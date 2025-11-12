@@ -188,45 +188,5 @@
       "value": "{\"route\":\"main_launch\",\"aplSupported\":true}"
     }
   ],
-  "actions": [
-    {
-      "type": "Button",
-      "caption": "Test: Open Energie Page",
-      "onClick": "IAH_TestOpenPage(1);"
-    },
-    {
-      "type": "Button",
-      "caption": "Test: Open Kamera Page",
-      "onClick": "IAH_TestOpenPage(2);"
-    },
-    {
-      "type": "Label",
-      "caption": "Hinweis: Unter der Modulinstanz wird ein Skript \"Action (Haus\\Übersicht/Einstellungen Entry)\" erzeugt. Dieses kannst du im Skill-Adapter als Einstiegsskript auswählen."
-    },
-    {
-      "type": "Button",
-      "caption": "Diagnose: IDs neu ermitteln",
-      "onClick": "IAH_DiagRebind($id);"
-    },
-    {
-      "type": "Button",
-      "caption": "Diagnose: Test-Launch (main_launch)",
-      "onClick": "IAH_DiagTestLaunch($id);"
-    },
-    {
-      "type": "Button",
-      "caption": "Diagnose: Custom-Payload senden",
-      "onClick": "IAH_DiagSendCustom($id);"
-    },
-    {
-      "type": "Button",
-      "caption": "Diagnose: Vorschau leeren",
-      "onClick": "IAH_DiagClearDump($id);"
-    },
-    {
-      "type": "Button",
-      "caption": "Diagnose: Logs leeren",
-      "onClick": "IAH_DiagClearLogs($id);"
-    }
-  ]
+  "actions": []
 }
