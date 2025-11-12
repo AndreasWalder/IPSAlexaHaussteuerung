@@ -201,123 +201,22 @@ class IPSAlexaHaussteuerung extends IPSModule
 
     public function GetConfigurationForm()
     {
-        // base form
         $formPath = __DIR__ . '/form.json';
-        $form = ['elements' => [], 'actions' => []];
-        if (file_exists($formPath)) {
-            $form = json_decode(file_get_contents($formPath), true);
-            if (!is_array($form)) {
-                $form = ['elements' => [], 'actions' => []];
-            }
+        if (!is_file($formPath)) {
+            return json_encode(['elements' => [], 'actions' => []]);
         }
 
-        // inject dynamic status
-        $S = $this->BuildScripts();
-        $V = $this->BuildVars();
-        $rows = [];
-        foreach ($S as $k => $id) {
-            $name = $id ? IPS_GetName($id) : '';
-            $rows[] = ['key' => $k, 'id' => $id, 'name' => $name];
+        $content = file_get_contents($formPath);
+        $form = json_decode((string) $content, true);
+        if (!is_array($form)) {
+            $form = ['elements' => [], 'actions' => []];
         }
 
-        $vars = $V['vars'] ?? [];
-        $vrows = [];
-        foreach ($vars as $k => $id) {
-            $name = $id ? IPS_GetName($id) : '';
-            $vrows[] = ['key' => $k, 'id' => $id, 'name' => $name];
+        if (!isset($form['elements']) || !is_array($form['elements'])) {
+            $form['elements'] = [];
         }
-
-        $statusPanel = [
-            'type'   => 'ExpansionPanel',
-            'caption' => 'Status (live)',
-            'items'  => [
-                ['type' => 'Label', 'caption' => 'Script-IDs'],
-                [
-                    'type'    => 'List',
-                    'columns' => [
-                        ['caption' => 'Key', 'name' => 'key', 'width' => '30%'],
-                        ['caption' => 'ID', 'name' => 'id', 'width' => '20%'],
-                        ['caption' => 'Name', 'name' => 'name', 'width' => '50%'],
-                    ],
-                    'values'  => $rows,
-                ],
-                ['type' => 'Label', 'caption' => 'Variablen-IDs'],
-                [
-                    'type'    => 'List',
-                    'columns' => [
-                        ['caption' => 'Key', 'name' => 'key', 'width' => '30%'],
-                        ['caption' => 'ID', 'name' => 'id', 'width' => '20%'],
-                        ['caption' => 'Name', 'name' => 'name', 'width' => '50%'],
-                    ],
-                    'values'  => $vrows,
-                ],
-            ],
-        ];
-        array_unshift($form['elements'], $statusPanel);
-
-        // Dump preview (read-only)
-        $dumpId = (int) ($V['vars']['dump_file'] ?? 0);
-        $dumpText = ($dumpId > 0 && @IPS_VariableExists($dumpId)) ? (string) GetValue($dumpId) : '';
-        if (strlen($dumpText) > 12000) {
-            $dumpText = substr($dumpText, 0, 12000) . "\n... (truncated)";
-        }
-
-        $preview = [
-            'type'    => 'ExpansionPanel',
-            'caption' => 'Antwort-Vorschau (dumpFile)',
-            'items'   => [
-                [
-                    'type'      => 'ValidationTextBox',
-                    'name'      => 'dumpPreview',
-                    'caption'   => 'Letzte Antwort',
-                    'value'     => $dumpText,
-                    'multiline' => true,
-                    'enabled'   => false,
-                ],
-            ],
-        ];
-        $form['elements'][] = $preview;
-
-        // Logs panel (read-only)
-        $logId = (int) ($V['vars']['log_recent'] ?? 0);
-        $logText = ($logId > 0 && @IPS_VariableExists($logId)) ? (string) GetValue($logId) : '';
-        if (strlen($logText) > 12000) {
-            $logText = substr($logText, -12000);
-        }
-
-        $logsPanel = [
-            'type'    => 'ExpansionPanel',
-            'caption' => 'Letzte Fehler / Logs',
-            'items'   => [
-                [
-                    'type'      => 'ValidationTextBox',
-                    'name'      => 'logsPreview',
-                    'caption'   => 'Logs',
-                    'value'     => $logText,
-                    'multiline' => true,
-                    'enabled'   => false,
-                ],
-            ],
-        ];
-        $form['elements'][] = $logsPanel;
-
-        // Add payload editor field to elements if missing
-        $hasDiag = false;
-        foreach ($form['elements'] as $el) {
-            if (isset($el['name']) && $el['name'] === 'DiagPayload') {
-                $hasDiag = true;
-                break;
-            }
-        }
-
-        if (!$hasDiag) {
-            $form['elements'][] = [
-                'name'      => 'DiagPayload',
-                'type'      => 'ValidationTextBox',
-                'caption'   => 'Diagnose: Custom Payload (JSON)',
-                'value'     => $this->ReadPropertyString('DiagPayload'),
-                'multiline' => true,
-            ];
+        if (!isset($form['actions']) || !is_array($form['actions'])) {
+            $form['actions'] = [];
         }
 
         return json_encode($form, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -487,39 +386,16 @@ class IPSAlexaHaussteuerung extends IPSModule
      */
     private function EntryScriptContent(): string
     {
-        $content = <<<'PHP'
-<?php
-/**
- * Entry for AlexaCustomSkillIntent → calls the IPSAlexaHaussteuerung module.
- * You can select THIS script in the Skill-Instance configuration ("Dieses Skript ausführen").
- */
-function Execute($request = null)
-{
-    // Determine module instance (parent of this script)
-    $self = $_IPS['SELF'] ?? 0;
-    $instanceID = IPS_GetParent($self);
-    if (!$instanceID) {
-        return;
-    }
+        $path = __DIR__ . '/resources/action_entry.php';
+        if (!is_file($path)) {
+            return "<?php\n";
+        }
 
-    // Normalize payload
-    if ($request === null) {
-        $payload = isset($_IPS['payload']) ? $_IPS['payload'] : [];
-    } else {
-        $payload = is_array($request) ? $request : (json_decode((string) $request, true) ?: []);
-    }
-    if (!is_array($payload)) {
-        $payload = [];
-    }
+        $content = file_get_contents($path);
+        if ($content === false || $content === '') {
+            return "<?php\n";
+        }
 
-    // route via Module
-    $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    $res = IPS_RequestAction($instanceID, 'RunRouteAll', $json);
-
-    // Echo back so the gateway can pass it along
-    echo $res;
-}
-PHP;
         return $content;
     }
 
