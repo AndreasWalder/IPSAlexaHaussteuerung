@@ -1,0 +1,15 @@
+{
+  "id": "{f528d4d0-5729-4315-ae88-9bbabdbd0392}",
+  "name": "IPSAlexaHaussteuerung",
+  "type": 3,
+  "vendor": "Haussteuerung",
+  "aliases": [
+    "IPSAlexaHaussteuerung"
+  ],
+  "parentRequirements": [],
+  "childRequirements": [],
+  "implemented": [],
+  "prefix": "IAH",
+  "url": "https://github.com/andreaswalder/IPSAlexaHaussteuerung",
+  "version": "1.0"
+}

@@ -1,0 +1,231 @@
+{
+  "elements": [
+    {
+      "name": "BaseUrl",
+      "type": "ValidationTextBox",
+      "caption": "Base URL",
+      "value": ""
+    },
+    {
+      "name": "Source",
+      "type": "ValidationTextBox",
+      "caption": "Source",
+      "value": ""
+    },
+    {
+      "name": "Token",
+      "type": "PasswordTextBox",
+      "caption": "Token",
+      "value": ""
+    },
+    {
+      "name": "Passwort",
+      "type": "PasswordTextBox",
+      "caption": "Passwort (WFC)",
+      "value": ""
+    },
+    {
+      "name": "StartPage",
+      "type": "ValidationTextBox",
+      "caption": "StartPage (z.B. #45315)",
+      "value": "#45315"
+    },
+    {
+      "name": "WfcId",
+      "type": "NumberSpinner",
+      "caption": "WFC ID",
+      "minimum": 0,
+      "maximum": 999999,
+      "value": 45315
+    },
+    {
+      "name": "DelayScript",
+      "type": "NumberSpinner",
+      "caption": "DelayScript ScriptID",
+      "minimum": 0,
+      "maximum": 999999,
+      "value": 55368
+    },
+    {
+      "name": "LOG_LEVEL",
+      "type": "Select",
+      "caption": "Log Level",
+      "options": [
+        {
+          "caption": "error",
+          "value": "error"
+        },
+        {
+          "caption": "info",
+          "value": "info"
+        },
+        {
+          "caption": "debug",
+          "value": "debug"
+        }
+      ],
+      "value": "debug"
+    },
+    {
+      "type": "ExpansionPanel",
+      "caption": "Page IDs",
+      "items": [
+        {
+          "name": "EnergiePageId",
+          "type": "ValidationTextBox",
+          "caption": "Energie PageId",
+          "value": "item2124"
+        },
+        {
+          "name": "KameraPageId",
+          "type": "ValidationTextBox",
+          "caption": "Kamera PageId",
+          "value": "item9907"
+        }
+      ]
+    },
+    {
+      "type": "ExpansionPanel",
+      "caption": "Flags",
+      "items": [
+        {
+          "name": "flag_preload_profiles",
+          "type": "CheckBox",
+          "caption": "preload_profiles",
+          "value": true
+        },
+        {
+          "name": "flag_log_basic",
+          "type": "CheckBox",
+          "caption": "log_basic",
+          "value": true
+        },
+        {
+          "name": "flag_log_verbose",
+          "type": "CheckBox",
+          "caption": "log_verbose",
+          "value": true
+        },
+        {
+          "name": "flag_log_apl_ds",
+          "type": "CheckBox",
+          "caption": "log_apl_ds",
+          "value": true
+        }
+      ]
+    },
+    {
+      "type": "ExpansionPanel",
+      "caption": "Script IDs (Defaults aus Export)",
+      "items": [
+        {
+          "name": "SCRIPT_ACTION",
+          "type": "NumberSpinner",
+          "caption": "Action ScriptID (Einstieg)",
+          "value": 39964
+        },
+        {
+          "name": "SCRIPT_ROUTE_ALL",
+          "type": "NumberSpinner",
+          "caption": "Route_allRenderer ScriptID",
+          "value": 11978
+        },
+        {
+          "name": "SCRIPT_RENDER_MAIN",
+          "type": "NumberSpinner",
+          "caption": "LaunchRequest ScriptID",
+          "value": 56904
+        },
+        {
+          "name": "SCRIPT_RENDER_SETTINGS",
+          "type": "NumberSpinner",
+          "caption": "EinstellungsRender ScriptID",
+          "value": 59056
+        },
+        {
+          "name": "SCRIPT_RENDER_HEIZUNG",
+          "type": "NumberSpinner",
+          "caption": "HeizungRenderer ScriptID",
+          "value": 26735
+        },
+        {
+          "name": "SCRIPT_RENDER_JALOUSIE",
+          "type": "NumberSpinner",
+          "caption": "JalousieRenderer ScriptID",
+          "value": 50191
+        },
+        {
+          "name": "SCRIPT_RENDER_LICHT",
+          "type": "NumberSpinner",
+          "caption": "LichtRenderer ScriptID",
+          "value": 56288
+        },
+        {
+          "name": "SCRIPT_RENDER_LUEFTUNG",
+          "type": "NumberSpinner",
+          "caption": "LüftungRenderer ScriptID",
+          "value": 28855
+        },
+        {
+          "name": "SCRIPT_RENDER_GERAETE",
+          "type": "NumberSpinner",
+          "caption": "GeraeteRenderer ScriptID",
+          "value": 33310
+        },
+        {
+          "name": "SCRIPT_RENDER_BEWAESSERUNG",
+          "type": "NumberSpinner",
+          "caption": "BewaesserungRenderer ScriptID",
+          "value": 28653
+        }
+      ]
+    },
+    {
+      "name": "DiagPayload",
+      "type": "TextArea",
+      "caption": "Diagnose: Custom Payload (JSON)",
+      "value": "{\"route\":\"main_launch\",\"aplSupported\":true}"
+    }
+  ],
+  "actions": [
+    {
+      "type": "Button",
+      "caption": "Test: Open Energie Page",
+      "onClick": "IAH_TestOpenPage(1);"
+    },
+    {
+      "type": "Button",
+      "caption": "Test: Open Kamera Page",
+      "onClick": "IAH_TestOpenPage(2);"
+    },
+    {
+      "type": "Label",
+      "caption": "Hinweis: Unter der Modulinstanz wird ein Skript \"Action (Haus\\Übersicht/Einstellungen Entry)\" erzeugt. Dieses kannst du im Skill-Adapter als Einstiegsskript auswählen."
+    },
+    {
+      "type": "Button",
+      "caption": "Diagnose: IDs neu ermitteln",
+      "onClick": "IAH_DiagRebind();"
+    },
+    {
+      "type": "Button",
+      "caption": "Diagnose: Test-Launch (main_launch)",
+      "onClick": "IAH_DiagTestLaunch();"
+    },
+    {
+      "type": "Button",
+      "caption": "Diagnose: Custom-Payload senden",
+      "onClick": "IAH_DiagSendCustom();"
+    },
+    {
+      "type": "Button",
+      "caption": "Diagnose: Vorschau leeren",
+      "onClick": "IAH_DiagClearDump();"
+    },
+    {
+      "type": "Button",
+      "caption": "Diagnose: Logs leeren",
+      "onClick": "IAH_DiagClearLogs();"
+    }
+  ]
+}
