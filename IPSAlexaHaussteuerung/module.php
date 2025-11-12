@@ -22,6 +22,7 @@ class IPSAlexaHaussteuerung extends IPSModule
     public function Create()
     {
         parent::Create();
+
         // Core settings
         $this->RegisterPropertyString('BaseUrl', '');
         $this->RegisterPropertyString('Source', '');
@@ -31,16 +32,20 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyInteger('WfcId', 45315);
         $this->RegisterPropertyInteger('DelayScript', 55368);
         $this->RegisterPropertyString('LOG_LEVEL', 'debug');
+
         // Pages
         $this->RegisterPropertyString('EnergiePageId', 'item2124');
         $this->RegisterPropertyString('KameraPageId', 'item9907');
+
         // Diagnostics payload editor
         $this->RegisterPropertyString('DiagPayload', '{"route":"main_launch","aplSupported":true}');
+
         // Flags
         $this->RegisterPropertyBoolean('flag_preload_profiles', true);
         $this->RegisterPropertyBoolean('flag_log_basic', true);
         $this->RegisterPropertyBoolean('flag_log_verbose', true);
         $this->RegisterPropertyBoolean('flag_log_apl_ds', true);
+
         // Script IDs
         $this->RegisterPropertyInteger('SCRIPT_ROUTE_ALL', 11978);
         $this->RegisterPropertyInteger('SCRIPT_ACTION', 39964);
@@ -59,16 +64,19 @@ class IPSAlexaHaussteuerung extends IPSModule
     public function ApplyChanges()
     {
         parent::ApplyChanges();
+
         $this->EnsureInfrastructure();
         $this->EnsureActionEntryScript();
     }
 
-    /** Ensure categories & runtime variables exist */
+    /**
+     * Ensure categories & runtime variables exist
+     */
     private function EnsureInfrastructure(): void
     {
         $root = $this->InstanceID;
         $catSettings = $this->ensureCategory($root, 'Einstellungen', 'iah.settings');
-        $catHelper   = $this->ensureCategory($root, 'Alexa new devices helper', 'iah.helper');
+        $catHelper = $this->ensureCategory($root, 'Alexa new devices helper', 'iah.helper');
 
         // Einstellungen toggles (Defaults wie im Original-Flow: aktiv = true)
         $this->ensureVar($catSettings, 'bewaesserung_toggle', 'bewaesserung_toggle', VARIABLETYPE_BOOLEAN, '', true);
@@ -82,8 +90,14 @@ class IPSAlexaHaussteuerung extends IPSModule
         // WFC PageSwitch Params → Default aus Instanz-Settings
         $wfc = $this->ReadPropertyInteger('WfcId');
         $page = $this->ReadPropertyString('EnergiePageId');
-        $this->ensureVar($catSettings, 'WFC PageSwitch Params', 'wfc_page_params', VARIABLETYPE_STRING, '',
-            json_encode(['page'=>$page,'wfc'=>$wfc], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
+        $this->ensureVar(
+            $catSettings,
+            'WFC PageSwitch Params',
+            'wfc_page_params',
+            VARIABLETYPE_STRING,
+            '',
+            json_encode(['page' => $page, 'wfc' => $wfc], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+        );
 
         // Helper
         $this->ensureVar($catHelper, 'DeviceMapJson', 'devicemap_json', VARIABLETYPE_STRING, '', '');
@@ -102,7 +116,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->ensureVar($root, 'lastVariableValue', 'last_var_value', VARIABLETYPE_STRING, '', '');
         $this->ensureVar($root, 'log_recent', 'log_recent', VARIABLETYPE_STRING, '', '');
     }
-private function ensureCategory(int $parent, string $name, string $ident): int
+
+    private function ensureCategory(int $parent, string $name, string $ident): int
     {
         $id = @IPS_GetObjectIDByIdent($ident, $parent);
         if (!$id) {
@@ -111,11 +126,18 @@ private function ensureCategory(int $parent, string $name, string $ident): int
             IPS_SetName($id, $name);
             IPS_SetIdent($id, $ident);
         }
+
         return $id;
     }
 
-    private function ensureVar(int $parent, string $name, string $ident, int $type, string $profile, $defaultValue=null): int
-    {
+    private function ensureVar(
+        int $parent,
+        string $name,
+        string $ident,
+        int $type,
+        string $profile,
+        $defaultValue = null
+    ): int {
         // 1) adopt existing by ident OR by name
         $id = @IPS_GetObjectIDByIdent($ident, $parent);
         if (!$id) {
@@ -125,23 +147,36 @@ private function ensureCategory(int $parent, string $name, string $ident): int
                 IPS_SetIdent($id, $ident);
             }
         }
+
         // 2) create if still missing
         if (!$id) {
             $id = IPS_CreateVariable($type);
             IPS_SetParent($id, $parent);
             IPS_SetName($id, $name);
             IPS_SetIdent($id, $ident);
-            if ($profile !== '') { @IPS_SetVariableCustomProfile($id, $profile); }
+            if ($profile !== '') {
+                @IPS_SetVariableCustomProfile($id, $profile);
+            }
         }
+
         // 3) initialize value if provided and variable was just created or empty
         if ($defaultValue !== null) {
             switch ($type) {
-                case VARIABLETYPE_BOOLEAN: @SetValueBoolean($id, (bool)$defaultValue); break;
-                case VARIABLETYPE_INTEGER: @SetValueInteger($id, (int)$defaultValue); break;
-                case VARIABLETYPE_FLOAT:   @SetValueFloat($id, (float)$defaultValue); break;
-                case VARIABLETYPE_STRING:  @SetValueString($id, (string)$defaultValue); break;
+                case VARIABLETYPE_BOOLEAN:
+                    @SetValueBoolean($id, (bool) $defaultValue);
+                    break;
+                case VARIABLETYPE_INTEGER:
+                    @SetValueInteger($id, (int) $defaultValue);
+                    break;
+                case VARIABLETYPE_FLOAT:
+                    @SetValueFloat($id, (float) $defaultValue);
+                    break;
+                case VARIABLETYPE_STRING:
+                    @SetValueString($id, (string) $defaultValue);
+                    break;
             }
         }
+
         return $id;
     }
 
@@ -149,118 +184,171 @@ private function ensureCategory(int $parent, string $name, string $ident): int
     {
         // base form
         $formPath = __DIR__ . '/form.json';
-        $form = ['elements'=>[],'actions'=>[]];
+        $form = ['elements' => [], 'actions' => []];
         if (file_exists($formPath)) {
             $form = json_decode(file_get_contents($formPath), true);
-            if (!is_array($form)) $form = ['elements'=>[],'actions'=>[]];
+            if (!is_array($form)) {
+                $form = ['elements' => [], 'actions' => []];
+            }
         }
+
         // inject dynamic status
         $S = $this->BuildScripts();
         $V = $this->BuildVars();
         $rows = [];
-        foreach ($S as $k=>$id) {
+        foreach ($S as $k => $id) {
             $name = $id ? IPS_GetName($id) : '';
-            $rows[] = ['key'=>$k, 'id'=>$id, 'name'=>$name];
+            $rows[] = ['key' => $k, 'id' => $id, 'name' => $name];
         }
+
         $vars = $V['vars'] ?? [];
         $vrows = [];
-        foreach ($vars as $k=>$id) {
+        foreach ($vars as $k => $id) {
             $name = $id ? IPS_GetName($id) : '';
-            $vrows[] = ['key'=>$k, 'id'=>$id, 'name'=>$name];
+            $vrows[] = ['key' => $k, 'id' => $id, 'name' => $name];
         }
+
         $statusPanel = [
-            'type'=>'ExpansionPanel',
-            'caption'=>'Status (live)',
-            'items'=>[
-                ['type'=>'Label','caption'=>'Script-IDs'],
-                ['type'=>'List','columns'=>[
-                    ['caption'=>'Key','name'=>'key','width'=>'30%'],
-                    ['caption'=>'ID','name'=>'id','width'=>'20%'],
-                    ['caption'=>'Name','name'=>'name','width'=>'50%']
-                ], 'values'=>$rows],
-                ['type'=>'Label','caption'=>'Variablen-IDs'],
-                ['type'=>'List','columns'=>[
-                    ['caption'=>'Key','name'=>'key','width'=>'30%'],
-                    ['caption'=>'ID','name'=>'id','width'=>'20%'],
-                    ['caption'=>'Name','name'=>'name','width'=>'50%']
-                ], 'values'=>$vrows]
-            ]
+            'type'   => 'ExpansionPanel',
+            'caption' => 'Status (live)',
+            'items'  => [
+                ['type' => 'Label', 'caption' => 'Script-IDs'],
+                [
+                    'type'    => 'List',
+                    'columns' => [
+                        ['caption' => 'Key', 'name' => 'key', 'width' => '30%'],
+                        ['caption' => 'ID', 'name' => 'id', 'width' => '20%'],
+                        ['caption' => 'Name', 'name' => 'name', 'width' => '50%'],
+                    ],
+                    'values'  => $rows,
+                ],
+                ['type' => 'Label', 'caption' => 'Variablen-IDs'],
+                [
+                    'type'    => 'List',
+                    'columns' => [
+                        ['caption' => 'Key', 'name' => 'key', 'width' => '30%'],
+                        ['caption' => 'ID', 'name' => 'id', 'width' => '20%'],
+                        ['caption' => 'Name', 'name' => 'name', 'width' => '50%'],
+                    ],
+                    'values'  => $vrows,
+                ],
+            ],
         ];
         array_unshift($form['elements'], $statusPanel);
 
         // Dump preview (read-only)
-        $dumpId = (int)($V['vars']['dump_file'] ?? 0);
-        $dumpText = ($dumpId>0 && @IPS_VariableExists($dumpId)) ? (string)GetValue($dumpId) : '';
-        if (strlen($dumpText) > 12000) { $dumpText = substr($dumpText, 0, 12000).'\n... (truncated)'; }
+        $dumpId = (int) ($V['vars']['dump_file'] ?? 0);
+        $dumpText = ($dumpId > 0 && @IPS_VariableExists($dumpId)) ? (string) GetValue($dumpId) : '';
+        if (strlen($dumpText) > 12000) {
+            $dumpText = substr($dumpText, 0, 12000) . "\n... (truncated)";
+        }
+
         $preview = [
-            'type'=>'ExpansionPanel',
-            'caption'=>'Antwort-Vorschau (dumpFile)',
-            'items'=>[
-                ['type'=>'TextArea','name'=>'dumpPreview','caption'=>'Letzte Antwort','value'=>$dumpText]
-            ]
+            'type'    => 'ExpansionPanel',
+            'caption' => 'Antwort-Vorschau (dumpFile)',
+            'items'   => [
+                ['type' => 'TextArea', 'name' => 'dumpPreview', 'caption' => 'Letzte Antwort', 'value' => $dumpText],
+            ],
         ];
         $form['elements'][] = $preview;
 
         // Logs panel (read-only)
-        $logId = (int)($V['vars']['log_recent'] ?? 0);
-        $logText = ($logId>0 && @IPS_VariableExists($logId)) ? (string)GetValue($logId) : '';
-        if (strlen($logText) > 12000) { $logText = substr($logText, -12000); }
+        $logId = (int) ($V['vars']['log_recent'] ?? 0);
+        $logText = ($logId > 0 && @IPS_VariableExists($logId)) ? (string) GetValue($logId) : '';
+        if (strlen($logText) > 12000) {
+            $logText = substr($logText, -12000);
+        }
+
         $logsPanel = [
-            'type'=>'ExpansionPanel',
-            'caption'=>'Letzte Fehler / Logs',
-            'items'=>[
-                ['type'=>'TextArea','name'=>'logsPreview','caption'=>'Logs','value'=>$logText]
-            ]
+            'type'    => 'ExpansionPanel',
+            'caption' => 'Letzte Fehler / Logs',
+            'items'   => [
+                ['type' => 'TextArea', 'name' => 'logsPreview', 'caption' => 'Logs', 'value' => $logText],
+            ],
         ];
         $form['elements'][] = $logsPanel;
 
         // Add payload editor field to elements if missing
         $hasDiag = false;
         foreach ($form['elements'] as $el) {
-            if (isset($el['name']) && $el['name']==='DiagPayload') { $hasDiag = true; break; }
-        }
-        if (!$hasDiag) {
-            $form['elements'][] = ['name'=>'DiagPayload','type'=>'TextArea','caption'=>'Diagnose: Custom Payload (JSON)','value'=>$this->ReadPropertyString('DiagPayload')];
-        }
-
-        return json_encode($form, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
-    }
-            if (!$found) {
-                $hooks[] = ['Hook' => $Hook, 'TargetID' => $this->InstanceID];
+            if (isset($el['name']) && $el['name'] === 'DiagPayload') {
+                $hasDiag = true;
+                break;
             }
-            IPS_SetProperty($id, 'Hooks', json_encode($hooks));
-            IPS_ApplyChanges($id);
         }
+
+        if (!$hasDiag) {
+            $form['elements'][] = [
+                'name'    => 'DiagPayload',
+                'type'    => 'TextArea',
+                'caption' => 'Diagnose: Custom Payload (JSON)',
+                'value'   => $this->ReadPropertyString('DiagPayload'),
+            ];
+        }
+
+        return json_encode($form, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 
-    /** Button handler from form */
+    /**
+     * Button handler from form
+     */
     public function TestOpenPage(int $which)
     {
         $V = $this->BuildVars();
-        $page = ($which === 1) ? $this->ReadPropertyString('EnergiePageId') : $this->ReadPropertyString('KameraPageId');
+        $page = ($which === 1)
+            ? $this->ReadPropertyString('EnergiePageId')
+            : $this->ReadPropertyString('KameraPageId');
         $params = ['page' => $page, 'wfc' => $V['WfcId']];
         @IPS_RunScriptEx($V['DelayScript'], $params);
     }
 
-    /** Legacy-compatible API */
+    /**
+     * Legacy-compatible API
+     */
     public function RunRouteAll(string $payloadJson)
     {
         $payload = @json_decode($payloadJson, true);
-        if (!is_array($payload)) $payload = [];
+        if (!is_array($payload)) {
+            $payload = [];
+        }
+
         $cfg = $this->BuildConfig();
         $router = new \IPSAlexaHaussteuerung\Router();
         $res = $router->route($payload, $cfg);
+
         return json_encode($res, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 
-    /** Build merged config for Router/Renderers */
+    public function RequestAction($Ident, $Value)
+    {
+        switch ($Ident) {
+            case 'RunRouteAll':
+                if (!is_string($Value)) {
+                    $Value = json_encode($Value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                }
+                if (!is_string($Value)) {
+                    $Value = '';
+                }
+
+                return $this->RunRouteAll($Value);
+
+            default:
+                trigger_error('Invalid ident for IPSAlexaHaussteuerung: ' . (string) $Ident, E_USER_NOTICE);
+        }
+
+        return null;
+    }
+
+    /**
+     * Build merged config for Router/Renderers
+     */
     private function BuildConfig(): array
     {
         return [
-            'V' => $this->BuildVars(),
-            'S' => $this->BuildScripts(),
-            'flags' => $this->BuildFlags(),
-            'LOG_LEVEL' => $this->ReadPropertyString('LOG_LEVEL')
+            'V'         => $this->BuildVars(),
+            'S'         => $this->BuildScripts(),
+            'flags'     => $this->BuildFlags(),
+            'LOG_LEVEL' => $this->ReadPropertyString('LOG_LEVEL'),
         ];
     }
 
@@ -268,67 +356,72 @@ private function ensureCategory(int $parent, string $name, string $ident): int
     {
         $root = $this->InstanceID;
         $settings = @IPS_GetObjectIDByIdent('iah.settings', $root);
-        $helper   = @IPS_GetObjectIDByIdent('iah.helper', $root);
-        $get = function(int $parent, string $ident) {
-            return (int)@IPS_GetObjectIDByIdent($ident, $parent);
+        $helper = @IPS_GetObjectIDByIdent('iah.helper', $root);
+
+        $get = function (int $parent, string $ident) {
+            return (int) @IPS_GetObjectIDByIdent($ident, $parent);
         };
+
         return [
-            'BaseUrl' => $this->ReadPropertyString('BaseUrl'),
-            'Source' => $this->ReadPropertyString('Source'),
-            'Token'  => $this->ReadPropertyString('Token'),
-            'Passwort' => $this->ReadPropertyString('Passwort'),
-            'StartPage' => $this->ReadPropertyString('StartPage'),
-            'WfcId' => $this->ReadPropertyInteger('WfcId'),
-            'DelayScript' => $this->ReadPropertyInteger('DelayScript'),
+            'BaseUrl'       => $this->ReadPropertyString('BaseUrl'),
+            'Source'        => $this->ReadPropertyString('Source'),
+            'Token'         => $this->ReadPropertyString('Token'),
+            'Passwort'      => $this->ReadPropertyString('Passwort'),
+            'StartPage'     => $this->ReadPropertyString('StartPage'),
+            'WfcId'         => $this->ReadPropertyInteger('WfcId'),
+            'DelayScript'   => $this->ReadPropertyInteger('DelayScript'),
             'EnergiePageId' => $this->ReadPropertyString('EnergiePageId'),
-            'KameraPageId' => $this->ReadPropertyString('KameraPageId'),
+            'KameraPageId'  => $this->ReadPropertyString('KameraPageId'),
             // IDs der erzeugten/verknüpften Variablen
-            'vars' => [
-                'settings_cat' => (int)$settings,
-                'helper_cat'   => (int)$helper,
-                'bewaesserung_toggle' => $get((int)$settings, 'bewaesserung_toggle'),
-                'geraete_toggle'      => $get((int)$settings, 'geraete_toggle'),
-                'heizung_stellen'     => $get((int)$settings, 'heizung_stellen'),
-                'jalousie_steuern'    => $get((int)$settings, 'jalousie_steuern'),
-                'licht_dimmers'       => $get((int)$settings, 'licht_dimmers'),
-                'licht_switches'      => $get((int)$settings, 'licht_switches'),
-                'lueftung_toggle'     => $get((int)$settings, 'lueftung_toggle'),
-                'wfc_page_params'     => $get((int)$settings, 'wfc_page_params'),
-                'devicemap_json'      => $get((int)$helper, 'devicemap_json'),
-                'pending_deviceid'    => $get((int)$helper, 'pending_deviceid'),
-                'pending_stage'       => $get((int)$helper, 'pending_stage'),
-                'action'              => (int)@IPS_GetObjectIDByIdent('action', $root),
-                'device'              => (int)@IPS_GetObjectIDByIdent('device', $root),
-                'room'                => (int)@IPS_GetObjectIDByIdent('room', $root),
-                'skill_active'        => (int)@IPS_GetObjectIDByIdent('skill_active', $root),
-                'dump_file'           => (int)@IPS_GetObjectIDByIdent('dump_file', $root),
-                'last_var_device'     => (int)@IPS_GetObjectIDByIdent('last_var_device', $root),
-                'last_var_id'         => (int)@IPS_GetObjectIDByIdent('last_var_id', $root),
-                'last_var_action'     => (int)@IPS_GetObjectIDByIdent('last_var_action', $root),
-                'last_var_value'      => (int)@IPS_GetObjectIDByIdent('last_var_value', $root)
-            ]
+            'vars'          => [
+                'settings_cat'       => (int) $settings,
+                'helper_cat'         => (int) $helper,
+                'bewaesserung_toggle' => $get((int) $settings, 'bewaesserung_toggle'),
+                'geraete_toggle'      => $get((int) $settings, 'geraete_toggle'),
+                'heizung_stellen'     => $get((int) $settings, 'heizung_stellen'),
+                'jalousie_steuern'    => $get((int) $settings, 'jalousie_steuern'),
+                'licht_dimmers'       => $get((int) $settings, 'licht_dimmers'),
+                'licht_switches'      => $get((int) $settings, 'licht_switches'),
+                'lueftung_toggle'     => $get((int) $settings, 'lueftung_toggle'),
+                'wfc_page_params'     => $get((int) $settings, 'wfc_page_params'),
+                'devicemap_json'      => $get((int) $helper, 'devicemap_json'),
+                'pending_deviceid'    => $get((int) $helper, 'pending_deviceid'),
+                'pending_stage'       => $get((int) $helper, 'pending_stage'),
+                'action'              => (int) @IPS_GetObjectIDByIdent('action', $root),
+                'device'              => (int) @IPS_GetObjectIDByIdent('device', $root),
+                'room'                => (int) @IPS_GetObjectIDByIdent('room', $root),
+                'skill_active'        => (int) @IPS_GetObjectIDByIdent('skill_active', $root),
+                'dump_file'           => (int) @IPS_GetObjectIDByIdent('dump_file', $root),
+                'last_var_device'     => (int) @IPS_GetObjectIDByIdent('last_var_device', $root),
+                'last_var_id'         => (int) @IPS_GetObjectIDByIdent('last_var_id', $root),
+                'last_var_action'     => (int) @IPS_GetObjectIDByIdent('last_var_action', $root),
+                'last_var_value'      => (int) @IPS_GetObjectIDByIdent('last_var_value', $root),
+            ],
         ];
     }
 
     private function BuildScripts(): array
     {
-        $get = function(string $prop, string $fallbackName): int {
-            $v = (int)$this->ReadPropertyInteger($prop);
-            if ($v > 0 && @IPS_ObjectExists($v)) return $v;
+        $get = function (string $prop, string $fallbackName): int {
+            $v = (int) $this->ReadPropertyInteger($prop);
+            if ($v > 0 && @IPS_ObjectExists($v)) {
+                return $v;
+            }
             $id = @IPS_GetObjectIDByName($fallbackName, 0); // global search
-            return (int)$id;
+            return (int) $id;
         };
+
         return [
-            'ROUTE_ALL'        => $get('SCRIPT_ROUTE_ALL', 'Route_allRenderer'),
-            'ACTION'          => $get('SCRIPT_ACTION', 'Action'),
-            'RENDER_MAIN'      => $get('SCRIPT_RENDER_MAIN', 'LaunchRequest'),
-            'RENDER_SETTINGS'  => $get('SCRIPT_RENDER_SETTINGS', 'EinstellungsRender'),
-            'RENDER_HEIZUNG'   => $get('SCRIPT_RENDER_HEIZUNG', 'HeizungRenderer'),
-            'RENDER_JALOUSIE'  => $get('SCRIPT_RENDER_JALOUSIE', 'JalousieRenderer'),
-            'RENDER_LICHT'     => $get('SCRIPT_RENDER_LICHT', 'LichtRenderer'),
-            'RENDER_LUEFTUNG'  => $get('SCRIPT_RENDER_LUEFTUNG', 'LüftungRenderer'),
-            'RENDER_GERAETE'   => $get('SCRIPT_RENDER_GERAETE', 'GeraeteRenderer'),
-            'RENDER_BEWAESSERUNG'=> $get('SCRIPT_RENDER_BEWAESSERUNG', 'BewaesserungRenderer')
+            'ROUTE_ALL'         => $get('SCRIPT_ROUTE_ALL', 'Route_allRenderer'),
+            'ACTION'            => $get('SCRIPT_ACTION', 'Action'),
+            'RENDER_MAIN'       => $get('SCRIPT_RENDER_MAIN', 'LaunchRequest'),
+            'RENDER_SETTINGS'   => $get('SCRIPT_RENDER_SETTINGS', 'EinstellungsRender'),
+            'RENDER_HEIZUNG'    => $get('SCRIPT_RENDER_HEIZUNG', 'HeizungRenderer'),
+            'RENDER_JALOUSIE'   => $get('SCRIPT_RENDER_JALOUSIE', 'JalousieRenderer'),
+            'RENDER_LICHT'      => $get('SCRIPT_RENDER_LICHT', 'LichtRenderer'),
+            'RENDER_LUEFTUNG'   => $get('SCRIPT_RENDER_LUEFTUNG', 'LüftungRenderer'),
+            'RENDER_GERAETE'    => $get('SCRIPT_RENDER_GERAETE', 'GeraeteRenderer'),
+            'RENDER_BEWAESSERUNG' => $get('SCRIPT_RENDER_BEWAESSERUNG', 'BewaesserungRenderer'),
         ];
     }
 
@@ -338,50 +431,25 @@ private function ensureCategory(int $parent, string $name, string $ident): int
             'preload_profiles' => $this->ReadPropertyBoolean('flag_preload_profiles'),
             'log_basic'        => $this->ReadPropertyBoolean('flag_log_basic'),
             'log_verbose'      => $this->ReadPropertyBoolean('flag_log_verbose'),
-            'log_apl_ds'       => $this->ReadPropertyBoolean('flag_log_apl_ds')
+            'log_apl_ds'       => $this->ReadPropertyBoolean('flag_log_apl_ds'),
         ];
     }
-}
 
-
-    /** Create or update a forwarding child script selectable as entry point in skill instance */
+    /**
+     * Create or update a forwarding child script selectable as entry point in skill instance
+     */
     private function EnsureActionEntryScript(): void
     {
         $root = $this->InstanceID;
-        $sid = $this->ensureScript($root, 'Action (Haus\Übersicht/Einstellungen Entry)', 'iah.action.entry');
-        $target = (int)$this->BuildScripts()['ACTION'];
-        $php = <<<'PHP'
-<?php
-// Auto-generated by IPSAlexaHaussteuerung
-$instanceID = $_IPS['TARGET'] ?? 0; // when run from event/instance
-if ($instanceID === 0) {
-    // try to find module instance by name near this script
-    $instanceID = IPS_GetParent($_IPS['SELF']);
-}
-$iid = $instanceID;
-$module = IPS_GetInstance($iid);
-$actionId = IAH_GetActionTarget($iid);
-$payload = $_IPS; // raw payload from gateway (if any)
-if ($actionId > 0 && IPS_ScriptExists($actionId)) {
-    // forward to your original Action script
-    echo IPS_RunScriptWaitEx($actionId, $payload);
-    return;
-}
-// else fallback: call module router
-if (isset($payload['payload'])) {
-    $res = IAH_RunRouteAll($iid, json_encode($payload['payload'], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
-    echo $res;
-} else {
-    echo IAH_RunRouteAll($iid, '{}');
-}
-PHP;
+        $sid = $this->ensureScript($root, 'Action (Haus\\Übersicht/Einstellungen Entry)', 'iah.action.entry');
         $content = $this->EntryScriptContent();
         IPS_SetScriptContent($sid, $content);
-        // ensure it's active
         IPS_SetHidden($sid, false);
     }
 
-    /** Ensure/Update content of entry script */
+    /**
+     * Ensure/Update content of entry script
+     */
     private function EntryScriptContent(): string
     {
         $content = <<<'PHP'
@@ -395,26 +463,32 @@ function Execute($request = null)
     // Determine module instance (parent of this script)
     $self = $_IPS['SELF'] ?? 0;
     $instanceID = IPS_GetParent($self);
-    if (!$instanceID) return;
+    if (!$instanceID) {
+        return;
+    }
 
     // Normalize payload
     if ($request === null) {
         $payload = isset($_IPS['payload']) ? $_IPS['payload'] : [];
     } else {
-        $payload = is_array($request) ? $request : (json_decode((string)$request, true) ?: []);
+        $payload = is_array($request) ? $request : (json_decode((string) $request, true) ?: []);
     }
-    if (!is_array($payload)) $payload = [];
+    if (!is_array($payload)) {
+        $payload = [];
+    }
 
     // route via Module
     $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     $res = IPS_RequestAction($instanceID, 'RunRouteAll', $json);
+
     // Echo back so the gateway can pass it along
     echo $res;
 }
 PHP;
         return $content;
     }
-private function ensureScript(int $parent, string $name, string $ident): int
+
+    private function ensureScript(int $parent, string $name, string $ident): int
     {
         $id = @IPS_GetObjectIDByIdent($ident, $parent);
         if (!$id) {
@@ -429,72 +503,92 @@ private function ensureScript(int $parent, string $name, string $ident): int
                 IPS_SetIdent($id, $ident);
             }
         }
+
         return $id;
     }
 
-    /** Getter for gateway: which script should be called as main Action */
+    /**
+     * Getter for gateway: which script should be called as main Action
+     */
     public function GetActionTarget(): int
     {
         $scripts = $this->BuildScripts();
-        return (int)($scripts['ACTION'] ?? 0);
+        return (int) ($scripts['ACTION'] ?? 0);
     }
 
-
-    /** Rebind and re-check infrastructure and scripts; returns summary string */
+    /**
+     * Rebind and re-check infrastructure and scripts; returns summary string
+     */
     public function DiagRebind(): string
     {
         $this->EnsureInfrastructure();
         $this->EnsureActionEntryScript();
         $S = $this->BuildScripts();
-        $V = $this->BuildVars();
         $ok = [];
-        foreach ($S as $k=>$v) { $ok[] = $k.':'.($v?:0); }
-        return 'Scripts: ['.implode(', ', $ok).']';
+        foreach ($S as $k => $v) {
+            $ok[] = $k . ':' . ($v ?: 0);
+        }
+
+        return 'Scripts: [' . implode(', ', $ok) . ']';
     }
 
-    /** Build and run a minimal test payload ('main_launch') */
+    /**
+     * Build and run a minimal test payload ('main_launch')
+     */
     public function DiagTestLaunch(): string
     {
-        $payload = ['route'=>'main_launch','aplSupported'=>true];
+        $payload = ['route' => 'main_launch', 'aplSupported' => true];
         $router = new \IPSAlexaHaussteuerung\Router();
         $res = $router->route($payload, $this->BuildConfig());
+
         return json_encode($res, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
-            }
-        }
-        return json_encode(['hook'=>$hook,'state'=>$state], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    }
 
-
-    /** Sends the custom JSON payload (from property DiagPayload) through the Router and stores the result in dumpFile var + log */
+    /**
+     * Sends the custom JSON payload (from property DiagPayload) through the Router and stores the result
+     * in dumpFile var + log
+     */
     public function DiagSendCustom(): string
     {
         $json = $this->ReadPropertyString('DiagPayload');
         $payload = @json_decode($json, true);
-        if (!is_array($payload)) $payload = [];
+        if (!is_array($payload)) {
+            $payload = [];
+        }
+
         $router = new \IPSAlexaHaussteuerung\Router();
         $res = $router->route($payload, $this->BuildConfig());
         $out = json_encode($res, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
         // write to dumpFile variable if present
-        $dumpId = (int)($this->BuildVars()['vars']['dump_file'] ?? 0);
-        if ($dumpId > 0) { @SetValueString($dumpId, $out); }
-        $this->log('info', 'DiagSendCustom result', ['len'=>strlen($out)]);
+        $dumpId = (int) ($this->BuildVars()['vars']['dump_file'] ?? 0);
+        if ($dumpId > 0) {
+            @SetValueString($dumpId, $out);
+        }
+
+        $this->log('info', 'DiagSendCustom result', ['len' => strlen($out)]);
         return $out;
     }
 
-
-    /** Clears the dumpFile variable (Antwort-Vorschau) */
+    /**
+     * Clears the dumpFile variable (Antwort-Vorschau)
+     */
     public function DiagClearDump(): void
     {
-        $dumpId = (int)($this->BuildVars()['vars']['dump_file'] ?? 0);
-        if ($dumpId > 0) { @SetValueString($dumpId, ''); }
+        $dumpId = (int) ($this->BuildVars()['vars']['dump_file'] ?? 0);
+        if ($dumpId > 0) {
+            @SetValueString($dumpId, '');
+        }
     }
 
-
-    /** Clears the recent log buffer */
+    /**
+     * Clears the recent log buffer
+     */
     public function DiagClearLogs(): void
     {
-        $logId = (int)($this->BuildVars()['vars']['log_recent'] ?? 0);
-        if ($logId > 0) { @SetValueString($logId, ''); }
+        $logId = (int) ($this->BuildVars()['vars']['log_recent'] ?? 0);
+        if ($logId > 0) {
+            @SetValueString($logId, '');
+        }
     }
+}
