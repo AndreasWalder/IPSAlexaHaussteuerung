@@ -75,8 +75,8 @@ class IPSAlexaHaussteuerung extends IPSModule
     private function EnsureInfrastructure(): void
     {
         $root = $this->InstanceID;
-        $catSettings = $this->ensureCategory($root, 'Einstellungen', 'iah.settings');
-        $catHelper = $this->ensureCategory($root, 'Alexa new devices helper', 'iah.helper');
+        $catSettings = $this->ensureCategory($root, 'Einstellungen', 'iahSettings');
+        $catHelper = $this->ensureCategory($root, 'Alexa new devices helper', 'iahHelper');
 
         // Einstellungen toggles (Defaults wie im Original-Flow: aktiv = true)
         $this->ensureVar($catSettings, 'bewaesserung_toggle', 'bewaesserungToggle', VARIABLETYPE_BOOLEAN, '', true);
@@ -93,7 +93,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->ensureVar(
             $catSettings,
             'WFC PageSwitch Params',
-            'wfc_page_params',
+            'wfcPageParams',
             VARIABLETYPE_STRING,
             '',
             json_encode(['page' => $page, 'wfc' => $wfc], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
@@ -121,11 +121,15 @@ class IPSAlexaHaussteuerung extends IPSModule
     {
         $id = @IPS_GetObjectIDByIdent($ident, $parent);
         if (!$id) {
-            $id = IPS_CreateCategory();
-            IPS_SetParent($id, $parent);
-            IPS_SetName($id, $name);
-            IPS_SetIdent($id, $ident);
+            $id = @IPS_GetObjectIDByName($name, $parent);
         }
+        if (!$id) {
+            $id = IPS_CreateCategory();
+        }
+
+        IPS_SetParent($id, $parent);
+        IPS_SetName($id, $name);
+        IPS_SetIdent($id, $ident);
 
         return $id;
     }
@@ -178,6 +182,21 @@ class IPSAlexaHaussteuerung extends IPSModule
         }
 
         return $id;
+    }
+
+    private function getObjectIDByIdentOrName(int $parent, string $ident, string $name): int
+    {
+        $id = @IPS_GetObjectIDByIdent($ident, $parent);
+        if ($id) {
+            return (int) $id;
+        }
+
+        $id = @IPS_GetObjectIDByName($name, $parent);
+        if ($id) {
+            return (int) $id;
+        }
+
+        return 0;
     }
 
     public function GetConfigurationForm()
@@ -355,8 +374,8 @@ class IPSAlexaHaussteuerung extends IPSModule
     private function BuildVars(): array
     {
         $root = $this->InstanceID;
-        $settings = @IPS_GetObjectIDByIdent('iah.settings', $root);
-        $helper = @IPS_GetObjectIDByIdent('iah.helper', $root);
+        $settings = $this->getObjectIDByIdentOrName($root, 'iahSettings', 'Einstellungen');
+        $helper = $this->getObjectIDByIdentOrName($root, 'iahHelper', 'Alexa new devices helper');
 
         $get = function (int $parent, string $ident) {
             return (int) @IPS_GetObjectIDByIdent($ident, $parent);
@@ -376,26 +395,27 @@ class IPSAlexaHaussteuerung extends IPSModule
             'vars'          => [
                 'settings_cat'       => (int) $settings,
                 'helper_cat'         => (int) $helper,
-                'bewaesserung_toggle' => $get((int) $settings, 'bewaesserung_toggle'),
-                'geraete_toggle'      => $get((int) $settings, 'geraete_toggle'),
-                'heizung_stellen'     => $get((int) $settings, 'heizung_stellen'),
-                'jalousie_steuern'    => $get((int) $settings, 'jalousie_steuern'),
-                'licht_dimmers'       => $get((int) $settings, 'licht_dimmers'),
-                'licht_switches'      => $get((int) $settings, 'licht_switches'),
-                'lueftung_toggle'     => $get((int) $settings, 'lueftung_toggle'),
-                'wfc_page_params'     => $get((int) $settings, 'wfc_page_params'),
-                'devicemap_json'      => $get((int) $helper, 'devicemap_json'),
-                'pending_deviceid'    => $get((int) $helper, 'pending_deviceid'),
-                'pending_stage'       => $get((int) $helper, 'pending_stage'),
+                'bewaesserung_toggle' => $get((int) $settings, 'bewaesserungToggle'),
+                'geraete_toggle'      => $get((int) $settings, 'geraeteToggle'),
+                'heizung_stellen'     => $get((int) $settings, 'heizungStellen'),
+                'jalousie_steuern'    => $get((int) $settings, 'jalousieSteuern'),
+                'licht_dimmers'       => $get((int) $settings, 'lichtDimmers'),
+                'licht_switches'      => $get((int) $settings, 'lichtSwitches'),
+                'lueftung_toggle'     => $get((int) $settings, 'lueftungToggle'),
+                'wfc_page_params'     => $get((int) $settings, 'wfcPageParams'),
+                'devicemap_json'      => $get((int) $helper, 'deviceMapJson'),
+                'pending_deviceid'    => $get((int) $helper, 'pendingDeviceId'),
+                'pending_stage'       => $get((int) $helper, 'pendingStage'),
                 'action'              => (int) @IPS_GetObjectIDByIdent('action', $root),
                 'device'              => (int) @IPS_GetObjectIDByIdent('device', $root),
                 'room'                => (int) @IPS_GetObjectIDByIdent('room', $root),
-                'skill_active'        => (int) @IPS_GetObjectIDByIdent('skill_active', $root),
-                'dump_file'           => (int) @IPS_GetObjectIDByIdent('dump_file', $root),
-                'last_var_device'     => (int) @IPS_GetObjectIDByIdent('last_var_device', $root),
-                'last_var_id'         => (int) @IPS_GetObjectIDByIdent('last_var_id', $root),
-                'last_var_action'     => (int) @IPS_GetObjectIDByIdent('last_var_action', $root),
-                'last_var_value'      => (int) @IPS_GetObjectIDByIdent('last_var_value', $root),
+                'skill_active'        => (int) @IPS_GetObjectIDByIdent('skillActive', $root),
+                'dump_file'           => (int) @IPS_GetObjectIDByIdent('dumpFile', $root),
+                'last_var_device'     => (int) @IPS_GetObjectIDByIdent('lastVarDevice', $root),
+                'last_var_id'         => (int) @IPS_GetObjectIDByIdent('lastVarId', $root),
+                'last_var_action'     => (int) @IPS_GetObjectIDByIdent('lastVarAction', $root),
+                'last_var_value'      => (int) @IPS_GetObjectIDByIdent('lastVarValue', $root),
+                'log_recent'          => (int) @IPS_GetObjectIDByIdent('logRecent', $root),
             ],
         ];
     }
@@ -441,7 +461,7 @@ class IPSAlexaHaussteuerung extends IPSModule
     private function EnsureActionEntryScript(): void
     {
         $root = $this->InstanceID;
-        $sid = $this->ensureScript($root, 'Action (Haus\\Übersicht/Einstellungen Entry)', 'iah.action.entry');
+        $sid = $this->ensureScript($root, 'Action (Haus\\Übersicht/Einstellungen Entry)', 'iahActionEntry');
         $content = $this->EntryScriptContent();
         IPS_SetScriptContent($sid, $content);
         IPS_SetHidden($sid, false);
