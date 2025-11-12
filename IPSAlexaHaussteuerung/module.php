@@ -40,24 +40,6 @@ class IPSAlexaHaussteuerung extends IPSModule
         // Diagnostics payload editor
         $this->RegisterPropertyString('DiagPayload', '{"route":"main_launch","aplSupported":true}');
 
-        // Flags
-        $this->RegisterPropertyBoolean('flag_preload_profiles', true);
-        $this->RegisterPropertyBoolean('flag_log_basic', true);
-        $this->RegisterPropertyBoolean('flag_log_verbose', true);
-        $this->RegisterPropertyBoolean('flag_log_apl_ds', true);
-
-        // Script IDs
-        $this->RegisterPropertyInteger('SCRIPT_ROUTE_ALL', 11978);
-        $this->RegisterPropertyInteger('SCRIPT_ACTION', 39964);
-        $this->RegisterPropertyInteger('SCRIPT_RENDER_MAIN', 56904);
-        $this->RegisterPropertyInteger('SCRIPT_RENDER_SETTINGS', 59056);
-        $this->RegisterPropertyInteger('SCRIPT_RENDER_HEIZUNG', 26735);
-        $this->RegisterPropertyInteger('SCRIPT_RENDER_JALOUSIE', 50191);
-        $this->RegisterPropertyInteger('SCRIPT_RENDER_LICHT', 56288);
-        $this->RegisterPropertyInteger('SCRIPT_RENDER_LUEFTUNG', 28855);
-        $this->RegisterPropertyInteger('SCRIPT_RENDER_GERAETE', 33310);
-        $this->RegisterPropertyInteger('SCRIPT_RENDER_BEWAESSERUNG', 28653);
-
         // WebHook (optional): expose /hook/ipshalexa for Skill endpoint
     }
 
@@ -280,7 +262,6 @@ class IPSAlexaHaussteuerung extends IPSModule
         return [
             'V'         => $this->BuildVars(),
             'S'         => $this->BuildScripts(),
-            'flags'     => $this->BuildFlags(),
             'LOG_LEVEL' => $this->ReadPropertyString('LOG_LEVEL'),
         ];
     }
@@ -336,37 +317,47 @@ class IPSAlexaHaussteuerung extends IPSModule
 
     private function BuildScripts(): array
     {
-        $get = function (string $prop, string $fallbackName): int {
-            $v = (int) $this->ReadPropertyInteger($prop);
-            if ($v > 0 && @IPS_ObjectExists($v)) {
-                return $v;
-            }
-            $id = @IPS_GetObjectIDByName($fallbackName, 0); // global search
-            return (int) $id;
-        };
-
         return [
-            'ROUTE_ALL'         => $get('SCRIPT_ROUTE_ALL', 'Route_allRenderer'),
-            'ACTION'            => $get('SCRIPT_ACTION', 'Action'),
-            'RENDER_MAIN'       => $get('SCRIPT_RENDER_MAIN', 'LaunchRequest'),
-            'RENDER_SETTINGS'   => $get('SCRIPT_RENDER_SETTINGS', 'EinstellungsRender'),
-            'RENDER_HEIZUNG'    => $get('SCRIPT_RENDER_HEIZUNG', 'HeizungRenderer'),
-            'RENDER_JALOUSIE'   => $get('SCRIPT_RENDER_JALOUSIE', 'JalousieRenderer'),
-            'RENDER_LICHT'      => $get('SCRIPT_RENDER_LICHT', 'LichtRenderer'),
-            'RENDER_LUEFTUNG'   => $get('SCRIPT_RENDER_LUEFTUNG', 'LüftungRenderer'),
-            'RENDER_GERAETE'    => $get('SCRIPT_RENDER_GERAETE', 'GeraeteRenderer'),
-            'RENDER_BEWAESSERUNG' => $get('SCRIPT_RENDER_BEWAESSERUNG', 'BewaesserungRenderer'),
+            'ACTION'            => $this->getActionScriptId(),
+            'ROUTE_ALL'         => $this->findScriptIdByName('Route_allRenderer'),
+            'RENDER_MAIN'       => $this->findScriptIdByName('LaunchRequest'),
+            'RENDER_SETTINGS'   => $this->findScriptIdByName('EinstellungsRender'),
+            'RENDER_HEIZUNG'    => $this->findScriptIdByName('HeizungRenderer'),
+            'RENDER_JALOUSIE'   => $this->findScriptIdByName('JalousieRenderer'),
+            'RENDER_LICHT'      => $this->findScriptIdByName('LichtRenderer'),
+            'RENDER_LUEFTUNG'   => $this->findScriptIdByName('LüftungRenderer'),
+            'RENDER_GERAETE'    => $this->findScriptIdByName('GeraeteRenderer'),
+            'RENDER_BEWAESSERUNG' => $this->findScriptIdByName('BewaesserungRenderer'),
         ];
     }
 
-    private function BuildFlags(): array
+    private function getActionScriptId(): int
     {
-        return [
-            'preload_profiles' => $this->ReadPropertyBoolean('flag_preload_profiles'),
-            'log_basic'        => $this->ReadPropertyBoolean('flag_log_basic'),
-            'log_verbose'      => $this->ReadPropertyBoolean('flag_log_verbose'),
-            'log_apl_ds'       => $this->ReadPropertyBoolean('flag_log_apl_ds'),
-        ];
+        $id = @IPS_GetObjectIDByIdent('iahActionEntry', $this->InstanceID);
+        if ($id) {
+            return (int) $id;
+        }
+
+        $name = 'Action (Haus\\Übersicht/Einstellungen Entry)';
+        $local = @IPS_GetObjectIDByName($name, $this->InstanceID);
+        if ($local) {
+            IPS_SetIdent($local, 'iahActionEntry');
+            return (int) $local;
+        }
+
+        $global = @IPS_GetObjectIDByName('Action', 0);
+        return (int) $global;
+    }
+
+    private function findScriptIdByName(string $name): int
+    {
+        $local = @IPS_GetObjectIDByName($name, $this->InstanceID);
+        if ($local) {
+            return (int) $local;
+        }
+
+        $global = @IPS_GetObjectIDByName($name, 0);
+        return (int) $global;
     }
 
     /**
