@@ -182,7 +182,7 @@
     },
     {
       "name": "DiagPayload",
-      "type": "TextBox",
+      "type": "ValidationTextBox",
       "caption": "Diagnose: Custom Payload (JSON)",
       "multiline": true,
       "value": "{\"route\":\"main_launch\",\"aplSupported\":true}"
