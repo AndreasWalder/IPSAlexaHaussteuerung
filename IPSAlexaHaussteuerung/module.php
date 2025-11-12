@@ -79,13 +79,13 @@ class IPSAlexaHaussteuerung extends IPSModule
         $catHelper = $this->ensureCategory($root, 'Alexa new devices helper', 'iah.helper');
 
         // Einstellungen toggles (Defaults wie im Original-Flow: aktiv = true)
-        $this->ensureVar($catSettings, 'bewaesserung_toggle', 'bewaesserung_toggle', VARIABLETYPE_BOOLEAN, '', true);
-        $this->ensureVar($catSettings, 'geraete_toggle', 'geraete_toggle', VARIABLETYPE_BOOLEAN, '', true);
-        $this->ensureVar($catSettings, 'heizung_stellen', 'heizung_stellen', VARIABLETYPE_BOOLEAN, '', true);
-        $this->ensureVar($catSettings, 'jalousie_steuern', 'jalousie_steuern', VARIABLETYPE_BOOLEAN, '', true);
-        $this->ensureVar($catSettings, 'licht_dimmers', 'licht_dimmers', VARIABLETYPE_BOOLEAN, '', true);
-        $this->ensureVar($catSettings, 'licht_switches', 'licht_switches', VARIABLETYPE_BOOLEAN, '', true);
-        $this->ensureVar($catSettings, 'lueftung_toggle', 'lueftung_toggle', VARIABLETYPE_BOOLEAN, '', true);
+        $this->ensureVar($catSettings, 'bewaesserung_toggle', 'bewaesserungToggle', VARIABLETYPE_BOOLEAN, '', true);
+        $this->ensureVar($catSettings, 'geraete_toggle', 'geraeteToggle', VARIABLETYPE_BOOLEAN, '', true);
+        $this->ensureVar($catSettings, 'heizung_stellen', 'heizungStellen', VARIABLETYPE_BOOLEAN, '', true);
+        $this->ensureVar($catSettings, 'jalousie_steuern', 'jalousieSteuern', VARIABLETYPE_BOOLEAN, '', true);
+        $this->ensureVar($catSettings, 'licht_dimmers', 'lichtDimmers', VARIABLETYPE_BOOLEAN, '', true);
+        $this->ensureVar($catSettings, 'licht_switches', 'lichtSwitches', VARIABLETYPE_BOOLEAN, '', true);
+        $this->ensureVar($catSettings, 'lueftung_toggle', 'lueftungToggle', VARIABLETYPE_BOOLEAN, '', true);
 
         // WFC PageSwitch Params → Default aus Instanz-Settings
         $wfc = $this->ReadPropertyInteger('WfcId');
@@ -100,21 +100,21 @@ class IPSAlexaHaussteuerung extends IPSModule
         );
 
         // Helper
-        $this->ensureVar($catHelper, 'DeviceMapJson', 'devicemap_json', VARIABLETYPE_STRING, '', '');
-        $this->ensureVar($catHelper, 'PendingDeviceId', 'pending_deviceid', VARIABLETYPE_STRING, '', '');
-        $this->ensureVar($catHelper, 'PendingStage', 'pending_stage', VARIABLETYPE_STRING, '', '');
+        $this->ensureVar($catHelper, 'DeviceMapJson', 'deviceMapJson', VARIABLETYPE_STRING, '', '');
+        $this->ensureVar($catHelper, 'PendingDeviceId', 'pendingDeviceId', VARIABLETYPE_STRING, '', '');
+        $this->ensureVar($catHelper, 'PendingStage', 'pendingStage', VARIABLETYPE_STRING, '', '');
 
         // Runtime vars under instance
         $this->ensureVar($root, 'action', 'action', VARIABLETYPE_STRING, '', '');
         $this->ensureVar($root, 'device', 'device', VARIABLETYPE_STRING, '', '');
         $this->ensureVar($root, 'room', 'room', VARIABLETYPE_STRING, '', '');
-        $this->ensureVar($root, 'skillActive', 'skill_active', VARIABLETYPE_BOOLEAN, '', false);
-        $this->ensureVar($root, 'dumpFile', 'dump_file', VARIABLETYPE_STRING, '', '');
-        $this->ensureVar($root, 'lastVariableDevice', 'last_var_device', VARIABLETYPE_STRING, '', '');
-        $this->ensureVar($root, 'lastVariableId', 'last_var_id', VARIABLETYPE_STRING, '', '');
-        $this->ensureVar($root, 'lastVariableAction', 'last_var_action', VARIABLETYPE_STRING, '', '');
-        $this->ensureVar($root, 'lastVariableValue', 'last_var_value', VARIABLETYPE_STRING, '', '');
-        $this->ensureVar($root, 'log_recent', 'log_recent', VARIABLETYPE_STRING, '', '');
+        $this->ensureVar($root, 'skillActive', 'skillActive', VARIABLETYPE_BOOLEAN, '', false);
+        $this->ensureVar($root, 'dumpFile', 'dumpFile', VARIABLETYPE_STRING, '', '');
+        $this->ensureVar($root, 'lastVariableDevice', 'lastVarDevice', VARIABLETYPE_STRING, '', '');
+        $this->ensureVar($root, 'lastVariableId', 'lastVarId', VARIABLETYPE_STRING, '', '');
+        $this->ensureVar($root, 'lastVariableAction', 'lastVarAction', VARIABLETYPE_STRING, '', '');
+        $this->ensureVar($root, 'lastVariableValue', 'lastVarValue', VARIABLETYPE_STRING, '', '');
+        $this->ensureVar($root, 'log_recent', 'logRecent', VARIABLETYPE_STRING, '', '');
     }
 
     private function ensureCategory(int $parent, string $name, string $ident): int
