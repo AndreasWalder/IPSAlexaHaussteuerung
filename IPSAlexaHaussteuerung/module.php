@@ -266,7 +266,14 @@ class IPSAlexaHaussteuerung extends IPSModule
             'type'    => 'ExpansionPanel',
             'caption' => 'Antwort-Vorschau (dumpFile)',
             'items'   => [
-                ['type' => 'TextArea', 'name' => 'dumpPreview', 'caption' => 'Letzte Antwort', 'value' => $dumpText],
+                [
+                    'type'      => 'ValidationTextBox',
+                    'name'      => 'dumpPreview',
+                    'caption'   => 'Letzte Antwort',
+                    'value'     => $dumpText,
+                    'multiline' => true,
+                    'enabled'   => false,
+                ],
             ],
         ];
         $form['elements'][] = $preview;
@@ -282,7 +289,14 @@ class IPSAlexaHaussteuerung extends IPSModule
             'type'    => 'ExpansionPanel',
             'caption' => 'Letzte Fehler / Logs',
             'items'   => [
-                ['type' => 'TextArea', 'name' => 'logsPreview', 'caption' => 'Logs', 'value' => $logText],
+                [
+                    'type'      => 'ValidationTextBox',
+                    'name'      => 'logsPreview',
+                    'caption'   => 'Logs',
+                    'value'     => $logText,
+                    'multiline' => true,
+                    'enabled'   => false,
+                ],
             ],
         ];
         $form['elements'][] = $logsPanel;
@@ -298,10 +312,11 @@ class IPSAlexaHaussteuerung extends IPSModule
 
         if (!$hasDiag) {
             $form['elements'][] = [
-                'name'    => 'DiagPayload',
-                'type'    => 'TextArea',
-                'caption' => 'Diagnose: Custom Payload (JSON)',
-                'value'   => $this->ReadPropertyString('DiagPayload'),
+                'name'      => 'DiagPayload',
+                'type'      => 'ValidationTextBox',
+                'caption'   => 'Diagnose: Custom Payload (JSON)',
+                'value'     => $this->ReadPropertyString('DiagPayload'),
+                'multiline' => true,
             ];
         }
 

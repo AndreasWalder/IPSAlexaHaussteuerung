@@ -206,27 +206,27 @@
     {
       "type": "Button",
       "caption": "Diagnose: IDs neu ermitteln",
-      "onClick": "IAH_DiagRebind();"
+      "onClick": "IAH_DiagRebind($id);"
     },
     {
       "type": "Button",
       "caption": "Diagnose: Test-Launch (main_launch)",
-      "onClick": "IAH_DiagTestLaunch();"
+      "onClick": "IAH_DiagTestLaunch($id);"
     },
     {
       "type": "Button",
       "caption": "Diagnose: Custom-Payload senden",
-      "onClick": "IAH_DiagSendCustom();"
+      "onClick": "IAH_DiagSendCustom($id);"
     },
     {
       "type": "Button",
       "caption": "Diagnose: Vorschau leeren",
-      "onClick": "IAH_DiagClearDump();"
+      "onClick": "IAH_DiagClearDump($id);"
     },
     {
       "type": "Button",
       "caption": "Diagnose: Logs leeren",
-      "onClick": "IAH_DiagClearLogs();"
+      "onClick": "IAH_DiagClearLogs($id);"
     }
   ]
 }
