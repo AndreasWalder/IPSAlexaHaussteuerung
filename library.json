@@ -1,10 +1,11 @@
 {
-  "id": "{11071e8f-bd54-46de-8f26-4abce0738e5e}",
+  "id": "{11071E8F-BD54-46DE-8F26-4ABCE0738E5E}",
   "name": "IPSAlexaHaussteuerung",
   "author": "Andreas Walder",
   "url": "https://github.com/andreaswalder/IPSAlexaHaussteuerung",
   "version": "1.0",
   "build": 1,
+  "date": "2023-11-12",
   "compatibility": {
     "version": "6.0"
   }
