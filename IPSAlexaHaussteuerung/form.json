@@ -192,12 +192,12 @@
     {
       "type": "Button",
       "caption": "Test: Open Energie Page",
-      "onClick": "IAH_TestOpenPage(1);"
+      "onClick": "IAH_TestOpenPage($id, 1);"
     },
     {
       "type": "Button",
       "caption": "Test: Open Kamera Page",
-      "onClick": "IAH_TestOpenPage(2);"
+      "onClick": "IAH_TestOpenPage($id, 2);"
     },
     {
       "type": "Label",
