@@ -41,6 +41,14 @@ class IPSAlexaHaussteuerung extends IPSModule
         // Diagnostics payload editor
         $this->RegisterPropertyString('DiagPayload', '{"route":"main_launch","aplSupported":true}');
 
+        // Optional status variables (allow linking existing values instead of auto-created ones)
+        $this->RegisterPropertyInteger('VarInformation', 0);
+        $this->RegisterPropertyInteger('VarMeldungen', 0);
+        $this->RegisterPropertyInteger('VarAussenTemp', 0);
+        $this->RegisterPropertyInteger('VarHeizraumIst', 0);
+        $this->RegisterPropertyInteger('VarOgGangIst', 0);
+        $this->RegisterPropertyInteger('VarTechnikIst', 0);
+
         // WebHook (optional): expose /hook/ipshalexa for Skill endpoint
     }
 

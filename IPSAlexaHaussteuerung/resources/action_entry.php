@@ -73,6 +73,16 @@ function iah_get_child_object(int $parent, string $ident, string $name): int
     return 0;
 }
 
+function iah_resolve_configured_var(array $props, string $propKey, int $fallback = 0): int
+{
+    $configured = (int) ($props[$propKey] ?? 0);
+    if ($configured > 0 && IPS_VariableExists($configured)) {
+        return $configured;
+    }
+
+    return $fallback;
+}
+
 function iah_find_script_by_name(int $instanceId, string $name): int
 {
     $local = @IPS_GetObjectIDByName($name, $instanceId);
@@ -114,9 +124,12 @@ function iah_build_system_configuration(int $instanceId): array
         'PENDING_STAGE'  => iah_get_child_object($helper, 'pendingStage', 'PendingStage'),
         'DOMAIN_FLAG'    => iah_get_child_object($instanceId, 'domainFlag', 'domain_flag'),
         'SKILL_ACTIVE'   => iah_get_child_object($instanceId, 'skillActive', 'skillActive'),
-        'AUSSEN_TEMP'    => iah_get_child_object($instanceId, 'aussenTemp', 'Außentemperatur'),
-        'INFORMATION'    => iah_get_child_object($instanceId, 'informationText', 'Information'),
-        'MELDUNGEN'      => iah_get_child_object($instanceId, 'meldungenText', 'Meldungen'),
+        'AUSSEN_TEMP'    => iah_resolve_configured_var($props, 'VarAussenTemp', iah_get_child_object($instanceId, 'aussenTemp', 'Außentemperatur')),
+        'INFORMATION'    => iah_resolve_configured_var($props, 'VarInformation', iah_get_child_object($instanceId, 'informationText', 'Information')),
+        'MELDUNGEN'      => iah_resolve_configured_var($props, 'VarMeldungen', iah_get_child_object($instanceId, 'meldungenText', 'Meldungen')),
+        'HEIZRAUM_IST'   => iah_resolve_configured_var($props, 'VarHeizraumIst'),
+        'OG_GANG_IST'    => iah_resolve_configured_var($props, 'VarOgGangIst'),
+        'TECHNIK_IST'    => iah_resolve_configured_var($props, 'VarTechnikIst'),
         'CoreHelpers'        => iah_get_child_object($helper, 'coreHelpersScript', 'CoreHelpers'),
         'DeviceMap'          => iah_get_child_object($helper, 'deviceMapScript', 'DeviceMap'),
         'RoomBuilderHelpers' => iah_get_child_object($helper, 'roomBuilderHelpersScript', 'RoomBuilderHelpers'),
