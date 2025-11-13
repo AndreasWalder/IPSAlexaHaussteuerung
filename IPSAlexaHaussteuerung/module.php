@@ -61,6 +61,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $catHelper = $this->ensureCategory($root, 'Alexa new devices helper', 'iahHelper');
 
         $this->ensureRoomsCatalogTemplate($catSettings);
+        $this->ensureActionScript($root);
 
         // Einstellungen toggles (Defaults wie im Original-Flow: aktiv = true)
         $this->ensureVar($catSettings, 'bewaesserung_toggle', 'bewaesserungToggle', VARIABLETYPE_BOOLEAN, '', true);
@@ -435,6 +436,42 @@ class IPSAlexaHaussteuerung extends IPSModule
 
         $global = @IPS_GetObjectIDByName('Action', 0);
         return (int) $global;
+    }
+
+    private function ensureActionScript(int $parent): int
+    {
+        $ident = 'iahActionEntry';
+        $name = 'Action (Haus\\Übersicht/Einstellungen Entry)';
+        $id = @IPS_GetObjectIDByIdent($ident, $parent);
+        $created = false;
+
+        if (!$id) {
+            $byName = @IPS_GetObjectIDByName($name, $parent);
+            if ($byName) {
+                $id = $byName;
+                IPS_SetIdent($id, $ident);
+            }
+        }
+
+        if (!$id) {
+            $id = IPS_CreateScript(0);
+            IPS_SetParent($id, $parent);
+            IPS_SetName($id, $name);
+            IPS_SetIdent($id, $ident);
+            $created = true;
+        }
+
+        if ($created) {
+            $template = __DIR__ . '/resources/action_entry.php';
+            if (is_file($template)) {
+                $content = file_get_contents($template);
+                if ($content !== false) {
+                    IPS_SetScriptContent($id, $content);
+                }
+            }
+        }
+
+        return (int) $id;
     }
 
     private function findScriptIdByName(string $name): int
