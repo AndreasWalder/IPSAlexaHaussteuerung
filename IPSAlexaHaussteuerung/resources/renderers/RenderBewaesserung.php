@@ -1,0 +1,972 @@
+<?php
+
+declare(strict_types=1);
+
+const GR_JF        = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
+const GR_DELAY_MS  = 50;
+const GR_MAX_DEPTH = 8;
+
+/* =========================
+   Input
+   ========================= */
+$in = json_decode($_IPS['payload'] ?? '{}', true) ?: [];
+
+$aplSupported = (bool)($in['aplSupported'] ?? false);
+$ROOMS        = (array)($in['roomsCatalog'] ?? []);
+$roomSpoken   = (string)($in['room'] ?? '');
+$roomMap      = (array)($in['roomMap'] ?? []);
+$args1_raw    = (string)($in['args1'] ?? '');
+$args2_raw    = (string)($in['args2'] ?? '');
+$numberRaw    = $in['number'] ?? ($in['value'] ?? null);
+
+/* v9: zusätzliche Voice-Kandidaten für Tab-Auswahl */
+$voice_action = (string)($in['action'] ?? '');
+$voice_device = (string)($in['device'] ?? '');
+$voice_alles  = (string)($in['alles']  ?? '');
+$voice_object = (string)($in['object'] ?? '');
+
+/* =========================
+   CFG / ACTION FLAGS / LOGGING
+   ========================= */
+$CFG = is_array($in['CFG'] ?? null) ? $in['CFG'] : [];
+
+// ActionsEnabled-IDs (kompatibel zu alter/ neuer Struktur)
+$VAR = [];
+if (is_array(($CFG['actions_vars'] ?? null))) {
+    $VAR = $CFG['actions_vars'];
+} elseif (is_array(($CFG['var']['ActionsEnabled'] ?? null))) {
+    $VAR = $CFG['var']['ActionsEnabled'];
+}
+
+// Profile optional vorladen (Cache)
+$PRELOAD_PROFILES = isset($CFG['flags']['preload_profiles']) ? (bool)$CFG['flags']['preload_profiles'] : true;
+if ($PRELOAD_PROFILES) {gr_get_profile_associations(''); }
+
+$readBool = static function($varId, bool $default=false): bool {
+    if (!is_int($varId) || $varId <= 0) return $default;
+    return (bool)@GetValue($varId);
+};
+
+$ACTIONS_ENABLED = [
+    'bewaesserung' => [
+        'toggle' => $readBool((int)($VAR['bewaesserung_toggle'] ?? 0), false)
+    ],
+];
+
+$CAN_TOGGLE  = (bool)($ACTIONS_ENABLED['bewaesserung']['toggle'] ?? false);
+
+$LOG_BASIC   = isset($in['logBasic'])   ? (bool)$in['logBasic']   : (isset($CFG['flags']['log_basic'])   ? (bool)$CFG['flags']['log_basic']   : true);
+$LOG_VERBOSE = isset($in['logVerbose']) ? (bool)$in['logVerbose'] : (isset($CFG['flags']['log_verbose']) ? (bool)$CFG['flags']['log_verbose'] : true);
+$LOG_TAG     = 'Alexa';
+$LOG_APL     = isset($CFG['flags']['log_apl_ds']) ? (bool)$CFG['flags']['log_apl_ds'] : true; // neu: DS komplett loggen
+$DUMP_VAR    = (int)($CFG['flags']['dump_ds_var'] ?? 0); // optional: DS in String-Variable dumpen
+
+$logB = static function(string $msg) use ($LOG_BASIC, $LOG_TAG)  { if ($LOG_BASIC)  IPS_LogMessage($LOG_TAG, $msg); };
+$logV = static function(string $msg) use ($LOG_VERBOSE, $LOG_TAG){ if ($LOG_VERBOSE) IPS_LogMessage($LOG_TAG, $msg); };
+
+$RID = strtoupper(substr(hash('crc32b', microtime(true) . mt_rand()), 0, 8));
+$logV("[$RID][Bewaesserung] ENTER");
+$logV("[$RID][Bewaesserung] INPUT ".json_encode([
+    'aplSupported'=>$aplSupported,'room'=>$roomSpoken,'args1'=>$args1_raw,'args2'=>$args2_raw,
+    'numberRaw'=>$numberRaw,'AE'=>$ACTIONS_ENABLED,
+    'voice'=>['action'=>$voice_action,'device'=>$voice_device,'alles'=>$voice_alles,'object'=>$voice_object]
+], GR_JF));
+
+/* =========================
+   Event-Normalisierung (dot-args)
+   ========================= */
+$ev = gr_normalize_event($args1_raw, $args2_raw, $numberRaw);
+if (!is_array($ev)) {
+    $ev = ['action'=>'','varId'=>0,'tabId'=>'','value'=>null,'toggleTo'=>null,'rawText'=>''];
+}
+$action    = (string)$ev['action'];
+$varId     = (int)$ev['varId'];
+$tabIdArg  = (string)$ev['tabId'];
+$numberIn  = $ev['value'];
+$toggleTo  = $ev['toggleTo'];
+$rawText   = (string)$ev['rawText'];
+
+$logV("[$RID][Bewaesserung] NORMALIZED ".json_encode($ev, GR_JF));
+
+/* =========================
+   Room-Resolve (optional)
+   ========================= */
+$roomKeyFilter = gr_resolveRoomKey($roomSpoken, $roomMap, $ROOMS);
+
+/* =========================
+   Tabs & aktive Kategorie
+   ========================= */
+$tabs = gr_collectRoomDeviceTabs($ROOMS, $roomKeyFilter);
+$logV("[$RID][Bewaesserung] tabs=".count($tabs));
+
+if (!$tabs) {
+    echo json_encode([
+        'speech'     => 'Keine Bewässerung im RoomsCatalog konfiguriert.',
+        'reprompt'   => '',
+        'apl'        => null,
+        'endSession' => false
+    ], GR_JF);
+    return;
+}
+
+/* v9: aktiven Tab bestimmen */
+if ($action === 'tab' && $tabIdArg !== '') {
+    $activeId = ctype_digit($tabIdArg) ? $tabIdArg : (gr_match_tab_by_name_or_synonym($tabs, $tabIdArg) ?? (string)$tabs[0]['id']);
+} elseif (($action === 'toggle' || $action === 'set') && $varId > 0) {
+    $activeId = gr_find_tab_for_var($tabs, $varId) ?? (string)$tabs[0]['id'];
+} else {
+    $activeId = ($args2_raw !== '' && !ctype_digit($args2_raw))
+        ? (gr_match_tab_by_name_or_synonym($tabs, $args2_raw) ?? null)
+        : null;
+    if ($activeId === null) {
+        foreach ([$voice_action, $voice_device, $voice_alles, $voice_object] as $cand) {
+            $cand = trim((string)$cand); if ($cand==='') continue;
+            $id = gr_match_tab_by_name_or_synonym($tabs, $cand);
+            if ($id !== null) { $activeId = $id; break; }
+        }
+    }
+    if ($activeId === null) $activeId = (string)$tabs[0]['id'];
+}
+
+$activeTitle = '';
+foreach ($tabs as $t) { if ((string)$t['id'] === (string)$activeId) { $activeTitle = (string)$t['title']; break; } }
+if ($activeTitle === '') $activeTitle = (string)($tabs[0]['title'] ?? 'Bewässerung');
+$logV("[$RID][Bewaesserung] activeTab=$activeId title=$activeTitle");
+
+/* =========================
+   ACTIONS (APL)
+   ========================= */
+$didAction = false;
+
+if ($action === 'toggle' && $varId > 0) {
+    if (!$CAN_TOGGLE) {
+        echo json_encode(['speech'=>'Schalten ist aktuell deaktiviert.','reprompt'=>'','apl'=>null,'endSession'=>false], GR_JF);
+        return;
+    }
+    if (IPS_ObjectExists($varId)) {
+        $var = @IPS_GetVariable($varId);
+        if (is_array($var)) {
+            $set = null;
+            if ($toggleTo === 'on' || $toggleTo === 'off') {
+                $set = ($toggleTo === 'on') ? 1 : 0;
+            } else {
+                $now = @GetValue($varId);
+                $set = gr_asBool($now) ? 0 : 1;
+            }
+            if (gr_hasAction($var)) { @RequestAction($varId, $set); } else { @SetValueBoolean($varId, (bool)$set); }
+            $didAction = true; $logB("[$RID][Bewaesserung] TOGGLE var=$varId set=".$set);
+        } else {
+            echo json_encode(['speech'=>'Schaltvorgang nicht möglich. Variable nicht gefunden.','reprompt'=>'','apl'=>null,'endSession'=>false], GR_JF);
+            return;
+        }
+    }
+}
+elseif ($action === 'set' && $varId > 0) {
+    if (!$CAN_TOGGLE) {
+        echo json_encode(['speech'=>'Setzen ist aktuell deaktiviert.','reprompt'=>'','apl'=>null,'endSession'=>false], GR_JF);
+        return;
+    }
+    if (IPS_ObjectExists($varId)) {
+        $var = @IPS_GetVariable($varId); $obj = @IPS_GetObject($varId);
+        if (!is_array($var) || !is_array($obj)) {
+            echo json_encode(['speech'=>'Setzen nicht möglich. Variable nicht gefunden.','reprompt'=>'','apl'=>null,'endSession'=>false], GR_JF);
+            return;
+        }
+        $resolved = gr_resolve_set_value($varId, $numberIn, (string)$rawText, $var, $obj);
+        if (!$resolved['ok']) { echo json_encode(['speech'=>$resolved['why'],'reprompt'=>'','apl'=>null,'endSession'=>false], GR_JF); return; }
+        $finalValue = $resolved['value'];
+        if (gr_hasAction($var)) {
+            $lastWarn = null;
+            set_error_handler(function($no,$str) use (&$lastWarn){ $lastWarn = $str; return true; });
+            @RequestAction($varId, $finalValue);
+            restore_error_handler();
+            if ($lastWarn) { echo json_encode(['speech'=>gr_hc_humanize_error($lastWarn),'reprompt'=>'','apl'=>null,'endSession'=>false], GR_JF); return; }
+        } else {
+            $vt = (int)($var['VariableType'] ?? 3);
+            switch ($vt) {
+                case 0: @SetValueBoolean($varId, gr_asBool($finalValue)); break;
+                case 1: @SetValueInteger($varId, (int)round((float)$finalValue)); break;
+                case 2: @SetValueFloat($varId, (float)$finalValue); break;
+                default: @SetValueString($varId, (string)$finalValue); break;
+            }
+        }
+        $didAction = true; $logB("[$RID][Bewaesserung] SET var=$varId value=".json_encode($finalValue, GR_JF));
+    }
+}
+
+/* =========================
+   Rows bauen (ggf. reread)
+   ========================= */
+if ($didAction) IPS_Sleep(GR_DELAY_MS);
+
+$rows = gr_buildRowsFromNode((int)$activeId, $CAN_TOGGLE);
+$logV("[$RID][Bewaesserung] rows=".count($rows));
+$enumDebug = array_values(array_filter($rows, static function($r){
+    $n = gr_norm((string)($r['name'] ?? ''));
+    $v = gr_norm((string)($r['value'] ?? ''));
+    return (!empty($r['isSection'])) || ($n==='steuern') || in_array($v,['start','starten','stop','stoppen','fortsetzen','pause','continue','resume'], true)
+        || (!empty($r['isEnum'])) || (!empty($r['hasEnum']) && !empty($r['isNumber']));
+}));
+$logV("[$RID][Bewaesserung] enumRows ".json_encode($enumDebug, GR_JF));
+
+/* =========================
+   APL (Doc + Datasources)
+   ========================= */
+$doc = ['type' => 'Link', 'src' => 'doc://alexa/apl/documents/Bewaesserung'];
+$ds  = [
+    'deviceTableData' => [
+        'title'     => $activeTitle,
+        'subtitle'  => 'Steckdosen & mehr',
+        'tabs'      => $tabs,
+        'activeTab' => (string)$activeId,
+        'headers'   => ['name'=>'Name','value'=>'Wert','updated'=>'Aktualisiert'],
+        'rows'      => $rows
+    ]
+];
+
+// Vollständiges DS-Logging + optionaler Dump in String-Variable
+if ($LOG_APL) {
+    @IPS_LogMessage($LOG_TAG, "[$RID][Bewaesserung] APL.DS.PRETTY\n".json_encode($ds, GR_JF | JSON_PRETTY_PRINT));
+    $logV("[$RID][Bewaesserung] APL.DS ".json_encode($ds, GR_JF));
+}
+if ($DUMP_VAR > 0 && @IPS_ObjectExists($DUMP_VAR)) {
+    $v = @IPS_GetVariable($DUMP_VAR);
+    if (is_array($v) && (int)($v['VariableType'] ?? 3) === 3) {
+        @SetValueString($DUMP_VAR, json_encode($ds, GR_JF | JSON_PRETTY_PRINT));
+    }
+}
+
+$apl = $aplSupported ? ['doc' => $doc, 'ds' => $ds, 'token' => 'hv-bewaesserung'] : null;
+
+echo json_encode([
+    'speech'     => '',
+    'reprompt'   => '',
+    'apl'        => $apl,
+    'endSession' => false
+], GR_JF);
+
+
+/* ============================================================
+   Helpers (gr_ Präfix)
+   ============================================================ */
+
+function gr_is_html_doc(string $s): bool {
+    $t = ltrim($s);
+    return stripos($t, '<!doctype html') === 0; // exakt dein Wunsch
+}
+
+function gr_is_placeholder_name(string $name): bool {
+    $n = trim($name);
+    if ($n === '') return true;
+    return (bool)preg_match('/^Unnamed Object\b/i', $n);
+}
+
+function gr_display_name(string $name): string {
+    $name = trim($name);
+    if ($name === '' || gr_is_placeholder_name($name)) return '';
+    $name = preg_replace('/^\s*link\s*:\s*/i', '', $name);
+    $name = preg_replace('/\s*\(link:.*$/i', '', $name);
+    return trim($name);
+}
+
+function gr_fallback_name_from_hierarchy(int $objectId): string {
+    $pid = @IPS_GetParentID($objectId);
+    while (is_int($pid) && $pid > 0 && IPS_ObjectExists($pid)) {
+        $p = @IPS_GetObject($pid);
+        $nm = gr_display_name((string)($p['ObjectName'] ?? ''));
+        if ($nm !== '') return $nm;
+        $pid = @IPS_GetParentID($pid);
+    }
+    return '';
+}
+
+function gr_info_is_writable(array $obj, array $var): bool {
+    if (gr_hasAction($var)) return true;
+    $info = gr_info_json($obj);
+    foreach (['writable','writeable','isWritable','canSet','settable','editable','readOnly'] as $k) {
+        if (!array_key_exists($k, $info)) continue;
+        $v = $info[$k];
+        if ($k === 'readOnly') return !filter_var($v, FILTER_VALIDATE_BOOLEAN);
+        if (is_bool($v)) return $v;
+        if (is_numeric($v)) return ((int)$v) === 1;
+        if (is_string($v)) return in_array(strtolower($v), ['1','true','yes','ja'], true);
+    }
+    return false;
+}
+
+function gr_normalize_event(string $a1, string $a2, $numRaw): array {
+    $a1l = mb_strtolower($a1, 'UTF-8');
+    $out = ['action'=>'', 'varId'=>0, 'tabId'=>'', 'value'=>null, 'toggleTo'=>null, 'rawText'=>''];
+
+    if ($a1l === 'bewaesserung.tab') {
+        $out['action'] = 'tab';
+        $out['tabId']  = (string)$a2;
+        $out['rawText']= (string)$a2;
+        return $out;
+    }
+
+    if (preg_match('/^bewaesserung\.(?:t|toggle)\.(\d+)$/i', $a1, $m)) {
+        $out['action']   = 'toggle';
+        $out['varId']    = (int)$m[1];
+        $arg2 = mb_strtolower(trim((string)$a2), 'UTF-8');
+        if ($arg2 === 'on' || $arg2 === 'off') $out['toggleTo'] = $arg2;
+        $out['rawText'] = (string)$a2;
+        return $out;
+    }
+
+    if (preg_match('/^bewaesserung\.(?:set(?:number|enum)?)\.(\d+)$/i', $a1, $m)) {
+        $out['action'] = 'set';
+        $out['varId']  = (int)$m[1];
+        $out['rawText']= (string)$a2;
+        if ($numRaw !== null && $numRaw !== '') {
+            $out['value'] = is_numeric($numRaw) ? (float)$numRaw : null;
+        } elseif ($a2 !== '' && is_numeric($a2)) {
+            $out['value'] = (float)$a2;
+        }
+        return $out;
+    }
+    if ($a1l === 'bewaesserung.set' || $a1l === 'bewaesserung.setenum') {
+        if (ctype_digit($a2)) {
+            $out['action'] = 'set';
+            $out['varId']  = (int)$a2;
+            $out['value']  = is_numeric($numRaw) ? (float)$numRaw : null;
+            $out['rawText']= (string)$numRaw;
+            return $out;
+        }
+    }
+
+    return $out;
+}
+
+function gr_resolveRoomKey(string $spoken, array $roomMap, array $ROOMS): ?string
+{
+    $spoken = gr_norm($spoken);
+    if ($spoken === '') return null;
+
+    foreach ($roomMap as $key => $arr) {
+        $syn  = array_map('gr_norm', (array)($arr[0] ?? []));
+        $disp = gr_norm((string)($arr[1] ?? $key));
+        if ($spoken === $disp || in_array($spoken, $syn, true)) return (string)$key;
+    }
+
+    foreach ($ROOMS as $key => $def) {
+        $disp = gr_norm((string)($def['display'] ?? $key));
+        if ($spoken === $disp || $spoken === gr_norm((string)$key)) return (string)$key;
+    }
+    return null;
+}
+
+function gr_collectRoomDeviceTabs(array $ROOMS, ?string $onlyRoomKey = null): array
+{
+    $tabs = [];
+
+    foreach ($ROOMS as $roomKey => $room) {
+        if ($roomKey === 'global') continue;
+        if ($onlyRoomKey !== null && (string)$roomKey !== (string)$onlyRoomKey) continue;
+
+        $dev = $room['domains']['sprinkler']['tabs'] ?? null;
+        if (is_array($dev)) {
+            foreach ($dev as $title => $def) { if ($t = gr_normalize_tab_def((string)$title, $def)) $tabs[] = $t; }
+        }
+
+        $domains = $room['domains'] ?? [];
+        if (is_array($domains)) {
+            foreach ($domains as $domVal) {
+                if (!is_array($domVal)) continue;
+                $nested = $domVal['sprinkler']['tabs'] ?? null;
+                if (!is_array($nested)) continue;
+                foreach ($nested as $title => $def) { if ($t = gr_normalize_tab_def((string)$title, $def)) $tabs[] = $t; }
+            }
+        }
+    }
+
+    usort($tabs, static function ($a, $b) {
+        $oa = (int)($a['order'] ?? 9999); $ob = (int)($b['order'] ?? 9999);
+        if ($oa !== $ob) return $oa <=> $ob;
+        return strcasecmp((string)$a['title'], (string)$b['title']);
+    });
+
+    return $tabs;
+}
+
+function gr_normalize_tab_def(string $title, $def): ?array
+{
+    if (is_int($def)) {
+        return ['id' => (string)$def, 'title' => $title, 'order' => 9999, 'synonyms' => []];
+    }
+    if (is_array($def)) {
+        $id = (int)($def['id'] ?? $def['nodeId'] ?? $def['var'] ?? 0);
+        if ($id > 0) {
+            $order = isset($def['order']) ? (int)$def['order'] : 9999;
+            $syn   = [];
+            if (!empty($def['synonyms'])) {
+                $raw = is_array($def['synonyms']) ? $def['synonyms'] : explode(',', (string)$def['synonyms']);
+                foreach ($raw as $s) { $s = trim((string)$s); if ($s !== '') $syn[] = $s; }
+            }
+            return ['id' => (string)$id, 'title' => $title, 'order' => $order, 'synonyms' => $syn];
+        }
+    }
+    return null;
+}
+
+/* =============================
+ *  Neue, gruppierte Row-Generierung
+ *  — Sortierung: Position, dann Alphabet
+ *  — Dummy‑Module als Rubriken
+ * ============================= */
+function gr_buildRowsFromNode(int $rootId, bool $aeToggle): array
+{
+    if ($rootId <= 0 || !IPS_ObjectExists($rootId)) return [];
+
+    $rows = [];
+    foreach (gr_sorted_children($rootId) as $cid) {
+        $obj = @IPS_GetObject($cid); if (!is_array($obj)) continue;
+        $otype = (int)($obj['ObjectType'] ?? -1);
+
+        // Rubrik: Dummy Modul
+        if ($otype === 1 && gr_is_dummy_module_instance($cid)) {
+            $rows[] = [
+                'isSection' => true,
+                'name'      => (string)($obj['ObjectName'] ?? 'Rubrik'),
+                'value'     => '',
+                'updated'   => ''
+            ];
+            foreach (gr_sorted_children($cid) as $ccid) {
+                $rows = array_merge($rows, gr_rows_for_child($ccid, $aeToggle));
+            }
+            continue;
+        }
+
+        // Normale Kinder
+        $rows = array_merge($rows, gr_rows_for_child($cid, $aeToggle));
+    }
+
+    return $rows;
+}
+
+function gr_rows_for_child(int $childId, bool $aeToggle): array
+{
+    $obj = @IPS_GetObject($childId); if (!is_array($obj)) return [];
+    $otype = (int)($obj['ObjectType'] ?? -1);
+
+    if ($otype === 2) { // Variable
+        $row = gr_make_row_for_var($childId, $aeToggle, null);
+        return $row ? [$row] : [];
+    }
+
+    if ($otype === 6) { // Link → Zielvariable, Name vom Link (Fallbacks)
+        $link = @IPS_GetLink($childId);
+        $tgt  = (int)($link['TargetID'] ?? 0);
+        if ($tgt > 0 && IPS_ObjectExists($tgt)) {
+            // 1) Link-Name
+            $name = gr_display_name((string)($obj['ObjectName'] ?? ''));
+            // 2) Ziel-Variablenname
+            if ($name === '') {
+                $tgtObj = @IPS_GetObject($tgt);
+                $name = gr_display_name((string)($tgtObj['ObjectName'] ?? ''));
+            }
+            // 3) Elternname (nächstgelegener nicht-Platzhalter)
+            if ($name === '') {
+                $name = gr_fallback_name_from_hierarchy($childId);
+                if ($name === '') { $name = gr_fallback_name_from_hierarchy($tgt); }
+            }
+            if ($name === '') { $name = null; } // leeres Override als null behandeln
+            $row = gr_make_row_for_var($tgt, $aeToggle, $name);
+            return $row ? [$row] : [];
+        }
+        return [];
+    }
+
+
+    // category/instance → recurse (sorted)
+    $rows = [];
+    foreach (gr_sorted_children($childId) as $cid) {
+        $rows = array_merge($rows, gr_rows_for_child($cid, $aeToggle));
+    }
+    return $rows;
+}
+
+function gr_sorted_children(int $parentId): array
+{
+    $children = (array)@IPS_GetChildrenIDs($parentId);
+    $list = [];
+    foreach ($children as $cid) {
+        $obj = @IPS_GetObject($cid); if (!is_array($obj)) continue;
+        $list[] = [
+            'id' => (int)$cid,
+            'pos'=> (int)($obj['ObjectPosition'] ?? 0),
+            'name'=> (string)($obj['ObjectName'] ?? '')
+        ];
+    }
+    usort($list, static function($a,$b){
+        if ($a['pos'] !== $b['pos']) return $a['pos'] <=> $b['pos'];
+        return strcasecmp($a['name'], $b['name']);
+    });
+    return array_column($list, 'id');
+}
+
+function gr_is_dummy_module_instance(int $instanceId): bool
+{
+    if (!IPS_ObjectExists($instanceId)) return false;
+    $obj = @IPS_GetObject($instanceId); if (!is_array($obj)) return false;
+    if ((int)($obj['ObjectType'] ?? -1) !== 1) return false;
+    $inst = @IPS_GetInstance($instanceId);
+    if (!is_array($inst)) return false;
+    $name = (string)($inst['ModuleInfo']['ModuleName'] ?? '');
+    $guid = (string)($inst['ModuleInfo']['ModuleID'] ?? '');
+    if ($name === 'Dummy Module') return true;
+    return (strtoupper($guid) === '{485D0419-B567-4B4E-8F61-CEE4D2A3EAB8}');
+}
+
+// --- REPLACE this function ---
+function gr_make_row_for_var(int $varId, bool $aeToggle, ?string $nameOverride): ?array
+{
+    if (!IPS_ObjectExists($varId)) return null;
+    $obj = @IPS_GetObject($varId); $var = @IPS_GetVariable($varId);
+    if (!is_array($obj) || !is_array($var)) return null;
+
+    $type = (int)($var['VariableType'] ?? 3);
+
+    $useOverride = ($nameOverride !== null && trim((string)$nameOverride) !== '') ? (string)$nameOverride : null;
+    $name = $useOverride !== null
+        ? gr_display_name($useOverride)
+        : gr_display_name((string)($obj['ObjectName'] ?? ''));
+
+    // weitere Fallbacks, wenn noch leer
+    if ($name === '') {
+        // a) nächster Elternname
+        $name = gr_fallback_name_from_hierarchy($varId);
+    }
+    if ($name === '') {
+        // b) ObjectIdent hübschen
+        $ident = (string)($obj['ObjectIdent'] ?? '');
+        if ($ident !== '') {
+            $name = gr_display_name(str_replace(['_', '.'], ' ', $ident));
+        }
+    }
+    if ($name === '') {
+        // c) letzte Rettung
+        $fallback = @IPS_GetName($varId);
+        $name = gr_display_name(is_string($fallback) ? $fallback : '');
+        if ($name === '') $name = 'ID '.$varId;
+    }
+
+    $raw       = @GetValue($varId);
+    $profile   = gr_get_profile_name($var);
+    $assoc     = gr_get_profile_associations($profile);
+    $enumFromInfo = gr_info_enum_for_var($obj, $var);
+
+    $value     = gr_formatValueHuman($varId, $type, $raw);
+    $typeName  = gr_typeName($type);
+    $updatedTs = (int)($var['VariableUpdated'] ?? time());
+    $updated   = gr_formatUpdated($updatedTs);
+    $boolOn    = ($type === 0) ? gr_asBool($raw) : false;
+    $controllable = gr_hasAction($var);
+
+    $raw       = @GetValue($varId);
+    // skip HTML documents (<!DOCTYPE html ...>) entirely
+    if ($type === 3 && is_string($raw) && gr_is_html_doc($raw)) {
+        return null; // -> Zeile auslassen
+    }
+
+    $valueColor = null;
+    if ($type !== 0) {
+        $vNorm = mb_strtolower(trim((string)$value), 'UTF-8');
+        if ($vNorm === 'aus' || $vNorm === 'nein' || $vNorm === 'off') { $valueColor = '#FF6B6B'; }
+    }
+
+    $base = [
+        'name'       => $name,
+        'value'      => $value,
+        'typeName'   => $typeName,
+        'updated'    => $updated,
+        'rowBg'      => null,
+        'valueColor' => $valueColor
+    ];
+
+    if ($type === 0) {
+        return $base + [
+            'isBool'    => true,
+            'boolOn'    => $boolOn,
+            'canToggle' => ($controllable && $aeToggle),
+            'hasEnum'   => false,
+            'enumOpts'  => [],
+            'targetId'  => (string)$varId
+        ];
+    }
+
+    if ($type === 1 || $type === 2) {
+        $enumOpts = [];
+        if (!empty($assoc['byValue'])) {
+            foreach ($assoc['byValue'] as $valKey => $label) {
+                $num = (strpos((string)$valKey, '.') !== false) ? (float)$valKey : (int)$valKey;
+                $enumOpts[] = ['label'=>$label, 'value'=>$num];
+            }
+        }
+        return $base + [
+            'isBool'       => false,
+            'boolOn'       => false,
+            'isNumber'     => true,
+            'canSetNumber' => ($controllable && $aeToggle),
+            'targetId'     => (string)$varId,
+            'hasEnum'      => !empty($enumOpts),
+            'enumOpts'     => $enumOpts,
+            'rawValue'     => $raw
+        ];
+    }
+
+    // String (incl. enums/steuern/profiles)
+    $nameNorm = gr_norm($name);
+    $valNorm  = gr_norm((string)@GetValue($varId));
+    $isSteuernLike = ($nameNorm === 'steuern') || in_array($valNorm, ['start','starten','stop','stoppen','fortsetzen','pause','continue','resume'], true);
+
+    $infoEnum   = $enumFromInfo['opts'];
+    $isWritable = gr_info_is_writable($obj, $var);
+    $canSet     = (($isWritable && $aeToggle) || $isSteuernLike);
+
+    if (!empty($infoEnum)) {
+        return $base + [
+            'isBool'=>false,'boolOn'=>false,'isEnum'=>true,'isNumber'=>false,
+            'canSetNumber'=>$canSet,'readOnly'=>!$canSet,'targetId'=>(string)$varId,
+            'hasEnum'=>true,'enumOpts'=>$infoEnum,'rawValue'=>(string)@GetValue($varId)
+        ];
+    }
+    
+    if ($isSteuernLike) {
+        return $base + [
+            'isBool'=>false,'boolOn'=>false,'isEnum'=>true,'isNumber'=>false,
+            'canSetNumber'=>true,'readOnly'=>false,'targetId'=>(string)$varId,
+            'hasEnum'=>true,'enumOpts'=>[
+                ['label'=>'Start','value'=>'Start'],
+                ['label'=>'Stoppen','value'=>'Stoppen'],
+                ['label'=>'Fortsetzen','value'=>'Fortsetzen']
+            ],
+            'rawValue'=>(string)@GetValue($varId)
+        ];
+    }
+    
+
+    $enumOpts = [];
+    if (!empty($assoc['byValue'])) {
+        foreach ($assoc['byValue'] as $valKey => $label) { $enumOpts[] = ['label'=>$label, 'value'=>$valKey]; }
+    }
+    if ($enumOpts) {
+        return $base + [
+            'isBool'=>false,'boolOn'=>false,'isEnum'=>true,'isNumber'=>false,
+            'canSetNumber'=>$canSet,'readOnly'=>!$canSet,'targetId'=>(string)$varId,
+            'hasEnum'=>true,'enumOpts'=>$enumOpts,'rawValue'=>(string)@GetValue($varId)
+        ];
+    }
+
+    return $base + [
+        'isBool'=>false,'boolOn'=>false,'isEnum'=>false,'hasEnum'=>false,'enumOpts'=>[],
+        'isNumber'=>false,'canSetNumber'=>false,'readOnly'=>true,'targetId'=>(string)$varId
+    ];
+}
+
+function gr_collectVarsDeep(int $nodeId, int $depth, int $maxDepth): array
+{
+    if ($depth > $maxDepth || !IPS_ObjectExists($nodeId)) return [];
+
+    $obj  = @IPS_GetObject($nodeId);
+    if (!is_array($obj)) return [];
+
+    $type = (int)($obj['ObjectType'] ?? -1);
+
+    // Variable → return entry with its own name/position
+    if ($type === 2) {
+        return [[
+            'id'   => $nodeId,
+            'name' => (string)($obj['ObjectName'] ?? ''),
+            'pos'  => (int)($obj['ObjectPosition'] ?? 0),
+        ]];
+    }
+
+    // Link → resolve target but override name/position with link's values
+    if ($type === 6) {
+        $link = @IPS_GetLink($nodeId);
+        $tgt  = (int)($link['TargetID'] ?? 0);
+        if ($tgt <= 0) return [];
+
+        $list         = gr_collectVarsDeep($tgt, $depth + 1, $maxDepth);
+        $nameOverride = (string)($obj['ObjectName'] ?? '');
+        $posOverride  = (int)($obj['ObjectPosition'] ?? 0);
+
+        foreach ($list as &$e) {
+            if (!is_array($e)) { $e = ['id' => (int)$e, 'name' => '', 'pos' => 9999]; }
+            if ($nameOverride !== '') $e['name'] = $nameOverride;
+            $e['pos'] = $posOverride;
+        }
+        unset($e);
+
+        return $list;
+    }
+
+    // Category/Instance/… → collect from children
+    $out = [];
+    foreach ((array)@IPS_GetChildrenIDs($nodeId) as $cid) {
+        foreach (gr_collectVarsDeep((int)$cid, $depth + 1, $maxDepth) as $e) {
+            $out[] = $e;
+        }
+    }
+    return $out;
+}
+
+function gr_find_tab_for_var(array $tabs, int $varId): ?string {
+    foreach ($tabs as $t) {
+        $root = (int)$t['id'];
+        if ($root > 0 && gr_node_contains_var($root, $varId, 0, GR_MAX_DEPTH)) { return (string)$t['id']; }
+    }
+    return null;
+}
+
+function gr_node_contains_var(int $nodeId, int $needle, int $depth, int $maxDepth): bool {
+    if ($depth > $maxDepth || !IPS_ObjectExists($nodeId)) return false;
+    $obj = @IPS_GetObject($nodeId); if (!is_array($obj)) return false;
+    $type = (int)($obj['ObjectType'] ?? -1);
+    if ($type === 2) return $nodeId === $needle;
+    if ($type === 6) { $link = @IPS_GetLink($nodeId); $tgt = (int)($link['TargetID'] ?? 0); return $tgt > 0 ? gr_node_contains_var($tgt, $needle, $depth + 1, $maxDepth) : false; }
+    foreach ((array)@IPS_GetChildrenIDs($nodeId) as $cid) { if (gr_node_contains_var((int)$cid, $needle, $depth + 1, $maxDepth)) return true; }
+    return false;
+}
+
+/* ---------- Value Formatting / Profiles ---------- */
+
+function gr_get_profile_name(array $var): string {
+    $p = (string)($var['VariableCustomProfile'] ?? ''); if ($p !== '') return $p;
+    $p = (string)($var['VariableProfile'] ?? ''); return $p ?: '';
+}
+
+function gr_get_profile_associations(string $profile): array {
+    static $CACHE = null;
+    if ($CACHE === null) {
+        $CACHE = [];
+        if (function_exists('IPS_GetVariableProfileList')) {
+            $list = @IPS_GetVariableProfileList();
+            if (is_array($list)) {
+                foreach ($list as $p) {
+                    $prof = @IPS_GetVariableProfile($p); if (!is_array($prof)) { continue; }
+                    $byValue = []; $byName = [];
+                    foreach ((array)($prof['Associations'] ?? []) as $a) {
+                        $v = $a['Value'] ?? null; $n = (string)($a['Name'] ?? '');
+                        if ($v === null || $n === '') continue;
+                        $byValue[(string)$v] = $n;
+                        $byName[gr_norm($n)] = $v;
+                    }
+                    $CACHE[$p] = ['byValue'=>$byValue, 'byName'=>$byName];
+                }
+            }
+        }
+    }
+
+    if ($profile === '') return ['byValue'=>[], 'byName'=>[]];
+
+    if (!isset($CACHE[$profile])) {
+        $prof = @IPS_GetVariableProfile($profile);
+        $byValue = []; $byName = [];
+        if (is_array($prof)) {
+            foreach ((array)($prof['Associations'] ?? []) as $a) {
+                $v = $a['Value'] ?? null; $n = (string)($a['Name'] ?? '');
+                if ($v === null || $n === '') continue;
+                $byValue[(string)$v] = $n; $byName[gr_norm($n)] = $v;
+            }
+        }
+        $CACHE[$profile] = ['byValue'=>$byValue, 'byName'=>$byName];
+    }
+
+    return $CACHE[$profile] ?? ['byValue'=>[], 'byName'=>[]];
+}
+
+function gr_var_expects_iso_duration(int $varId, array $var): bool {
+    $type = (int)($var['VariableType'] ?? 3);
+    if ($type === 3) {
+        $cur = @GetValue($varId);
+        if (is_string($cur) && preg_match('/^P(T(\d+H)?(\d+M)?(\d+S)?)$/i', $cur)) return true;
+        $p = gr_get_profile_name($var);
+        if ($p !== '' && stripos($p, 'duration') !== false) return true;
+    }
+    return false;
+}
+
+function gr_parse_duration_to_seconds(string $raw): ?int {
+    $s = gr_norm($raw); if ($s === '') return null;
+    $s = str_replace(['sekunden','sek','second','seconds','minuten','minute','min','stunden','stunde','std','hour','hours','h'],
+                     ['s','s','s','s','m','m','m','h','h','h','h','h'], $s);
+    $h = $m = $sec = 0;
+    if (preg_match('/(\d+)\s*h/', $s, $mm)) $h   = (int)$mm[1];
+    if (preg_match('/(\d+)\s*m/', $s, $mm)) $m   = (int)$mm[1];
+    if (preg_match('/(\d+)\s*s?(\b|$)/', $s, $mm)) $sec = (int)$mm[1];
+    if ($h===0 && $m===0 && $sec===0) { if (preg_match('/^\d+$/', $s)) $sec = (int)$s; else return null; }
+    return $h*3600 + $m*60 + $sec;
+}
+
+function gr_seconds_to_iso(int $total): string {
+    $h = intdiv($total, 3600); $m = intdiv($total % 3600, 60); $s = $total % 60;
+    $out = 'PT'; if ($h>0) $out .= $h.'H'; if ($m>0) $out .= $m.'M'; if ($s>0 || ($h==0 && $m==0)) $out .= $s.'S';
+    return $out;
+}
+
+function gr_resolve_set_value(int $varId, $numberIn, string $rawText, array $var, array $obj): array {
+    $rawText = trim((string)$rawText);
+
+    if ($numberIn !== null && $numberIn !== '') { return ['ok'=>true, 'value'=>(float)$numberIn, 'why'=>null]; }
+    if ($rawText !== '' && is_numeric($rawText)) { return ['ok'=>true, 'value'=>(float)$rawText, 'why'=>null]; }
+
+    $info = gr_info_json($obj);
+    if (!empty($info)) {
+        if (isset($info['enumMap']) && is_array($info['enumMap']) && $rawText !== '') {
+            $key = gr_norm($rawText);
+            foreach ($info['enumMap'] as $label => $val) { if (gr_norm((string)$label) === $key) { return ['ok'=>true, 'value'=>$val, 'why'=>null]; } }
+        }
+        if ($rawText !== '') {
+            if (!empty($info['enum']) && is_array($info['enum'])) {
+                foreach ($info['enum'] as $label) { if (gr_norm((string)$label) === gr_norm($rawText)) { return ['ok'=>true, 'value'=>(string)$label, 'why'=>null]; } }
+            }
+            if (!empty($info['enumOpts']) && is_array($info['enumOpts'])) {
+                foreach ($info['enumOpts'] as $opt) {
+                    $lab = (string)($opt['label'] ?? ''); $val = $opt['value'] ?? $lab;
+                    if ($lab !== '' && gr_norm($lab) === gr_norm($rawText)) { return ['ok'=>true, 'value'=>$val, 'why'=>null]; }
+                }
+            }
+        }
+        if (!empty($info['enumProfile']) && is_string($info['enumProfile']) && $rawText !== '') {
+            $assoc = gr_get_profile_associations($info['enumProfile']);
+            $key = gr_norm($rawText); if (isset($assoc['byName'][$key])) { return ['ok'=>true, 'value'=>$assoc['byName'][$key], 'why'=>null]; }
+        }
+    }
+
+    $profile = gr_get_profile_name($var); $assoc = gr_get_profile_associations($profile);
+    if ($rawText !== '' && !empty($assoc['byName'])) {
+        $key = gr_norm($rawText); if (array_key_exists($key, $assoc['byName'])) { return ['ok'=>true, 'value'=>$assoc['byName'][$key], 'why'=>null]; }
+    }
+
+    if ($rawText !== '') {
+        $secs = gr_parse_duration_to_seconds($rawText);
+        if ($secs !== null) {
+            if (gr_var_expects_iso_duration($varId, $var)) return ['ok'=>true, 'value'=>gr_seconds_to_iso($secs), 'why'=>null];
+            $type = (int)($var['VariableType'] ?? 3); if ($type === 1 || $type === 2) return ['ok'=>true, 'value'=>$secs, 'why'=>null];
+        }
+    }
+
+    $type = (int)($var['VariableType'] ?? 3);
+    if ($type === 3 && $rawText !== '') { return ['ok'=>true, 'value'=>$rawText, 'why'=>null]; }
+
+    if (!empty($assoc['byValue'])) { $allowed = implode(', ', array_values($assoc['byValue'])); return ['ok'=>false, 'why'=>'Ungültiger Wert. Erlaubt: '.$allowed]; }
+    $infoAllowed = gr_info_allowed_list($obj); if ($infoAllowed !== '') return ['ok'=>false, 'why'=>'Ungültiger Wert. Erlaubt: '.$infoAllowed];
+
+    return ['ok'=>false, 'why'=>'Ungültiger Wert.'];
+}
+
+function gr_hc_humanize_error(string $s): string {
+    $t = gr_norm($s);
+    if (strpos($t, 'remotestart not active') !== false)  return 'Fernstart ist nicht aktiviert. Bitte am Bewässerung freigeben.';
+    if (strpos($t, 'remotecontrol not active') !== false) return 'Fernbedienung ist nicht aktiviert. Bitte am Bewässerung erlauben.';
+    if (strpos($t, 'localcontrol active') !== false)      return 'Lokale Bedienung ist aktiv. Bitte am Bewässerung bestätigen.';
+    return $s;
+}
+
+function gr_formatValueHuman(int $varId, int $type, $val): string
+{
+    if ($type === 1 || $type === 2) {
+        $var = @IPS_GetVariable($varId);
+        if (is_array($var)) {
+            $profile = gr_get_profile_name($var); $assoc = gr_get_profile_associations($profile);
+            if (!empty($assoc['byValue'])) { $k = (string)(is_bool($val)?(int)$val:$val); if (isset($assoc['byValue'][$k])) return $assoc['byValue'][$k]; }
+        }
+    }
+
+    switch ($type) {
+        case 0: return gr_asBool($val) ? 'Ja' : 'Nein';
+        case 1:
+        case 2:
+            $f = @GetValueFormatted($varId); if (is_string($f) && $f !== '') return $f;
+            if (is_float($val) || is_double($val)) return number_format((float)$val, 2, ',', '');
+            return (string)$val;
+        default:
+            $s = trim((string)$val); if ($s === '') return '—';
+            $enum = gr_tryHumanizeEnum($s); if ($enum !== null) return $enum; return $s;
+    }
+}
+
+function gr_tryHumanizeEnum(string $s): ?string
+{
+    $t = trim($s);
+    if (preg_match('/^P(T?(?:\d+H)?(?:\d+M)?(?:\d+S)?)$/i', $t)) {
+        $parts = []; if (preg_match('/(\d+)H/i', $t, $m)) $parts[] = (int)$m[1].' h';
+        if (preg_match('/(\d+)M/i', $t, $m)) $parts[] = (int)$m[1].' m';
+        if (preg_match('/(\d+)S/i', $t, $m)) $parts[] = (int)$m[1].' s';
+        return $parts ? implode(' ', $parts) : '0 s';
+    }
+    $last = (strpos($t, '.') !== false) ? preg_replace('/^.*\./', '', $t) : $t;
+    $last = str_replace('_', ' ', $last); $last = trim(preg_replace('/(?<!^)([A-Z])/', ' $1', $last));
+    $de = gr_de_status_word($last); if ($de !== null) return $de; return $last !== '' ? $last : null;
+}
+
+function gr_de_status_word(string $word): ?string
+{
+    $w = mb_strtolower(trim($word), 'UTF-8'); if ($w === '') return null;
+    if ($w === 'inactive') return 'Inaktiv'; if ($w === 'active') return 'Aktiv'; if ($w === 'standby') return 'Standby';
+    if ($w === 'on') return 'Ein'; if ($w === 'off') return 'Aus'; if ($w === 'open' || $w === 'opened') return 'Offen'; if ($w === 'close' || $w === 'closed') return 'Geschlossen';
+    if ($w === 'running') return 'Läuft'; if ($w === 'paused') return 'Pausiert'; if ($w === 'ready' || $w === 'idle') return 'Bereit';
+    if ($w === 'busy') return 'Beschäftigt'; if ($w === 'error' || $w === 'fault' || $w === 'failure') return 'Fehler'; if ($w === 'warning') return 'Warnung';
+    if ($w === 'ok' || $w === 'success') return 'OK'; if ($w === 'connected') return 'Verbunden'; if ($w === 'disconnected') return 'Getrennt'; if ($w === 'unknown') return 'Unbekannt';
+    if (preg_match('/inactive$/', $w)) return mb_convert_case(preg_replace('/inactive$/', 'inaktiv', $w), MB_CASE_TITLE, 'UTF-8');
+    if (preg_match('/active$/',   $w)) return mb_convert_case(preg_replace('/active$/',   'aktiv',   $w), MB_CASE_TITLE, 'UTF-8');
+    return null;
+}
+
+function gr_hasAction(array $var) : bool {
+    $custom  = (int)($var['VariableCustomAction'] ?? 0);
+    $std     = (int)($var['VariableAction']       ?? 0);
+    return ($custom > 0) || ($std > 0);
+}
+
+function gr_typeName(int $t): string { if ($t === 0) return 'Boolean'; if ($t === 1) return 'Integer'; if ($t === 2) return 'Float'; return 'String'; }
+
+function gr_asBool($v): bool {
+    if (is_bool($v)) return $v; if (is_numeric($v)) return ((float)$v) != 0.0;
+    if (is_string($v)) { $s = gr_norm($v); return in_array($s, ['1','true','an','ein','on','ja','yes'], true); }
+    return false;
+}
+
+function gr_formatUpdated(int $ts): string { $now = time(); return (($now - $ts) > 36 * 3600) ? date('d.m.Y', $ts) : date('H:i:s', $ts); }
+
+function gr_norm(string $s): string { $s = mb_strtolower(trim($s), 'UTF-8'); $s = str_replace(['ae','oe','ue','ss'], ['ä','ö','ü','ß'], $s); return $s; }
+
+/* --- Synonym-Matching für Tabs --- */
+function gr_keynorm(string $s): string { $s = gr_norm($s); $s = preg_replace('/[^a-z0-9äöüß]+/u', '', $s); return $s ?? ''; }
+function gr_match_tab_by_name_or_synonym(array $tabs, string $spoken): ?string {
+    $k = gr_keynorm($spoken); if ($k === '') return null;
+    foreach ($tabs as $t) {
+        if (gr_keynorm((string)$t['title']) === $k) return (string)$t['id'];
+        foreach ((array)($t['synonyms'] ?? []) as $syn) { if (gr_keynorm((string)$syn) === $k) return (string)$t['id']; }
+    }
+    return null;
+}
+
+/* --- ObjectInfo-basierte Enums --- */
+function gr_info_json(array $obj): array { $infoRaw = (string)($obj['ObjectInfo'] ?? ''); if ($infoRaw === '') return []; $j = json_decode($infoRaw, true); return is_array($j) ? $j : []; }
+function gr_info_enum_for_var(array $obj, array $var): array {
+    $out = ['opts'=>[]]; $info = gr_info_json($obj); if (empty($info)) return $out;
+    if (!empty($info['enumOpts']) && is_array($info['enumOpts'])) {
+        $opts = []; foreach ($info['enumOpts'] as $opt) { $lab = (string)($opt['label'] ?? ''); if ($lab==='') continue; $val = $opt['value'] ?? $lab; $opts[] = ['label'=>$lab, 'value'=>$val]; }
+        if ($opts) return ['opts'=>$opts];
+    }
+    if (!empty($info['enum']) && is_array($info['enum'])) {
+        $map = is_array($info['enumMap'] ?? null) ? $info['enumMap'] : [];
+        $opts = []; foreach ($info['enum'] as $lab) { $labS = (string)$lab; if ($labS==='') continue; $val = array_key_exists($labS, $map) ? $map[$labS] : $labS; $opts[] = ['label'=>$labS, 'value'=>$val]; }
+        if ($opts) return ['opts'=>$opts];
+    }
+    if (!empty($info['enumProfile']) && is_string($info['enumProfile'])) {
+        $assoc = gr_get_profile_associations($info['enumProfile']);
+        if (!empty($assoc['byValue'])) { $opts = []; foreach ($assoc['byValue'] as $valKey => $label) { $opts[] = ['label'=>$label, 'value'=>$valKey]; } if ($opts) return ['opts'=>$opts]; }
+    }
+    return $out;
+}
+function gr_info_allowed_list(array $obj): string {
+    $info = gr_info_json($obj); $labels = [];
+    if (!empty($info['enumOpts']) && is_array($info['enumOpts'])) { foreach ($info['enumOpts'] as $opt) { $lab = (string)($opt['label'] ?? ''); if ($lab !== '') $labels[] = $lab; } }
+    elseif (!empty($info['enum']) && is_array($info['enum'])) { foreach ($info['enum'] as $lab) { $lab = (string)$lab; if ($lab !== '') $labels[] = $lab; } }
+    elseif (!empty($info['enumProfile']) && is_string($info['enumProfile'])) { $assoc = gr_get_profile_associations($info['enumProfile']); if (!empty($assoc['byValue'])) $labels = array_values($assoc['byValue']); }
+    return $labels ? implode(', ', $labels) : '';
+}
