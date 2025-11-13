@@ -6,12 +6,33 @@
  *
  * Dieses Skript kapselt den Dialog-Flow für den Device-Map-Wizard
  * (Name erfragen → APL-Support erfragen) und liefert eine einzige
- * Funktion `handle_wizard(...)`, die entweder eine Response (Ask/Tell)
- * zurückgibt oder `null`, wenn kein Wizard aktiv ist bzw. nichts zu tun ist.
+ * Funktion `handle_wizard(...)`, die entweder eine strukturierte
+ * Antwort (Array) zurückgibt oder `null`, wenn kein Wizard aktiv ist
+ * bzw. nichts zu tun ist.
+ *
+ * Rückgabeformat:
+ *   null  → Wizard nicht zuständig / nicht aktiv
+ *   [
+ *     'type'     => 'ask' | 'tell',
+ *     'text'     => 'Antworttext',
+ *     'reprompt' => 'Reprompt-Text' (nur bei type = 'ask', optional)
+ *   ]
  */
 
 /**
- * Führt den Wizard-Flow aus und gibt ggf. eine Response zurück.
+ * Führt den Wizard-Flow aus und gibt ggf. eine Antwort-Struktur zurück.
+ *
+ * @param array  $V                  SystemConfiguration['var']
+ * @param string $intentName         Aktueller Intent-Name
+ * @param string $action             Slot 'Action' (normalisiert)
+ * @param string $alles              Slot 'Alles'  (normalisiert)
+ * @param string $room               Slot 'Room'   (normalisiert)
+ * @param string $device             Slot 'Device' (normalisiert)
+ * @param array  $DM_HELPERS         DeviceMap-Helper (ensure/update/save/...)
+ * @param string $STAGE_AWAIT_NAME   Konstantenwert für Name-Stufe
+ * @param string $STAGE_AWAIT_APL    Konstantenwert für APL-Stufe
+ *
+ * @return array<string,mixed>|null
  */
 $handle_wizard = static function(
     array  $V,
@@ -52,23 +73,6 @@ $handle_wizard = static function(
         $logWizard('DEBUG', $message, $context);
     };
 
-    $buildAskResponse = static function (string $text, ?string $reprompt = null) use ($logWizardError) {
-        try {
-            $ask = \IPSAlexaHaussteuerung\AskResponse::CreatePlainText($text);
-            if ($reprompt !== null) {
-                $ask->SetRepromptPlainText($reprompt);
-            }
-            return $ask;
-        } catch (\Throwable $e) {
-            $logWizardError('Failed to build AskResponse', [
-                'text' => $text,
-                'reprompt' => $reprompt,
-                'exception' => $e->getMessage(),
-            ]);
-            return null;
-        }
-    };
-
     $formatCreated = static function (int $ts): string {
         $tz = new \DateTimeZone('Europe/Vienna');
         $dt = (new \DateTimeImmutable('@' . $ts))->setTimezone($tz);
@@ -98,6 +102,7 @@ $handle_wizard = static function(
         $value = strtr($value, $map);
         $value = preg_replace('/[\r\n]+/u', ' ', $value);
         $value = preg_replace('/\s{2,}/u', ' ', $value);
+        $value = preg_replace('/\s{2,}/u', ' ', $value);
         return trim((string)$value);
     };
 
@@ -122,9 +127,9 @@ $handle_wizard = static function(
         $result = [];
         foreach (array_keys($seen) as $char) {
             $result[] = [
-                'char' => $char,
+                'char'      => $char,
                 'codepoint' => $codepointOfChar($char),
-                'hex' => strtoupper(bin2hex($char)),
+                'hex'       => strtoupper(bin2hex($char)),
             ];
         }
         return $result;
@@ -171,7 +176,10 @@ $handle_wizard = static function(
             'deviceMapVar'     => $deviceMapVar,
         ]);
         $resetWizard();
-        return \IPSAlexaHaussteuerung\TellResponse::CreatePlainText('Geräte-Assistent konnte nicht gestartet werden. Bitte prüfe die Konfiguration.');
+        return [
+            'type' => 'tell',
+            'text' => 'Geräte-Assistent konnte nicht gestartet werden. Bitte prüfe die Konfiguration.',
+        ];
     }
 
     $pendingStage = (string)GetValueString($pendingStageVar);
@@ -181,8 +189,8 @@ $handle_wizard = static function(
 
     if ($pendingStage === '' || $pendingDevId === '') {
         $logWizardDebug('No active wizard, skip.', [
-            'pendingStage' => $pendingStage,
-            'pendingDeviceId' => $pendingDevId,
+            'pendingStage'   => $pendingStage,
+            'pendingDeviceId'=> $pendingDevId,
         ]);
         return null;
     }
@@ -192,9 +200,21 @@ $handle_wizard = static function(
     // -----------------------
     if ($pendingStage === $STAGE_AWAIT_NAME) {
 
+        $logWizardDebug('Stage: await name', [
+            'slots' => [
+                'action' => $action,
+                'alles'  => $alles,
+                'room'   => $room,
+                'device' => $device,
+            ],
+        ]);
+
         if (in_array($action, $abortWords, true)) {
             $resetWizard();
-            return \IPSAlexaHaussteuerung\TellResponse::CreatePlainText('Okay, abgebrochen.');
+            return [
+                'type' => 'tell',
+                'text' => 'Okay, abgebrochen.',
+            ];
         }
 
         $proposed = '';
@@ -204,49 +224,69 @@ $handle_wizard = static function(
         elseif ($action !== '') $proposed = trim($action);
 
         if ($proposed === '') {
-            $ask = \IPSAlexaHaussteuerung\AskResponse::CreatePlainText('Wie soll ich das Gerät nennen?');
-            $ask->SetRepromptPlainText('Sag z. B. Küche, Wohnzimmer oder Büro.');
-            return $ask;
+            $logWizardDebug('No valid name provided. Asking again.');
+            return [
+                'type'     => 'ask',
+                'text'     => 'Wie soll ich das Gerät nennen?',
+                'reprompt' => 'Sag z. B. Küche, Wohnzimmer oder Büro.',
+            ];
         }
 
-        $speechName = $sanitizeSpeechName($proposed);
+        $logWizardDebug('Proposed device name collected.', [
+            'name'     => $proposed,
+            'deviceId' => $pendingDevId,
+        ]);
 
+        $speechName   = $sanitizeSpeechName($proposed);
         $questionText = $speechName !== ''
             ? 'Alles klar - "' . $speechName . '". Hat dieses Gerät einen Bildschirm?'
             : 'Alles klar, Name gespeichert. Hat dieses Gerät einen Bildschirm?';
 
-        $questionText = $normalizePlainText($questionText);
-
-        $unsupported = $detectUnsupportedQuestionChars($questionText);
-        if ($unsupported !== []) {
+        $questionText       = $normalizePlainText($questionText);
+        $unsupportedChars   = $detectUnsupportedQuestionChars($questionText);
+        if ($unsupportedChars !== []) {
+            $logWizardDebug('Unsupported punctuation detected in question text. Using fallback.', [
+                'question'          => $questionText,
+                'unsupportedChars'  => $unsupportedChars,
+            ]);
             $questionText = $normalizePlainText('Hat dieses Gerät einen Bildschirm?');
         }
+
+        $logWizardDebug('Prepared screen question text.', [
+            'speechName' => $speechName,
+            'question'   => $questionText,
+        ]);
 
         // speichern
         $updateLocation = $DM_HELPERS['update_location'] ?? null;
         if (!is_callable($updateLocation)) {
+            $logWizardError('Helper "update_location" fehlt – nutze Fallback.', [
+                'helpers' => array_keys((array)$DM_HELPERS),
+            ]);
             $updateLocation = $fallbackUpdateLocation;
         }
 
         try {
+            $logWizardDebug('Calling update_location.');
             $updateLocation($deviceMapVar, $pendingDevId, $proposed);
+            $logWizardDebug('update_location successful.');
         } catch (\Throwable $e) {
+            $logWizardError('update_location failed', ['exception' => $e->getMessage()]);
             $resetWizard();
-            return \IPSAlexaHaussteuerung\TellResponse::CreatePlainText('Gerät konnte nicht gespeichert werden. Bitte versuche es noch einmal.');
+            return [
+                'type' => 'tell',
+                'text' => 'Gerät konnte nicht gespeichert werden. Bitte versuche es noch einmal.',
+            ];
         }
 
         SetValueString($pendingStageVar, $STAGE_AWAIT_APL);
+        $logWizardDebug('Stage switched to await APL.');
 
-        $ask = $buildAskResponse($questionText, 'Bitte antworte mit ja oder nein.');
-        if ($ask === null) {
-            $ask = $buildAskResponse('Hat dieses Gerät einen Bildschirm?', 'Bitte antworte mit ja oder nein.');
-        }
-        if ($ask === null) {
-            $resetWizard();
-            return \IPSAlexaHaussteuerung\TellResponse::CreatePlainText('Gerät konnte nicht gespeichert werden. Bitte versuche es noch einmal.');
-        }
-
-        return $ask;
+        return [
+            'type'     => 'ask',
+            'text'     => $questionText,
+            'reprompt' => 'Bitte antworte mit ja oder nein.',
+        ];
     }
 
     // -----------------------
@@ -254,44 +294,73 @@ $handle_wizard = static function(
     // -----------------------
     if ($pendingStage === $STAGE_AWAIT_APL) {
 
+        $logWizardDebug('Stage: await APL', [
+            'intent' => $intentName,
+            'slots'  => [
+                'action' => $action,
+                'alles'  => $alles,
+                'room'   => $room,
+            ],
+        ]);
+
         $yesIntents = ['AMAZON.YesIntent','YesIntent'];
         $noIntents  = ['AMAZON.NoIntent','NoIntent'];
 
         $isYes = in_array($intentName, $yesIntents, true)
-              || $action === 'ja' || $alles === 'ja' || $room === 'ja';
+              || $action === 'ja'   || $alles === 'ja'   || $room === 'ja';
 
         $isNo  = in_array($intentName, $noIntents, true)
               || $action === 'nein' || $alles === 'nein' || $room === 'nein';
 
         if (!$isYes && !$isNo) {
-            $ask = \IPSAlexaHaussteuerung\AskResponse::CreatePlainText('Hat das Gerät einen Bildschirm?');
-            $ask->SetRepromptPlainText('Ja oder nein?');
-            return $ask;
+            $logWizardDebug('APL question unanswered yet.');
+            return [
+                'type'     => 'ask',
+                'text'     => 'Hat das Gerät einen Bildschirm?',
+                'reprompt' => 'Ja oder nein?',
+            ];
         }
 
         $apl = $isYes;
 
         $updateApl = $DM_HELPERS['update_apl'] ?? null;
         if (!is_callable($updateApl)) {
+            $logWizardError('Helper "update_apl" fehlt – nutze Fallback.', [
+                'helpers' => array_keys((array)$DM_HELPERS),
+            ]);
             $updateApl = $fallbackUpdateApl;
         }
 
         try {
+            $logWizardDebug('Calling update_apl.', ['apl' => $apl]);
             $updateApl($deviceMapVar, $pendingDevId, $apl);
+            $logWizardDebug('update_apl successful.');
         } catch (\Throwable $e) {
+            $logWizardError('update_apl failed', ['exception' => $e->getMessage()]);
             $resetWizard();
-            return \IPSAlexaHaussteuerung\TellResponse::CreatePlainText('Die Bildschirm-Einstellung konnte nicht gespeichert werden.');
+            return [
+                'type' => 'tell',
+                'text' => 'Die Bildschirm-Einstellung konnte nicht gespeichert werden.',
+            ];
         }
 
         $resetWizard();
-        return \IPSAlexaHaussteuerung\TellResponse::CreatePlainText(
-            'Danke, Einstellungen gespeichert. ' . ($apl ? 'Bildschirm erkannt' : 'Kein Bildschirm')
-        );
+        $logWizardDebug('Wizard finished successfully.');
+
+        return [
+            'type' => 'tell',
+            'text' => 'Danke, Einstellungen gespeichert. ' . ($apl ? 'Bildschirm erkannt' : 'Kein Bildschirm'),
+        ];
     }
 
     // UNBEKANNTE STAGE
     $resetWizard();
-    return \IPSAlexaHaussteuerung\TellResponse::CreatePlainText('Assistent zurückgesetzt.');
+    $logWizardError('Unknown stage, wizard reset.', ['pendingStage' => $pendingStage]);
+
+    return [
+        'type' => 'tell',
+        'text' => 'Assistent zurückgesetzt.',
+    ];
 };
 
 return [
