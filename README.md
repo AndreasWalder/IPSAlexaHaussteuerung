@@ -98,7 +98,8 @@ IPSAlexaHaussteuerung/
 │     ├─ Lexikon.php
 │     ├─ RoomBuilderHelpers.php
 │     ├─ RoomsCatalog.php
-│     └─ Normalizer.php
+│     ├─ Normalizer.php
+│     └─ WebHookIcons.php
 ├─ src/
 │  ├─ Helpers.php
 │  ├─ LogTrait.php
@@ -136,6 +137,24 @@ decken folgende Aufgaben ab:
 - `RoomsCatalog.php` – kompletter Raum-/Domain-Katalog mit allen IDs,
   Synonymen und Tabs. Diesen Inhalt kannst du direkt in ein IP-Symcon-Skript
   kopieren und dort bearbeiten, um Räume komfortabel zu pflegen.
+- `WebHookIcons.php` – WebHook-Endpunkt, der Dateien aus `user/icons/`
+  sicher ausliefert (Token aus der Modul-Instanz übernehmen und als
+  `$SECRET` setzen, Hook z. B. `/hook/alexa-icons`).
+
+### 🌐 WebHook für Icon-Auslieferung
+
+1. Erstelle in IP-Symcon ein Skript und kopiere den Inhalt von
+   `resources/helpers/WebHookIcons.php` hinein.
+2. Trage im Skript bei `$SECRET` genau den Token ein, der im Modul unter
+   *Token* angezeigt wird (siehe Instanzkonfiguration).
+3. Registriere das Skript als WebHook (z. B. `/hook/alexa-icons`).
+4. Lege deine PNG/SVG/ICO-Dateien in `user/icons/` ab und rufe sie über
+   `https://<symcon-host>/hook/alexa-icons/<datei>?token=<TOKEN>` auf.
+
+Die Auslieferung erfolgt mit passenden MIME-Typen, ETag/Last-Modified-Headern
+und optionalem Caching (1 Jahr für Bilder/CSS/JS, no-store für HTML). Damit
+lassen sich die Alexa-APLs oder externe Displays mit den gleichen Icons
+versorgen, die auch innerhalb von IP-Symcon verwendet werden.
 
 ---
 
