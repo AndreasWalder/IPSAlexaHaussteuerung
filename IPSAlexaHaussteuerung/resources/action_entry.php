@@ -544,13 +544,13 @@ function Execute($request = null)
             $STAGE_AWAIT_APL
         );
 
-        if ($wzResult !== null) {
+         if ($wzResult !== null) {
             $type     = (string)($wzResult['type'] ?? '');
             $text     = (string)($wzResult['text'] ?? '');
             $reprompt = isset($wzResult['reprompt']) ? (string)$wzResult['reprompt'] : '';
 
             if ($type === 'ask') {
-                $ask = \IPSAlexaHaussteuerung\AskResponse::CreatePlainText($text);
+                $ask = AskResponse::CreatePlainText($text);
                 if ($reprompt !== '') {
                     $ask->SetRepromptPlainText($reprompt);
                 }
@@ -558,10 +558,13 @@ function Execute($request = null)
             }
 
             if ($type === 'tell') {
-                return \IPSAlexaHaussteuerung\TellResponse::CreatePlainText($text);
+                return TellResponse::CreatePlainText($text);
             }
 
-            return \IPSAlexaHaussteuerung\TellResponse::CreatePlainText($text !== '' ? $text : 'Assistent beendet.');
+            // Fallback, falls der Wizard etwas Unerwartetes liefert
+            return TellResponse::CreatePlainText(
+                $text !== '' ? $text : 'Assistent beendet.'
+            );
         }
 
         // --------- Room/Number/Action Normalisierung ---------
