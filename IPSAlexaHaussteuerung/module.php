@@ -65,6 +65,20 @@ class IPSAlexaHaussteuerung extends IPSModule
 
         parent::ApplyChanges();
 
+        // String-Variable für DeviceMapJson anlegen (falls noch nicht)
+        $varId = $this->RegisterVariableString('deviceMapJson', 'DeviceMapJson', '~TextBox', 10);
+    
+        // Auf Änderungen der Variable hören
+        $this->RegisterMessage($varId, VM_UPDATE);
+    
+        // Property -> Variable synchronisieren
+        $cfgJson  = $this->ReadPropertyString('DeviceMapJson');
+        $varJson  = GetValueString($varId);
+    
+        if ($cfgJson !== '' && $cfgJson !== $varJson) {
+            SetValueString($varId, $cfgJson);
+        }
+
         $this->EnsureInfrastructure();
         $this->syncDeviceMapVarFromProperty();
 
