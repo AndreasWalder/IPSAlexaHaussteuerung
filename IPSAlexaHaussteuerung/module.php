@@ -30,7 +30,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyString('Passwort', '');
         $this->RegisterPropertyString('StartPage', '#45315');
         $this->RegisterPropertyInteger('WfcId', 45315);
-        $this->RegisterPropertyInteger('DelayScript', 55368);
+        $this->RegisterPropertyInteger('DelayScript', 0);
         $this->RegisterPropertyInteger('ConfigScriptId', 0);
         $this->RegisterPropertyString('LOG_LEVEL', 'debug');
 
@@ -47,6 +47,10 @@ class IPSAlexaHaussteuerung extends IPSModule
     public function ApplyChanges()
     {
         parent::ApplyChanges();
+
+        if ($this->EnsureHelperScripts()) {
+            return;
+        }
 
         $this->EnsureInfrastructure();
         $this->EnsureActionEntryScript();
@@ -482,6 +486,62 @@ class IPSAlexaHaussteuerung extends IPSModule
                 if ($content !== false) {
                     IPS_SetScriptContent($id, $content);
                 }
+            }
+        }
+
+        return (int) $id;
+    }
+
+    /**
+     * Ensure helper scripts that are bundled with the module exist and keep properties in sync
+     */
+    private function EnsureHelperScripts(): bool
+    {
+        $updated = false;
+        $delayScriptPath = __DIR__ . '/resources/helpers/WfcDelayedPageSwitch.php';
+        $delayScriptId = $this->ensureTemplateScript($this->InstanceID, 'WfcDelayedPageSwitch', 'iahWfcDelayedPageSwitch', $delayScriptPath);
+        if ($delayScriptId > 0) {
+            $updated = $this->ensureDelayScriptProperty((int) $delayScriptId);
+        }
+
+        return $updated;
+    }
+
+    private function ensureDelayScriptProperty(int $scriptId): bool
+    {
+        $current = $this->ReadPropertyInteger('DelayScript');
+        if ($current !== $scriptId) {
+            IPS_SetProperty($this->InstanceID, 'DelayScript', $scriptId);
+            IPS_ApplyChanges($this->InstanceID);
+            return true;
+        }
+
+        return false;
+    }
+
+    private function ensureTemplateScript(int $parent, string $name, string $ident, string $templatePath): int
+    {
+        $id = @IPS_GetObjectIDByIdent($ident, $parent);
+        $created = false;
+
+        if (!$id) {
+            $byName = @IPS_GetObjectIDByName($name, $parent);
+            if ($byName) {
+                $id = $byName;
+                IPS_SetIdent($id, $ident);
+            } else {
+                $id = IPS_CreateScript(0);
+                IPS_SetParent($id, $parent);
+                IPS_SetName($id, $name);
+                IPS_SetIdent($id, $ident);
+                $created = true;
+            }
+        }
+
+        if ($created && is_file($templatePath)) {
+            $content = file_get_contents($templatePath);
+            if ($content !== false) {
+                IPS_SetScriptContent($id, $content);
             }
         }
 
