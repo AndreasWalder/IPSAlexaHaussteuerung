@@ -13,17 +13,22 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
   `Execute($request = null)` – kann direkt im AlexaCustomSkillIntent-Modul als *„Dieses Skript ausführen“* gewählt werden.
 - **Kein interner WebHook**  
   Das Alexa-Gateway (z. B. `/alexa/haus`) bleibt der Entry-Point – das Modul übernimmt nur die interne Auswertung.
-- **Router + Renderer-Wrapper**  
+- **Router + Renderer-Wrapper**
   Leitet Payloads an deine vorhandenen Skripte (Heizung, Licht, Jalousie, Lüftung, Geräte, Bewässerung, Einstellungen, Route_all) weiter.
-- **Automatische Variablenanlage & Standardwerte**  
-  Erstellt Kategorien *Einstellungen* und *Alexa new devices helper* sowie Runtime-Variablen (`action`, `device`, `room`, `skillActive`, …)  
+- **Automatische Variablenanlage & Standardwerte**
+  Erstellt Kategorien *Einstellungen* und *Alexa new devices helper* sowie Runtime-Variablen (`action`, `device`, `room`, `skillActive`, …)
   – inkl. sinnvoller Startwerte (Toggles = true, `skillActive = false`).
+- **RoomsCatalog-Template inklusive**
+  Beim ersten `ApplyChanges()` erzeugt das Modul automatisch ein Skript **„RoomsCatalog“** in der Kategorie *Einstellungen* und befüllt es mit dem Beispiel aus `resources/helpers/RoomsCatalog.php`. Dieses Skript kannst du direkt bearbeiten und dessen ID z. B. im `SystemConfiguration`-Skript verwenden.
+- **Konfig-Skript frei wählbar**
+  Hinterlege dein bestehendes `SystemConfiguration`-Skript direkt in der Instanz (*Config ScriptID*). Das Action-Entry-Skript lädt diese ID automatisch – keine hart codierte Script-ID `48789` mehr notwendig.
 - **V/S-Mapping**  
   Alle Variablen-IDs (V) und Script-IDs (S) werden automatisch ins Payload injiziert – keine festen IDs mehr nötig.
 - **Diagnose-Dashboard in der Instanz-Form**
-  - Live-Status: Scripts / Variablen  
-  - Antwort-Vorschau (`dumpFile`)  
-  - Letzte Fehler / Logs (`log_recent`) mit automatischem Ringpuffer (≈ 200 Zeilen)  
+  - Live-Status: Scripts / Variablen
+  - Antwort-Vorschau (`dumpFile`)
+  - Letzte Fehler / Logs (`log_recent`) mit automatischem Ringpuffer (≈ 200 Zeilen)
+  - Direktanzeige des **Codex-Protokolls** (Inhalt der Variable `log_recent`) als mehrzeiliges Textfeld
   - Buttons: *IDs neu ermitteln*, *Test-Launch*, *Custom-Payload senden*, *Vorschau leeren*, *Logs leeren*
 - **Konfig-Formular mit sinnvollen Settings**
   - Sicherheits- & Verbindungs-Parameter  
@@ -136,6 +141,10 @@ Skripte und hinterlege deren IDs in deiner Konfiguration (`var.CoreHelpers`,
 `var.DeviceMap`, `var.DeviceMapWizard`, `var.Lexikon`, `script.NORMALIZER`,
 `var.RoomBuilderHelpers`, `var.RoomsCatalog`, usw.). Die enthaltenen Dateien
 decken folgende Aufgaben ab:
+
+> 🆕 **RoomsCatalog-Automatismus:** Das Modul legt beim ersten `ApplyChanges()` bereits ein Skript **„RoomsCatalog“** unterhalb der Kategorie *Einstellungen* an und befüllt es mit dem Standard-Template. Du kannst den Inhalt dort direkt anpassen – die Script-ID lässt sich anschließend im `SystemConfiguration`-Skript verwenden.
+
+> 💡 **Hinweis:** Das Modul erwartet, dass du die ID deines zentralen `SystemConfiguration`-Skripts im Feld **Config ScriptID** einträgst. Dieses Skript kann z. B. alle oben genannten Helper-IDs bündeln und wird beim Ausführen von `Action (Haus\Übersicht/Einstellungen Entry)` automatisch geladen.
 
 - `CoreHelpers.php` – generische Utilities wie Slot-Handling, APL-Parsing,
   Tabs-Matching oder Nummern-Extraktion.

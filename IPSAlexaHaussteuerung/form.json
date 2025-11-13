@@ -47,6 +47,14 @@
       "value": 55368
     },
     {
+      "name": "ConfigScriptId",
+      "type": "NumberSpinner",
+      "caption": "Config ScriptID",
+      "minimum": 0,
+      "maximum": 999999,
+      "value": 0
+    },
+    {
       "name": "LOG_LEVEL",
       "type": "Select",
       "caption": "Log Level",
