@@ -36,10 +36,60 @@
  * - Lade-Pfad für Helfer-Skript an Config angepasst (liest $V['DeviceMap'] statt $S['DEVICE_MAP_HELPERS'])
  */
 
+const IAH_MODULE_GUID = '{F528D4D0-5729-4315-AE88-9BBABDBD0392}';
+
 function iah_get_instance_id(): int
 {
     $self = (int) ($_IPS['SELF'] ?? 0);
-    return (int) @IPS_GetParent($self);
+    $instanceId = iah_resolve_instance_from_object($self);
+    if ($instanceId > 0) {
+        return $instanceId;
+    }
+
+    $fallback = iah_find_instance_via_config_script();
+    if ($fallback > 0) {
+        return $fallback;
+    }
+
+    return 0;
+}
+
+function iah_resolve_instance_from_object(int $objectId): int
+{
+    while ($objectId > 0) {
+        $parent = (int) @IPS_GetParent($objectId);
+        if ($parent <= 0) {
+            return 0;
+        }
+        if (IPS_InstanceExists($parent)) {
+            return $parent;
+        }
+        $objectId = $parent;
+    }
+
+    return 0;
+}
+
+function iah_find_instance_via_config_script(): int
+{
+    if (!function_exists('IPS_GetInstanceListByModuleID')) {
+        return 0;
+    }
+
+    $instances = @IPS_GetInstanceListByModuleID(IAH_MODULE_GUID);
+    if (!is_array($instances) || $instances === []) {
+        return 0;
+    }
+
+    foreach ($instances as $instanceId) {
+        $props = iah_get_instance_properties((int) $instanceId);
+        $configScript = (int) ($props['SystemConfigScriptId'] ?? 0);
+        if ($configScript > 0 && IPS_ScriptExists($configScript)) {
+            return (int) $instanceId;
+        }
+    }
+
+    return 0;
 }
 
 function iah_get_instance_properties(int $instanceId): array
