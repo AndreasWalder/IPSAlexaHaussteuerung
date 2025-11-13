@@ -68,17 +68,19 @@ $matchDomain = static function (string $action, string $device, string $alles, s
     if ($action === 'geräte' || $device === 'geräte' || $device === 'gerät') return 'geraete';
     if ($action === 'bewässerung' || $action === 'garten' || $device === 'bewässerung' || $device === 'garten') return 'bewaesserung';
 
-    $jalSyn   = ['jalousie','jalousien','rollo','rollladen','rollläden','raffstore','beschattung'];
-    $lightSyn = ['licht','beleuchtung'];
-    $ventSyn  = ['lüftung','lueftung','ventilation','lüfter','luefter'];
-    $geratSyn = ['geräte','geraete','gerät'];
-    $bewSyn   = ['bewaesserung','bewässerung','garten'];
+    $jalSyn      = ['jalousie','jalousien','rollo','rollladen','rollläden','raffstore','beschattung'];
+    $lightSyn    = ['licht','beleuchtung'];
+    $ventSyn     = ['lüftung','lueftung','ventilation','lüfter','luefter'];
+    $geratSyn    = ['geräte','geraete','gerät'];
+    $bewSyn      = ['bewaesserung','bewässerung','garten'];
+    $settingsSyn = ['einstellung','einstellungen','settings'];
 
     if (in_array($action,$jalSyn,true)   || in_array($device,$jalSyn,true)   || in_array($alles,$jalSyn,true))   return 'jalousie';
     if (in_array($action,$lightSyn,true) || in_array($device,$lightSyn,true) || in_array($alles,$lightSyn,true)) return 'licht';
     if (in_array($action,$ventSyn,true)  || in_array($device,$ventSyn,true)  || in_array($alles,$ventSyn,true) || in_array($room,$ventSyn,true)) return 'lueftung';
     if (in_array($action,$geratSyn,true) || in_array($device,$geratSyn,true) || in_array($alles,$geratSyn,true) || in_array($room,$geratSyn,true)) return 'geraete';
     if (in_array($action,$bewSyn,true)   || in_array($device,$bewSyn,true)   || in_array($alles,$bewSyn,true) || in_array($room,$bewSyn,true)) return 'bewaesserung';
+    if (in_array($action,$settingsSyn,true) || in_array($device,$settingsSyn,true) || in_array($alles,$settingsSyn,true)) return 'einstellungen';
     return null;
 };
 

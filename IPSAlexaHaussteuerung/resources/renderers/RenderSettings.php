@@ -11,6 +11,9 @@ $args2        = $in['args2'] ?? null;
 $CFG = is_array($in['CFG'] ?? null) ? $in['CFG'] : [];
 // IDs: bevorzugt actions_vars, sonst var.ActionsEnabled
 $VAR_IDS = is_array($CFG['actions_vars'] ?? null) ? $CFG['actions_vars'] : (is_array(($CFG['var']['ActionsEnabled'] ?? null)) ? $CFG['var']['ActionsEnabled'] : []);
+if (!isset($VAR_IDS['lueft_stellen']) && isset($VAR_IDS['lueftung_toggle'])) {
+    $VAR_IDS['lueft_stellen'] = $VAR_IDS['lueftung_toggle'];
+}
 
 // optionale Farb-Overrides
 $COL = is_array($CFG['settings_colors'] ?? null) ? $CFG['settings_colors'] : [];
@@ -46,7 +49,13 @@ $fallbackEnabled = static function(array $AE, string $key): bool {
         case 'jalousie_steuern': return (bool)($AE['jalousie']['steuern'] ?? false);
         case 'licht_dimmers':    return (bool)($AE['licht']['dimmers'] ?? false);
         case 'licht_switches':   return (bool)($AE['licht']['switches'] ?? false);
-        case 'lueft_stellen':  return (bool)($AE['lueft']['stellen_aendern'] ?? false);
+        case 'lueft_stellen':
+            $aeLueft    = is_array($AE['lueft'] ?? null) ? $AE['lueft'] : [];
+            $aeLueftung = is_array($AE['lueftung'] ?? null) ? $AE['lueftung'] : [];
+            return (bool)($aeLueft['stellen_aendern']
+                ?? $aeLueft['stellen']
+                ?? $aeLueftung['toggle']
+                ?? ($AE['lueft_stellen'] ?? false));
         case 'geraete_toggle':  return (bool)($AE['geraete']['geraete_toggle'] ?? false);
         case 'bewaesserung_toggle':  return (bool)($AE['bewaesserung']['bewaesserung_toggle'] ?? false);
         default: return false;
