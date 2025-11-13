@@ -91,16 +91,20 @@ IPSAlexaHaussteuerung/
 ├─ form.json
 ├─ resources/
 │  ├─ action_entry.php
-│  └─ helpers/
-│     ├─ CoreHelpers.php
-│     ├─ DeviceMap.php
-│     ├─ DeviceMapWizard.php
-│     ├─ Lexikon.php
-│     ├─ Normalizer.php
-│     ├─ RoomBuilderHelpers.php
-│     ├─ RoomsCatalog.php
-│     ├─ WfcDelayedPageSwitch.php
-│     └─ WebHookIcons.php
+│  ├─ helpers/
+│  │  ├─ CoreHelpers.php
+│  │  ├─ DeviceMap.php
+│  │  ├─ DeviceMapWizard.php
+│  │  ├─ Lexikon.php
+│  │  ├─ Normalizer.php
+│  │  ├─ RoomBuilderHelpers.php
+│  │  ├─ RoomsCatalog.php
+│  │  ├─ WfcDelayedPageSwitch.php
+│  │  └─ WebHookIcons.php
+│  └─ renderers/
+│     ├─ RenderBewaesserung.php
+│     ├─ RenderGeraete.php
+│     └─ RenderSettings.php
 ├─ src/
 │  ├─ Helpers.php
 │  ├─ LogTrait.php
@@ -144,6 +148,21 @@ decken folgende Aufgaben ab:
 - `WebHookIcons.php` – WebHook-Endpunkt, der Dateien aus `user/icons/`
   sicher ausliefert (Token aus der Modul-Instanz übernehmen und als
   `$SECRET` setzen, Hook z. B. `/hook/alexa-icons`).
+
+### 🖥️ Renderer-Skripte
+
+Unter `resources/renderers/` findest du komplette APL-Renderer, die in
+deinem IP-Symcon System laufen und von den PHP-Modul-Routen via
+`IPS_RunScriptEx`/`IPS_RunScriptWaitEx` aufgerufen werden können. Kopiere
+die Dateien nach Symcon, verknüpfe sie mit deinen Render-Skripten und trage
+die jeweiligen Script-IDs in der Modulkonfiguration ein.
+
+- `RenderBewaesserung.php` – vollständiger Bewässerungs-Renderer mit Tabs,
+  Aktionen (Toggle/Set), DS-Logging, Voice-Matching und Enum-Aufbereitung.
+- `RenderGeraete.php` – universeller Geräte-Renderer für beliebige Räume,
+  inklusive Dummy-Rubriken, Sortierung, Profil/Enum-Auflösung und APL-DS Dump.
+- `RenderSettings.php` – Einstellungen/Actions-Renderer zum Umschalten der
+  `ActionsEnabled`-Flags samt Farbschema, Logik für APL-Buttons und Alexa-Infos.
 
 ### ⏱️ Verzögertes WebFront-Umschalten
 
