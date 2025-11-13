@@ -102,9 +102,15 @@ IPSAlexaHaussteuerung/
 │  │  ├─ WfcDelayedPageSwitch.php
 │  │  └─ WebHookIcons.php
 │  └─ renderers/
+│     ├─ LaunchRequest.php
 │     ├─ RenderBewaesserung.php
 │     ├─ RenderGeraete.php
-│     └─ RenderSettings.php
+│     ├─ RenderHeizung.php
+│     ├─ RenderJalousie.php
+│     ├─ RenderLicht.php
+│     ├─ RenderLueftung.php
+│     ├─ RenderSettings.php
+│     └─ Route_allRenderer.php
 ├─ src/
 │  ├─ Helpers.php
 │  ├─ LogTrait.php
@@ -161,8 +167,26 @@ die jeweiligen Script-IDs in der Modulkonfiguration ein.
   Aktionen (Toggle/Set), DS-Logging, Voice-Matching und Enum-Aufbereitung.
 - `RenderGeraete.php` – universeller Geräte-Renderer für beliebige Räume,
   inklusive Dummy-Rubriken, Sortierung, Profil/Enum-Auflösung und APL-DS Dump.
+- `RenderHeizung.php` – temperaturfokussierter Renderer, der ohne Fallbacks nur
+  explizit adressierte Heizkreise erlaubt und bei fehlenden Zielen klare
+  Sprachantworten liefert.
+- `RenderJalousie.php` – Renderer für Jalousien und Szenen inklusive
+  Prozent-/Aktionslogik, Icon-Auflösung über den WebHook und Payload-Limiter
+  für große APL-Datasources.
+- `RenderLicht.php` – Schalt- und Dimmer-Renderer mit ActionsEnabled-Guards,
+  zielgerichteten Visual-Updates, Szenenunterstützung und synchronisiertem
+  Switch/Dimmer-State pro Raum.
+- `RenderLueftung.php` – Lüftungsrenderer ohne Fallbacks, inklusive zentraler
+  und raumbezogener Geräte, Buttons aus dem RoomsCatalog sowie klaren
+  Fehlermeldungen bei nicht erreichbaren Variablen.
 - `RenderSettings.php` – Einstellungen/Actions-Renderer zum Umschalten der
   `ActionsEnabled`-Flags samt Farbschema, Logik für APL-Buttons und Alexa-Infos.
+- `LaunchRequest.php` – Start-/Tiles-Renderer für den LaunchIntent mit Icon-
+  Proxy, Payload-Limiter und Diagnose-Logging, damit der Einstieg in deine
+  Visualisierung stabil bleibt.
+- `Route_allRenderer.php` – zentrales Routing-Skript, das die Payloads an die
+  jeweiligen Render-Skripte dispatcht, Flags setzt, External-Links öffnet und
+  alle Responses konsolidiert an Alexa zurückgibt.
 
 ### ⏱️ Verzögertes WebFront-Umschalten
 
