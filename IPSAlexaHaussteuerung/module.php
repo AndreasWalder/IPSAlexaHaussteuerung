@@ -85,6 +85,29 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->isApplyingChanges = false;
     }
 
+    public function MessageSink($TimeStamp, $SenderID, $Message, $Data)
+    {
+        parent::MessageSink($TimeStamp, $SenderID, $Message, $Data);
+    
+        // ID der DeviceMapJson-Variable
+        $varId = @ $this->GetIDForIdent('deviceMapJson');
+        if ($varId === 0) {
+            return;
+        }
+    
+        // Wenn DeviceMapJson geändert wurde → Property nachziehen
+        if ($Message === VM_UPDATE && $SenderID === $varId) {
+            $newJson    = GetValueString($varId);
+            $currentCfg = $this->ReadPropertyString('DeviceMapJson');
+    
+            if ($newJson !== $currentCfg) {
+                IPS_SetProperty($this->InstanceID, 'DeviceMapJson', $newJson);
+                IPS_ApplyChanges($this->InstanceID);
+            }
+        }
+    }
+
+
     /**
      * Ensure categories & runtime variables exist
      */
