@@ -74,6 +74,18 @@ $handle_wizard = static function(
         $logWizard('DEBUG', $message, $context);
     };
 
+    $createAskResponse = static function (string $text) use ($logWizardError) {
+        try {
+            return AskResponse::CreatePlainText($text);
+        } catch (\Throwable $e) {
+            $logWizardError('Failed to create AskResponse', [
+                'text' => $text,
+                'exception' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    };
+
     $formatCreated = static function (int $ts): string {
         $tz = new \DateTimeZone('Europe/Vienna');
         $dt = (new \DateTimeImmutable('@' . $ts))->setTimezone($tz);
@@ -84,6 +96,24 @@ $handle_wizard = static function(
     $sanitizeSpeechName = static function (string $value): string {
         $value = str_replace(["\r", "\n"], ' ', $value);
         $value = preg_replace('/["“”„]+/u', ' ', $value);
+        $value = preg_replace('/\s{2,}/u', ' ', $value);
+        return trim((string)$value);
+    };
+
+    $normalizePlainText = static function (string $value): string {
+        $map = [
+            "\u{00A0}" => ' ',
+            "\u{2013}" => '-',
+            "\u{2014}" => '-',
+            "\u{2018}" => "'",
+            "\u{2019}" => "'",
+            "\u{201A}" => ',',
+            "\u{201C}" => '"',
+            "\u{201D}" => '"',
+            "\u{201E}" => '"',
+        ];
+        $value = strtr($value, $map);
+        $value = preg_replace('/[\r\n]+/u', ' ', $value);
         $value = preg_replace('/\s{2,}/u', ' ', $value);
         return trim((string)$value);
     };
@@ -177,8 +207,9 @@ $handle_wizard = static function(
 
         $speechName = $sanitizeSpeechName($proposed);
         $questionText = $speechName !== ''
-            ? 'Alles klar – „' . $speechName . '“. Hat dieses Gerät einen Bildschirm?'
+            ? 'Alles klar - "' . $speechName . '". Hat dieses Gerät einen Bildschirm?'
             : 'Alles klar, Name gespeichert. Hat dieses Gerät einen Bildschirm?';
+        $questionText = $normalizePlainText($questionText);
         $logWizardDebug('Prepared screen question text.', [
             'speechName' => $speechName,
             'question' => $questionText,
@@ -203,8 +234,22 @@ $handle_wizard = static function(
 
         SetValueString($pendingStageVar, $STAGE_AWAIT_APL);
         $logWizardDebug('Stage switched to await APL.');
-        return AskResponse::CreatePlainText($questionText)
-            ->SetRepromptPlainText('Bitte antworte mit ja oder nein.');
+
+        $ask = $createAskResponse($questionText);
+        if ($ask === null) {
+            $fallbackQuestion = $normalizePlainText('Hat dieses Gerät einen Bildschirm?');
+            $logWizardDebug('Falling back to generic screen question text.', [
+                'question' => $fallbackQuestion,
+            ]);
+            $ask = $createAskResponse($fallbackQuestion);
+        }
+
+        if ($ask === null) {
+            $resetWizard();
+            return TellResponse::CreatePlainText('Gerät konnte nicht gespeichert werden. Bitte versuche es noch einmal.');
+        }
+
+        return $ask->SetRepromptPlainText('Bitte antworte mit ja oder nein.');
     }
 
     // --- STAGE: APL ja/nein ---
