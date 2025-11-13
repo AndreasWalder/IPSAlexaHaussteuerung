@@ -51,7 +51,21 @@ function Execute($request = null)
         }
 
         // --------- Config laden ---------
-        $CFG     = require IPS_GetScriptFile(48789);
+        $instanceId = IPS_GetParent($_IPS['SELF'] ?? 0);
+        $cfgScriptId = 0;
+        if ($instanceId > 0) {
+            $rawConfig = IPS_GetConfiguration($instanceId);
+            $props = json_decode((string)$rawConfig, true);
+            if (is_array($props)) {
+                $cfgScriptId = (int)($props['ConfigScriptId'] ?? 0);
+            }
+        }
+
+        if ($cfgScriptId <= 0 || !IPS_ScriptExists($cfgScriptId)) {
+            return TellResponse::CreatePlainText('Fehler: Bitte ConfigScriptId in der Instanz setzen (Skript nicht gefunden).');
+        }
+
+        $CFG     = require IPS_GetScriptFile($cfgScriptId);
         $V       = $CFG['var'];
         $S       = $CFG['script'];
         $baseUrl = (string)($V['BaseUrl'] ?? '');
