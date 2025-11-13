@@ -83,6 +83,18 @@
       "value": "{\"route\":\"main_launch\",\"aplSupported\":true}"
     },
     {
+      "type": "ExpansionPanel",
+      "caption": "Device-Map",
+      "items": [
+        {
+          "name": "VarDeviceMapJson",
+          "type": "SelectVariable",
+          "caption": "DeviceMap JSON",
+          "value": 0
+        }
+      ]
+    },
+    {
       "name": "SystemConfigScriptId",
       "type": "SelectScript",
       "caption": "Config ScriptID",

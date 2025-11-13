@@ -43,6 +43,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyString('DiagPayload', '{"route":"main_launch","aplSupported":true}');
 
         // Optional status variables (allow linking existing values instead of auto-created ones)
+        $this->RegisterPropertyInteger('VarDeviceMapJson', 0);
         $this->RegisterPropertyInteger('VarInformation', 0);
         $this->RegisterPropertyInteger('VarMeldungen', 0);
         $this->RegisterPropertyInteger('VarAussenTemp', 0);
@@ -378,6 +379,19 @@ class IPSAlexaHaussteuerung extends IPSModule
             return (int) @IPS_GetObjectIDByIdent($ident, $parent);
         };
 
+        $resolveVar = static function (int $id): int {
+            if ($id > 0 && IPS_VariableExists($id)) {
+                return $id;
+            }
+
+            return 0;
+        };
+
+        $deviceMapJsonVar = $resolveVar($this->ReadPropertyInteger('VarDeviceMapJson'));
+        if ($deviceMapJsonVar <= 0) {
+            $deviceMapJsonVar = $get((int) $helper, 'deviceMapJson');
+        }
+
         return [
             'BaseUrl'       => $this->ReadPropertyString('BaseUrl'),
             'Source'        => $this->ReadPropertyString('Source'),
@@ -400,7 +414,7 @@ class IPSAlexaHaussteuerung extends IPSModule
                 'licht_switches'      => $get((int) $settings, 'lichtSwitches'),
                 'lueftung_toggle'     => $get((int) $settings, 'lueftungToggle'),
                 'wfc_page_params'     => $get((int) $settings, 'wfcPageParams'),
-                'devicemap_json'      => $get((int) $helper, 'deviceMapJson'),
+                'devicemap_json'      => $deviceMapJsonVar,
                 'pending_deviceid'    => $get((int) $helper, 'pendingDeviceId'),
                 'pending_stage'       => $get((int) $helper, 'pendingStage'),
                 'action'              => (int) @IPS_GetObjectIDByIdent('action', $root),
@@ -459,7 +473,6 @@ class IPSAlexaHaussteuerung extends IPSModule
         $ident = 'iahActionEntry';
         $name = 'Action (Haus\\Übersicht/Einstellungen Entry)';
         $id = @IPS_GetObjectIDByIdent($ident, $parent);
-        $created = false;
 
         if (!$id) {
             $byName = @IPS_GetObjectIDByName($name, $parent);
@@ -474,16 +487,13 @@ class IPSAlexaHaussteuerung extends IPSModule
             IPS_SetParent($id, $parent);
             IPS_SetName($id, $name);
             IPS_SetIdent($id, $ident);
-            $created = true;
         }
 
-        if ($created) {
-            $template = __DIR__ . '/resources/action_entry.php';
-            if (is_file($template)) {
-                $content = file_get_contents($template);
-                if ($content !== false) {
-                    IPS_SetScriptContent($id, $content);
-                }
+        $template = __DIR__ . '/resources/action_entry.php';
+        if (is_file($template)) {
+            $content = file_get_contents($template);
+            if ($content !== false) {
+                IPS_SetScriptContent($id, $content);
             }
         }
 
@@ -529,7 +539,6 @@ class IPSAlexaHaussteuerung extends IPSModule
     private function ensureScriptTemplate(int $parent, string $name, string $ident, string $template): int
     {
         $id = @IPS_GetObjectIDByIdent($ident, $parent);
-        $created = false;
 
         if (!$id) {
             $byName = @IPS_GetObjectIDByName($name, $parent);
@@ -544,10 +553,9 @@ class IPSAlexaHaussteuerung extends IPSModule
             IPS_SetParent($id, $parent);
             IPS_SetName($id, $name);
             IPS_SetIdent($id, $ident);
-            $created = true;
         }
 
-        if ($created && is_file($template)) {
+        if (is_file($template)) {
             $content = file_get_contents($template);
             if ($content !== false) {
                 IPS_SetScriptContent($id, $content);
@@ -583,7 +591,6 @@ class IPSAlexaHaussteuerung extends IPSModule
         $name = 'RoomsCatalog';
         $ident = 'roomsCatalog';
         $id = @IPS_GetObjectIDByIdent($ident, $parent);
-        $created = false;
 
         if (!$id) {
             $byName = @IPS_GetObjectIDByName($name, $parent);
@@ -598,16 +605,13 @@ class IPSAlexaHaussteuerung extends IPSModule
             IPS_SetParent($id, $parent);
             IPS_SetName($id, $name);
             IPS_SetIdent($id, $ident);
-            $created = true;
         }
 
-        if ($created) {
-            $template = __DIR__ . '/resources/helpers/RoomsCatalog.php';
-            if (is_file($template)) {
-                $content = file_get_contents($template);
-                if ($content !== false) {
-                    IPS_SetScriptContent($id, $content);
-                }
+        $template = __DIR__ . '/resources/helpers/RoomsCatalog.php';
+        if (is_file($template)) {
+            $content = file_get_contents($template);
+            if ($content !== false) {
+                IPS_SetScriptContent($id, $content);
             }
         }
 
@@ -668,6 +672,11 @@ class IPSAlexaHaussteuerung extends IPSModule
             return 0;
         };
 
+        $deviceMapJsonVar = $resolveVar($this->ReadPropertyInteger('VarDeviceMapJson'));
+        if ($deviceMapJsonVar <= 0) {
+            $deviceMapJsonVar = $getVar($helperCat, 'deviceMapJson', 'DeviceMapJson');
+        }
+
         $var = [
             'BaseUrl'       => $this->ReadPropertyString('BaseUrl'),
             'Source'        => $this->ReadPropertyString('Source'),
@@ -687,7 +696,7 @@ class IPSAlexaHaussteuerung extends IPSModule
                 'geraete_toggle'      => $getVar($settingsCat, 'geraeteToggle', 'geraete_toggle'),
                 'bewaesserung_toggle' => $getVar($settingsCat, 'bewaesserungToggle', 'bewaesserung_toggle'),
             ],
-            'DEVICE_MAP'     => $getVar($helperCat, 'deviceMapJson', 'DeviceMapJson'),
+            'DEVICE_MAP'     => $deviceMapJsonVar,
             'PENDING_DEVICE' => $getVar($helperCat, 'pendingDeviceId', 'PendingDeviceId'),
             'PENDING_STAGE'  => $getVar($helperCat, 'pendingStage', 'PendingStage'),
             'DOMAIN_FLAG'    => $getVar($root, 'domainFlag', 'domain_flag'),
