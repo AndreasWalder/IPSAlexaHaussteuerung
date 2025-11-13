@@ -74,6 +74,48 @@ $handle_wizard = static function(
         $logWizard('DEBUG', $message, $context);
     };
 
+    $reloadDeviceMapHelpers = static function () use (&$DM_HELPERS, $V, $logWizardError, $logWizardDebug): void {
+        $scriptId = (int)($V['DeviceMap'] ?? 0);
+        if ($scriptId <= 0) {
+            $logWizardError('DeviceMap helper script id missing, cannot reload.');
+            return;
+        }
+        try {
+            $logWizardDebug('Reloading DeviceMap helpers.', ['scriptId' => $scriptId]);
+            $helpers = require IPS_GetScriptFile($scriptId);
+            if (is_array($helpers) && $helpers !== []) {
+                $DM_HELPERS = array_merge($DM_HELPERS, $helpers);
+                $logWizardDebug('DeviceMap helpers reloaded.', ['helperKeys' => array_keys($helpers)]);
+            } else {
+                $logWizardError('DeviceMap helper script returned no helpers.', ['scriptId' => $scriptId]);
+            }
+        } catch (\Throwable $e) {
+            $logWizardError('Failed to reload DeviceMap helpers', [
+                'scriptId' => $scriptId,
+                'exception' => $e->getMessage(),
+            ]);
+        }
+    };
+
+    $ensureHelper = static function (string $helper, callable $fallback) use (&$DM_HELPERS, $logWizardError, $logWizardDebug, $reloadDeviceMapHelpers) {
+        $callable = $DM_HELPERS[$helper] ?? null;
+        if (is_callable($callable)) {
+            return $callable;
+        }
+
+        $logWizardError(sprintf('Helper "%s" missing – attempting reload.', $helper), ['helpers' => array_keys((array)$DM_HELPERS)]);
+        $reloadDeviceMapHelpers();
+
+        $callable = $DM_HELPERS[$helper] ?? null;
+        if (is_callable($callable)) {
+            $logWizardDebug(sprintf('Helper "%s" restored after reload.', $helper));
+            return $callable;
+        }
+
+        $logWizardError(sprintf('Helper "%s" still missing – using fallback.', $helper));
+        return $fallback;
+    };
+
     $buildAskResponse = static function (string $text, ?string $reprompt = null) use ($logWizardError) {
         try {
             $ask = AskResponse::CreatePlainText($text);
@@ -258,11 +300,7 @@ $handle_wizard = static function(
         ]);
 
         // Speichern & zur APL-Frage wechseln
-        $updateLocation = $DM_HELPERS['update_location'] ?? null;
-        if (!is_callable($updateLocation)) {
-            $logWizardError('Helper "update_location" fehlt – nutze Fallback.', ['helpers' => array_keys((array)$DM_HELPERS)]);
-            $updateLocation = $fallbackUpdateLocation;
-        }
+        $updateLocation = $ensureHelper('update_location', $fallbackUpdateLocation);
 
         try {
             $logWizardDebug('Calling update_location.');
@@ -316,11 +354,7 @@ $handle_wizard = static function(
         }
 
         $apl = $isYes;
-        $updateApl = $DM_HELPERS['update_apl'] ?? null;
-        if (!is_callable($updateApl)) {
-            $logWizardError('Helper "update_apl" fehlt – nutze Fallback.', ['helpers' => array_keys((array)$DM_HELPERS)]);
-            $updateApl = $fallbackUpdateApl;
-        }
+        $updateApl = $ensureHelper('update_apl', $fallbackUpdateApl);
 
         try {
             $logWizardDebug('Calling update_apl.', ['apl' => $apl]);
