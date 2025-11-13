@@ -96,9 +96,10 @@ IPSAlexaHaussteuerung/
 │     ├─ DeviceMap.php
 │     ├─ DeviceMapWizard.php
 │     ├─ Lexikon.php
+│     ├─ Normalizer.php
 │     ├─ RoomBuilderHelpers.php
 │     ├─ RoomsCatalog.php
-│     ├─ Normalizer.php
+│     ├─ WfcDelayedPageSwitch.php
 │     └─ WebHookIcons.php
 ├─ src/
 │  ├─ Helpers.php
@@ -137,9 +138,22 @@ decken folgende Aufgaben ab:
 - `RoomsCatalog.php` – kompletter Raum-/Domain-Katalog mit allen IDs,
   Synonymen und Tabs. Diesen Inhalt kannst du direkt in ein IP-Symcon-Skript
   kopieren und dort bearbeiten, um Räume komfortabel zu pflegen.
+- `WfcDelayedPageSwitch.php` – nimmt per `IPS_RunScriptEx` eine Zielseite und
+  WebFront-ID entgegen, speichert sie gepuffert und schaltet nach 10 Sekunden
+  automatisch über `WFC_SwitchPage` um (praktisch für "nach Erfolg X anzeigen").
 - `WebHookIcons.php` – WebHook-Endpunkt, der Dateien aus `user/icons/`
   sicher ausliefert (Token aus der Modul-Instanz übernehmen und als
   `$SECRET` setzen, Hook z. B. `/hook/alexa-icons`).
+
+### ⏱️ Verzögertes WebFront-Umschalten
+
+1. Erstelle in IP-Symcon ein Skript und kopiere den Inhalt von
+   `resources/helpers/WfcDelayedPageSwitch.php` hinein.
+2. Starte das Skript bei Bedarf mit `IPS_RunScriptEx($id, ['wfc' => <WFC-ID>, 'page' => 'page.XYZ']);`
+   zum Beispiel nach einem erfolgreichen Alexa-Kommando.
+3. Das Skript puffert die Parameter zehn Sekunden lang und ruft danach
+   automatisch `WFC_SwitchPage`. So kann der Client z. B. nach einer Szene
+   automatisch zur Visualisierung springen.
 
 ### 🌐 WebHook für Icon-Auslieferung
 
