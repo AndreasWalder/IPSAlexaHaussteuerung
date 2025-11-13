@@ -32,26 +32,9 @@
     },
     {
       "name": "WfcId",
-      "type": "NumberSpinner",
+      "type": "SelectInstance",
       "caption": "WFC ID",
-      "minimum": 0,
-      "maximum": 999999,
-      "value": 45315
-    },
-    {
-      "name": "DelayScript",
-      "type": "NumberSpinner",
-      "caption": "DelayScript ScriptID",
-      "minimum": 0,
-      "maximum": 999999,
-      "value": 55368
-    },
-    {
-      "name": "ConfigScriptId",
-      "type": "NumberSpinner",
-      "caption": "Config ScriptID",
-      "minimum": 0,
-      "maximum": 999999,
+      "moduleID": "{3565B1B6-8F7B-4311-A4B6-1BF1D868F39F}",
       "value": 0
     },
     {

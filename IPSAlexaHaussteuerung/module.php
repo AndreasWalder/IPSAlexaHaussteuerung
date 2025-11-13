@@ -30,8 +30,6 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyString('Passwort', '');
         $this->RegisterPropertyString('StartPage', '#45315');
         $this->RegisterPropertyInteger('WfcId', 45315);
-        $this->RegisterPropertyInteger('DelayScript', 0);
-        $this->RegisterPropertyInteger('ConfigScriptId', 0);
         $this->RegisterPropertyString('LOG_LEVEL', 'debug');
 
         // Pages
@@ -48,10 +46,7 @@ class IPSAlexaHaussteuerung extends IPSModule
     {
         parent::ApplyChanges();
 
-        if ($this->EnsureHelperScripts()) {
-            return;
-        }
-
+        $this->EnsureHelperScripts();
         $this->EnsureInfrastructure();
         $this->EnsureActionEntryScript();
     }
@@ -258,7 +253,10 @@ class IPSAlexaHaussteuerung extends IPSModule
             ? $this->ReadPropertyString('EnergiePageId')
             : $this->ReadPropertyString('KameraPageId');
         $params = ['page' => $page, 'wfc' => $V['WfcId']];
-        @IPS_RunScriptEx($V['DelayScript'], $params);
+        $delayScript = $this->getDelayScriptId();
+        if ($delayScript > 0) {
+            @IPS_RunScriptEx($delayScript, $params);
+        }
     }
 
     /**
@@ -327,7 +325,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             'Passwort'      => $this->ReadPropertyString('Passwort'),
             'StartPage'     => $this->ReadPropertyString('StartPage'),
             'WfcId'         => $this->ReadPropertyInteger('WfcId'),
-            'DelayScript'   => $this->ReadPropertyInteger('DelayScript'),
+            'DelayScript'   => $this->getDelayScriptId(),
             'EnergiePageId' => $this->ReadPropertyString('EnergiePageId'),
             'KameraPageId'  => $this->ReadPropertyString('KameraPageId'),
             // IDs der erzeugten/verknüpften Variablen
@@ -495,28 +493,13 @@ class IPSAlexaHaussteuerung extends IPSModule
     /**
      * Ensure helper scripts that are bundled with the module exist and keep properties in sync
      */
-    private function EnsureHelperScripts(): bool
+    private function EnsureHelperScripts(): void
     {
-        $updated = false;
         $delayScriptPath = __DIR__ . '/resources/helpers/WfcDelayedPageSwitch.php';
-        $delayScriptId = $this->ensureTemplateScript($this->InstanceID, 'WfcDelayedPageSwitch', 'iahWfcDelayedPageSwitch', $delayScriptPath);
-        if ($delayScriptId > 0) {
-            $updated = $this->ensureDelayScriptProperty((int) $delayScriptId);
-        }
+        $this->ensureTemplateScript($this->InstanceID, 'WfcDelayedPageSwitch', 'iahWfcDelayedPageSwitch', $delayScriptPath);
 
-        return $updated;
-    }
-
-    private function ensureDelayScriptProperty(int $scriptId): bool
-    {
-        $current = $this->ReadPropertyInteger('DelayScript');
-        if ($current !== $scriptId) {
-            IPS_SetProperty($this->InstanceID, 'DelayScript', $scriptId);
-            IPS_ApplyChanges($this->InstanceID);
-            return true;
-        }
-
-        return false;
+        $configTemplate = __DIR__ . '/resources/helpers/SystemConfiguration.php';
+        $this->ensureTemplateScript($this->InstanceID, 'SystemConfiguration', 'iahSystemConfiguration', $configTemplate);
     }
 
     private function ensureTemplateScript(int $parent, string $name, string $ident, string $templatePath): int
@@ -546,6 +529,11 @@ class IPSAlexaHaussteuerung extends IPSModule
         }
 
         return (int) $id;
+    }
+
+    private function getDelayScriptId(): int
+    {
+        return $this->getObjectIDByIdentOrName($this->InstanceID, 'iahWfcDelayedPageSwitch', 'WfcDelayedPageSwitch');
     }
 
     /**
