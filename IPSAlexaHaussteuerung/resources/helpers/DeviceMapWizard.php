@@ -10,11 +10,6 @@
  * zurückgibt oder `null`, wenn kein Wizard aktiv ist bzw. nichts zu tun ist.
  */
 
-declare(strict_types=1);
-
-use IPSAlexaHaussteuerung\AskResponse;
-use IPSAlexaHaussteuerung\TellResponse;
-
 /**
  * Führt den Wizard-Flow aus und gibt ggf. eine Response zurück.
  */
