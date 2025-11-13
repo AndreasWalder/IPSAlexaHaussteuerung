@@ -31,6 +31,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyString('StartPage', '#45315');
         $this->RegisterPropertyInteger('WfcId', 45315);
         $this->RegisterPropertyInteger('DelayScript', 55368);
+        $this->RegisterPropertyInteger('ConfigScriptId', 0);
         $this->RegisterPropertyString('LOG_LEVEL', 'debug');
 
         // Pages
@@ -59,6 +60,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         $root = $this->InstanceID;
         $catSettings = $this->ensureCategory($root, 'Einstellungen', 'iahSettings');
         $catHelper = $this->ensureCategory($root, 'Alexa new devices helper', 'iahHelper');
+
+        $this->ensureRoomsCatalogTemplate($catSettings);
 
         // Einstellungen toggles (Defaults wie im Original-Flow: aktiv = true)
         $this->ensureVar($catSettings, 'bewaesserung_toggle', 'bewaesserungToggle', VARIABLETYPE_BOOLEAN, '', true);
@@ -312,6 +315,9 @@ class IPSAlexaHaussteuerung extends IPSModule
                 'last_var_value'      => (int) @IPS_GetObjectIDByIdent('lastVarValue', $root),
                 'log_recent'          => (int) @IPS_GetObjectIDByIdent('logRecent', $root),
             ],
+            'scripts'       => [
+                'rooms_catalog' => $this->getObjectIDByIdentOrName((int) $settings, 'roomsCatalog', 'RoomsCatalog'),
+            ],
         ];
     }
 
@@ -407,6 +413,42 @@ class IPSAlexaHaussteuerung extends IPSModule
         }
 
         return $id;
+    }
+
+    private function ensureRoomsCatalogTemplate(int $parent): int
+    {
+        $name = 'RoomsCatalog';
+        $ident = 'roomsCatalog';
+        $id = @IPS_GetObjectIDByIdent($ident, $parent);
+        $created = false;
+
+        if (!$id) {
+            $byName = @IPS_GetObjectIDByName($name, $parent);
+            if ($byName) {
+                $id = $byName;
+                IPS_SetIdent($id, $ident);
+            }
+        }
+
+        if (!$id) {
+            $id = IPS_CreateScript(0);
+            IPS_SetParent($id, $parent);
+            IPS_SetName($id, $name);
+            IPS_SetIdent($id, $ident);
+            $created = true;
+        }
+
+        if ($created) {
+            $template = __DIR__ . '/resources/helpers/RoomsCatalog.php';
+            if (is_file($template)) {
+                $content = file_get_contents($template);
+                if ($content !== false) {
+                    IPS_SetScriptContent($id, $content);
+                }
+            }
+        }
+
+        return (int) $id;
     }
 
     /**
