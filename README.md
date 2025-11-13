@@ -96,6 +96,8 @@ IPSAlexaHaussteuerung/
 │     ├─ DeviceMap.php
 │     ├─ DeviceMapWizard.php
 │     ├─ Lexikon.php
+│     ├─ RoomBuilderHelpers.php
+│     ├─ RoomsCatalog.php
 │     └─ Normalizer.php
 ├─ src/
 │  ├─ Helpers.php
@@ -120,7 +122,8 @@ Im Ordner `resources/helpers/` findest du Vorlagen für alle externen Skripte,
 die das Action-Script erwartet. Kopiere die Inhalte in eigene IP-Symcon
 Skripte und hinterlege deren IDs in deiner Konfiguration (`var.CoreHelpers`,
 `var.DeviceMap`, `var.DeviceMapWizard`, `var.Lexikon`, `script.NORMALIZER`,
-usw.). Die enthaltenen Dateien decken folgende Aufgaben ab:
+`var.RoomBuilderHelpers`, `var.RoomsCatalog`, usw.). Die enthaltenen Dateien
+decken folgende Aufgaben ab:
 
 - `CoreHelpers.php` – generische Utilities wie Slot-Handling, APL-Parsing,
   Tabs-Matching oder Nummern-Extraktion.
@@ -128,6 +131,11 @@ usw.). Die enthaltenen Dateien decken folgende Aufgaben ab:
 - `DeviceMapWizard.php` – kompletter Dialog-Flow für den Geräte-Wizard.
 - `Lexikon.php` – Wörterbuch & Regex-Patterns für Begriffe/Zahlen.
 - `Normalizer.php` – Normalisierungsfunktionen für Tokens, Räume & Actions.
+- `RoomBuilderHelpers.php` – baut aus dem RoomsCatalog einen aggregierten
+  Status je Raum (z. B. Heizkreise) für Renderer/Widgets.
+- `RoomsCatalog.php` – kompletter Raum-/Domain-Katalog mit allen IDs,
+  Synonymen und Tabs. Diesen Inhalt kannst du direkt in ein IP-Symcon-Skript
+  kopieren und dort bearbeiten, um Räume komfortabel zu pflegen.
 
 ---
 
