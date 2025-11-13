@@ -52,12 +52,6 @@
       "value": "debug"
     },
     {
-      "name": "ConfigScriptId",
-      "type": "SelectScript",
-      "caption": "Config ScriptID (SystemConfiguration)",
-      "value": 0
-    },
-    {
       "type": "ExpansionPanel",
       "caption": "Page IDs",
       "items": [
