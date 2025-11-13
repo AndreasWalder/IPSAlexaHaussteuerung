@@ -18,6 +18,8 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
 - **Automatische Variablenanlage & Standardwerte**
   Erstellt Kategorien *Einstellungen* und *Alexa new devices helper* sowie Runtime-Variablen (`action`, `device`, `room`, `skillActive`, …)
   – inkl. sinnvoller Startwerte (Toggles = true, `skillActive = false`).
+- **RoomsCatalog-Template inklusive**
+  Beim ersten `ApplyChanges()` erzeugt das Modul automatisch ein Skript **„RoomsCatalog“** in der Kategorie *Einstellungen* und befüllt es mit dem Beispiel aus `resources/helpers/RoomsCatalog.php`. Dieses Skript kannst du direkt bearbeiten und dessen ID z. B. im `SystemConfiguration`-Skript verwenden.
 - **Konfig-Skript frei wählbar**
   Hinterlege dein bestehendes `SystemConfiguration`-Skript direkt in der Instanz (*Config ScriptID*). Das Action-Entry-Skript lädt diese ID automatisch – keine hart codierte Script-ID `48789` mehr notwendig.
 - **V/S-Mapping**  
@@ -138,6 +140,8 @@ Skripte und hinterlege deren IDs in deiner Konfiguration (`var.CoreHelpers`,
 `var.DeviceMap`, `var.DeviceMapWizard`, `var.Lexikon`, `script.NORMALIZER`,
 `var.RoomBuilderHelpers`, `var.RoomsCatalog`, usw.). Die enthaltenen Dateien
 decken folgende Aufgaben ab:
+
+> 🆕 **RoomsCatalog-Automatismus:** Das Modul legt beim ersten `ApplyChanges()` bereits ein Skript **„RoomsCatalog“** unterhalb der Kategorie *Einstellungen* an und befüllt es mit dem Standard-Template. Du kannst den Inhalt dort direkt anpassen – die Script-ID lässt sich anschließend im `SystemConfiguration`-Skript verwenden.
 
 > 💡 **Hinweis:** Das Modul erwartet, dass du die ID deines zentralen `SystemConfiguration`-Skripts im Feld **Config ScriptID** einträgst. Dieses Skript kann z. B. alle oben genannten Helper-IDs bündeln und wird beim Ausführen von `Action (Haus\Übersicht/Einstellungen Entry)` automatisch geladen.
 
