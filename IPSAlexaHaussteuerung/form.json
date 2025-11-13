@@ -81,6 +81,48 @@
       "caption": "Diagnose: Custom Payload (JSON)",
       "multiline": true,
       "value": "{\"route\":\"main_launch\",\"aplSupported\":true}"
+    },
+    {
+      "type": "ExpansionPanel",
+      "caption": "Status-Variablen",
+      "items": [
+        {
+          "name": "VarInformation",
+          "type": "SelectVariable",
+          "caption": "Information",
+          "value": 0
+        },
+        {
+          "name": "VarMeldungen",
+          "type": "SelectVariable",
+          "caption": "Meldungen",
+          "value": 0
+        },
+        {
+          "name": "VarAussenTemp",
+          "type": "SelectVariable",
+          "caption": "Außentemperatur",
+          "value": 0
+        },
+        {
+          "name": "VarHeizraumIst",
+          "type": "SelectVariable",
+          "caption": "Heizraum Ist",
+          "value": 0
+        },
+        {
+          "name": "VarOgGangIst",
+          "type": "SelectVariable",
+          "caption": "OG Gang Ist",
+          "value": 0
+        },
+        {
+          "name": "VarTechnikIst",
+          "type": "SelectVariable",
+          "caption": "Technik Ist",
+          "value": 0
+        }
+      ]
     }
   ],
   "actions": []
