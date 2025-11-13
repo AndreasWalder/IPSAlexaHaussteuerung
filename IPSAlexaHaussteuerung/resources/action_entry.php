@@ -52,6 +52,26 @@ function iah_get_instance_properties(int $instanceId): array
     return is_array($props) ? $props : [];
 }
 
+function iah_build_logger(array $props): callable
+{
+    $rank = ['error' => 0, 'warn' => 1, 'info' => 2, 'debug' => 3];
+    $level = strtolower((string) ($props['LOG_LEVEL'] ?? 'info'));
+
+    return static function (string $lvl, string $msg, array $ctx = []) use ($rank, $level): void {
+        $target = $rank[$level] ?? 2;
+        $current = $rank[$lvl] ?? 2;
+        if ($current > $target) {
+            return;
+        }
+
+        if (!empty($ctx)) {
+            $msg .= ' ' . json_encode($ctx, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+
+        IPS_LogMessage('Alexa', $msg);
+    };
+}
+
 function iah_get_child_object(int $parent, string $ident, string $name): int
 {
     if ($parent <= 0) {
@@ -97,8 +117,14 @@ function iah_find_script_by_name(int $instanceId, string $name): int
 function iah_build_system_configuration(int $instanceId): array
 {
     $props = iah_get_instance_properties($instanceId);
+    $logCfg = iah_build_logger($props);
     $settings = iah_get_child_object($instanceId, 'iahSettings', 'Einstellungen');
     $helper = iah_get_child_object($instanceId, 'iahHelper', 'Alexa new devices helper');
+    $logCfg('debug', 'CFG.build.start', [
+        'instanceId' => $instanceId,
+        'settings' => $settings,
+        'helper' => $helper,
+    ]);
 
     $var = [
         'BaseUrl'       => (string) ($props['BaseUrl'] ?? ''),
