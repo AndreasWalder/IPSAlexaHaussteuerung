@@ -66,6 +66,46 @@ $handle_wizard = static function(
         IPS_LogMessage('Alexa', 'DeviceMapWizard: ' . $message);
     };
 
+    $formatCreated = static function (int $ts): string {
+        $tz = new \DateTimeZone('Europe/Vienna');
+        $dt = (new \DateTimeImmutable('@' . $ts))->setTimezone($tz);
+        $wd = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
+        return $wd[(int)$dt->format('w')] . ', ' . $dt->format('d.m.Y, H:i:s');
+    };
+
+    $fallbackUpdateEntry = static function (int $varId, string $deviceId, callable $mutator) use ($formatCreated): void {
+        $raw = (string)GetValueString($varId);
+        $map = json_decode($raw !== '' ? $raw : '[]', true);
+        if (!is_array($map)) {
+            $map = [];
+        }
+        if (!isset($map[$deviceId]) || !is_array($map[$deviceId])) {
+            $map[$deviceId] = [
+                'location' => '',
+                'apl'      => false,
+                'isNew'    => true,
+                'created'  => $formatCreated(time()),
+            ];
+        }
+        $entry = $map[$deviceId];
+        $mutator($entry);
+        $entry['isNew'] = false;
+        $map[$deviceId] = $entry;
+        SetValueString($varId, json_encode($map, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    };
+
+    $fallbackUpdateLocation = static function (int $varId, string $deviceId, string $location) use ($fallbackUpdateEntry): void {
+        $fallbackUpdateEntry($varId, $deviceId, static function (array &$entry) use ($location): void {
+            $entry['location'] = $location;
+        });
+    };
+
+    $fallbackUpdateApl = static function (int $varId, string $deviceId, bool $apl) use ($fallbackUpdateEntry): void {
+        $fallbackUpdateEntry($varId, $deviceId, static function (array &$entry) use ($apl): void {
+            $entry['apl'] = $apl;
+        });
+    };
+
     if ($pendingStageVar <= 0 || $pendingDeviceVar <= 0 || $deviceMapVar <= 0) {
         $logWizardError('Missing helper ids', [
             'pendingStageVar' => $pendingStageVar,
@@ -102,8 +142,14 @@ $handle_wizard = static function(
         }
 
         // Speichern & zur APL-Frage wechseln
+        $updateLocation = $DM_HELPERS['update_location'] ?? null;
+        if (!is_callable($updateLocation)) {
+            $logWizardError('Helper "update_location" fehlt – nutze Fallback.', ['helpers' => array_keys((array)$DM_HELPERS)]);
+            $updateLocation = $fallbackUpdateLocation;
+        }
+
         try {
-            $DM_HELPERS['update_location']($deviceMapVar, $pendingDevId, $proposed);
+            $updateLocation($deviceMapVar, $pendingDevId, $proposed);
         } catch (\Throwable $e) {
             $logWizardError('update_location failed', ['exception' => $e->getMessage()]);
             $resetWizard();
@@ -128,8 +174,14 @@ $handle_wizard = static function(
         }
 
         $apl = $isYes;
+        $updateApl = $DM_HELPERS['update_apl'] ?? null;
+        if (!is_callable($updateApl)) {
+            $logWizardError('Helper "update_apl" fehlt – nutze Fallback.', ['helpers' => array_keys((array)$DM_HELPERS)]);
+            $updateApl = $fallbackUpdateApl;
+        }
+
         try {
-            $DM_HELPERS['update_apl']($deviceMapVar, $pendingDevId, $apl);
+            $updateApl($deviceMapVar, $pendingDevId, $apl);
         } catch (\Throwable $e) {
             $logWizardError('update_apl failed', ['exception' => $e->getMessage()]);
             $resetWizard();
