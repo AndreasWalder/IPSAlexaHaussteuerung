@@ -231,11 +231,7 @@ function iah_build_system_configuration_internal(int $instanceId, array $props, 
             'geraete_toggle'    => iah_get_child_object($settings, 'geraeteToggle', 'geraete_toggle'),
             'bewaesserung_toggle' => iah_get_child_object($settings, 'bewaesserungToggle', 'bewaesserung_toggle'),
         ],
-        'DEVICE_MAP'     => iah_resolve_configured_var(
-            $props,
-            'VarDeviceMapJson',
-            iah_get_child_object($helper, 'deviceMapJson', 'DeviceMapJson')
-        ),
+        'DEVICE_MAP'     => iah_get_child_object($helper, 'deviceMapJson', 'DeviceMapJson'),
         'PENDING_DEVICE' => iah_get_child_object($helper, 'pendingDeviceId', 'PendingDeviceId'),
         'PENDING_STAGE'  => iah_get_child_object($helper, 'pendingStage', 'PendingStage'),
         'DOMAIN_FLAG'    => iah_get_child_object($instanceId, 'domainFlag', 'domain_flag'),

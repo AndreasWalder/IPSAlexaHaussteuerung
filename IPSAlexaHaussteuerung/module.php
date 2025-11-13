@@ -41,9 +41,9 @@ class IPSAlexaHaussteuerung extends IPSModule
 
         // Diagnostics payload editor
         $this->RegisterPropertyString('DiagPayload', '{"route":"main_launch","aplSupported":true}');
+        $this->RegisterPropertyString('DeviceMapJson', '');
 
         // Optional status variables (allow linking existing values instead of auto-created ones)
-        $this->RegisterPropertyInteger('VarDeviceMapJson', 0);
         $this->RegisterPropertyInteger('VarInformation', 0);
         $this->RegisterPropertyInteger('VarMeldungen', 0);
         $this->RegisterPropertyInteger('VarAussenTemp', 0);
@@ -52,6 +52,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyInteger('VarTechnikIst', 0);
 
         // WebHook (optional): expose /hook/ipshalexa for Skill endpoint
+
+        $this->RegisterAttributeString('DeviceMapJsonMirror', '');
     }
 
     public function ApplyChanges()
@@ -59,6 +61,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         parent::ApplyChanges();
 
         $this->EnsureInfrastructure();
+        $this->syncDeviceMapVarFromProperty();
     }
 
     /**
@@ -216,6 +219,8 @@ class IPSAlexaHaussteuerung extends IPSModule
 
         if (!isset($form['elements']) || !is_array($form['elements'])) {
             $form['elements'] = [];
+        } else {
+            $form['elements'] = $this->injectDeviceMapValue($form['elements'], $this->readDeviceMapJsonFromVariable());
         }
         if (!isset($form['actions']) || !is_array($form['actions'])) {
             $form['actions'] = [];
@@ -387,10 +392,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             return 0;
         };
 
-        $deviceMapJsonVar = $resolveVar($this->ReadPropertyInteger('VarDeviceMapJson'));
-        if ($deviceMapJsonVar <= 0) {
-            $deviceMapJsonVar = $get((int) $helper, 'deviceMapJson');
-        }
+        $deviceMapJsonVar = $get((int) $helper, 'deviceMapJson');
 
         return [
             'BaseUrl'       => $this->ReadPropertyString('BaseUrl'),
@@ -448,6 +450,69 @@ class IPSAlexaHaussteuerung extends IPSModule
             'RENDER_GERAETE'    => $this->getRendererScriptId('iahRenderGeraete', 'GeraeteRenderer'),
             'RENDER_BEWAESSERUNG' => $this->getRendererScriptId('iahRenderBewaesserung', 'BewaesserungRenderer'),
         ];
+    }
+
+    private function injectDeviceMapValue(array $elements, string $value): array
+    {
+        foreach ($elements as &$element) {
+            if (isset($element['name']) && $element['name'] === 'DeviceMapJson') {
+                $element['value'] = $value;
+            }
+            if (isset($element['items']) && is_array($element['items'])) {
+                $element['items'] = $this->injectDeviceMapValue($element['items'], $value);
+            }
+        }
+
+        return $elements;
+    }
+
+    private function readDeviceMapJsonFromVariable(): string
+    {
+        $varId = $this->getDeviceMapVariableId();
+        if ($varId > 0 && IPS_VariableExists($varId)) {
+            return (string) GetValueString($varId);
+        }
+
+        return $this->ReadPropertyString('DeviceMapJson');
+    }
+
+    private function getDeviceMapVariableId(): int
+    {
+        $helper = $this->getObjectIDByIdentOrName($this->InstanceID, 'iahHelper', 'Alexa new devices helper');
+        if ($helper > 0) {
+            $varId = @IPS_GetObjectIDByIdent('deviceMapJson', (int) $helper);
+            if ($varId) {
+                return (int) $varId;
+            }
+        }
+
+        return 0;
+    }
+
+    private function syncDeviceMapVarFromProperty(): void
+    {
+        $varId = $this->getDeviceMapVariableId();
+        if ($varId <= 0 || !IPS_VariableExists($varId)) {
+            return;
+        }
+
+        $propertyValue = $this->ReadPropertyString('DeviceMapJson');
+        $mirror = $this->ReadAttributeString('DeviceMapJsonMirror');
+
+        if ($mirror === '') {
+            $this->WriteAttributeString('DeviceMapJsonMirror', $propertyValue);
+        }
+
+        if ($propertyValue !== $mirror) {
+            SetValueString($varId, $propertyValue);
+            $this->WriteAttributeString('DeviceMapJsonMirror', $propertyValue);
+            return;
+        }
+
+        if ($mirror === '' && $propertyValue === '') {
+            $current = (string) GetValueString($varId);
+            $this->WriteAttributeString('DeviceMapJsonMirror', $current);
+        }
     }
 
     private function getActionScriptId(): int
@@ -672,11 +737,6 @@ class IPSAlexaHaussteuerung extends IPSModule
             return 0;
         };
 
-        $deviceMapJsonVar = $resolveVar($this->ReadPropertyInteger('VarDeviceMapJson'));
-        if ($deviceMapJsonVar <= 0) {
-            $deviceMapJsonVar = $getVar($helperCat, 'deviceMapJson', 'DeviceMapJson');
-        }
-
         $var = [
             'BaseUrl'       => $this->ReadPropertyString('BaseUrl'),
             'Source'        => $this->ReadPropertyString('Source'),
@@ -696,7 +756,7 @@ class IPSAlexaHaussteuerung extends IPSModule
                 'geraete_toggle'      => $getVar($settingsCat, 'geraeteToggle', 'geraete_toggle'),
                 'bewaesserung_toggle' => $getVar($settingsCat, 'bewaesserungToggle', 'bewaesserung_toggle'),
             ],
-            'DEVICE_MAP'     => $deviceMapJsonVar,
+            'DEVICE_MAP'     => $getVar($helperCat, 'deviceMapJson', 'DeviceMapJson'),
             'PENDING_DEVICE' => $getVar($helperCat, 'pendingDeviceId', 'PendingDeviceId'),
             'PENDING_STAGE'  => $getVar($helperCat, 'pendingStage', 'PendingStage'),
             'DOMAIN_FLAG'    => $getVar($root, 'domainFlag', 'domain_flag'),

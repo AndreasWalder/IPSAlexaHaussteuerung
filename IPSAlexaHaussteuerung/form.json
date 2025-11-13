@@ -87,10 +87,11 @@
       "caption": "Device-Map",
       "items": [
         {
-          "name": "VarDeviceMapJson",
-          "type": "SelectVariable",
+          "name": "DeviceMapJson",
+          "type": "ValidationTextBox",
           "caption": "DeviceMap JSON",
-          "value": 0
+          "multiline": true,
+          "value": ""
         }
       ]
     },
