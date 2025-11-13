@@ -18,6 +18,9 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
 - **Automatische Variablenanlage & Standardwerte**
   Erstellt Kategorien *Einstellungen* und *Alexa new devices helper* sowie Runtime-Variablen (`action`, `device`, `room`, `skillActive`, …)
   – inkl. sinnvoller Startwerte (Toggles = true, `skillActive = false`).
+- **Auto-Deployment aller Skripte**
+  Action-, Route- und Renderer-Skripte inklusive `SystemConfiguration` werden beim `ApplyChanges()` erzeugt oder aktualisiert.
+  Die erzeugte `SystemConfiguration` enthält alle relevanten IDs und wird automatisch mit dem Action-Skript verknüpft.
 - **RoomsCatalog-Template inklusive**
   Beim ersten `ApplyChanges()` erzeugt das Modul automatisch ein Skript **„RoomsCatalog“** in der Kategorie *Einstellungen* und befüllt es mit dem Beispiel aus `resources/helpers/RoomsCatalog.php`. Dieses Skript kannst du direkt bearbeiten und dessen ID z. B. im `SystemConfiguration`-Skript verwenden.
 - **Konfig-Skript frei wählbar**
@@ -144,7 +147,7 @@ decken folgende Aufgaben ab:
 
 > 🆕 **RoomsCatalog-Automatismus:** Das Modul legt beim ersten `ApplyChanges()` bereits ein Skript **„RoomsCatalog“** unterhalb der Kategorie *Einstellungen* an und befüllt es mit dem Standard-Template. Du kannst den Inhalt dort direkt anpassen – die Script-ID lässt sich anschließend im `SystemConfiguration`-Skript verwenden.
 
-> 💡 **Hinweis:** Das Modul erwartet, dass du die ID deines zentralen `SystemConfiguration`-Skripts im Feld **Config ScriptID** einträgst. Dieses Skript kann z. B. alle oben genannten Helper-IDs bündeln und wird beim Ausführen von `Action (Haus\Übersicht/Einstellungen Entry)` automatisch geladen.
+- > 💡 **Hinweis:** Standardmäßig erzeugt das Modul selbst ein `SystemConfiguration`-Skript, pflegt dort alle IDs und hinterlegt dieses automatisch im Action-Entry. Wenn du eine eigene Variante nutzen willst, kannst du sie im Feld **Config ScriptID** auswählen.
 
 - `CoreHelpers.php` – generische Utilities wie Slot-Handling, APL-Parsing,
   Tabs-Matching oder Nummern-Extraktion.

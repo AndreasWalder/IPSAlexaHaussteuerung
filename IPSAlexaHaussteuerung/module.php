@@ -31,6 +31,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyString('StartPage', '#45315');
         $this->RegisterPropertyInteger('WfcId', 45315);
         $this->RegisterPropertyString('LOG_LEVEL', 'debug');
+        $this->RegisterPropertyInteger('SystemConfigScriptId', 0);
         $this->RegisterAttributeString('DelayedPageSwitchPayload', '');
         $this->RegisterTimer('DelayedPageSwitch', 0, 'IAH_HandleDelayedPageSwitch($_IPS["TARGET"]);');
 
@@ -71,6 +72,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->ensureRoomsCatalogTemplate($catSettings);
         $this->ensureActionScript($root);
         $this->ensureHelperScripts($catHelper);
+        $this->ensureRendererScripts($root);
 
         // Einstellungen toggles (Defaults wie im Original-Flow: aktiv = true)
         $this->ensureVar($catSettings, 'bewaesserung_toggle', 'bewaesserungToggle', VARIABLETYPE_BOOLEAN, '', true);
@@ -110,6 +112,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->ensureVar($root, 'lastVariableValue', 'lastVarValue', VARIABLETYPE_STRING, '', '');
         $this->ensureVar($root, 'log_recent', 'logRecent', VARIABLETYPE_STRING, '', '');
         $this->ensureVar($root, 'domain_flag', 'domainFlag', VARIABLETYPE_STRING, '', '');
+
+        $this->ensureSystemConfigurationScript($catSettings, $catHelper);
         // Hinweis: Die Statusvariablen (Information/Meldungen/Außentemperatur) werden nicht mehr automatisch
         // erstellt. Sie müssen über die Instanzkonfiguration mit bestehenden Variablen verknüpft werden.
     }
@@ -420,15 +424,15 @@ class IPSAlexaHaussteuerung extends IPSModule
     {
         return [
             'ACTION'            => $this->getActionScriptId(),
-            'ROUTE_ALL'         => $this->findScriptIdByName('Route_allRenderer'),
-            'RENDER_MAIN'       => $this->findScriptIdByName('LaunchRequest'),
-            'RENDER_SETTINGS'   => $this->findScriptIdByName('EinstellungsRender'),
-            'RENDER_HEIZUNG'    => $this->findScriptIdByName('HeizungRenderer'),
-            'RENDER_JALOUSIE'   => $this->findScriptIdByName('JalousieRenderer'),
-            'RENDER_LICHT'      => $this->findScriptIdByName('LichtRenderer'),
-            'RENDER_LUEFTUNG'   => $this->findScriptIdByName('LüftungRenderer'),
-            'RENDER_GERAETE'    => $this->findScriptIdByName('GeraeteRenderer'),
-            'RENDER_BEWAESSERUNG' => $this->findScriptIdByName('BewaesserungRenderer'),
+            'ROUTE_ALL'         => $this->getRendererScriptId('iahRouteAllRenderer', 'Route_allRenderer'),
+            'RENDER_MAIN'       => $this->getRendererScriptId('iahRenderLaunch', 'LaunchRequest'),
+            'RENDER_SETTINGS'   => $this->getRendererScriptId('iahRenderSettings', 'EinstellungsRender'),
+            'RENDER_HEIZUNG'    => $this->getRendererScriptId('iahRenderHeizung', 'HeizungRenderer'),
+            'RENDER_JALOUSIE'   => $this->getRendererScriptId('iahRenderJalousie', 'JalousieRenderer'),
+            'RENDER_LICHT'      => $this->getRendererScriptId('iahRenderLicht', 'LichtRenderer'),
+            'RENDER_LUEFTUNG'   => $this->getRendererScriptId('iahRenderLueftung', 'LüftungRenderer'),
+            'RENDER_GERAETE'    => $this->getRendererScriptId('iahRenderGeraete', 'GeraeteRenderer'),
+            'RENDER_BEWAESSERUNG' => $this->getRendererScriptId('iahRenderBewaesserung', 'BewaesserungRenderer'),
         ];
     }
 
@@ -502,6 +506,26 @@ class IPSAlexaHaussteuerung extends IPSModule
         }
     }
 
+    private function ensureRendererScripts(int $parent): void
+    {
+        $base = __DIR__ . '/resources/renderers/';
+        $map = [
+            ['name' => 'Route_allRenderer',   'ident' => 'iahRouteAllRenderer',   'file' => $base . 'Route_allRenderer.php'],
+            ['name' => 'LaunchRequest',       'ident' => 'iahRenderLaunch',       'file' => $base . 'LaunchRequest.php'],
+            ['name' => 'HeizungRenderer',     'ident' => 'iahRenderHeizung',      'file' => $base . 'RenderHeizung.php'],
+            ['name' => 'JalousieRenderer',    'ident' => 'iahRenderJalousie',     'file' => $base . 'RenderJalousie.php'],
+            ['name' => 'LichtRenderer',       'ident' => 'iahRenderLicht',        'file' => $base . 'RenderLicht.php'],
+            ['name' => 'LüftungRenderer',     'ident' => 'iahRenderLueftung',     'file' => $base . 'RenderLueftung.php'],
+            ['name' => 'GeraeteRenderer',     'ident' => 'iahRenderGeraete',      'file' => $base . 'RenderGeraete.php'],
+            ['name' => 'BewaesserungRenderer','ident' => 'iahRenderBewaesserung', 'file' => $base . 'RenderBewaesserung.php'],
+            ['name' => 'EinstellungsRender',  'ident' => 'iahRenderSettings',     'file' => $base . 'RenderSettings.php'],
+        ];
+
+        foreach ($map as $def) {
+            $this->ensureScriptTemplate($parent, $def['name'], $def['ident'], $def['file']);
+        }
+    }
+
     private function ensureScriptTemplate(int $parent, string $name, string $ident, string $template): int
     {
         $id = @IPS_GetObjectIDByIdent($ident, $parent);
@@ -531,6 +555,16 @@ class IPSAlexaHaussteuerung extends IPSModule
         }
 
         return (int) $id;
+    }
+
+    private function getRendererScriptId(string $ident, string $name): int
+    {
+        $id = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
+        if ($id) {
+            return (int) $id;
+        }
+
+        return $this->findScriptIdByName($name);
     }
 
     private function findScriptIdByName(string $name): int
@@ -578,6 +612,132 @@ class IPSAlexaHaussteuerung extends IPSModule
         }
 
         return (int) $id;
+    }
+
+    private function ensureSystemConfigurationScript(int $settingsCat, int $helperCat): int
+    {
+        $parent = $settingsCat;
+        $ident = 'iahSystemConfiguration';
+        $name = 'SystemConfiguration';
+        $id = @IPS_GetObjectIDByIdent($ident, $parent);
+
+        if (!$id) {
+            $byName = @IPS_GetObjectIDByName($name, $parent);
+            if ($byName) {
+                $id = $byName;
+                IPS_SetIdent($id, $ident);
+            }
+        }
+
+        if (!$id) {
+            $id = IPS_CreateScript(0);
+            IPS_SetParent($id, $parent);
+            IPS_SetName($id, $name);
+            IPS_SetIdent($id, $ident);
+        }
+
+        $snapshot = $this->buildSystemConfigurationSnapshot($settingsCat, $helperCat);
+        $content = "<?php\nreturn " . var_export($snapshot, true) . ";\n";
+        IPS_SetScriptContent($id, $content);
+
+        return (int) $id;
+    }
+
+    private function buildSystemConfigurationSnapshot(int $settingsCat, int $helperCat): array
+    {
+        $root = $this->InstanceID;
+        $getVar = function (int $parent, string $ident, string $name = ''): int {
+            $id = @IPS_GetObjectIDByIdent($ident, $parent);
+            if ($id) {
+                return (int) $id;
+            }
+            if ($name !== '') {
+                $byName = @IPS_GetObjectIDByName($name, $parent);
+                if ($byName) {
+                    IPS_SetIdent($byName, $ident);
+                    return (int) $byName;
+                }
+            }
+            return 0;
+        };
+
+        $resolveVar = static function (int $id): int {
+            if ($id > 0 && IPS_VariableExists($id)) {
+                return $id;
+            }
+            return 0;
+        };
+
+        $var = [
+            'BaseUrl'       => $this->ReadPropertyString('BaseUrl'),
+            'Source'        => $this->ReadPropertyString('Source'),
+            'Token'         => $this->ReadPropertyString('Token'),
+            'Passwort'      => $this->ReadPropertyString('Passwort'),
+            'StartPage'     => $this->ReadPropertyString('StartPage'),
+            'LOG_LEVEL'     => $this->ReadPropertyString('LOG_LEVEL'),
+            'WfcId'         => $this->ReadPropertyInteger('WfcId'),
+            'EnergiePageId' => $this->ReadPropertyString('EnergiePageId'),
+            'KameraPageId'  => $this->ReadPropertyString('KameraPageId'),
+            'ActionsEnabled' => [
+                'heizung_stellen'     => $getVar($settingsCat, 'heizungStellen', 'heizung_stellen'),
+                'jalousie_steuern'    => $getVar($settingsCat, 'jalousieSteuern', 'jalousie_steuern'),
+                'licht_switches'      => $getVar($settingsCat, 'lichtSwitches', 'licht_switches'),
+                'licht_dimmers'       => $getVar($settingsCat, 'lichtDimmers', 'licht_dimmers'),
+                'lueftung_toggle'     => $getVar($settingsCat, 'lueftungToggle', 'lueftung_toggle'),
+                'geraete_toggle'      => $getVar($settingsCat, 'geraeteToggle', 'geraete_toggle'),
+                'bewaesserung_toggle' => $getVar($settingsCat, 'bewaesserungToggle', 'bewaesserung_toggle'),
+            ],
+            'DEVICE_MAP'     => $getVar($helperCat, 'deviceMapJson', 'DeviceMapJson'),
+            'PENDING_DEVICE' => $getVar($helperCat, 'pendingDeviceId', 'PendingDeviceId'),
+            'PENDING_STAGE'  => $getVar($helperCat, 'pendingStage', 'PendingStage'),
+            'DOMAIN_FLAG'    => $getVar($root, 'domainFlag', 'domain_flag'),
+            'SKILL_ACTIVE'   => $getVar($root, 'skillActive', 'skillActive'),
+            'AUSSEN_TEMP'    => $resolveVar($this->ReadPropertyInteger('VarAussenTemp')),
+            'INFORMATION'    => $resolveVar($this->ReadPropertyInteger('VarInformation')),
+            'MELDUNGEN'      => $resolveVar($this->ReadPropertyInteger('VarMeldungen')),
+            'HEIZRAUM_IST'   => $resolveVar($this->ReadPropertyInteger('VarHeizraumIst')),
+            'OG_GANG_IST'    => $resolveVar($this->ReadPropertyInteger('VarOgGangIst')),
+            'TECHNIK_IST'    => $resolveVar($this->ReadPropertyInteger('VarTechnikIst')),
+            'CoreHelpers'        => $getVar($helperCat, 'coreHelpersScript', 'CoreHelpers'),
+            'DeviceMap'          => $getVar($helperCat, 'deviceMapScript', 'DeviceMap'),
+            'RoomBuilderHelpers' => $getVar($helperCat, 'roomBuilderHelpersScript', 'RoomBuilderHelpers'),
+            'DeviceMapWizard'    => $getVar($helperCat, 'deviceMapWizardScript', 'DeviceMapWizard'),
+            'Lexikon'            => $getVar($helperCat, 'lexikonScript', 'Lexikon'),
+        ];
+
+        $scripts = [
+            'ROUTE_ALL'           => $this->getRendererScriptId('iahRouteAllRenderer', 'Route_allRenderer'),
+            'RENDER_MAIN'         => $this->getRendererScriptId('iahRenderLaunch', 'LaunchRequest'),
+            'RENDER_SETTINGS'     => $this->getRendererScriptId('iahRenderSettings', 'EinstellungsRender'),
+            'RENDER_HEIZUNG'      => $this->getRendererScriptId('iahRenderHeizung', 'HeizungRenderer'),
+            'RENDER_JALOUSIE'     => $this->getRendererScriptId('iahRenderJalousie', 'JalousieRenderer'),
+            'RENDER_LICHT'        => $this->getRendererScriptId('iahRenderLicht', 'LichtRenderer'),
+            'RENDER_LUEFTUNG'     => $this->getRendererScriptId('iahRenderLueftung', 'LüftungRenderer'),
+            'RENDER_GERAETE'      => $this->getRendererScriptId('iahRenderGeraete', 'GeraeteRenderer'),
+            'RENDER_BEWAESSERUNG' => $this->getRendererScriptId('iahRenderBewaesserung', 'BewaesserungRenderer'),
+            'ROOMS_CATALOG'       => $getVar($settingsCat, 'roomsCatalog', 'RoomsCatalog'),
+            'NORMALIZER'          => $getVar($helperCat, 'normalizerScript', 'Normalizer'),
+        ];
+
+        $requiredVars = ['CoreHelpers', 'DeviceMap', 'RoomBuilderHelpers', 'DeviceMapWizard', 'Lexikon', 'DEVICE_MAP', 'PENDING_DEVICE', 'PENDING_STAGE', 'DOMAIN_FLAG', 'SKILL_ACTIVE'];
+        $requiredScripts = ['ROOMS_CATALOG', 'NORMALIZER'];
+        $missing = [];
+
+        foreach ($requiredVars as $key) {
+            $val = $var[$key] ?? 0;
+            if ((int) $val === 0) {
+                $missing[] = $key;
+            }
+        }
+
+        foreach ($requiredScripts as $key) {
+            $val = $scripts[$key] ?? 0;
+            if ((int) $val === 0) {
+                $missing[] = $key;
+            }
+        }
+
+        return ['var' => $var, 'script' => $scripts, 'missing' => $missing];
     }
 
     /**
