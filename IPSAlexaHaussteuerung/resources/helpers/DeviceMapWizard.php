@@ -8,32 +8,15 @@
  * (Name erfragen → APL-Support erfragen) und liefert eine einzige
  * Funktion `handle_wizard(...)`, die entweder eine Response (Ask/Tell)
  * zurückgibt oder `null`, wenn kein Wizard aktiv ist bzw. nichts zu tun ist.
- *
- * Verwendung im Action-Script:
- *   $WZ = require IPS_GetScriptFile((int)$V['DeviceMapWizard']);
- *   $resp = $WZ['handle_wizard'](
- *       $V, $intentName, $action, $alles, $room, $device,
- *       $DM_HELPERS, $STAGE_AWAIT_NAME, $STAGE_AWAIT_APL
- *   );
- *   if ($resp !== null) { return $resp; }
  */
 
 declare(strict_types=1);
 
+use IPSAlexaHaussteuerung\AskResponse;
+use IPSAlexaHaussteuerung\TellResponse;
+
 /**
  * Führt den Wizard-Flow aus und gibt ggf. eine Response zurück.
- *
- * @param array  $V                  SystemConfiguration['var']
- * @param string $intentName         Aktueller Intent-Name
- * @param string $action             Slot 'Action' (normalisiert)
- * @param string $alles              Slot 'Alles'  (normalisiert)
- * @param string $room               Slot 'Room'   (normalisiert)
- * @param string $device             Slot 'Device' (normalisiert)
- * @param array  $DM_HELPERS         DeviceMap-Helper (ensure/update/save/...)
- * @param string $STAGE_AWAIT_NAME   Konstantenwert für Name-Stufe
- * @param string $STAGE_AWAIT_APL    Konstantenwert für APL-Stufe
- *
- * @return mixed AskResponse|TellResponse|null
  */
 $handle_wizard = static function(
     array  $V,
@@ -46,9 +29,9 @@ $handle_wizard = static function(
     string $STAGE_AWAIT_NAME,
     string $STAGE_AWAIT_APL
 ) {
-    $pendingStageVar = (int)($V['PENDING_STAGE'] ?? 0);
+    $pendingStageVar  = (int)($V['PENDING_STAGE']  ?? 0);
     $pendingDeviceVar = (int)($V['PENDING_DEVICE'] ?? 0);
-    $deviceMapVar = (int)($V['DEVICE_MAP'] ?? 0);
+    $deviceMapVar     = (int)($V['DEVICE_MAP']     ?? 0);
 
     $resetWizard = static function () use ($pendingStageVar, $pendingDeviceVar): void {
         if ($pendingStageVar > 0) {
@@ -72,48 +55,6 @@ $handle_wizard = static function(
 
     $logWizardDebug = static function (string $message, array $context = []) use ($logWizard): void {
         $logWizard('DEBUG', $message, $context);
-    };
-
-    $reloadDeviceMapHelpers = static function () use (&$DM_HELPERS, $V, $logWizardError, $logWizardDebug): void {
-        $scriptId = (int)($V['DeviceMap'] ?? 0);
-        if ($scriptId <= 0) {
-            $logWizardError('DeviceMap helper script id missing, cannot reload.');
-            return;
-        }
-        try {
-            $logWizardDebug('Reloading DeviceMap helpers.', ['scriptId' => $scriptId]);
-            $helpers = require IPS_GetScriptFile($scriptId);
-            if (is_array($helpers) && $helpers !== []) {
-                $DM_HELPERS = array_merge($DM_HELPERS, $helpers);
-                $logWizardDebug('DeviceMap helpers reloaded.', ['helperKeys' => array_keys($helpers)]);
-            } else {
-                $logWizardError('DeviceMap helper script returned no helpers.', ['scriptId' => $scriptId]);
-            }
-        } catch (\Throwable $e) {
-            $logWizardError('Failed to reload DeviceMap helpers', [
-                'scriptId' => $scriptId,
-                'exception' => $e->getMessage(),
-            ]);
-        }
-    };
-
-    $ensureHelper = static function (string $helper, callable $fallback) use (&$DM_HELPERS, $logWizardError, $logWizardDebug, $reloadDeviceMapHelpers) {
-        $callable = $DM_HELPERS[$helper] ?? null;
-        if (is_callable($callable)) {
-            return $callable;
-        }
-
-        $logWizardError(sprintf('Helper "%s" missing – attempting reload.', $helper), ['helpers' => array_keys((array)$DM_HELPERS)]);
-        $reloadDeviceMapHelpers();
-
-        $callable = $DM_HELPERS[$helper] ?? null;
-        if (is_callable($callable)) {
-            $logWizardDebug(sprintf('Helper "%s" restored after reload.', $helper));
-            return $callable;
-        }
-
-        $logWizardError(sprintf('Helper "%s" still missing – using fallback.', $helper));
-        return $fallback;
     };
 
     $buildAskResponse = static function (string $text, ?string $reprompt = null) use ($logWizardError) {
@@ -227,11 +168,12 @@ $handle_wizard = static function(
         });
     };
 
+    // Missing IDs → Fehler
     if ($pendingStageVar <= 0 || $pendingDeviceVar <= 0 || $deviceMapVar <= 0) {
         $logWizardError('Missing helper ids', [
-            'pendingStageVar' => $pendingStageVar,
+            'pendingStageVar'  => $pendingStageVar,
             'pendingDeviceVar' => $pendingDeviceVar,
-            'deviceMapVar' => $deviceMapVar,
+            'deviceMapVar'     => $deviceMapVar,
         ]);
         $resetWizard();
         return TellResponse::CreatePlainText('Geräte-Assistent konnte nicht gestartet werden. Bitte prüfe die Konfiguration.');
@@ -239,26 +181,22 @@ $handle_wizard = static function(
 
     $pendingStage = (string)GetValueString($pendingStageVar);
     $pendingDevId = (string)GetValueString($pendingDeviceVar);
-    $abortWords   = ['zurück','exit','abbrechen','ende','fertig'];
+
+    $abortWords = ['zurück','exit','abbrechen','ende','fertig'];
 
     if ($pendingStage === '' || $pendingDevId === '') {
         $logWizardDebug('No active wizard, skip.', [
             'pendingStage' => $pendingStage,
             'pendingDeviceId' => $pendingDevId,
         ]);
-        return null; // kein aktiver Wizard
+        return null;
     }
 
-    // --- STAGE: Name erfragen ---
+    // -----------------------
+    // STAGE 1 — NAME
+    // -----------------------
     if ($pendingStage === $STAGE_AWAIT_NAME) {
-        $logWizardDebug('Stage: await name', [
-            'slots' => [
-                'action' => $action,
-                'alles'  => $alles,
-                'room'   => $room,
-                'device' => $device,
-            ],
-        ]);
+
         if (in_array($action, $abortWords, true)) {
             $resetWizard();
             return TellResponse::CreatePlainText('Okay, abgebrochen.');
@@ -271,59 +209,43 @@ $handle_wizard = static function(
         elseif ($action !== '') $proposed = trim($action);
 
         if ($proposed === '') {
-            $logWizardDebug('No valid name provided. Asking again.');
-            return AskResponse::CreatePlainText('Wie soll ich das Gerät nennen?')
-                ->SetRepromptPlainText('Sag z. B. Küche, Wohnzimmer oder Büro.');
+            $ask = AskResponse::CreatePlainText('Wie soll ich das Gerät nennen?');
+            $ask->SetRepromptPlainText('Sag z. B. Küche, Wohnzimmer oder Büro.');
+            return $ask;
         }
 
-        $logWizardDebug('Proposed device name collected.', [
-            'name' => $proposed,
-            'deviceId' => $pendingDevId,
-        ]);
-
         $speechName = $sanitizeSpeechName($proposed);
+
         $questionText = $speechName !== ''
             ? 'Alles klar - "' . $speechName . '". Hat dieses Gerät einen Bildschirm?'
             : 'Alles klar, Name gespeichert. Hat dieses Gerät einen Bildschirm?';
+
         $questionText = $normalizePlainText($questionText);
-        $unsupportedChars = $detectUnsupportedQuestionChars($questionText);
-        if ($unsupportedChars !== []) {
-            $logWizardDebug('Unsupported punctuation detected in question text. Using fallback.', [
-                'question' => $questionText,
-                'unsupportedChars' => $unsupportedChars,
-            ]);
+
+        $unsupported = $detectUnsupportedQuestionChars($questionText);
+        if ($unsupported !== []) {
             $questionText = $normalizePlainText('Hat dieses Gerät einen Bildschirm?');
         }
-        $logWizardDebug('Prepared screen question text.', [
-            'speechName' => $speechName,
-            'question' => $questionText,
-        ]);
 
-        // Speichern & zur APL-Frage wechseln
-        $updateLocation = $ensureHelper('update_location', $fallbackUpdateLocation);
+        // speichern
+        $updateLocation = $DM_HELPERS['update_location'] ?? null;
+        if (!is_callable($updateLocation)) {
+            $updateLocation = $fallbackUpdateLocation;
+        }
 
         try {
-            $logWizardDebug('Calling update_location.');
             $updateLocation($deviceMapVar, $pendingDevId, $proposed);
-            $logWizardDebug('update_location successful.');
         } catch (\Throwable $e) {
-            $logWizardError('update_location failed', ['exception' => $e->getMessage()]);
             $resetWizard();
             return TellResponse::CreatePlainText('Gerät konnte nicht gespeichert werden. Bitte versuche es noch einmal.');
         }
 
         SetValueString($pendingStageVar, $STAGE_AWAIT_APL);
-        $logWizardDebug('Stage switched to await APL.');
 
         $ask = $buildAskResponse($questionText, 'Bitte antworte mit ja oder nein.');
         if ($ask === null) {
-            $fallbackQuestion = $normalizePlainText('Hat dieses Gerät einen Bildschirm?');
-            $logWizardDebug('Falling back to generic screen question text.', [
-                'question' => $fallbackQuestion,
-            ]);
-            $ask = $buildAskResponse($fallbackQuestion, 'Bitte antworte mit ja oder nein.');
+            $ask = $buildAskResponse('Hat dieses Gerät einen Bildschirm?', 'Bitte antworte mit ja oder nein.');
         }
-
         if ($ask === null) {
             $resetWizard();
             return TellResponse::CreatePlainText('Gerät konnte nicht gespeichert werden. Bitte versuche es noch einmal.');
@@ -332,47 +254,47 @@ $handle_wizard = static function(
         return $ask;
     }
 
-    // --- STAGE: APL ja/nein ---
+    // -----------------------
+    // STAGE 2 — APL JA/NEIN
+    // -----------------------
     if ($pendingStage === $STAGE_AWAIT_APL) {
-        $logWizardDebug('Stage: await APL', [
-            'intent' => $intentName,
-            'slots' => [
-                'action' => $action,
-                'alles'  => $alles,
-                'room'   => $room,
-            ],
-        ]);
+
         $yesIntents = ['AMAZON.YesIntent','YesIntent'];
         $noIntents  = ['AMAZON.NoIntent','NoIntent'];
-        $isYes = in_array($intentName, $yesIntents, true) || $action === 'ja'   || $alles === 'ja'   || $room === 'ja';
-        $isNo  = in_array($intentName,  $noIntents,  true) || $action === 'nein' || $alles === 'nein' || $room === 'nein';
+
+        $isYes = in_array($intentName, $yesIntents, true)
+              || $action === 'ja' || $alles === 'ja' || $room === 'ja';
+
+        $isNo  = in_array($intentName, $noIntents, true)
+              || $action === 'nein' || $alles === 'nein' || $room === 'nein';
 
         if (!$isYes && !$isNo) {
-            $logWizardDebug('APL question unanswered yet.');
-            return AskResponse::CreatePlainText('Hat das Gerät einen Bildschirm?')
-                ->SetRepromptPlainText('Ja oder nein?');
+            $ask = AskResponse::CreatePlainText('Hat das Gerät einen Bildschirm?');
+            $ask->SetRepromptPlainText('Ja oder nein?');
+            return $ask;
         }
 
         $apl = $isYes;
-        $updateApl = $ensureHelper('update_apl', $fallbackUpdateApl);
+
+        $updateApl = $DM_HELPERS['update_apl'] ?? null;
+        if (!is_callable($updateApl)) {
+            $updateApl = $fallbackUpdateApl;
+        }
 
         try {
-            $logWizardDebug('Calling update_apl.', ['apl' => $apl]);
             $updateApl($deviceMapVar, $pendingDevId, $apl);
-            $logWizardDebug('update_apl successful.');
         } catch (\Throwable $e) {
-            $logWizardError('update_apl failed', ['exception' => $e->getMessage()]);
             $resetWizard();
             return TellResponse::CreatePlainText('Die Bildschirm-Einstellung konnte nicht gespeichert werden.');
         }
 
         $resetWizard();
-        $logWizardDebug('Wizard finished successfully.');
-        $txt = $apl ? 'Bildschirm erkannt' : 'Kein Bildschirm';
-        return TellResponse::CreatePlainText('Danke, Einstellungen gespeichert. ' . $txt);
+        return TellResponse::CreatePlainText(
+            'Danke, Einstellungen gespeichert. ' . ($apl ? 'Bildschirm erkannt' : 'Kein Bildschirm')
+        );
     }
 
-    // unbekannte Stage → aufräumen
+    // UNBEKANNTE STAGE
     $resetWizard();
     return TellResponse::CreatePlainText('Assistent zurückgesetzt.');
 };
