@@ -31,6 +31,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyString('StartPage', '#45315');
         $this->RegisterPropertyInteger('WfcId', 45315);
         $this->RegisterPropertyString('LOG_LEVEL', 'debug');
+        $this->RegisterAttributeString('DelayedPageSwitchPayload', '');
+        $this->RegisterTimer('DelayedPageSwitch', 0, 'IAH_HandleDelayedPageSwitch($_IPS["TARGET"]);');
 
         // Pages
         $this->RegisterPropertyString('EnergiePageId', 'item2124');
@@ -46,9 +48,7 @@ class IPSAlexaHaussteuerung extends IPSModule
     {
         parent::ApplyChanges();
 
-        $this->EnsureHelperScripts();
         $this->EnsureInfrastructure();
-        $this->EnsureActionEntryScript();
     }
 
     /**
@@ -252,10 +252,53 @@ class IPSAlexaHaussteuerung extends IPSModule
         $page = ($which === 1)
             ? $this->ReadPropertyString('EnergiePageId')
             : $this->ReadPropertyString('KameraPageId');
-        $params = ['page' => $page, 'wfc' => $V['WfcId']];
-        $delayScript = $this->getDelayScriptId();
-        if ($delayScript > 0) {
-            @IPS_RunScriptEx($delayScript, $params);
+        $this->TriggerPageSwitch($page, (int) $V['WfcId']);
+    }
+
+    public function TriggerPageSwitch(string $pageId, int $wfcId): void
+    {
+        $pageId = trim($pageId);
+        if ($pageId === '' || $wfcId <= 0) {
+            return;
+        }
+
+        $payload = json_encode([
+            'page' => $pageId,
+            'wfc'  => $wfcId,
+        ], JSON_UNESCAPED_SLASHES);
+
+        $this->WriteAttributeString('DelayedPageSwitchPayload', (string) $payload);
+        $this->SetTimerInterval('DelayedPageSwitch', 10 * 1000);
+    }
+
+    public function HandleDelayedPageSwitch(): void
+    {
+        $raw = $this->ReadAttributeString('DelayedPageSwitchPayload');
+        $data = @json_decode($raw, true);
+        $this->SetTimerInterval('DelayedPageSwitch', 0);
+        $this->WriteAttributeString('DelayedPageSwitchPayload', '');
+
+        if (!is_array($data)) {
+            $this->log('warn', 'DelayedPageSwitch: invalid payload', ['raw' => $raw]);
+            return;
+        }
+
+        $page = (string) ($data['page'] ?? '');
+        $wfc = (int) ($data['wfc'] ?? 0);
+        if ($page === '' || $wfc <= 0) {
+            $this->log('warn', 'DelayedPageSwitch: missing params', ['data' => $data]);
+            return;
+        }
+
+        if (!IPS_InstanceExists($wfc)) {
+            $this->log('warn', 'DelayedPageSwitch: WFC missing', ['wfc' => $wfc]);
+            return;
+        }
+
+        try {
+            WFC_SwitchPage($wfc, $page);
+        } catch (\Throwable $t) {
+            $this->log('error', 'DelayedPageSwitch failed', ['msg' => $t->getMessage()]);
         }
     }
 
@@ -325,9 +368,9 @@ class IPSAlexaHaussteuerung extends IPSModule
             'Passwort'      => $this->ReadPropertyString('Passwort'),
             'StartPage'     => $this->ReadPropertyString('StartPage'),
             'WfcId'         => $this->ReadPropertyInteger('WfcId'),
-            'DelayScript'   => $this->getDelayScriptId(),
             'EnergiePageId' => $this->ReadPropertyString('EnergiePageId'),
             'KameraPageId'  => $this->ReadPropertyString('KameraPageId'),
+            'InstanceID'    => $this->InstanceID,
             // IDs der erzeugten/verknüpften Variablen
             'vars'          => [
                 'settings_cat'       => (int) $settings,
@@ -405,55 +448,6 @@ class IPSAlexaHaussteuerung extends IPSModule
         return (int) $global;
     }
 
-    /**
-     * Create or update a forwarding child script selectable as entry point in skill instance
-     */
-    private function EnsureActionEntryScript(): void
-    {
-        $root = $this->InstanceID;
-        $sid = $this->ensureScript($root, 'Action (Haus\\Übersicht/Einstellungen Entry)', 'iahActionEntry');
-        $content = $this->EntryScriptContent();
-        IPS_SetScriptContent($sid, $content);
-        IPS_SetHidden($sid, false);
-    }
-
-    /**
-     * Ensure/Update content of entry script
-     */
-    private function EntryScriptContent(): string
-    {
-        $path = __DIR__ . '/resources/action_entry.php';
-        if (!is_file($path)) {
-            return "<?php\n";
-        }
-
-        $content = file_get_contents($path);
-        if ($content === false || $content === '') {
-            return "<?php\n";
-        }
-
-        return $content;
-    }
-
-    private function ensureScript(int $parent, string $name, string $ident): int
-    {
-        $id = @IPS_GetObjectIDByIdent($ident, $parent);
-        if (!$id) {
-            $byName = @IPS_GetObjectIDByName($name, $parent);
-            if ($byName) {
-                $id = $byName;
-                IPS_SetIdent($id, $ident);
-            } else {
-                $id = IPS_CreateScript(0); // PHP
-                IPS_SetParent($id, $parent);
-                IPS_SetName($id, $name);
-                IPS_SetIdent($id, $ident);
-            }
-        }
-
-        return $id;
-    }
-
     private function ensureRoomsCatalogTemplate(int $parent): int
     {
         $name = 'RoomsCatalog';
@@ -491,67 +485,11 @@ class IPSAlexaHaussteuerung extends IPSModule
     }
 
     /**
-     * Ensure helper scripts that are bundled with the module exist and keep properties in sync
-     */
-    private function EnsureHelperScripts(): void
-    {
-        $delayScriptPath = __DIR__ . '/resources/helpers/WfcDelayedPageSwitch.php';
-        $this->ensureTemplateScript($this->InstanceID, 'WfcDelayedPageSwitch', 'iahWfcDelayedPageSwitch', $delayScriptPath);
-
-        $configTemplate = __DIR__ . '/resources/helpers/SystemConfiguration.php';
-        $this->ensureTemplateScript($this->InstanceID, 'SystemConfiguration', 'iahSystemConfiguration', $configTemplate);
-    }
-
-    private function ensureTemplateScript(int $parent, string $name, string $ident, string $templatePath): int
-    {
-        $id = @IPS_GetObjectIDByIdent($ident, $parent);
-        $created = false;
-
-        if (!$id) {
-            $byName = @IPS_GetObjectIDByName($name, $parent);
-            if ($byName) {
-                $id = $byName;
-                IPS_SetIdent($id, $ident);
-            } else {
-                $id = IPS_CreateScript(0);
-                IPS_SetParent($id, $parent);
-                IPS_SetName($id, $name);
-                IPS_SetIdent($id, $ident);
-                $created = true;
-            }
-        }
-
-        if ($created && is_file($templatePath)) {
-            $content = file_get_contents($templatePath);
-            if ($content !== false) {
-                IPS_SetScriptContent($id, $content);
-            }
-        }
-
-        return (int) $id;
-    }
-
-    private function getDelayScriptId(): int
-    {
-        return $this->getObjectIDByIdentOrName($this->InstanceID, 'iahWfcDelayedPageSwitch', 'WfcDelayedPageSwitch');
-    }
-
-    /**
-     * Getter for gateway: which script should be called as main Action
-     */
-    public function GetActionTarget(): int
-    {
-        $scripts = $this->BuildScripts();
-        return (int) ($scripts['ACTION'] ?? 0);
-    }
-
-    /**
      * Rebind and re-check infrastructure and scripts; returns summary string
      */
     public function DiagRebind(): string
     {
         $this->EnsureInfrastructure();
-        $this->EnsureActionEntryScript();
         $S = $this->BuildScripts();
         $ok = [];
         foreach ($S as $k => $v) {
