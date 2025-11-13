@@ -14,6 +14,7 @@ return [
             'jalousie_steuern'   => 0,
             'licht_switches'     => 0,
             'licht_dimmers'      => 0,
+            'lueft_stellen'      => 0, // alias for legacy lueftung_toggle
             'lueftung_toggle'    => 0,
             'geraete_toggle'     => 0,
             'bewaesserung_toggle'=> 0,

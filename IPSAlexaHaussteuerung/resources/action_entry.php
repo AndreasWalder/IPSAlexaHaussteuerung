@@ -212,6 +212,8 @@ function iah_build_system_configuration_internal(int $instanceId, array $props, 
         'helper' => $helper,
     ]);
 
+    $lueftungToggle = iah_get_child_object($settings, 'lueftungToggle', 'lueftung_toggle');
+
     $var = [
         'BaseUrl'       => (string) ($props['BaseUrl'] ?? ''),
         'Source'        => (string) ($props['Source'] ?? ''),
@@ -227,7 +229,8 @@ function iah_build_system_configuration_internal(int $instanceId, array $props, 
             'jalousie_steuern'  => iah_get_child_object($settings, 'jalousieSteuern', 'jalousie_steuern'),
             'licht_switches'    => iah_get_child_object($settings, 'lichtSwitches', 'licht_switches'),
             'licht_dimmers'     => iah_get_child_object($settings, 'lichtDimmers', 'licht_dimmers'),
-            'lueftung_toggle'   => iah_get_child_object($settings, 'lueftungToggle', 'lueftung_toggle'),
+            'lueft_stellen'     => $lueftungToggle,
+            'lueftung_toggle'   => $lueftungToggle,
             'geraete_toggle'    => iah_get_child_object($settings, 'geraeteToggle', 'geraete_toggle'),
             'bewaesserung_toggle' => iah_get_child_object($settings, 'bewaesserungToggle', 'bewaesserung_toggle'),
         ],
@@ -316,6 +319,18 @@ function Execute($request = null)
 
         $V = $CFG['var'];
         $S = $CFG['script'];
+
+        // Legacy alias: expose lueftung_toggle also as lueft_stellen
+        if (isset($V['ActionsEnabled']) && is_array($V['ActionsEnabled'])) {
+            if (!isset($V['ActionsEnabled']['lueft_stellen']) && isset($V['ActionsEnabled']['lueftung_toggle'])) {
+                $V['ActionsEnabled']['lueft_stellen'] = $V['ActionsEnabled']['lueftung_toggle'];
+            }
+        }
+        if (isset($CFG['var']['ActionsEnabled']) && is_array($CFG['var']['ActionsEnabled'])) {
+            if (!isset($CFG['var']['ActionsEnabled']['lueft_stellen']) && isset($CFG['var']['ActionsEnabled']['lueftung_toggle'])) {
+                $CFG['var']['ActionsEnabled']['lueft_stellen'] = $CFG['var']['ActionsEnabled']['lueftung_toggle'];
+            }
+        }
         $baseUrl = (string)($V['BaseUrl'] ?? '');
         $token   = (string)($V['Token']   ?? '');
         $source  = (string)($V['Source']  ?? '');
@@ -382,10 +397,13 @@ function Execute($request = null)
             'heizung'       => ['stellen_aendern' => $read($IDS['heizung_stellen']      ?? 0)],
             'jalousie'      => ['steuern'         => $read($IDS['jalousie_steuern']     ?? 0)],
             'licht'         => ['switches'        => $read($IDS['licht_switches']       ?? 0), 'dimmers'         => $read($IDS['licht_dimmers']        ?? 0)],
-            'lueftung'      => ['toggle'          => $read($IDS['lueft_stellen']        ?? 0)],
+            'lueftung'      => ['toggle'          => $read($IDS['lueft_stellen']        ?? ($IDS['lueftung_toggle'] ?? 0))],
             'geraete'       => ['toggle'          => $read($IDS['geraete_toggle']       ?? 0)],
             'bewaesserung'  => ['toggle'          => $read($IDS['bewaesserung_toggle']  ?? 0)],
         ];
+        $lueftEnabled = (bool)($ACTIONS_ENABLED['lueftung']['toggle'] ?? false);
+        $ACTIONS_ENABLED['lueft_stellen'] = $lueftEnabled;
+        $ACTIONS_ENABLED['lueft'] = ['stellen_aendern' => $lueftEnabled, 'stellen' => $lueftEnabled];
         $log('debug','AE(main)', $ACTIONS_ENABLED);
 
         // --------- RoomsCatalog ---------
@@ -685,7 +703,9 @@ function Execute($request = null)
             'geraete'      => fn()=> $domain==='geraete'  || $device==='geraete'  || (is_string($APL['a1']) && str_starts_with((string)$APL['a1'],'geraete.')),
             'bewaesserung' => fn()=> $domain==='bewaesserung' || $device==='bewaesserung' || (is_string($APL['a1']) && str_starts_with((string)$APL['a1'],'bewaesserung.')),
             'external'     => fn()=> isset($selected),
-            'settings'     => fn()=> $domain==='einstellungen' || $device==='einstellungen',
+            'settings'     => fn()=> $domain==='einstellungen'
+                || $device==='einstellungen'
+                || in_array($action, ['einstellung','einstellungen','settings'], true),
         ];
 
         // Route bestimmen

@@ -773,6 +773,8 @@ class IPSAlexaHaussteuerung extends IPSModule
             return 0;
         };
 
+        $lueftungToggleVar = $getVar($settingsCat, 'lueftungToggle', 'lueftung_toggle');
+
         $var = [
             'BaseUrl'       => $this->ReadPropertyString('BaseUrl'),
             'Source'        => $this->ReadPropertyString('Source'),
@@ -788,7 +790,8 @@ class IPSAlexaHaussteuerung extends IPSModule
                 'jalousie_steuern'    => $getVar($settingsCat, 'jalousieSteuern', 'jalousie_steuern'),
                 'licht_switches'      => $getVar($settingsCat, 'lichtSwitches', 'licht_switches'),
                 'licht_dimmers'       => $getVar($settingsCat, 'lichtDimmers', 'licht_dimmers'),
-                'lueftung_toggle'     => $getVar($settingsCat, 'lueftungToggle', 'lueftung_toggle'),
+                'lueft_stellen'       => $lueftungToggleVar,
+                'lueftung_toggle'     => $lueftungToggleVar,
                 'geraete_toggle'      => $getVar($settingsCat, 'geraeteToggle', 'geraete_toggle'),
                 'bewaesserung_toggle' => $getVar($settingsCat, 'bewaesserungToggle', 'bewaesserung_toggle'),
             ],
