@@ -46,8 +46,38 @@ $handle_wizard = static function(
     string $STAGE_AWAIT_NAME,
     string $STAGE_AWAIT_APL
 ) {
-    $pendingStage = (string)GetValueString($V['PENDING_STAGE']);
-    $pendingDevId = (string)GetValueString($V['PENDING_DEVICE']);
+    $pendingStageVar = (int)($V['PENDING_STAGE'] ?? 0);
+    $pendingDeviceVar = (int)($V['PENDING_DEVICE'] ?? 0);
+    $deviceMapVar = (int)($V['DEVICE_MAP'] ?? 0);
+
+    $resetWizard = static function () use ($pendingStageVar, $pendingDeviceVar): void {
+        if ($pendingStageVar > 0) {
+            SetValueString($pendingStageVar, '');
+        }
+        if ($pendingDeviceVar > 0) {
+            SetValueString($pendingDeviceVar, '');
+        }
+    };
+
+    $logWizardError = static function (string $message, array $context = []): void {
+        if (!empty($context)) {
+            $message .= ' ' . json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+        IPS_LogMessage('Alexa', 'DeviceMapWizard: ' . $message);
+    };
+
+    if ($pendingStageVar <= 0 || $pendingDeviceVar <= 0 || $deviceMapVar <= 0) {
+        $logWizardError('Missing helper ids', [
+            'pendingStageVar' => $pendingStageVar,
+            'pendingDeviceVar' => $pendingDeviceVar,
+            'deviceMapVar' => $deviceMapVar,
+        ]);
+        $resetWizard();
+        return TellResponse::CreatePlainText('Geräte-Assistent konnte nicht gestartet werden. Bitte prüfe die Konfiguration.');
+    }
+
+    $pendingStage = (string)GetValueString($pendingStageVar);
+    $pendingDevId = (string)GetValueString($pendingDeviceVar);
     $abortWords   = ['zurück','exit','abbrechen','ende','fertig'];
 
     if ($pendingStage === '' || $pendingDevId === '') {
@@ -57,8 +87,7 @@ $handle_wizard = static function(
     // --- STAGE: Name erfragen ---
     if ($pendingStage === $STAGE_AWAIT_NAME) {
         if (in_array($action, $abortWords, true)) {
-            SetValueString($V['PENDING_STAGE'], '');
-            SetValueString($V['PENDING_DEVICE'], '');
+            $resetWizard();
             return TellResponse::CreatePlainText('Okay, abgebrochen.');
         }
 
@@ -73,8 +102,15 @@ $handle_wizard = static function(
         }
 
         // Speichern & zur APL-Frage wechseln
-        $DM_HELPERS['update_location']((int)$V['DEVICE_MAP'], $pendingDevId, $proposed);
-        SetValueString($V['PENDING_STAGE'], $STAGE_AWAIT_APL);
+        try {
+            $DM_HELPERS['update_location']($deviceMapVar, $pendingDevId, $proposed);
+        } catch (\Throwable $e) {
+            $logWizardError('update_location failed', ['exception' => $e->getMessage()]);
+            $resetWizard();
+            return TellResponse::CreatePlainText('Gerät konnte nicht gespeichert werden. Bitte versuche es noch einmal.');
+        }
+
+        SetValueString($pendingStageVar, $STAGE_AWAIT_APL);
         return AskResponse::CreatePlainText('Alles klar – "' . $proposed . '". Hat dieses Gerät einen Bildschirm?')
             ->SetRepromptPlainText('Bitte antworte mit ja oder nein.');
     }
@@ -92,16 +128,21 @@ $handle_wizard = static function(
         }
 
         $apl = $isYes;
-        $DM_HELPERS['update_apl']((int)$V['DEVICE_MAP'], $pendingDevId, $apl);
-        SetValueString($V['PENDING_STAGE'], '');
-        SetValueString($V['PENDING_DEVICE'], '');
+        try {
+            $DM_HELPERS['update_apl']($deviceMapVar, $pendingDevId, $apl);
+        } catch (\Throwable $e) {
+            $logWizardError('update_apl failed', ['exception' => $e->getMessage()]);
+            $resetWizard();
+            return TellResponse::CreatePlainText('Die Bildschirm-Einstellung konnte nicht gespeichert werden.');
+        }
+
+        $resetWizard();
         $txt = $apl ? 'Bildschirm erkannt' : 'Kein Bildschirm';
         return TellResponse::CreatePlainText('Danke, Einstellungen gespeichert. ' . $txt);
     }
 
     // unbekannte Stage → aufräumen
-    SetValueString($V['PENDING_STAGE'], '');
-    SetValueString($V['PENDING_DEVICE'], '');
+    $resetWizard();
     return TellResponse::CreatePlainText('Assistent zurückgesetzt.');
 };
 
