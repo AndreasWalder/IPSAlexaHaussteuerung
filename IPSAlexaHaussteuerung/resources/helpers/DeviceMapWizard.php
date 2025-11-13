@@ -102,7 +102,6 @@ $handle_wizard = static function(
         $value = strtr($value, $map);
         $value = preg_replace('/[\r\n]+/u', ' ', $value);
         $value = preg_replace('/\s{2,}/u', ' ', $value);
-        $value = preg_replace('/\s{2,}/u', ' ', $value);
         return trim((string)$value);
     };
 
@@ -189,8 +188,8 @@ $handle_wizard = static function(
 
     if ($pendingStage === '' || $pendingDevId === '') {
         $logWizardDebug('No active wizard, skip.', [
-            'pendingStage'   => $pendingStage,
-            'pendingDeviceId'=> $pendingDevId,
+            'pendingStage'    => $pendingStage,
+            'pendingDeviceId' => $pendingDevId,
         ]);
         return null;
     }
@@ -242,12 +241,12 @@ $handle_wizard = static function(
             ? 'Alles klar - "' . $speechName . '". Hat dieses Gerät einen Bildschirm?'
             : 'Alles klar, Name gespeichert. Hat dieses Gerät einen Bildschirm?';
 
-        $questionText       = $normalizePlainText($questionText);
-        $unsupportedChars   = $detectUnsupportedQuestionChars($questionText);
+        $questionText     = $normalizePlainText($questionText);
+        $unsupportedChars = $detectUnsupportedQuestionChars($questionText);
         if ($unsupportedChars !== []) {
             $logWizardDebug('Unsupported punctuation detected in question text. Using fallback.', [
-                'question'          => $questionText,
-                'unsupportedChars'  => $unsupportedChars,
+                'question'         => $questionText,
+                'unsupportedChars' => $unsupportedChars,
             ]);
             $questionText = $normalizePlainText('Hat dieses Gerät einen Bildschirm?');
         }
