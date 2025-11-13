@@ -31,6 +31,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyString('StartPage', '#45315');
         $this->RegisterPropertyInteger('WfcId', 45315);
         $this->RegisterPropertyInteger('DelayScript', 55368);
+        $this->RegisterPropertyInteger('ConfigScriptId', 0);
         $this->RegisterPropertyString('LOG_LEVEL', 'debug');
 
         // Pages
