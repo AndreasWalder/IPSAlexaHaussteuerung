@@ -62,6 +62,7 @@ class IPSAlexaHaussteuerung extends IPSModule
 
         $this->ensureRoomsCatalogTemplate($catSettings);
         $this->ensureActionScript($root);
+        $this->ensureHelperScripts($catHelper);
 
         // Einstellungen toggles (Defaults wie im Original-Flow: aktiv = true)
         $this->ensureVar($catSettings, 'bewaesserung_toggle', 'bewaesserungToggle', VARIABLETYPE_BOOLEAN, '', true);
@@ -100,6 +101,10 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->ensureVar($root, 'lastVariableAction', 'lastVarAction', VARIABLETYPE_STRING, '', '');
         $this->ensureVar($root, 'lastVariableValue', 'lastVarValue', VARIABLETYPE_STRING, '', '');
         $this->ensureVar($root, 'log_recent', 'logRecent', VARIABLETYPE_STRING, '', '');
+        $this->ensureVar($root, 'domain_flag', 'domainFlag', VARIABLETYPE_STRING, '', '');
+        $this->ensureVar($root, 'Information', 'informationText', VARIABLETYPE_STRING, '', '');
+        $this->ensureVar($root, 'Meldungen', 'meldungenText', VARIABLETYPE_STRING, '', '');
+        $this->ensureVar($root, 'Außentemperatur', 'aussenTemp', VARIABLETYPE_FLOAT, '~Temperature', 0.0);
     }
 
     private function ensureCategory(int $parent, string $name, string $ident): int
@@ -468,6 +473,53 @@ class IPSAlexaHaussteuerung extends IPSModule
                 if ($content !== false) {
                     IPS_SetScriptContent($id, $content);
                 }
+            }
+        }
+
+        return (int) $id;
+    }
+
+    private function ensureHelperScripts(int $parent): void
+    {
+        $map = [
+            ['name' => 'CoreHelpers', 'ident' => 'coreHelpersScript', 'file' => __DIR__ . '/resources/helpers/CoreHelpers.php'],
+            ['name' => 'DeviceMap', 'ident' => 'deviceMapScript', 'file' => __DIR__ . '/resources/helpers/DeviceMap.php'],
+            ['name' => 'RoomBuilderHelpers', 'ident' => 'roomBuilderHelpersScript', 'file' => __DIR__ . '/resources/helpers/RoomBuilderHelpers.php'],
+            ['name' => 'DeviceMapWizard', 'ident' => 'deviceMapWizardScript', 'file' => __DIR__ . '/resources/helpers/DeviceMapWizard.php'],
+            ['name' => 'Lexikon', 'ident' => 'lexikonScript', 'file' => __DIR__ . '/resources/helpers/Lexikon.php'],
+            ['name' => 'Normalizer', 'ident' => 'normalizerScript', 'file' => __DIR__ . '/resources/helpers/Normalizer.php'],
+        ];
+
+        foreach ($map as $def) {
+            $this->ensureScriptTemplate($parent, $def['name'], $def['ident'], $def['file']);
+        }
+    }
+
+    private function ensureScriptTemplate(int $parent, string $name, string $ident, string $template): int
+    {
+        $id = @IPS_GetObjectIDByIdent($ident, $parent);
+        $created = false;
+
+        if (!$id) {
+            $byName = @IPS_GetObjectIDByName($name, $parent);
+            if ($byName) {
+                $id = $byName;
+                IPS_SetIdent($id, $ident);
+            }
+        }
+
+        if (!$id) {
+            $id = IPS_CreateScript(0);
+            IPS_SetParent($id, $parent);
+            IPS_SetName($id, $name);
+            IPS_SetIdent($id, $ident);
+            $created = true;
+        }
+
+        if ($created && is_file($template)) {
+            $content = file_get_contents($template);
+            if ($content !== false) {
+                IPS_SetScriptContent($id, $content);
             }
         }
 

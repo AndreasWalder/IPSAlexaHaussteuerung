@@ -52,32 +52,111 @@ function iah_get_instance_properties(int $instanceId): array
     return is_array($props) ? $props : [];
 }
 
-function iah_find_child_script(int $instanceId, string $ident, string $name): int
+function iah_get_child_object(int $parent, string $ident, string $name): int
 {
-    if ($instanceId <= 0) {
+    if ($parent <= 0) {
         return 0;
     }
-    $id = @IPS_GetObjectIDByIdent($ident, $instanceId);
-    if ($id) {
-        return (int) $id;
+    if ($ident !== '') {
+        $id = @IPS_GetObjectIDByIdent($ident, $parent);
+        if ($id) {
+            return (int) $id;
+        }
     }
-    $id = @IPS_GetObjectIDByName($name, $instanceId);
-    return (int) $id;
+    if ($name !== '') {
+        $id = @IPS_GetObjectIDByName($name, $parent);
+        if ($id) {
+            return (int) $id;
+        }
+    }
+
+    return 0;
 }
 
-function iah_apply_instance_overrides(array $vars, array $props, int $instanceId): array
+function iah_find_script_by_name(int $instanceId, string $name): int
 {
-    $vars['BaseUrl']       = (string) ($props['BaseUrl'] ?? '');
-    $vars['Source']        = (string) ($props['Source'] ?? '');
-    $vars['Token']         = (string) ($props['Token'] ?? '');
-    $vars['Passwort']      = (string) ($props['Passwort'] ?? '');
-    $vars['StartPage']     = (string) ($props['StartPage'] ?? '#45315');
-    $vars['LOG_LEVEL']     = (string) ($props['LOG_LEVEL'] ?? 'info');
-    $vars['WfcId']         = (int) ($props['WfcId'] ?? 0);
-    $vars['EnergiePageId'] = (string) ($props['EnergiePageId'] ?? '');
-    $vars['KameraPageId']  = (string) ($props['KameraPageId'] ?? '');
+    $local = @IPS_GetObjectIDByName($name, $instanceId);
+    if ($local) {
+        return (int) $local;
+    }
 
-    return $vars;
+    $global = @IPS_GetObjectIDByName($name, 0);
+    return (int) $global;
+}
+
+function iah_build_system_configuration(int $instanceId): array
+{
+    $props = iah_get_instance_properties($instanceId);
+    $settings = iah_get_child_object($instanceId, 'iahSettings', 'Einstellungen');
+    $helper = iah_get_child_object($instanceId, 'iahHelper', 'Alexa new devices helper');
+
+    $var = [
+        'BaseUrl'       => (string) ($props['BaseUrl'] ?? ''),
+        'Source'        => (string) ($props['Source'] ?? ''),
+        'Token'         => (string) ($props['Token'] ?? ''),
+        'Passwort'      => (string) ($props['Passwort'] ?? ''),
+        'StartPage'     => (string) ($props['StartPage'] ?? '#45315'),
+        'LOG_LEVEL'     => (string) ($props['LOG_LEVEL'] ?? 'info'),
+        'WfcId'         => (int) ($props['WfcId'] ?? 0),
+        'EnergiePageId' => (string) ($props['EnergiePageId'] ?? ''),
+        'KameraPageId'  => (string) ($props['KameraPageId'] ?? ''),
+        'ActionsEnabled' => [
+            'heizung_stellen'   => iah_get_child_object($settings, 'heizungStellen', 'heizung_stellen'),
+            'jalousie_steuern'  => iah_get_child_object($settings, 'jalousieSteuern', 'jalousie_steuern'),
+            'licht_switches'    => iah_get_child_object($settings, 'lichtSwitches', 'licht_switches'),
+            'licht_dimmers'     => iah_get_child_object($settings, 'lichtDimmers', 'licht_dimmers'),
+            'lueftung_toggle'   => iah_get_child_object($settings, 'lueftungToggle', 'lueftung_toggle'),
+            'geraete_toggle'    => iah_get_child_object($settings, 'geraeteToggle', 'geraete_toggle'),
+            'bewaesserung_toggle' => iah_get_child_object($settings, 'bewaesserungToggle', 'bewaesserung_toggle'),
+        ],
+        'DEVICE_MAP'     => iah_get_child_object($helper, 'deviceMapJson', 'DeviceMapJson'),
+        'PENDING_DEVICE' => iah_get_child_object($helper, 'pendingDeviceId', 'PendingDeviceId'),
+        'PENDING_STAGE'  => iah_get_child_object($helper, 'pendingStage', 'PendingStage'),
+        'DOMAIN_FLAG'    => iah_get_child_object($instanceId, 'domainFlag', 'domain_flag'),
+        'SKILL_ACTIVE'   => iah_get_child_object($instanceId, 'skillActive', 'skillActive'),
+        'AUSSEN_TEMP'    => iah_get_child_object($instanceId, 'aussenTemp', 'Außentemperatur'),
+        'INFORMATION'    => iah_get_child_object($instanceId, 'informationText', 'Information'),
+        'MELDUNGEN'      => iah_get_child_object($instanceId, 'meldungenText', 'Meldungen'),
+        'CoreHelpers'        => iah_get_child_object($helper, 'coreHelpersScript', 'CoreHelpers'),
+        'DeviceMap'          => iah_get_child_object($helper, 'deviceMapScript', 'DeviceMap'),
+        'RoomBuilderHelpers' => iah_get_child_object($helper, 'roomBuilderHelpersScript', 'RoomBuilderHelpers'),
+        'DeviceMapWizard'    => iah_get_child_object($helper, 'deviceMapWizardScript', 'DeviceMapWizard'),
+        'Lexikon'            => iah_get_child_object($helper, 'lexikonScript', 'Lexikon'),
+    ];
+
+    $scripts = [
+        'ROUTE_ALL'           => iah_find_script_by_name($instanceId, 'Route_allRenderer'),
+        'RENDER_MAIN'         => iah_find_script_by_name($instanceId, 'LaunchRequest'),
+        'RENDER_HEIZUNG'      => iah_find_script_by_name($instanceId, 'HeizungRenderer'),
+        'RENDER_JALOUSIE'     => iah_find_script_by_name($instanceId, 'JalousieRenderer'),
+        'RENDER_LICHT'        => iah_find_script_by_name($instanceId, 'LichtRenderer'),
+        'RENDER_LUEFTUNG'     => iah_find_script_by_name($instanceId, 'LüftungRenderer'),
+        'RENDER_GERAETE'      => iah_find_script_by_name($instanceId, 'GeraeteRenderer'),
+        'RENDER_BEWAESSERUNG' => iah_find_script_by_name($instanceId, 'BewaesserungRenderer'),
+        'RENDER_SETTINGS'     => iah_find_script_by_name($instanceId, 'EinstellungsRender'),
+        'ROOMS_CATALOG'       => iah_get_child_object($settings, 'roomsCatalog', 'RoomsCatalog'),
+        'NORMALIZER'          => iah_get_child_object($helper, 'normalizerScript', 'Normalizer'),
+    ];
+
+    $requiredVars = ['CoreHelpers', 'DeviceMap', 'RoomBuilderHelpers', 'DeviceMapWizard', 'Lexikon', 'DEVICE_MAP', 'PENDING_DEVICE', 'PENDING_STAGE', 'DOMAIN_FLAG', 'SKILL_ACTIVE'];
+    $requiredScripts = ['ROOMS_CATALOG', 'NORMALIZER'];
+    $missing = [];
+
+    foreach ($requiredVars as $key) {
+        $val = $var[$key] ?? 0;
+        if ((int) $val === 0) {
+            $missing[] = $key;
+        }
+    }
+
+    foreach ($requiredScripts as $key) {
+        $val = $scripts[$key] ?? 0;
+        if ((int) $val === 0) {
+            $missing[] = $key;
+        }
+    }
+
+    return ['var' => $var, 'script' => $scripts, 'missing' => $missing];
 }
 
 function Execute($request = null)
@@ -95,22 +174,13 @@ function Execute($request = null)
         }
 
         // --------- Config laden ---------
-        $instanceId   = iah_get_instance_id();
-        $cfgScriptId  = iah_find_child_script($instanceId, 'iahSystemConfiguration', 'SystemConfiguration');
-        if ($cfgScriptId <= 0 || !IPS_ScriptExists($cfgScriptId)) {
-            return TellResponse::CreatePlainText('Fehler: Interne SystemConfiguration nicht gefunden. Bitte Instanz prüfen.');
+        $instanceId = iah_get_instance_id();
+        $CFG = iah_build_system_configuration($instanceId);
+        if (!empty($CFG['missing'])) {
+            return TellResponse::CreatePlainText('Fehler: Folgende IDs fehlen oder konnten nicht erzeugt werden: ' . implode(', ', $CFG['missing']));
         }
 
-        $CFG = require IPS_GetScriptFile($cfgScriptId);
-        if (!is_array($CFG)) {
-            return TellResponse::CreatePlainText('Fehler: SystemConfiguration liefert kein Array.');
-        }
-
-        $CFG['var']    = is_array($CFG['var'] ?? null) ? $CFG['var'] : [];
-        $CFG['script'] = is_array($CFG['script'] ?? null) ? $CFG['script'] : [];
-
-        $props = iah_get_instance_properties($instanceId);
-        $V = iah_apply_instance_overrides($CFG['var'], $props, $instanceId);
+        $V = $CFG['var'];
         $S = $CFG['script'];
         $baseUrl = (string)($V['BaseUrl'] ?? '');
         $token   = (string)($V['Token']   ?? '');
