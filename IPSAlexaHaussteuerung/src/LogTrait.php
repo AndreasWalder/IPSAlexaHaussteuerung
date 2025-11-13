@@ -12,7 +12,7 @@ trait LogTrait{
         }
         $cur = $map[$lvl] ?? 1;
         if ($cur <= $set) {
-            @IPS_LogMessage('IPSAlexaHaus', sprintf('%s | %s | %s', strtoupper($lvl), $msg, json_encode($ctx,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)));
+            @IPS_LogMessage('Alexa', sprintf('%s | %s | %s', strtoupper($lvl), $msg, json_encode($ctx,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)));
         }
         // store in recent buffer (last ~200 lines)
         try {

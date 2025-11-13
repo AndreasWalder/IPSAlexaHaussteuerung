@@ -52,6 +52,26 @@ function iah_get_instance_properties(int $instanceId): array
     return is_array($props) ? $props : [];
 }
 
+function iah_build_logger(array $props): callable
+{
+    $rank = ['error' => 0, 'warn' => 1, 'info' => 2, 'debug' => 3];
+    $level = strtolower((string) ($props['LOG_LEVEL'] ?? 'info'));
+
+    return static function (string $lvl, string $msg, array $ctx = []) use ($rank, $level): void {
+        $target = $rank[$level] ?? 2;
+        $current = $rank[$lvl] ?? 2;
+        if ($current > $target) {
+            return;
+        }
+
+        if (!empty($ctx)) {
+            $msg .= ' ' . json_encode($ctx, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+
+        IPS_LogMessage('Alexa', $msg);
+    };
+}
+
 function iah_get_child_object(int $parent, string $ident, string $name): int
 {
     if ($parent <= 0) {
@@ -97,8 +117,17 @@ function iah_find_script_by_name(int $instanceId, string $name): int
 function iah_build_system_configuration(int $instanceId): array
 {
     $props = iah_get_instance_properties($instanceId);
+    $logCfg = iah_build_logger($props);
     $settings = iah_get_child_object($instanceId, 'iahSettings', 'Einstellungen');
     $helper = iah_get_child_object($instanceId, 'iahHelper', 'Alexa new devices helper');
+    $configScriptId = (int) ($props['ConfigScriptId'] ?? 0);
+
+    $logCfg('debug', 'CFG.build.start', [
+        'instanceId' => $instanceId,
+        'configScriptId' => $configScriptId,
+        'settings' => $settings,
+        'helper' => $helper,
+    ]);
 
     $var = [
         'BaseUrl'       => (string) ($props['BaseUrl'] ?? ''),
@@ -151,6 +180,37 @@ function iah_build_system_configuration(int $instanceId): array
         'NORMALIZER'          => iah_get_child_object($helper, 'normalizerScript', 'Normalizer'),
     ];
 
+    $errors = [];
+
+    if ($configScriptId > 0) {
+        if (!IPS_ScriptExists($configScriptId)) {
+            $logCfg('error', 'CFG.config_script.missing', ['scriptId' => $configScriptId]);
+            $errors['config_script'] = 'missing';
+        } else {
+            try {
+                $userCfg = require IPS_GetScriptFile($configScriptId);
+            } catch (Throwable $e) {
+                $logCfg('error', 'CFG.config_script.exception', ['scriptId' => $configScriptId, 'msg' => $e->getMessage()]);
+                $userCfg = null;
+            }
+
+            if (is_array($userCfg)) {
+                $logCfg('debug', 'CFG.config_script.loaded', ['scriptId' => $configScriptId, 'keys' => array_keys($userCfg)]);
+                if (isset($userCfg['var']) && is_array($userCfg['var'])) {
+                    $var = array_replace_recursive($var, $userCfg['var']);
+                }
+                if (isset($userCfg['script']) && is_array($userCfg['script'])) {
+                    $scripts = array_replace_recursive($scripts, $userCfg['script']);
+                }
+            } else {
+                $logCfg('error', 'CFG.config_script.invalid', ['scriptId' => $configScriptId]);
+                $errors['config_script'] = 'invalid';
+            }
+        }
+    } else {
+        $logCfg('debug', 'CFG.config_script.not_set');
+    }
+
     $requiredVars = ['CoreHelpers', 'DeviceMap', 'RoomBuilderHelpers', 'DeviceMapWizard', 'Lexikon', 'DEVICE_MAP', 'PENDING_DEVICE', 'PENDING_STAGE', 'DOMAIN_FLAG', 'SKILL_ACTIVE'];
     $requiredScripts = ['ROOMS_CATALOG', 'NORMALIZER'];
     $missing = [];
@@ -169,7 +229,7 @@ function iah_build_system_configuration(int $instanceId): array
         }
     }
 
-    return ['var' => $var, 'script' => $scripts, 'missing' => $missing];
+    return ['var' => $var, 'script' => $scripts, 'missing' => $missing, 'errors' => $errors];
 }
 
 function Execute($request = null)
@@ -189,6 +249,13 @@ function Execute($request = null)
         // --------- Config laden ---------
         $instanceId = iah_get_instance_id();
         $CFG = iah_build_system_configuration($instanceId);
+        $cfgError = (string) ($CFG['errors']['config_script'] ?? '');
+        if ($cfgError === 'missing') {
+            return TellResponse::CreatePlainText('Fehler: Interne SystemConfiguration nicht gefunden. Bitte Instanz prüfen.');
+        }
+        if ($cfgError === 'invalid') {
+            return TellResponse::CreatePlainText('Fehler: Interne SystemConfiguration ungültig. Bitte Skript prüfen.');
+        }
         if (!empty($CFG['missing'])) {
             return TellResponse::CreatePlainText('Fehler: Folgende IDs fehlen oder konnten nicht erzeugt werden: ' . implode(', ', $CFG['missing']));
         }
