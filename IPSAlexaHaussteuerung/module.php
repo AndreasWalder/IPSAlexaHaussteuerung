@@ -110,9 +110,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->ensureVar($root, 'lastVariableValue', 'lastVarValue', VARIABLETYPE_STRING, '', '');
         $this->ensureVar($root, 'log_recent', 'logRecent', VARIABLETYPE_STRING, '', '');
         $this->ensureVar($root, 'domain_flag', 'domainFlag', VARIABLETYPE_STRING, '', '');
-        $this->ensureVar($root, 'Information', 'informationText', VARIABLETYPE_STRING, '', '');
-        $this->ensureVar($root, 'Meldungen', 'meldungenText', VARIABLETYPE_STRING, '', '');
-        $this->ensureVar($root, 'Außentemperatur', 'aussenTemp', VARIABLETYPE_FLOAT, '~Temperature', 0.0);
+        // Hinweis: Die Statusvariablen (Information/Meldungen/Außentemperatur) werden nicht mehr automatisch
+        // erstellt. Sie müssen über die Instanzkonfiguration mit bestehenden Variablen verknüpft werden.
     }
 
     private function ensureCategory(int $parent, string $name, string $ident): int
