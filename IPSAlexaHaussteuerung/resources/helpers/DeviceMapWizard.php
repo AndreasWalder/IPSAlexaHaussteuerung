@@ -135,6 +135,7 @@ $handle_wizard = static function(
         if ($room   !== '') $proposed = trim($room);
         elseif ($device !== '') $proposed = trim($device);
         elseif ($alles  !== '') $proposed = trim($alles);
+        elseif ($action !== '') $proposed = trim($action);
 
         if ($proposed === '') {
             return AskResponse::CreatePlainText('Wie soll ich das Gerät nennen?')
