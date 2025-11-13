@@ -362,7 +362,6 @@ function Execute($request = null)
         // Helfer-Skripte
         $DM_HELPERS = require IPS_GetScriptFile((int)$V['DeviceMap']);
         $RBUILDER = require IPS_GetScriptFile((int)$V['RoomBuilderHelpers']);
-        $WZ = require IPS_GetScriptFile((int)$V['DeviceMapWizard']);
 
         // --------- Lexikon & Normalizer ---------
         $LEX  = require IPS_GetScriptFile($V['Lexikon']);
@@ -531,7 +530,9 @@ function Execute($request = null)
         }
 
         // --------- Device-Map Wizard Flow (ausgelagert) ---------
-        $resp = $WZ['handle_wizard'](
+        $wizard = require IPS_GetScriptFile((int)$V['DeviceMapWizard']);
+
+        $wzResult = $wizard['handle_wizard'](
             $V,
             $intentName,
             (string)$action,
@@ -542,8 +543,25 @@ function Execute($request = null)
             $STAGE_AWAIT_NAME,
             $STAGE_AWAIT_APL
         );
-        if ($resp !== null) {
-            return $resp;
+
+        if ($wzResult !== null) {
+            $type     = (string)($wzResult['type'] ?? '');
+            $text     = (string)($wzResult['text'] ?? '');
+            $reprompt = isset($wzResult['reprompt']) ? (string)$wzResult['reprompt'] : '';
+
+            if ($type === 'ask') {
+                $ask = \IPSAlexaHaussteuerung\AskResponse::CreatePlainText($text);
+                if ($reprompt !== '') {
+                    $ask->SetRepromptPlainText($reprompt);
+                }
+                return $ask;
+            }
+
+            if ($type === 'tell') {
+                return \IPSAlexaHaussteuerung\TellResponse::CreatePlainText($text);
+            }
+
+            return \IPSAlexaHaussteuerung\TellResponse::CreatePlainText($text !== '' ? $text : 'Assistent beendet.');
         }
 
         // --------- Room/Number/Action Normalisierung ---------
