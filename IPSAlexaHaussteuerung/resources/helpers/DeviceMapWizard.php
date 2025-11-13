@@ -74,12 +74,17 @@ $handle_wizard = static function(
         $logWizard('DEBUG', $message, $context);
     };
 
-    $createAskResponse = static function (string $text) use ($logWizardError) {
+    $buildAskResponse = static function (string $text, ?string $reprompt = null) use ($logWizardError) {
         try {
-            return AskResponse::CreatePlainText($text);
+            $ask = AskResponse::CreatePlainText($text);
+            if ($reprompt !== null) {
+                $ask->SetRepromptPlainText($reprompt);
+            }
+            return $ask;
         } catch (\Throwable $e) {
-            $logWizardError('Failed to create AskResponse', [
+            $logWizardError('Failed to build AskResponse', [
                 'text' => $text,
+                'reprompt' => $reprompt,
                 'exception' => $e->getMessage(),
             ]);
             return null;
@@ -116,6 +121,35 @@ $handle_wizard = static function(
         $value = preg_replace('/[\r\n]+/u', ' ', $value);
         $value = preg_replace('/\s{2,}/u', ' ', $value);
         return trim((string)$value);
+    };
+
+    $codepointOfChar = static function (string $char): string {
+        $converted = mb_convert_encoding($char, 'UCS-4BE', 'UTF-8');
+        $data = unpack('N', $converted === false ? '' : $converted);
+        $code = (int)($data[1] ?? 0);
+        return sprintf('U+%04X', $code);
+    };
+
+    $detectUnsupportedQuestionChars = static function (string $value) use ($codepointOfChar): array {
+        if ($value === '') {
+            return [];
+        }
+        if (!preg_match_all('/[\x{2000}-\x{206F}]/u', $value, $matches)) {
+            return [];
+        }
+        $seen = [];
+        foreach ($matches[0] as $char) {
+            $seen[$char] = true;
+        }
+        $result = [];
+        foreach (array_keys($seen) as $char) {
+            $result[] = [
+                'char' => $char,
+                'codepoint' => $codepointOfChar($char),
+                'hex' => strtoupper(bin2hex($char)),
+            ];
+        }
+        return $result;
     };
 
     $fallbackUpdateEntry = static function (int $varId, string $deviceId, callable $mutator) use ($formatCreated): void {
@@ -210,6 +244,14 @@ $handle_wizard = static function(
             ? 'Alles klar - "' . $speechName . '". Hat dieses Gerät einen Bildschirm?'
             : 'Alles klar, Name gespeichert. Hat dieses Gerät einen Bildschirm?';
         $questionText = $normalizePlainText($questionText);
+        $unsupportedChars = $detectUnsupportedQuestionChars($questionText);
+        if ($unsupportedChars !== []) {
+            $logWizardDebug('Unsupported punctuation detected in question text. Using fallback.', [
+                'question' => $questionText,
+                'unsupportedChars' => $unsupportedChars,
+            ]);
+            $questionText = $normalizePlainText('Hat dieses Gerät einen Bildschirm?');
+        }
         $logWizardDebug('Prepared screen question text.', [
             'speechName' => $speechName,
             'question' => $questionText,
@@ -235,13 +277,13 @@ $handle_wizard = static function(
         SetValueString($pendingStageVar, $STAGE_AWAIT_APL);
         $logWizardDebug('Stage switched to await APL.');
 
-        $ask = $createAskResponse($questionText);
+        $ask = $buildAskResponse($questionText, 'Bitte antworte mit ja oder nein.');
         if ($ask === null) {
             $fallbackQuestion = $normalizePlainText('Hat dieses Gerät einen Bildschirm?');
             $logWizardDebug('Falling back to generic screen question text.', [
                 'question' => $fallbackQuestion,
             ]);
-            $ask = $createAskResponse($fallbackQuestion);
+            $ask = $buildAskResponse($fallbackQuestion, 'Bitte antworte mit ja oder nein.');
         }
 
         if ($ask === null) {
@@ -249,7 +291,7 @@ $handle_wizard = static function(
             return TellResponse::CreatePlainText('Gerät konnte nicht gespeichert werden. Bitte versuche es noch einmal.');
         }
 
-        return $ask->SetRepromptPlainText('Bitte antworte mit ja oder nein.');
+        return $ask;
     }
 
     // --- STAGE: APL ja/nein ---
