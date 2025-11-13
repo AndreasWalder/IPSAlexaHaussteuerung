@@ -114,13 +114,49 @@ function iah_find_script_by_name(int $instanceId, string $name): int
     return (int) $global;
 }
 
-function iah_build_system_configuration(int $instanceId): array
+function iah_get_config_script_id(array $props, int $instanceId): int
 {
-    $props = iah_get_instance_properties($instanceId);
-    $logCfg = iah_build_logger($props);
+    $configured = (int) ($props['SystemConfigScriptId'] ?? 0);
+    if ($configured > 0 && IPS_ScriptExists($configured)) {
+        return $configured;
+    }
+
+    $auto = iah_get_child_object($instanceId, 'iahSystemConfiguration', 'SystemConfiguration');
+    if ($auto > 0 && IPS_ScriptExists($auto)) {
+        return $auto;
+    }
+
+    return 0;
+}
+
+function iah_detect_missing_entries(array $var, array $scripts): array
+{
+    $requiredVars = ['CoreHelpers', 'DeviceMap', 'RoomBuilderHelpers', 'DeviceMapWizard', 'Lexikon', 'DEVICE_MAP', 'PENDING_DEVICE', 'PENDING_STAGE', 'DOMAIN_FLAG', 'SKILL_ACTIVE'];
+    $requiredScripts = ['ROOMS_CATALOG', 'NORMALIZER'];
+    $missing = [];
+
+    foreach ($requiredVars as $key) {
+        $val = $var[$key] ?? 0;
+        if ((int) $val === 0) {
+            $missing[] = $key;
+        }
+    }
+
+    foreach ($requiredScripts as $key) {
+        $val = $scripts[$key] ?? 0;
+        if ((int) $val === 0) {
+            $missing[] = $key;
+        }
+    }
+
+    return $missing;
+}
+
+function iah_build_system_configuration_internal(int $instanceId, array $props, callable $logCfg): array
+{
     $settings = iah_get_child_object($instanceId, 'iahSettings', 'Einstellungen');
     $helper = iah_get_child_object($instanceId, 'iahHelper', 'Alexa new devices helper');
-    $logCfg('debug', 'CFG.build.start', [
+    $logCfg('debug', 'CFG.build.internal', [
         'instanceId' => $instanceId,
         'settings' => $settings,
         'helper' => $helper,
@@ -177,25 +213,34 @@ function iah_build_system_configuration(int $instanceId): array
         'NORMALIZER'          => iah_get_child_object($helper, 'normalizerScript', 'Normalizer'),
     ];
 
-    $requiredVars = ['CoreHelpers', 'DeviceMap', 'RoomBuilderHelpers', 'DeviceMapWizard', 'Lexikon', 'DEVICE_MAP', 'PENDING_DEVICE', 'PENDING_STAGE', 'DOMAIN_FLAG', 'SKILL_ACTIVE'];
-    $requiredScripts = ['ROOMS_CATALOG', 'NORMALIZER'];
-    $missing = [];
-
-    foreach ($requiredVars as $key) {
-        $val = $var[$key] ?? 0;
-        if ((int) $val === 0) {
-            $missing[] = $key;
-        }
-    }
-
-    foreach ($requiredScripts as $key) {
-        $val = $scripts[$key] ?? 0;
-        if ((int) $val === 0) {
-            $missing[] = $key;
-        }
-    }
+    $missing = iah_detect_missing_entries($var, $scripts);
 
     return ['var' => $var, 'script' => $scripts, 'missing' => $missing];
+}
+
+function iah_build_system_configuration(int $instanceId): array
+{
+    $props = iah_get_instance_properties($instanceId);
+    $logCfg = iah_build_logger($props);
+    $scriptId = iah_get_config_script_id($props, $instanceId);
+
+    if ($scriptId > 0) {
+        $path = IPS_GetScriptFile($scriptId);
+        $data = @require $path;
+        if (is_array($data)) {
+            $var = is_array($data['var'] ?? null) ? $data['var'] : [];
+            $scripts = is_array($data['script'] ?? null) ? $data['script'] : [];
+            $missing = is_array($data['missing'] ?? null) ? $data['missing'] : iah_detect_missing_entries($var, $scripts);
+            $logCfg('debug', 'CFG.load.script', ['script' => $scriptId]);
+            return ['var' => $var, 'script' => $scripts, 'missing' => $missing];
+        }
+
+        $logCfg('warn', 'CFG.load.script.invalid', ['script' => $scriptId]);
+    } else {
+        $logCfg('warn', 'CFG.load.script.notfound', []);
+    }
+
+    return iah_build_system_configuration_internal($instanceId, $props, $logCfg);
 }
 
 function Execute($request = null)

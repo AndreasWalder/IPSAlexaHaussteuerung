@@ -83,6 +83,12 @@
       "value": "{\"route\":\"main_launch\",\"aplSupported\":true}"
     },
     {
+      "name": "SystemConfigScriptId",
+      "type": "SelectScript",
+      "caption": "Config ScriptID",
+      "value": 0
+    },
+    {
       "type": "ExpansionPanel",
       "caption": "Status-Variablen",
       "items": [
