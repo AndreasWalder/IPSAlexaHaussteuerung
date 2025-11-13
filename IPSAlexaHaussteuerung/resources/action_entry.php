@@ -77,8 +77,6 @@ function iah_apply_instance_overrides(array $vars, array $props, int $instanceId
     $vars['EnergiePageId'] = (string) ($props['EnergiePageId'] ?? '');
     $vars['KameraPageId']  = (string) ($props['KameraPageId'] ?? '');
 
-    $vars['DelayScript'] = iah_find_child_script($instanceId, 'iahWfcDelayedPageSwitch', 'WfcDelayedPageSwitch');
-
     return $vars;
 }
 
@@ -531,9 +529,9 @@ function Execute($request = null)
                     'Passwort'      => $V['Passwort'],
                     'StartPage'     => $V['StartPage'],
                     'WfcId'         => $V['WfcId'],
-                    'DelayScript'   => $V['DelayScript'],
                     'EnergiePageId' => $V['EnergiePageId'],
                     'KameraPageId'  => $V['KameraPageId'],
+                    'InstanceID'    => $instanceId,
                     'externalKey'   => $selected ?? null,
                 ],
                 'rooms'           => $rooms,

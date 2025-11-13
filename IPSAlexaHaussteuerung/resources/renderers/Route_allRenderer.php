@@ -10,7 +10,7 @@
  * 2025-11-10: Robust-Decode: inneres payload (String/Array) wird ausgepackt; rooms/ROOMS/ACTIONS_ENABLED/aplArgs
  *              werden aus JSON-Strings automatisch zu Arrays normalisiert. Ist-Temperatur als formatierter Wert.
  * 2025-11-10: External: externalKey top-level akzeptiert; kontextabhängige Page-ID aus SystemConfiguration
- *              (EnergiePageId/KameraPageId) mit Fallback. DelayScript mit erweitertem Logging, Exists-Check
+ *              (EnergiePageId/KameraPageId) mit Fallback. PageSwitch intern über Modul-Funktion
  *              und Übergabe ['page'=>$pageId,'wfc'=>$wfcId].
  *
  * Aufruf:
@@ -19,7 +19,7 @@
  * Erwartetes payload (Auszug):
  *   route: 'main_launch'|'heizung'|'jalousie'|'licht'|'lueftung'|'geraete'|'bewaesserung'|'settings'|'external'
  *   S: ['RENDER_MAIN'=>id,'RENDER_HEIZUNG'=>id,'RENDER_JALOUSIE'=>id,'RENDER_LICHT'=>id,'RENDER_LUEFTUNG'=>id,'RENDER_GERAETE'=>id,'RENDER_BEWAESSERUNG'=>id,'RENDER_SETTINGS'=>id]
- *   V: Variablen-IDs (AUSSEN_TEMP, INFORMATION, MELDUNGEN, DOMAIN_FLAG, SKILL_ACTIVE, StartPage, WfcId, DelayScript,
+ *   V: Variablen-IDs (AUSSEN_TEMP, INFORMATION, MELDUNGEN, DOMAIN_FLAG, SKILL_ACTIVE, StartPage, WfcId,
  *                     EnergiePageId, KameraPageId, ...)
  *   rooms, ROOMS, ACTIONS_ENABLED
  *   args1v,args2v,args3v,args4v, aplSupported, action, device, room, object, alles, number, prozent, power,
@@ -387,7 +387,7 @@ try {
         $passwort    = (string)($V['Passwort'] ?? '');
         $startPage   = (string)($V['StartPage'] ?? '');
         $wfcId       = (int)   ($V['WfcId'] ?? 0);
-        $delayScript = (int)   ($V['DelayScript'] ?? 0);
+        $instanceId  = (int)   ($V['InstanceID'] ?? 0);
 
         // Page-ID kontextabhängig aus SystemConfiguration mit Fallbacks
         $pageIdMap = [
@@ -401,7 +401,7 @@ try {
             'externalKey'=>$externalKey,
             'cfg.keys'=>array_keys($cfg),
             'wfcId'=>$wfcId,
-            'delayScript'=>$delayScript,
+            'instanceId'=>$instanceId,
             'pageId'=>$pageId,
             'baseUrl'=>$baseUrl !== '' ? '(set)' : '(empty)',
             'token'=>$token !== '' ? '(set)' : '(empty)'
@@ -434,27 +434,24 @@ try {
             'shellUrl'=>$shellUrl,
         ]));
 
-        // Delay-Script mit Existenz-Check + Detail-Logging
-        if ($delayScript > 0) {
-            $exists = function_exists('IPS_ScriptExists') ? IPS_ScriptExists($delayScript) : true; // Fallback
-            if ($exists) {
-                $argsDelay = ['page'=>$pageId, 'wfc'=>$wfcId];
-                IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] external.delay dispatch ' . $j([
-                    'scriptId'=>$delayScript,
-                    'args'=>$argsDelay
-                ]));
+        // Delayed PageSwitch direkt über Modul-Instanz anstoßen
+        if ($instanceId > 0 && $pageId !== '' && $wfcId > 0) {
+            IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] external.delay dispatch ' . $j([
+                'instanceId'=>$instanceId,
+                'args'=>['page'=>$pageId,'wfc'=>$wfcId]
+            ]));
+            if (function_exists('IAH_TriggerPageSwitch')) {
                 try {
-                    // Asynchron starten (nicht blockierend)
-                    @$ok = IPS_RunScriptEx($delayScript, $argsDelay);
-                    IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] external.delay dispatched ok='.(($ok===null||$ok===true)?'true':'false'));
+                    IAH_TriggerPageSwitch($instanceId, (string)$pageId, (int)$wfcId);
+                    IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] external.delay dispatched ok=true');
                 } catch (Throwable $e) {
                     IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] external.delay error '.$e->getMessage());
                 }
             } else {
-                IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] external.delay missing scriptId='.$delayScript);
+                IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] external.delay missing module function IAH_TriggerPageSwitch');
             }
         } else {
-            IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] external.delay skipped (id<=0)');
+            IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] external.delay skipped (missing params)');
         }
 
         // HTML.Start zurückgeben

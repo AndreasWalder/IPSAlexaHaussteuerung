@@ -25,12 +25,6 @@
       "value": ""
     },
     {
-      "name": "StartPage",
-      "type": "ValidationTextBox",
-      "caption": "StartPage (z.B. #45315)",
-      "value": "#45315"
-    },
-    {
       "name": "WfcId",
       "type": "SelectInstance",
       "caption": "WFC ID",
@@ -61,6 +55,12 @@
       "type": "ExpansionPanel",
       "caption": "Page IDs",
       "items": [
+        {
+          "name": "StartPage",
+          "type": "ValidationTextBox",
+          "caption": "StartPage (z.B. #45315)",
+          "value": "#45315"
+        },
         {
           "name": "EnergiePageId",
           "type": "ValidationTextBox",
