@@ -81,6 +81,13 @@ $handle_wizard = static function(
         return $wd[(int)$dt->format('w')] . ', ' . $dt->format('d.m.Y, H:i:s');
     };
 
+    $sanitizeSpeechName = static function (string $value): string {
+        $value = str_replace(["\r", "\n"], ' ', $value);
+        $value = preg_replace('/["“”„]+/u', ' ', $value);
+        $value = preg_replace('/\s{2,}/u', ' ', $value);
+        return trim((string)$value);
+    };
+
     $fallbackUpdateEntry = static function (int $varId, string $deviceId, callable $mutator) use ($formatCreated): void {
         $raw = (string)GetValueString($varId);
         $map = json_decode($raw !== '' ? $raw : '[]', true);
@@ -168,6 +175,15 @@ $handle_wizard = static function(
             'deviceId' => $pendingDevId,
         ]);
 
+        $speechName = $sanitizeSpeechName($proposed);
+        $questionText = $speechName !== ''
+            ? 'Alles klar – „' . $speechName . '“. Hat dieses Gerät einen Bildschirm?'
+            : 'Alles klar, Name gespeichert. Hat dieses Gerät einen Bildschirm?';
+        $logWizardDebug('Prepared screen question text.', [
+            'speechName' => $speechName,
+            'question' => $questionText,
+        ]);
+
         // Speichern & zur APL-Frage wechseln
         $updateLocation = $DM_HELPERS['update_location'] ?? null;
         if (!is_callable($updateLocation)) {
@@ -187,7 +203,7 @@ $handle_wizard = static function(
 
         SetValueString($pendingStageVar, $STAGE_AWAIT_APL);
         $logWizardDebug('Stage switched to await APL.');
-        return AskResponse::CreatePlainText('Alles klar – "' . $proposed . '". Hat dieses Gerät einen Bildschirm?')
+        return AskResponse::CreatePlainText($questionText)
             ->SetRepromptPlainText('Bitte antworte mit ja oder nein.');
     }
 
