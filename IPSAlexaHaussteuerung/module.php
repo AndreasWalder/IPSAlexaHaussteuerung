@@ -204,7 +204,44 @@ class IPSAlexaHaussteuerung extends IPSModule
             $form['actions'] = [];
         }
 
+        $form['elements'][] = $this->buildLogPreviewPanel();
+
         return json_encode($form, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    private function buildLogPreviewPanel(): array
+    {
+        $logId = (int) @IPS_GetObjectIDByIdent('logRecent', $this->InstanceID);
+        if ($logId <= 0) {
+            $logText = 'Variable "log_recent" wurde noch nicht angelegt.';
+        } else {
+            $logText = (string) @GetValue($logId);
+            $logText = trim($logText);
+            if ($logText === '') {
+                $logText = '– keine Einträge vorhanden –';
+            } else {
+                $logText = substr($logText, -20000);
+            }
+        }
+
+        return [
+            'type'   => 'ExpansionPanel',
+            'caption'=> 'Diagnose: Codex-Protokoll (log_recent)',
+            'items'  => [
+                [
+                    'type'      => 'ValidationTextBox',
+                    'name'      => 'DiagCodexLog',
+                    'caption'   => 'Aktueller Inhalt',
+                    'multiline' => true,
+                    'enabled'   => false,
+                    'value'     => $logText,
+                ],
+                [
+                    'type'    => 'Label',
+                    'caption' => 'Die Ausgabe stammt direkt aus der internen Variable "log_recent".',
+                ],
+            ],
+        ];
     }
 
     /**

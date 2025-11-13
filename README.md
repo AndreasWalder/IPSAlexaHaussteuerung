@@ -25,9 +25,10 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
 - **V/S-Mapping**  
   Alle Variablen-IDs (V) und Script-IDs (S) werden automatisch ins Payload injiziert – keine festen IDs mehr nötig.
 - **Diagnose-Dashboard in der Instanz-Form**
-  - Live-Status: Scripts / Variablen  
-  - Antwort-Vorschau (`dumpFile`)  
-  - Letzte Fehler / Logs (`log_recent`) mit automatischem Ringpuffer (≈ 200 Zeilen)  
+  - Live-Status: Scripts / Variablen
+  - Antwort-Vorschau (`dumpFile`)
+  - Letzte Fehler / Logs (`log_recent`) mit automatischem Ringpuffer (≈ 200 Zeilen)
+  - Direktanzeige des **Codex-Protokolls** (Inhalt der Variable `log_recent`) als mehrzeiliges Textfeld
   - Buttons: *IDs neu ermitteln*, *Test-Launch*, *Custom-Payload senden*, *Vorschau leeren*, *Logs leeren*
 - **Konfig-Formular mit sinnvollen Settings**
   - Sicherheits- & Verbindungs-Parameter  
