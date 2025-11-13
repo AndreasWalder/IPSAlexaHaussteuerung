@@ -36,6 +36,52 @@
  * - Lade-Pfad für Helfer-Skript an Config angepasst (liest $V['DeviceMap'] statt $S['DEVICE_MAP_HELPERS'])
  */
 
+function iah_get_instance_id(): int
+{
+    $self = (int) ($_IPS['SELF'] ?? 0);
+    return (int) @IPS_GetParent($self);
+}
+
+function iah_get_instance_properties(int $instanceId): array
+{
+    if ($instanceId <= 0) {
+        return [];
+    }
+    $rawConfig = IPS_GetConfiguration($instanceId);
+    $props = json_decode((string) $rawConfig, true);
+    return is_array($props) ? $props : [];
+}
+
+function iah_find_child_script(int $instanceId, string $ident, string $name): int
+{
+    if ($instanceId <= 0) {
+        return 0;
+    }
+    $id = @IPS_GetObjectIDByIdent($ident, $instanceId);
+    if ($id) {
+        return (int) $id;
+    }
+    $id = @IPS_GetObjectIDByName($name, $instanceId);
+    return (int) $id;
+}
+
+function iah_apply_instance_overrides(array $vars, array $props, int $instanceId): array
+{
+    $vars['BaseUrl']       = (string) ($props['BaseUrl'] ?? '');
+    $vars['Source']        = (string) ($props['Source'] ?? '');
+    $vars['Token']         = (string) ($props['Token'] ?? '');
+    $vars['Passwort']      = (string) ($props['Passwort'] ?? '');
+    $vars['StartPage']     = (string) ($props['StartPage'] ?? '#45315');
+    $vars['LOG_LEVEL']     = (string) ($props['LOG_LEVEL'] ?? 'info');
+    $vars['WfcId']         = (int) ($props['WfcId'] ?? 0);
+    $vars['EnergiePageId'] = (string) ($props['EnergiePageId'] ?? '');
+    $vars['KameraPageId']  = (string) ($props['KameraPageId'] ?? '');
+
+    $vars['DelayScript'] = iah_find_child_script($instanceId, 'iahWfcDelayedPageSwitch', 'WfcDelayedPageSwitch');
+
+    return $vars;
+}
+
 function Execute($request = null)
 {
     // --- Konstanten für Wizard-Status ---
@@ -51,23 +97,23 @@ function Execute($request = null)
         }
 
         // --------- Config laden ---------
-        $instanceId = IPS_GetParent($_IPS['SELF'] ?? 0);
-        $cfgScriptId = 0;
-        if ($instanceId > 0) {
-            $rawConfig = IPS_GetConfiguration($instanceId);
-            $props = json_decode((string)$rawConfig, true);
-            if (is_array($props)) {
-                $cfgScriptId = (int)($props['ConfigScriptId'] ?? 0);
-            }
-        }
-
+        $instanceId   = iah_get_instance_id();
+        $cfgScriptId  = iah_find_child_script($instanceId, 'iahSystemConfiguration', 'SystemConfiguration');
         if ($cfgScriptId <= 0 || !IPS_ScriptExists($cfgScriptId)) {
-            return TellResponse::CreatePlainText('Fehler: Bitte ConfigScriptId in der Instanz setzen (Skript nicht gefunden).');
+            return TellResponse::CreatePlainText('Fehler: Interne SystemConfiguration nicht gefunden. Bitte Instanz prüfen.');
         }
 
-        $CFG     = require IPS_GetScriptFile($cfgScriptId);
-        $V       = $CFG['var'];
-        $S       = $CFG['script'];
+        $CFG = require IPS_GetScriptFile($cfgScriptId);
+        if (!is_array($CFG)) {
+            return TellResponse::CreatePlainText('Fehler: SystemConfiguration liefert kein Array.');
+        }
+
+        $CFG['var']    = is_array($CFG['var'] ?? null) ? $CFG['var'] : [];
+        $CFG['script'] = is_array($CFG['script'] ?? null) ? $CFG['script'] : [];
+
+        $props = iah_get_instance_properties($instanceId);
+        $V = iah_apply_instance_overrides($CFG['var'], $props, $instanceId);
+        $S = $CFG['script'];
         $baseUrl = (string)($V['BaseUrl'] ?? '');
         $token   = (string)($V['Token']   ?? '');
         $source  = (string)($V['Source']  ?? '');
