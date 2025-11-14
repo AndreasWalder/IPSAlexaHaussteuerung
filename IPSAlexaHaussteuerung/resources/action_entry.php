@@ -181,7 +181,7 @@ function iah_get_config_script_id(array $props, int $instanceId): int
 
 function iah_detect_missing_entries(array $var, array $scripts): array
 {
-    $requiredVars = ['CoreHelpers', 'DeviceMap', 'RoomBuilderHelpers', 'DeviceMapWizard', 'Lexikon', 'DEVICE_MAP', 'PENDING_DEVICE', 'PENDING_STAGE', 'DOMAIN_FLAG', 'SKILL_ACTIVE'];
+    $requiredVars = ['CoreHelpers', 'DeviceMap', 'RoomBuilderHelpers', 'DeviceMapWizard', 'Lexikon', 'DEVICE_MAP', 'PENDING_DEVICE', 'PENDING_STAGE', 'DOMAIN_FLAG', 'SKILL_ACTIVE', 'ACTION_VAR', 'DEVICE_VAR', 'ROOM_VAR'];
     $requiredScripts = ['ROOMS_CATALOG', 'NORMALIZER'];
     $missing = [];
 
@@ -250,6 +250,9 @@ function iah_build_system_configuration_internal(int $instanceId, array $props, 
         'RoomBuilderHelpers' => iah_get_child_object($helper, 'roomBuilderHelpersScript', 'RoomBuilderHelpers'),
         'DeviceMapWizard'    => iah_get_child_object($helper, 'deviceMapWizardScript', 'DeviceMapWizard'),
         'Lexikon'            => iah_get_child_object($helper, 'lexikonScript', 'Lexikon'),
+        'ACTION_VAR'         => iah_get_child_object($instanceId, 'action', 'action'),
+        'DEVICE_VAR'         => iah_get_child_object($instanceId, 'device', 'device'),
+        'ROOM_VAR'           => iah_get_child_object($instanceId, 'room', 'room'),
     ];
 
     $scripts = [
@@ -319,6 +322,13 @@ function Execute($request = null)
 
         $V = $CFG['var'];
         $S = $CFG['script'];
+
+        $writeRuntimeString = static function ($varId, string $value): void {
+            $id = (int) $varId;
+            if ($id > 0) {
+                @SetValueString($id, $value);
+            }
+        };
 
         // Legacy alias: expose lueftung_toggle also as lueft_stellen
         if (isset($V['ActionsEnabled']) && is_array($V['ActionsEnabled'])) {
@@ -662,6 +672,10 @@ function Execute($request = null)
             $domain = $matchDomain($action, $device, $alles, $room);
         }
         $log('debug','domain', ($domain ?? '(auto)'));
+
+        $writeRuntimeString($V['ACTION_VAR'] ?? 0, (string) $action);
+        $writeRuntimeString($V['DEVICE_VAR'] ?? 0, (string) $device);
+        $writeRuntimeString($V['ROOM_VAR'] ?? 0, (string) $room);
 
         // --------- Außentemperatur-Shortcut ---------
         $AUSSEN_ALIASES = ['außentemperatur','aussentemperatur'];

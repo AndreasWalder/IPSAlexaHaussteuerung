@@ -709,6 +709,9 @@ class IPSAlexaHaussteuerung extends IPSModule
             'lastVariableId'     => $getVar($root, 'lastVarId', 'lastVariableId'),
             'lastVariableAction' => $getVar($root, 'lastVarAction', 'lastVariableAction'),
             'lastVariableValue'  => $getVar($root, 'lastVarValue', 'lastVariableValue'),
+            'ACTION_VAR'         => $getVar($root, 'action', 'action'),
+            'DEVICE_VAR'         => $getVar($root, 'device', 'device'),
+            'ROOM_VAR'           => $getVar($root, 'room', 'room'),
             'AUSSEN_TEMP'    => $resolveVar($this->ReadPropertyInteger('VarAussenTemp')),
             'INFORMATION'    => $resolveVar($this->ReadPropertyInteger('VarInformation')),
             'MELDUNGEN'      => $resolveVar($this->ReadPropertyInteger('VarMeldungen')),
@@ -736,7 +739,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             'NORMALIZER'          => $getVar($helperCat, 'normalizerScript', 'Normalizer'),
         ];
 
-        $requiredVars = ['CoreHelpers', 'DeviceMap', 'RoomBuilderHelpers', 'DeviceMapWizard', 'Lexikon', 'DEVICE_MAP', 'PENDING_DEVICE', 'PENDING_STAGE', 'DOMAIN_FLAG', 'SKILL_ACTIVE'];
+        $requiredVars = ['CoreHelpers', 'DeviceMap', 'RoomBuilderHelpers', 'DeviceMapWizard', 'Lexikon', 'DEVICE_MAP', 'PENDING_DEVICE', 'PENDING_STAGE', 'DOMAIN_FLAG', 'SKILL_ACTIVE', 'ACTION_VAR', 'DEVICE_VAR', 'ROOM_VAR'];
         $requiredScripts = ['ROOMS_CATALOG', 'NORMALIZER'];
         $missing = [];
 
