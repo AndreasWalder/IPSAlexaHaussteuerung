@@ -432,6 +432,9 @@ class IPSAlexaHaussteuerung extends IPSModule
 
                 return $this->RunRouteAll($Value);
 
+            case 'ManualRefresh':
+                return $this->ManualRefresh();
+
             default:
                 trigger_error('Invalid ident for IPSAlexaHaussteuerung: ' . (string) $Ident, E_USER_NOTICE);
         }
@@ -944,6 +947,18 @@ class IPSAlexaHaussteuerung extends IPSModule
         if ($logId > 0) {
             @SetValueString($logId, '');
         }
+    }
+
+    /**
+     * Rebuilds renderer scripts and helper structure manually via the configuration form button.
+     */
+    public function ManualRefresh(): string
+    {
+        $this->log('info', 'Manual refresh requested from configuration form');
+        $summary = $this->DiagRebind();
+        $this->log('info', 'Manual refresh completed', ['summary' => $summary]);
+
+        return $summary;
     }
 
     private function readRendererDomainsProperty(): array
