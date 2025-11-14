@@ -448,6 +448,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             'V'         => $this->BuildVars(),
             'S'         => $this->BuildScripts(),
             'LOG_LEVEL' => $this->ReadPropertyString('LOG_LEVEL'),
+            'rendererDomains' => $this->readRendererDomainsProperty(),
             'launchCatalog' => $this->readLaunchCatalogProperty(),
         ];
     }

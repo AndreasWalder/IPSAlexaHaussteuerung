@@ -66,7 +66,9 @@ $voice_object = (string)($in['object'] ?? '');
    CFG / ACTION FLAGS / LOGGING
    ========================= */
 $CFG = is_array($in['CFG'] ?? null) ? $in['CFG'] : [];
-$rendererCfg = gr_renderer_config('geraete', $CFG);
+$routeKey = strtolower((string)($in['route'] ?? ''));
+if ($routeKey === '') { $routeKey = 'geraete'; }
+$rendererCfg = gr_renderer_config($routeKey, $CFG);
 $rendererRouteKey = (string)($rendererCfg['route'] ?? 'geraete');
 if ($rendererRouteKey === '') { $rendererRouteKey = 'geraete'; }
 $rendererToggleVarKey = (string)($rendererCfg['toggleVarKey'] ?? ($rendererRouteKey . '_toggle'));
