@@ -207,10 +207,21 @@ foreach ($CATALOG as $roomKey => $def) {
             $valueId = $meta['value'] ?? null;
             if (!is_int($valueId) || $valueId <= 0) continue;
 
+            $stateId = (is_int($meta['state'] ?? null) && (int)$meta['state'] > 0) ? (int)$meta['state'] : 0;
+            $isOn    = null;
+            if ($stateId > 0) {
+                $isOn = asBool(readVal($stateId));
+            }
+
+            $value = (asNumber(readVal($valueId)) ?? 0);
+            if ($isOn === false) {
+                $value = 0.0;
+            }
+
             $row = [
                 'title'      => (string)($meta['title'] ?? $roomDisplay.' '.$dimKey),
                 'entityId'   => (string)($meta['entityId'] ?? ('dim.'.$roomKey.'_'.$dimKey)),
-                'value'      => (asNumber(readVal($valueId)) ?? 0),
+                'value'      => $value,
                 'icon'       => $resolveIcon((string)($meta['icon'] ?? '')) ?: '',
                 'min'        => isset($meta['min'])  ? (float)$meta['min']  : 0.0,
                 'max'        => isset($meta['max'])  ? (float)$meta['max']  : 100.0,
@@ -221,8 +232,12 @@ foreach ($CATALOG as $roomKey => $def) {
                 'floorKey'   => strtoupper((string)($meta['floor'] ?? '')) ?: ($roomFloor !== '' ? $roomFloor : $unknownFloorKey),
                 'valueVarId' => (int)$valueId,
                 'setVarId'   => (is_int($meta['set'] ?? null) ? (int)$meta['set'] : 0),
-                'pairedSwitch'=> (string)($meta['pairedSwitch'] ?? '')
+                'pairedSwitch'=> (string)($meta['pairedSwitch'] ?? ''),
+                'stateVarId'  => $stateId,
             ];
+            if ($isOn !== null) {
+                $row['isOn'] = $isOn;
+            }
             if (empty($row['floorKey'])) $row['floorKey'] = 'Z';
             $dimRowsByFloor[$row['floorKey']][] = $row;
             $dimFlat[] = $row;
@@ -594,8 +609,19 @@ if ($lastDimEntity !== null) $logV("[$RID] DIMMER target=".$lastDimEntity." valu
 /* Nach Aktion kurz warten und Werte neu holen */
 if ($didAction) {
     IPS_Sleep(RENDER_DELAY_MS);
-    foreach ($switchFlat as $i=>$sw) { $switchFlat[$i]['isOn'] = asBool(readVal((int)$sw['stateVarId'])); }
-    foreach ($dimFlat as $i=>$d)    { $dimFlat[$i]['value'] = (asNumber(readVal((int)$d['valueVarId'])) ?? 0); }
+foreach ($switchFlat as $i=>$sw) { $switchFlat[$i]['isOn'] = asBool(readVal((int)$sw['stateVarId'])); }
+foreach ($dimFlat as $i=>$d) {
+    $stateVarId = isset($d['stateVarId']) ? (int)$d['stateVarId'] : 0;
+    $isOn       = $stateVarId > 0 ? asBool(readVal($stateVarId)) : null;
+    $value      = (asNumber(readVal((int)$d['valueVarId'])) ?? 0);
+    if ($isOn === false) {
+        $value = 0.0;
+    }
+    $dimFlat[$i]['value'] = $value;
+    if ($isOn !== null) {
+        $dimFlat[$i]['isOn'] = $isOn;
+    }
+}
 }
 
 /* =========================
