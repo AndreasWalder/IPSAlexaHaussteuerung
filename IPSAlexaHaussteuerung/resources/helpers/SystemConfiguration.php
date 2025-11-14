@@ -42,6 +42,7 @@ return [
         'NUMBER_VAR'         => 0,
         'PROZENT_VAR'        => 0,
         'ALLES_VAR'          => 0,
+        'ALEXA_VAR'          => 0,
         'externalKey'        => '',
         // Helper scripts (these point to scripts located below the instance)
         'CoreHelpers'        => 0,
