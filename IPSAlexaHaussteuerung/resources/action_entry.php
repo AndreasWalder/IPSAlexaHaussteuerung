@@ -751,9 +751,23 @@ function Execute($request = null)
             return AskResponse::CreatePlainText('Ich bin die Alexa für ' . $alexa)->SetRepromptPlainText('wie kann ich helfen?');
         }
 
+         $isPlainGetHaus = (
+            $intentName === 'GetHaus'
+            && $action === ''
+            && $device === ''
+            && $room === ''
+            && $object === ''
+            && $szene === ''
+            && $alles === ''
+            && (($APL['a1'] ?? null) === null)
+        );
+
         // ===== Tabellen-Router =====
         $ROUTES = [
-            'main'         => fn()=> $request->IsLaunchRequest() || ($action==='zurück' && !is_numeric($APL['a1'])) || ($APL['a1']==='zurück'),
+            'main'         => fn()=> $request->IsLaunchRequest()
+                || $isPlainGetHaus
+                || ($action==='zurück' && !is_numeric($APL['a1']))
+                || ($APL['a1']==='zurück'),
             'main_home'    => fn()=> is_array($APL['args']) && (($APL['args'][0]??'')==='GetHaus') && (($APL['args'][1]??'')==='home'),
             'heizung'      => fn()=> $domain==='heizung' || $device==='heizung' || $device==='temperatur',
             'jalousie'     => fn()=> $domain==='jalousie' || $device==='jalousie',
