@@ -218,6 +218,7 @@ return [
                     'anrichte' => [
                         'title' => 'Küche Anrichte',
                         'synonyms' => ['anrichte','vitrine','board','kommode','dimmen'],
+                        'state' => 33911,
                         'value' => 28194,
                         'set' => 28194,
                         'min' => 0,
