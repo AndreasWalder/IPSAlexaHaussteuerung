@@ -121,6 +121,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             ['number', 'number'],
             ['prozent', 'prozent'],
             ['alles', 'alles'],
+            ['alexa', 'alexa'],
         ];
         foreach ($diagVars as [$ident, $name]) {
             $this->adoptChildToCategory($root, $catDiag, $ident, $name);

@@ -181,7 +181,7 @@ function iah_get_config_script_id(array $props, int $instanceId): int
 
 function iah_detect_missing_entries(array $var, array $scripts): array
 {
-    $requiredVars = ['CoreHelpers', 'DeviceMap', 'RoomBuilderHelpers', 'DeviceMapWizard', 'Lexikon', 'DEVICE_MAP', 'PENDING_DEVICE', 'PENDING_STAGE', 'DOMAIN_FLAG', 'SKILL_ACTIVE', 'ACTION_VAR', 'DEVICE_VAR', 'ROOM_VAR'];
+    $requiredVars = ['CoreHelpers', 'DeviceMap', 'RoomBuilderHelpers', 'DeviceMapWizard', 'Lexikon', 'DEVICE_MAP', 'PENDING_DEVICE', 'PENDING_STAGE', 'DOMAIN_FLAG', 'SKILL_ACTIVE', 'ACTION_VAR', 'DEVICE_VAR', 'ROOM_VAR', 'ALEXA_VAR'];
     $requiredScripts = ['ROOMS_CATALOG', 'NORMALIZER'];
     $missing = [];
 
@@ -262,6 +262,7 @@ function iah_build_system_configuration_internal(int $instanceId, array $props, 
         'NUMBER_VAR'         => iah_get_child_object($diag, 'number', 'number'),
         'PROZENT_VAR'        => iah_get_child_object($diag, 'prozent', 'prozent'),
         'ALLES_VAR'          => iah_get_child_object($diag, 'alles', 'alles'),
+        'ALEXA_VAR'          => iah_get_child_object($diag, 'alexa', 'alexa'),
     ];
 
     $scripts = [
@@ -690,6 +691,7 @@ function Execute($request = null)
         $writeRuntimeString($V['NUMBER_VAR'] ?? 0, $number === null ? '' : (string) $number);
         $writeRuntimeString($V['PROZENT_VAR'] ?? 0, $prozent === null ? '' : (string) $prozent);
         $writeRuntimeString($V['ALLES_VAR'] ?? 0, (string) $alles);
+        $writeRuntimeString($V['ALEXA_VAR'] ?? 0, (string) $alexa);
 
         // --------- Außentemperatur-Shortcut ---------
         $AUSSEN_ALIASES = ['außentemperatur','aussentemperatur'];
