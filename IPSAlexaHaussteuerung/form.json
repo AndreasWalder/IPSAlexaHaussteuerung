@@ -87,15 +87,15 @@
           "delete": true,
           "rowCount": 4,
           "columns": [
-            { "caption": "Route", "name": "route", "width": "90px", "add": true, "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Log-Label", "name": "logName", "width": "120px", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "RoomsCatalog-Domain", "name": "roomDomain", "width": "150px", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Fallback-Titel", "name": "title", "width": "140px", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Subtitel", "name": "subtitle", "width": "140px", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Fehlermeldung", "name": "speechEmpty", "width": "200px", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "APL-Dokument", "name": "aplDoc", "width": "220px", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "APL-Token", "name": "aplToken", "width": "120px", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Toggle-Variable", "name": "toggleVarKey", "width": "150px", "edit": { "type": "ValidationTextBox" } }
+            { "caption": "Route", "name": "route", "width": "90px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Log-Label", "name": "logName", "width": "120px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "RoomsCatalog-Domain", "name": "roomDomain", "width": "150px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Fallback-Titel", "name": "title", "width": "140px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Subtitel", "name": "subtitle", "width": "140px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Fehlermeldung", "name": "speechEmpty", "width": "200px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "APL-Dokument", "name": "aplDoc", "width": "220px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "APL-Token", "name": "aplToken", "width": "120px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Toggle-Variable", "name": "toggleVarKey", "width": "150px", "add": "", "edit": { "type": "ValidationTextBox" } }
           ]
         }
       ]
@@ -148,11 +148,11 @@
           "delete": true,
           "rowCount": 5,
           "columns": [
-            { "caption": "ID", "name": "id", "width": "100px", "add": true, "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Titel", "name": "title", "width": "160px", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Subtitel", "name": "subtitle", "width": "180px", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Icon-Datei", "name": "icon", "width": "160px", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Farbe (#RRGGBB)", "name": "color", "width": "140px", "edit": { "type": "ValidationTextBox" } }
+            { "caption": "ID", "name": "id", "width": "100px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Titel", "name": "title", "width": "160px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Subtitel", "name": "subtitle", "width": "180px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Icon-Datei", "name": "icon", "width": "160px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Farbe (#RRGGBB)", "name": "color", "width": "140px", "add": "", "edit": { "type": "ValidationTextBox" } }
           ]
         }
       ]
