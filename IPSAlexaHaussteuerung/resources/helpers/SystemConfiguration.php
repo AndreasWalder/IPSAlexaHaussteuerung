@@ -34,6 +34,9 @@ return [
         'lastVariableId'     => 0,
         'lastVariableAction' => 0,
         'lastVariableValue'  => 0,
+        'ACTION_VAR'         => 0,
+        'DEVICE_VAR'         => 0,
+        'ROOM_VAR'           => 0,
         'externalKey'        => '',
         // Helper scripts (these point to scripts located below the instance)
         'CoreHelpers'        => 0,
