@@ -256,6 +256,63 @@ function iah_sanitize_renderer_domain_entry(array $entry): array
     return $out;
 }
 
+function iah_infer_tab_domain_title(array $tabs, string $route): string
+{
+    foreach ($tabs as $key => $tab) {
+        $title = '';
+        if (is_array($tab)) {
+            $title = trim((string)($tab['title'] ?? ''));
+            if ($title === '') {
+                $title = trim((string)$key);
+            }
+        } else {
+            $title = trim((string)$tab);
+            if ($title === '') {
+                $title = trim((string)$key);
+            }
+        }
+
+        if ($title !== '') {
+            return $title;
+        }
+    }
+
+    return ucfirst($route);
+}
+
+function iah_detect_rooms_catalog_tab_domains(array $ROOMS): array
+{
+    $routes = [];
+    foreach ($ROOMS as $room) {
+        if (!is_array($room)) {
+            continue;
+        }
+        $domains = (array)($room['domains'] ?? []);
+        foreach ($domains as $domainKey => $domainDef) {
+            $route = strtolower((string)$domainKey);
+            if ($route === '' || isset($routes[$route])) {
+                continue;
+            }
+            if (in_array($route, ['devices', 'sprinkler'], true)) {
+                continue;
+            }
+            $tabs = (array)($domainDef['tabs'] ?? []);
+            if ($tabs === []) {
+                continue;
+            }
+            $title = iah_infer_tab_domain_title($tabs, $route);
+            $routes[$route] = [
+                'route'      => $route,
+                'roomDomain' => $route,
+                'title'      => $title,
+                'logName'    => $title,
+            ];
+        }
+    }
+
+    return $routes;
+}
+
 function iah_build_renderer_domain_list(array $props): array
 {
     $raw = $props['RendererDomains'] ?? '[]';
@@ -545,6 +602,33 @@ function Execute($request = null)
 
         $V = $CFG['var'];
         $S = $CFG['script'];
+        $rendererDomains = is_array($CFG['rendererDomains'] ?? null) ? $CFG['rendererDomains'] : [];
+        $rendererDomainMap = [];
+        foreach ($rendererDomains as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            $routeKey = strtolower((string)($entry['route'] ?? ''));
+            if ($routeKey === '') {
+                continue;
+            }
+            $rendererDomainMap[$routeKey] = $entry;
+        }
+        $rendererRoomDomainKeys = [];
+        foreach ($rendererDomainMap as $routeKey => $entry) {
+            $roomDomain = strtolower((string)($entry['roomDomain'] ?? ''));
+            if ($roomDomain === '') {
+                $roomDomain = $routeKey;
+            }
+            $rendererRoomDomainKeys[$routeKey] = $roomDomain;
+        }
+        $claimedRoomDomains = [];
+        foreach ($rendererRoomDomainKeys as $roomDomain) {
+            if ($roomDomain === '') {
+                continue;
+            }
+            $claimedRoomDomains[$roomDomain] = true;
+        }
 
         $writeRuntimeString = static function ($varId, string $value): void {
             $id = (int) $varId;
@@ -644,6 +728,28 @@ function Execute($request = null)
             return TellResponse::CreatePlainText('Fehler: RoomsCatalog leer oder ungültig.');
         }
 
+        $tabDomains = iah_detect_rooms_catalog_tab_domains($ROOMS);
+        $addedDynamicRoute = false;
+        foreach ($tabDomains as $routeKey => $entry) {
+            $roomDomain = strtolower((string)($entry['roomDomain'] ?? $routeKey));
+            if ($roomDomain === '') {
+                $roomDomain = $routeKey;
+            }
+            if (isset($claimedRoomDomains[$roomDomain])) {
+                continue;
+            }
+            if (!isset($rendererDomainMap[$routeKey])) {
+                $rendererDomainMap[$routeKey] = array_merge(iah_renderer_domain_base($routeKey), $entry);
+            }
+            $rendererRoomDomainKeys[$routeKey] = $roomDomain;
+            $claimedRoomDomains[$roomDomain] = true;
+            $addedDynamicRoute = true;
+        }
+        if ($addedDynamicRoute) {
+            $rendererDomains = array_values($rendererDomainMap);
+            $CFG['rendererDomains'] = $rendererDomains;
+        }
+
         // ---------- Frühe Slots (für Exit) ----------
         $action1  = $lc($getSlotCH($request,'Action')  ?? '');
         $szene1   = $lc($getSlotCH($request,'Szene')   ?? '');
@@ -702,6 +808,30 @@ function Execute($request = null)
                 'info'           => ['domain' => 'info',          'device' => 'info'],
                 'szene'          => ['domain' => 'szene',         'device' => 'szene'],
             ];
+
+            foreach ($rendererDomainMap as $routeKey => $entry) {
+                if (isset($NAV_MAP[$routeKey])) {
+                    continue;
+                }
+                if ($routeKey === '' || in_array($routeKey, ['main_launch', 'external', 'settings'], true)) {
+                    continue;
+                }
+                $roomDomainRaw = strtolower((string)($rendererRoomDomainKeys[$routeKey] ?? ($entry['roomDomain'] ?? '')));
+                if ($roomDomainRaw === '') {
+                    $roomDomainRaw = $routeKey;
+                }
+                $domainAlias = $roomDomainRaw;
+                if ($domainAlias === '' || in_array($domainAlias, ['devices', 'sprinkler'], true)) {
+                    $domainAlias = $routeKey;
+                }
+                $NAV_MAP[$routeKey] = [
+                    'domain' => $domainAlias,
+                    'device' => $domainAlias,
+                ];
+                if ($domainAlias !== $routeKey && !isset($NAV_MAP[$domainAlias])) {
+                    $NAV_MAP[$domainAlias] = $NAV_MAP[$routeKey];
+                }
+            }
 
             if (isset($NAV_MAP[$navId])) {
                 $forcedDomain = $NAV_MAP[$navId]['domain'];
@@ -994,6 +1124,34 @@ function Execute($request = null)
                 || in_array($action, ['einstellung','einstellungen','settings'], true),
         ];
 
+        foreach ($rendererDomainMap as $routeKey => $entry) {
+            if (isset($ROUTES[$routeKey])) {
+                continue;
+            }
+            $routePrefix = $routeKey . '.';
+            $roomDomainRaw = strtolower((string)($rendererRoomDomainKeys[$routeKey] ?? ($entry['roomDomain'] ?? '')));
+            if ($roomDomainRaw === '') {
+                $roomDomainRaw = $routeKey;
+            }
+            $roomDomainPrefix = $roomDomainRaw . '.';
+            $domainAlias = $roomDomainRaw;
+            if ($domainAlias === '' || in_array($domainAlias, ['devices', 'sprinkler'], true)) {
+                $domainAlias = $routeKey;
+            }
+            $baseRendererPrefix = (strtolower((string)($entry['roomDomain'] ?? 'devices')) === 'sprinkler')
+                ? 'bewaesserung.'
+                : 'geraete.';
+            $ROUTES[$routeKey] = fn() => $domain === $routeKey
+                || ($roomDomainRaw !== '' && $domain === $roomDomainRaw)
+                || $domain === $domainAlias
+                || $device === $routeKey
+                || ($roomDomainRaw !== '' && $device === $roomDomainRaw)
+                || $device === $domainAlias
+                || (is_string($APL['a1']) && str_starts_with((string)$APL['a1'], $routePrefix))
+                || ($roomDomainRaw !== '' && is_string($APL['a1']) && str_starts_with((string)$APL['a1'], $roomDomainPrefix))
+                || (is_string($APL['a1']) && str_starts_with((string)$APL['a1'], $baseRendererPrefix));
+        }
+
         // Route bestimmen
         $__route = $__route ?? null;
         foreach ($ROUTES as $r=>$cond) {
@@ -1069,6 +1227,7 @@ function Execute($request = null)
                 'room_raw'        => (string)$room_raw,
                 'szene'           => (string)$szene,
                 'CFG'             => $CFG,
+                'rendererDomains' => array_values($rendererDomainMap),
             ];
 
             $res = json_decode(IPS_RunScriptWaitEx($S['ROUTE_ALL'], ['payload'=>json_encode($payload, $JSON)]), true);
