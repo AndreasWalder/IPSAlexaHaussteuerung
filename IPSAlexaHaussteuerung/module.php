@@ -44,7 +44,6 @@ class IPSAlexaHaussteuerung extends IPSModule
 
         // Diagnostics payload editor
         $this->RegisterPropertyString('DiagPayload', '{"route":"main_launch","aplSupported":true}');
-        $this->RegisterPropertyString('DeviceMapJson', '');
 
         // Optional status variables (allow linking existing values instead of auto-created ones)
         $this->RegisterPropertyInteger('VarInformation', 0);
@@ -56,7 +55,6 @@ class IPSAlexaHaussteuerung extends IPSModule
 
         // WebHook (optional): expose /hook/ipshalexa for Skill endpoint
 
-        $this->RegisterAttributeString('DeviceMapJsonMirror', '');
     }
 
     public function ApplyChanges()
@@ -65,46 +63,9 @@ class IPSAlexaHaussteuerung extends IPSModule
 
         parent::ApplyChanges();
 
-        // String-Variable für DeviceMapJson anlegen (falls noch nicht)
-        $varId = $this->RegisterVariableString('deviceMapJson', 'DeviceMapJson', '~TextBox', 10);
-    
-        // Auf Änderungen der Variable hören
-        $this->RegisterMessage($varId, VM_UPDATE);
-    
-        // Property -> Variable synchronisieren
-        $cfgJson  = $this->ReadPropertyString('DeviceMapJson');
-        $varJson  = GetValueString($varId);
-    
-        if ($cfgJson !== '' && $cfgJson !== $varJson) {
-            SetValueString($varId, $cfgJson);
-        }
-
         $this->EnsureInfrastructure();
-        $this->syncDeviceMapVarFromProperty();
 
         $this->isApplyingChanges = false;
-    }
-
-    public function MessageSink($TimeStamp, $SenderID, $Message, $Data)
-    {
-        parent::MessageSink($TimeStamp, $SenderID, $Message, $Data);
-    
-        // ID der DeviceMapJson-Variable
-        $varId = @ $this->GetIDForIdent('deviceMapJson');
-        if ($varId === 0) {
-            return;
-        }
-    
-        // Wenn DeviceMapJson geändert wurde → Property nachziehen
-        if ($Message === VM_UPDATE && $SenderID === $varId) {
-            $newJson    = GetValueString($varId);
-            $currentCfg = $this->ReadPropertyString('DeviceMapJson');
-    
-            if ($newJson !== $currentCfg) {
-                IPS_SetProperty($this->InstanceID, 'DeviceMapJson', $newJson);
-                IPS_ApplyChanges($this->InstanceID);
-            }
-        }
     }
 
 
@@ -144,7 +105,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         );
 
         // Helper
-        $this->ensureVar($catHelper, 'DeviceMapJson', 'deviceMapJson', VARIABLETYPE_STRING, '', '');
+        $this->ensureVar($catHelper, 'DeviceMapJson', 'deviceMapJson', VARIABLETYPE_STRING, '', null);
         $this->ensureVar($catHelper, 'PendingDeviceId', 'pendingDeviceId', VARIABLETYPE_STRING, '', '');
         $this->ensureVar($catHelper, 'PendingStage', 'pendingStage', VARIABLETYPE_STRING, '', '');
 
@@ -263,8 +224,6 @@ class IPSAlexaHaussteuerung extends IPSModule
 
         if (!isset($form['elements']) || !is_array($form['elements'])) {
             $form['elements'] = [];
-        } else {
-            $form['elements'] = $this->injectDeviceMapValue($form['elements'], $this->readDeviceMapJsonFromVariable());
         }
         if (!isset($form['actions']) || !is_array($form['actions'])) {
             $form['actions'] = [];
@@ -494,98 +453,6 @@ class IPSAlexaHaussteuerung extends IPSModule
             'RENDER_GERAETE'    => $this->getRendererScriptId('iahRenderGeraete', 'GeraeteRenderer'),
             'RENDER_BEWAESSERUNG' => $this->getRendererScriptId('iahRenderBewaesserung', 'BewaesserungRenderer'),
         ];
-    }
-
-    private function injectDeviceMapValue(array $elements, string $value): array
-    {
-        foreach ($elements as &$element) {
-            if (isset($element['name']) && $element['name'] === 'DeviceMapJson') {
-                $element['value'] = $value;
-            }
-            if (isset($element['items']) && is_array($element['items'])) {
-                $element['items'] = $this->injectDeviceMapValue($element['items'], $value);
-            }
-        }
-
-        return $elements;
-    }
-
-    private function readDeviceMapJsonFromVariable(): string
-    {
-        $varId = $this->getDeviceMapVariableId();
-        if ($varId > 0 && IPS_VariableExists($varId)) {
-            return (string) GetValueString($varId);
-        }
-
-        return $this->ReadPropertyString('DeviceMapJson');
-    }
-
-    private function getDeviceMapVariableId(): int
-    {
-        $helper = $this->getObjectIDByIdentOrName($this->InstanceID, 'iahHelper', 'Alexa new devices helper');
-        if ($helper > 0) {
-            $varId = @IPS_GetObjectIDByIdent('deviceMapJson', (int) $helper);
-            if ($varId) {
-                return (int) $varId;
-            }
-        }
-
-        return 0;
-    }
-
-    private function syncDeviceMapVarFromProperty(): void
-    {
-        $varId = $this->getDeviceMapVariableId();
-        if ($varId <= 0 || !IPS_VariableExists($varId)) {
-            return;
-        }
-
-        $propertyValue = $this->ReadPropertyString('DeviceMapJson');
-        $currentValue = (string) GetValueString($varId);
-        $mirror = $this->ReadAttributeString('DeviceMapJsonMirror');
-
-        if ($mirror === '') {
-            if ($propertyValue !== '') {
-                SetValueString($varId, $propertyValue);
-                $this->WriteAttributeString('DeviceMapJsonMirror', $propertyValue);
-                return;
-            }
-
-            if ($currentValue !== '') {
-                $this->updateDeviceMapProperty($currentValue);
-                return;
-            }
-
-            $this->WriteAttributeString('DeviceMapJsonMirror', '');
-            return;
-        }
-
-        if ($propertyValue !== $mirror) {
-            SetValueString($varId, $propertyValue);
-            $this->WriteAttributeString('DeviceMapJsonMirror', $propertyValue);
-            return;
-        }
-
-        if ($currentValue !== $mirror) {
-            $this->updateDeviceMapProperty($currentValue);
-        }
-    }
-
-    private function updateDeviceMapProperty(string $value): void
-    {
-        if ($this->ReadPropertyString('DeviceMapJson') === $value) {
-            $this->WriteAttributeString('DeviceMapJsonMirror', $value);
-            return;
-        }
-
-        IPS_SetProperty($this->InstanceID, 'DeviceMapJson', $value);
-        $this->WriteAttributeString('DeviceMapJsonMirror', $value);
-
-        if ($this->isApplyingChanges) {
-            return;
-        }
-
-        @IPS_ApplyChanges($this->InstanceID);
     }
 
     private function getActionScriptId(): int
