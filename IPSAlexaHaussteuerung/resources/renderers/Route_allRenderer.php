@@ -69,6 +69,32 @@ try {
     $ROOMS           = $norm($payload['ROOMS'] ?? []);
     $ACTIONS_ENABLED = $norm($payload['ACTIONS_ENABLED'] ?? []);
     $aplArgs         = $norm($payload['aplArgs'] ?? []);
+    $roomMap         = (static function (array $ROOMS): array {
+        $m = [];
+        foreach ($ROOMS as $k => $v) {
+            $m[$k] = [(array)($v['synonyms'] ?? []), (string)($v['display'] ?? $k)];
+        }
+        return $m;
+    })($ROOMS);
+
+    $rendererDomainEntries = [];
+    if (isset($payload['rendererDomains']) && is_array($payload['rendererDomains'])) {
+        $rendererDomainEntries = $payload['rendererDomains'];
+    } elseif (is_array($CFG['rendererDomains'] ?? null)) {
+        $rendererDomainEntries = $CFG['rendererDomains'];
+    }
+    $rendererDomainMap = [];
+    foreach ($rendererDomainEntries as $entry) {
+        if (!is_array($entry)) {
+            continue;
+        }
+        $routeKey = strtolower((string)($entry['route'] ?? ''));
+        if ($routeKey === '') {
+            continue;
+        }
+        $rendererDomainMap[$routeKey] = $entry;
+    }
+    $knownStaticRoutes = ['main_launch','heizung','jalousie','licht','lueftung','geraete','bewaesserung','settings','external'];
 
     $args1v         = $payload['args1v'] ?? null;
     $args2v         = $payload['args2v'] ?? null;
@@ -178,7 +204,7 @@ try {
                 'args2'           => $args2v,
                 'args1'           => $args1v,
                 'rooms'           => $rooms,
-                'roomMap'         => (function (array $ROOMS) { $m=[]; foreach ($ROOMS as $k=>$v) $m[$k]=[(array)($v['synonyms'] ?? []),(string)($v['display'] ?? $k)]; return $m; })($ROOMS),
+                'roomMap'         => $roomMap,
                 'roomsCatalog'    => $ROOMS,
                 'CFG'             => $CFG,
                 'ACTIONS_ENABLED' => $ACTIONS_ENABLED,
@@ -240,7 +266,7 @@ try {
                 'args2'           => $args2v,
                 'args1'           => $args1v,
                 'rooms'           => $rooms,
-                'roomMap'         => (function (array $ROOMS) { $m=[]; foreach ($ROOMS as $k=>$v) $m[$k]=[(array)($v['synonyms'] ?? []),(string)($v['display'] ?? $k)]; return $m; })($ROOMS),
+                'roomMap'         => $roomMap,
                 'roomsCatalog'    => $ROOMS,
                 'CFG'             => $CFG,
                 'ACTIONS_ENABLED' => $ACTIONS_ENABLED,
@@ -271,7 +297,7 @@ try {
                 'args2'           => $args2v,
                 'args1'           => $args1v,
                 'rooms'           => $rooms,
-                'roomMap'         => (function (array $ROOMS) { $m=[]; foreach ($ROOMS as $k=>$v) $m[$k]=[(array)($v['synonyms'] ?? []),(string)($v['display'] ?? $k)]; return $m; })($ROOMS),
+                'roomMap'         => $roomMap,
                 'roomsCatalog'    => $ROOMS,
                 'CFG'             => $CFG,
                 'ACTIONS_ENABLED' => $ACTIONS_ENABLED,
@@ -293,6 +319,7 @@ try {
         $flags['setDomainFlag'] = 'geraete';
         $data = IPS_RunScriptWaitEx((int)$S['RENDER_GERAETE'], [
             'payload' => json_encode([
+                'route'          => $route,
                 'aplSupported'    => $aplSupported,
                 'action'          => $action,
                 'device'          => $device,
@@ -303,7 +330,7 @@ try {
                 'args2'           => $args2v,
                 'args1'           => $args1v,
                 'rooms'           => $rooms,
-                'roomMap'         => (function (array $ROOMS) { $m=[]; foreach ($ROOMS as $k=>$v) $m[$k]=[(array)($v['synonyms'] ?? []),(string)($v['display'] ?? $k)]; return $m; })($ROOMS),
+                'roomMap'         => $roomMap,
                 'roomsCatalog'    => $ROOMS,
                 'CFG'             => $CFG,
                 'ACTIONS_ENABLED' => $ACTIONS_ENABLED,
@@ -324,6 +351,7 @@ try {
         $flags['setDomainFlag'] = 'bewaesserung';
         $data = IPS_RunScriptWaitEx((int)$S['RENDER_BEWAESSERUNG'], [
             'payload' => json_encode([
+                'route'          => $route,
                 'aplSupported'    => $aplSupported,
                 'action'          => $action,
                 'device'          => $device,
@@ -334,7 +362,7 @@ try {
                 'args2'           => $args2v,
                 'args1'           => $args1v,
                 'rooms'           => $rooms,
-                'roomMap'         => (function (array $ROOMS) { $m=[]; foreach ($ROOMS as $k=>$v) $m[$k]=[(array)($v['synonyms'] ?? []),(string)($v['display'] ?? $k)]; return $m; })($ROOMS),
+                'roomMap'         => $roomMap,
                 'roomsCatalog'    => $ROOMS,
                 'CFG'             => $CFG,
                 'ACTIONS_ENABLED' => $ACTIONS_ENABLED,
@@ -472,6 +500,49 @@ try {
             'aplToken' => 'hv-external'
         ], $JSON);
         return;
+    }
+
+    $routeKey = strtolower($route);
+    if ($routeKey !== '' && isset($rendererDomainMap[$routeKey]) && !in_array($routeKey, $knownStaticRoutes, true)) {
+        $entry = $rendererDomainMap[$routeKey];
+        $roomDomain = strtolower((string)($entry['roomDomain'] ?? 'devices'));
+        $rendererKey = ($roomDomain === 'sprinkler') ? 'RENDER_BEWAESSERUNG' : 'RENDER_GERAETE';
+        $rendererId = (int)($S[$rendererKey] ?? 0);
+        if ($rendererId > 0) {
+            IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] → dynamic route '.$routeKey.' via '.$rendererKey);
+            $flags['setDomainFlag'] = $routeKey;
+            $rendererPayload = [
+                'route'          => $route,
+                'aplSupported'   => $aplSupported,
+                'action'         => $action,
+                'device'         => $device,
+                'room'           => $room,
+                'object'         => $object,
+                'alles'          => $alles,
+                'number'         => ($power ? null : $number),
+                'args2'          => $args2v,
+                'args1'          => $args1v,
+                'rooms'          => $rooms,
+                'roomMap'        => $roomMap,
+                'roomsCatalog'   => $ROOMS,
+                'CFG'            => $CFG,
+                'ACTIONS_ENABLED'=> $ACTIONS_ENABLED,
+                'power'          => $power,
+            ];
+            $data = IPS_RunScriptWaitEx($rendererId, [
+                'payload' => json_encode($rendererPayload, $JSON),
+            ]);
+            IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] dynamic '.$routeKey.' result='.($data ? 'ok' : 'null'));
+            $dataArr = is_string($data) ? (json_decode($data, true) ?: null) : $data;
+            $aplToken = (string)($entry['aplToken'] ?? '');
+            if ($aplToken === '') {
+                $slug = preg_replace('/[^a-z0-9]+/i', '', $routeKey);
+                $aplToken = $slug !== '' ? ('hv-' . strtolower($slug)) : 'hv-main';
+            }
+            echo json_encode(['ok'=>(bool)$dataArr,'route'=>$route,'data'=>$dataArr,'flags'=>$flags,'aplToken'=>$aplToken], $JSON);
+            return;
+        }
+        IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] dynamic route '.$routeKey.' missing renderer script');
     }
 
     // Unbekannte Route
