@@ -84,6 +84,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->ensureHelperScripts($catHelper);
         $this->ensureRendererScripts($catRenderers);
 
+        $catDiag = $this->ensureCategory($root, 'Diagnose', 'iahDiag');
+
         // Einstellungen toggles (Defaults wie im Original-Flow: aktiv = true)
         $this->ensureVar($catSettings, 'bewaesserung_toggle', 'bewaesserungToggle', VARIABLETYPE_BOOLEAN, '', true);
         $this->ensureVar($catSettings, 'geraete_toggle', 'geraeteToggle', VARIABLETYPE_BOOLEAN, '', true);
@@ -110,10 +112,22 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->ensureVar($catHelper, 'PendingDeviceId', 'pendingDeviceId', VARIABLETYPE_STRING, '', '');
         $this->ensureVar($catHelper, 'PendingStage', 'pendingStage', VARIABLETYPE_STRING, '', '');
 
+        $diagVars = [
+            ['action', 'action'],
+            ['device', 'device'],
+            ['room', 'room'],
+            ['szene', 'szene'],
+            ['object', 'object'],
+            ['number', 'number'],
+            ['prozent', 'prozent'],
+            ['alles', 'alles'],
+        ];
+        foreach ($diagVars as [$ident, $name]) {
+            $this->adoptChildToCategory($root, $catDiag, $ident, $name);
+            $this->ensureVar($catDiag, $name, $ident, VARIABLETYPE_STRING, '', '');
+        }
+
         // Runtime vars under instance
-        $this->ensureVar($root, 'action', 'action', VARIABLETYPE_STRING, '', '');
-        $this->ensureVar($root, 'device', 'device', VARIABLETYPE_STRING, '', '');
-        $this->ensureVar($root, 'room', 'room', VARIABLETYPE_STRING, '', '');
         $this->ensureVar($root, 'skillActive', 'skillActive', VARIABLETYPE_BOOLEAN, '', false);
         $this->ensureVar($root, 'dumpFile', 'dumpFile', VARIABLETYPE_STRING, '', '');
         $this->ensureVar($root, 'lastVariableDevice', 'lastVarDevice', VARIABLETYPE_STRING, '', '');
@@ -143,6 +157,22 @@ class IPSAlexaHaussteuerung extends IPSModule
         IPS_SetIdent($id, $ident);
 
         return $id;
+    }
+
+    private function adoptChildToCategory(int $sourceParent, int $targetParent, string $ident, string $name): void
+    {
+        if ($sourceParent <= 0 || $targetParent <= 0) {
+            return;
+        }
+
+        $id = @IPS_GetObjectIDByIdent($ident, $sourceParent);
+        if (!$id && $name !== '') {
+            $id = @IPS_GetObjectIDByName($name, $sourceParent);
+        }
+
+        if ($id && IPS_GetParent($id) !== $targetParent) {
+            IPS_SetParent($id, $targetParent);
+        }
     }
 
     private function ensureVar(
@@ -383,6 +413,10 @@ class IPSAlexaHaussteuerung extends IPSModule
         $root = $this->InstanceID;
         $settings = $this->getObjectIDByIdentOrName($root, 'iahSettings', 'Einstellungen');
         $helper = $this->getObjectIDByIdentOrName($root, 'iahHelper', 'Alexa new devices helper');
+        $diag    = $this->getObjectIDByIdentOrName($root, 'iahDiag', 'Diagnose');
+        if ($diag <= 0) {
+            $diag = $root;
+        }
 
         $get = function (int $parent, string $ident) {
             return (int) @IPS_GetObjectIDByIdent($ident, $parent);
@@ -423,9 +457,14 @@ class IPSAlexaHaussteuerung extends IPSModule
                 'devicemap_json'      => $deviceMapJsonVar,
                 'pending_deviceid'    => $get((int) $helper, 'pendingDeviceId'),
                 'pending_stage'       => $get((int) $helper, 'pendingStage'),
-                'action'              => (int) @IPS_GetObjectIDByIdent('action', $root),
-                'device'              => (int) @IPS_GetObjectIDByIdent('device', $root),
-                'room'                => (int) @IPS_GetObjectIDByIdent('room', $root),
+                'action'              => (int) @IPS_GetObjectIDByIdent('action', $diag),
+                'device'              => (int) @IPS_GetObjectIDByIdent('device', $diag),
+                'room'                => (int) @IPS_GetObjectIDByIdent('room', $diag),
+                'szene'               => (int) @IPS_GetObjectIDByIdent('szene', $diag),
+                'object'              => (int) @IPS_GetObjectIDByIdent('object', $diag),
+                'number'              => (int) @IPS_GetObjectIDByIdent('number', $diag),
+                'prozent'             => (int) @IPS_GetObjectIDByIdent('prozent', $diag),
+                'alles'               => (int) @IPS_GetObjectIDByIdent('alles', $diag),
                 'skill_active'        => (int) @IPS_GetObjectIDByIdent('skillActive', $root),
                 'dump_file'           => (int) @IPS_GetObjectIDByIdent('dumpFile', $root),
                 'last_var_device'     => (int) @IPS_GetObjectIDByIdent('lastVarDevice', $root),
@@ -679,6 +718,10 @@ class IPSAlexaHaussteuerung extends IPSModule
         };
 
         $lueftungToggleVar = $getVar($settingsCat, 'lueftungToggle', 'lueftung_toggle');
+        $diagCat = $this->getObjectIDByIdentOrName($root, 'iahDiag', 'Diagnose');
+        if ($diagCat <= 0) {
+            $diagCat = $root;
+        }
 
         $var = [
             'BaseUrl'       => $this->ReadPropertyString('BaseUrl'),
@@ -709,9 +752,14 @@ class IPSAlexaHaussteuerung extends IPSModule
             'lastVariableId'     => $getVar($root, 'lastVarId', 'lastVariableId'),
             'lastVariableAction' => $getVar($root, 'lastVarAction', 'lastVariableAction'),
             'lastVariableValue'  => $getVar($root, 'lastVarValue', 'lastVariableValue'),
-            'ACTION_VAR'         => $getVar($root, 'action', 'action'),
-            'DEVICE_VAR'         => $getVar($root, 'device', 'device'),
-            'ROOM_VAR'           => $getVar($root, 'room', 'room'),
+            'ACTION_VAR'         => $getVar($diagCat, 'action', 'action'),
+            'DEVICE_VAR'         => $getVar($diagCat, 'device', 'device'),
+            'ROOM_VAR'           => $getVar($diagCat, 'room', 'room'),
+            'SZENE_VAR'          => $getVar($diagCat, 'szene', 'szene'),
+            'OBJECT_VAR'         => $getVar($diagCat, 'object', 'object'),
+            'NUMBER_VAR'         => $getVar($diagCat, 'number', 'number'),
+            'PROZENT_VAR'        => $getVar($diagCat, 'prozent', 'prozent'),
+            'ALLES_VAR'          => $getVar($diagCat, 'alles', 'alles'),
             'AUSSEN_TEMP'    => $resolveVar($this->ReadPropertyInteger('VarAussenTemp')),
             'INFORMATION'    => $resolveVar($this->ReadPropertyInteger('VarInformation')),
             'MELDUNGEN'      => $resolveVar($this->ReadPropertyInteger('VarMeldungen')),
