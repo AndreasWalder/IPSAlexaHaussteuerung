@@ -545,6 +545,18 @@ function Execute($request = null)
 
         $V = $CFG['var'];
         $S = $CFG['script'];
+        $rendererDomains = is_array($CFG['rendererDomains'] ?? null) ? $CFG['rendererDomains'] : [];
+        $rendererDomainMap = [];
+        foreach ($rendererDomains as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            $routeKey = strtolower((string)($entry['route'] ?? ''));
+            if ($routeKey === '') {
+                continue;
+            }
+            $rendererDomainMap[$routeKey] = $entry;
+        }
 
         $writeRuntimeString = static function ($varId, string $value): void {
             $id = (int) $varId;
@@ -702,6 +714,20 @@ function Execute($request = null)
                 'info'           => ['domain' => 'info',          'device' => 'info'],
                 'szene'          => ['domain' => 'szene',         'device' => 'szene'],
             ];
+
+            foreach ($rendererDomainMap as $routeKey => $entry) {
+                if (isset($NAV_MAP[$routeKey])) {
+                    continue;
+                }
+                if ($routeKey === '' || in_array($routeKey, ['main_launch', 'external', 'settings'], true)) {
+                    continue;
+                }
+                $roomDomain = strtolower((string)($entry['roomDomain'] ?? 'devices'));
+                $NAV_MAP[$routeKey] = [
+                    'domain' => $routeKey,
+                    'device' => ($roomDomain === 'sprinkler') ? 'bewaesserung' : 'geraete',
+                ];
+            }
 
             if (isset($NAV_MAP[$navId])) {
                 $forcedDomain = $NAV_MAP[$navId]['domain'];
@@ -993,6 +1019,20 @@ function Execute($request = null)
                 || $device==='einstellungen'
                 || in_array($action, ['einstellung','einstellungen','settings'], true),
         ];
+
+        foreach ($rendererDomainMap as $routeKey => $entry) {
+            if (isset($ROUTES[$routeKey])) {
+                continue;
+            }
+            $routePrefix = $routeKey . '.';
+            $baseRendererPrefix = (strtolower((string)($entry['roomDomain'] ?? 'devices')) === 'sprinkler')
+                ? 'bewaesserung.'
+                : 'geraete.';
+            $ROUTES[$routeKey] = fn() => $domain === $routeKey
+                || $device === $routeKey
+                || (is_string($APL['a1']) && str_starts_with((string)$APL['a1'], $routePrefix))
+                || (is_string($APL['a1']) && str_starts_with((string)$APL['a1'], $baseRendererPrefix));
+        }
 
         // Route bestimmen
         $__route = $__route ?? null;
