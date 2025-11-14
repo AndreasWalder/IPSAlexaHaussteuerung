@@ -639,6 +639,14 @@ class IPSAlexaHaussteuerung extends IPSModule
             return (int) $id;
         }
 
+        $renderersCat = @IPS_GetObjectIDByIdent('iahRenderers', $this->InstanceID);
+        if ($renderersCat) {
+            $id = @IPS_GetObjectIDByIdent($ident, $renderersCat);
+            if ($id) {
+                return (int) $id;
+            }
+        }
+
         return $this->findScriptIdByName($name);
     }
 
