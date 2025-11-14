@@ -37,6 +37,11 @@ return [
         'ACTION_VAR'         => 0,
         'DEVICE_VAR'         => 0,
         'ROOM_VAR'           => 0,
+        'SZENE_VAR'          => 0,
+        'OBJECT_VAR'         => 0,
+        'NUMBER_VAR'         => 0,
+        'PROZENT_VAR'        => 0,
+        'ALLES_VAR'          => 0,
         'externalKey'        => '',
         // Helper scripts (these point to scripts located below the instance)
         'CoreHelpers'        => 0,

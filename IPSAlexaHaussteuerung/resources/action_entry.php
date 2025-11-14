@@ -206,6 +206,10 @@ function iah_build_system_configuration_internal(int $instanceId, array $props, 
 {
     $settings = iah_get_child_object($instanceId, 'iahSettings', 'Einstellungen');
     $helper = iah_get_child_object($instanceId, 'iahHelper', 'Alexa new devices helper');
+    $diag    = iah_get_child_object($instanceId, 'iahDiag', 'Diagnose');
+    if ($diag <= 0) {
+        $diag = $instanceId;
+    }
     $logCfg('debug', 'CFG.build.internal', [
         'instanceId' => $instanceId,
         'settings' => $settings,
@@ -250,9 +254,14 @@ function iah_build_system_configuration_internal(int $instanceId, array $props, 
         'RoomBuilderHelpers' => iah_get_child_object($helper, 'roomBuilderHelpersScript', 'RoomBuilderHelpers'),
         'DeviceMapWizard'    => iah_get_child_object($helper, 'deviceMapWizardScript', 'DeviceMapWizard'),
         'Lexikon'            => iah_get_child_object($helper, 'lexikonScript', 'Lexikon'),
-        'ACTION_VAR'         => iah_get_child_object($instanceId, 'action', 'action'),
-        'DEVICE_VAR'         => iah_get_child_object($instanceId, 'device', 'device'),
-        'ROOM_VAR'           => iah_get_child_object($instanceId, 'room', 'room'),
+        'ACTION_VAR'         => iah_get_child_object($diag, 'action', 'action'),
+        'DEVICE_VAR'         => iah_get_child_object($diag, 'device', 'device'),
+        'ROOM_VAR'           => iah_get_child_object($diag, 'room', 'room'),
+        'SZENE_VAR'          => iah_get_child_object($diag, 'szene', 'szene'),
+        'OBJECT_VAR'         => iah_get_child_object($diag, 'object', 'object'),
+        'NUMBER_VAR'         => iah_get_child_object($diag, 'number', 'number'),
+        'PROZENT_VAR'        => iah_get_child_object($diag, 'prozent', 'prozent'),
+        'ALLES_VAR'          => iah_get_child_object($diag, 'alles', 'alles'),
     ];
 
     $scripts = [
@@ -676,6 +685,11 @@ function Execute($request = null)
         $writeRuntimeString($V['ACTION_VAR'] ?? 0, (string) $action);
         $writeRuntimeString($V['DEVICE_VAR'] ?? 0, (string) $device);
         $writeRuntimeString($V['ROOM_VAR'] ?? 0, (string) $room);
+        $writeRuntimeString($V['SZENE_VAR'] ?? 0, (string) $szene);
+        $writeRuntimeString($V['OBJECT_VAR'] ?? 0, (string) $object);
+        $writeRuntimeString($V['NUMBER_VAR'] ?? 0, $number === null ? '' : (string) $number);
+        $writeRuntimeString($V['PROZENT_VAR'] ?? 0, $prozent === null ? '' : (string) $prozent);
+        $writeRuntimeString($V['ALLES_VAR'] ?? 0, (string) $alles);
 
         // --------- Außentemperatur-Shortcut ---------
         $AUSSEN_ALIASES = ['außentemperatur','aussentemperatur'];
