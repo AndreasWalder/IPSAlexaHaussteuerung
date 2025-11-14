@@ -77,11 +77,12 @@ class IPSAlexaHaussteuerung extends IPSModule
         $root = $this->InstanceID;
         $catSettings = $this->ensureCategory($root, 'Einstellungen', 'iahSettings');
         $catHelper = $this->ensureCategory($root, 'Alexa new devices helper', 'iahHelper');
+        $catRenderers = $this->ensureCategory($root, 'Renderers', 'iahRenderers');
 
         $this->ensureRoomsCatalogTemplate($catSettings);
-        $this->ensureActionScript($root);
+        $this->ensureActionScript($catRenderers);
         $this->ensureHelperScripts($catHelper);
-        $this->ensureRendererScripts($root);
+        $this->ensureRendererScripts($catRenderers);
 
         // Einstellungen toggles (Defaults wie im Original-Flow: aktiv = true)
         $this->ensureVar($catSettings, 'bewaesserung_toggle', 'bewaesserungToggle', VARIABLETYPE_BOOLEAN, '', true);
