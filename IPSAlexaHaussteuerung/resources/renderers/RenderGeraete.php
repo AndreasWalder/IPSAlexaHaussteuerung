@@ -66,6 +66,24 @@ $voice_object = (string)($in['object'] ?? '');
    CFG / ACTION FLAGS / LOGGING
    ========================= */
 $CFG = is_array($in['CFG'] ?? null) ? $in['CFG'] : [];
+$rendererCfg = gr_renderer_config('geraete', $CFG);
+$rendererRouteKey = (string)($rendererCfg['route'] ?? 'geraete');
+if ($rendererRouteKey === '') { $rendererRouteKey = 'geraete'; }
+$rendererToggleVarKey = (string)($rendererCfg['toggleVarKey'] ?? ($rendererRouteKey . '_toggle'));
+if ($rendererToggleVarKey === '') { $rendererToggleVarKey = $rendererRouteKey . '_toggle'; }
+$rendererRoomDomain = (string)($rendererCfg['roomDomain'] ?? 'devices');
+if ($rendererRoomDomain === '') { $rendererRoomDomain = 'devices'; }
+$rendererSpeechEmpty = (string)($rendererCfg['speechEmpty'] ?? 'Keine Geräte im RoomsCatalog konfiguriert.');
+$rendererDefaultTitle = (string)($rendererCfg['title'] ?? 'Geräte');
+if ($rendererDefaultTitle === '') { $rendererDefaultTitle = 'Geräte'; }
+$rendererSubtitle = (string)($rendererCfg['subtitle'] ?? 'Steckdosen & mehr');
+if ($rendererSubtitle === '') { $rendererSubtitle = 'Steckdosen & mehr'; }
+$rendererLogName = (string)($rendererCfg['logName'] ?? 'Geraete');
+if ($rendererLogName === '') { $rendererLogName = 'Geraete'; }
+$rendererAplDoc = (string)($rendererCfg['aplDoc'] ?? 'doc://alexa/apl/documents/Geraete');
+if ($rendererAplDoc === '') { $rendererAplDoc = 'doc://alexa/apl/documents/Geraete'; }
+$rendererAplToken = (string)($rendererCfg['aplToken'] ?? 'hv-geraete');
+if ($rendererAplToken === '') { $rendererAplToken = 'hv-geraete'; }
 
 // ActionsEnabled-IDs (kompatibel zu alter/ neuer Struktur)
 $VAR = [];
@@ -85,12 +103,12 @@ $readBool = static function($varId, bool $default=false): bool {
 };
 
 $ACTIONS_ENABLED = [
-    'geraete' => [
-        'toggle' => $readBool((int)($VAR['geraete_toggle'] ?? 0), false)
+    $rendererRouteKey => [
+        'toggle' => $readBool((int)($VAR[$rendererToggleVarKey] ?? 0), false)
     ],
 ];
 
-$CAN_TOGGLE  = (bool)($ACTIONS_ENABLED['geraete']['toggle'] ?? false);
+$CAN_TOGGLE  = (bool)($ACTIONS_ENABLED[$rendererRouteKey]['toggle'] ?? false);
 
 $LOG_BASIC   = isset($in['logBasic'])   ? (bool)$in['logBasic']   : (isset($CFG['flags']['log_basic'])   ? (bool)$CFG['flags']['log_basic']   : true);
 $LOG_VERBOSE = isset($in['logVerbose']) ? (bool)$in['logVerbose'] : (isset($CFG['flags']['log_verbose']) ? (bool)$CFG['flags']['log_verbose'] : true);
@@ -102,8 +120,8 @@ $logB = static function(string $msg) use ($LOG_BASIC, $LOG_TAG)  { if ($LOG_BASI
 $logV = static function(string $msg) use ($LOG_VERBOSE, $LOG_TAG){ if ($LOG_VERBOSE) IPS_LogMessage($LOG_TAG, $msg); };
 
 $RID = strtoupper(substr(hash('crc32b', microtime(true) . mt_rand()), 0, 8));
-$logV("[$RID][Geraete] ENTER");
-$logV("[$RID][Geraete] INPUT ".json_encode([
+$logV("[$RID][{$rendererLogName}] ENTER");
+$logV("[$RID][{$rendererLogName}] INPUT ".json_encode([
     'aplSupported'=>$aplSupported,'room'=>$roomSpoken,'args1'=>$args1_raw,'args2'=>$args2_raw,
     'numberRaw'=>$numberRaw,'AE'=>$ACTIONS_ENABLED,
     'voice'=>['action'=>$voice_action,'device'=>$voice_device,'alles'=>$voice_alles,'object'=>$voice_object]
@@ -123,7 +141,7 @@ $numberIn  = $ev['value'];
 $toggleTo  = $ev['toggleTo'];
 $rawText   = (string)$ev['rawText'];
 
-$logV("[$RID][Geraete] NORMALIZED ".json_encode($ev, GR_JF));
+$logV("[$RID][{$rendererLogName}] NORMALIZED ".json_encode($ev, GR_JF));
 
 /* =========================
    Room-Resolve (optional)
@@ -133,12 +151,12 @@ $roomKeyFilter = gr_resolveRoomKey($roomSpoken, $roomMap, $ROOMS);
 /* =========================
    Tabs & aktive Kategorie
    ========================= */
-$tabs = gr_collectRoomDeviceTabs($ROOMS, $roomKeyFilter);
-$logV("[$RID][Geraete] tabs=".count($tabs));
+$tabs = gr_collectRoomDeviceTabs($ROOMS, $roomKeyFilter, $rendererRoomDomain);
+$logV("[$RID][{$rendererLogName}] tabs=".count($tabs));
 
 if (!$tabs) {
     echo json_encode([
-        'speech'     => 'Keine Geräte im RoomsCatalog konfiguriert.',
+        'speech'     => $rendererSpeechEmpty,
         'reprompt'   => '',
         'apl'        => null,
         'endSession' => false
@@ -167,8 +185,8 @@ if ($action === 'tab' && $tabIdArg !== '') {
 
 $activeTitle = '';
 foreach ($tabs as $t) { if ((string)$t['id'] === (string)$activeId) { $activeTitle = (string)$t['title']; break; } }
-if ($activeTitle === '') $activeTitle = (string)($tabs[0]['title'] ?? 'Geräte');
-$logV("[$RID][Geraete] activeTab=$activeId title=$activeTitle");
+if ($activeTitle === '') $activeTitle = (string)($tabs[0]['title'] ?? $rendererDefaultTitle);
+$logV("[$RID][{$rendererLogName}] activeTab=$activeId title=$activeTitle");
 
 /* =========================
    ACTIONS (APL)
@@ -191,7 +209,7 @@ if ($action === 'toggle' && $varId > 0) {
                 $set = gr_asBool($now) ? 0 : 1;
             }
             if (gr_hasAction($var)) { @RequestAction($varId, $set); } else { @SetValueBoolean($varId, (bool)$set); }
-            $didAction = true; $logB("[$RID][Geraete] TOGGLE var=$varId set=".$set);
+            $didAction = true; $logB("[$RID][{$rendererLogName}] TOGGLE var=$varId set=".$set);
         } else {
             echo json_encode(['speech'=>'Schaltvorgang nicht möglich. Variable nicht gefunden.','reprompt'=>'','apl'=>null,'endSession'=>false], GR_JF);
             return;
@@ -227,7 +245,7 @@ elseif ($action === 'set' && $varId > 0) {
                 default: @SetValueString($varId, (string)$finalValue); break;
             }
         }
-        $didAction = true; $logB("[$RID][Geraete] SET var=$varId value=".json_encode($finalValue, GR_JF));
+        $didAction = true; $logB("[$RID][{$rendererLogName}] SET var=$varId value=".json_encode($finalValue, GR_JF));
     }
 }
 
@@ -237,23 +255,23 @@ elseif ($action === 'set' && $varId > 0) {
 if ($didAction) IPS_Sleep(GR_DELAY_MS);
 
 $rows = gr_buildRowsFromNode((int)$activeId, $CAN_TOGGLE);
-$logV("[$RID][Geraete] rows=".count($rows));
+$logV("[$RID][{$rendererLogName}] rows=".count($rows));
 $enumDebug = array_values(array_filter($rows, static function($r){
     $n = gr_norm((string)($r['name'] ?? ''));
     $v = gr_norm((string)($r['value'] ?? ''));
     return (!empty($r['isSection'])) || ($n==='steuern') || in_array($v,['start','starten','stop','stoppen','fortsetzen','pause','continue','resume'], true)
         || (!empty($r['isEnum'])) || (!empty($r['hasEnum']) && !empty($r['isNumber']));
 }));
-$logV("[$RID][Geraete] enumRows ".json_encode($enumDebug, GR_JF));
+$logV("[$RID][{$rendererLogName}] enumRows ".json_encode($enumDebug, GR_JF));
 
 /* =========================
    APL (Doc + Datasources)
    ========================= */
-$doc = ['type' => 'Link', 'src' => 'doc://alexa/apl/documents/Geraete'];
+$doc = ['type' => 'Link', 'src' => $rendererAplDoc];
 $ds  = [
     'deviceTableData' => [
         'title'     => $activeTitle,
-        'subtitle'  => 'Steckdosen & mehr',
+        'subtitle'  => $rendererSubtitle,
         'tabs'      => $tabs,
         'activeTab' => (string)$activeId,
         'headers'   => ['name'=>'Name','value'=>'Wert','updated'=>'Aktualisiert'],
@@ -263,8 +281,8 @@ $ds  = [
 
 // Vollständiges DS-Logging + optionaler Dump in String-Variable
 if ($LOG_APL) {
-    @IPS_LogMessage($LOG_TAG, "[$RID][Geraete] APL.DS.PRETTY\n".json_encode($ds, GR_JF | JSON_PRETTY_PRINT));
-    $logV("[$RID][Geraete] APL.DS ".json_encode($ds, GR_JF));
+    @IPS_LogMessage($LOG_TAG, "[$RID][{$rendererLogName}] APL.DS.PRETTY\n".json_encode($ds, GR_JF | JSON_PRETTY_PRINT));
+    $logV("[$RID][{$rendererLogName}] APL.DS ".json_encode($ds, GR_JF));
 }
 if ($DUMP_VAR > 0 && @IPS_ObjectExists($DUMP_VAR)) {
     $v = @IPS_GetVariable($DUMP_VAR);
@@ -273,7 +291,7 @@ if ($DUMP_VAR > 0 && @IPS_ObjectExists($DUMP_VAR)) {
     }
 }
 
-$apl = $aplSupported ? ['doc' => $doc, 'ds' => $ds, 'token' => 'hv-geraete'] : null;
+$apl = $aplSupported ? ['doc' => $doc, 'ds' => $ds, 'token' => $rendererAplToken] : null;
 
 echo json_encode([
     'speech'     => '',
@@ -286,6 +304,11 @@ echo json_encode([
 /* ============================================================
    Helpers (gr_ Präfix)
    ============================================================ */
+
+function gr_is_html_doc(string $s): bool {
+    $t = ltrim($s);
+    return stripos($t, '<!doctype html') === 0;
+}
 
 function gr_is_placeholder_name(string $name): bool {
     $n = trim($name);
@@ -388,15 +411,16 @@ function gr_resolveRoomKey(string $spoken, array $roomMap, array $ROOMS): ?strin
     return null;
 }
 
-function gr_collectRoomDeviceTabs(array $ROOMS, ?string $onlyRoomKey = null): array
+function gr_collectRoomDeviceTabs(array $ROOMS, ?string $onlyRoomKey = null, string $domainKey = 'devices'): array
 {
     $tabs = [];
+    $domainKey = $domainKey !== '' ? $domainKey : 'devices';
 
     foreach ($ROOMS as $roomKey => $room) {
         if ($roomKey === 'global') continue;
         if ($onlyRoomKey !== null && (string)$roomKey !== (string)$onlyRoomKey) continue;
 
-        $dev = $room['domains']['devices']['tabs'] ?? null;
+        $dev = $room['domains'][$domainKey]['tabs'] ?? null;
         if (is_array($dev)) {
             foreach ($dev as $title => $def) { if ($t = gr_normalize_tab_def((string)$title, $def)) $tabs[] = $t; }
         }
@@ -405,7 +429,7 @@ function gr_collectRoomDeviceTabs(array $ROOMS, ?string $onlyRoomKey = null): ar
         if (is_array($domains)) {
             foreach ($domains as $domVal) {
                 if (!is_array($domVal)) continue;
-                $nested = $domVal['devices']['tabs'] ?? null;
+                $nested = $domVal[$domainKey]['tabs'] ?? null;
                 if (!is_array($nested)) continue;
                 foreach ($nested as $title => $def) { if ($t = gr_normalize_tab_def((string)$title, $def)) $tabs[] = $t; }
             }
@@ -594,6 +618,10 @@ function gr_make_row_for_var(int $varId, bool $aeToggle, ?string $nameOverride):
     $updated   = gr_formatUpdated($updatedTs);
     $boolOn    = ($type === 0) ? gr_asBool($raw) : false;
     $controllable = gr_hasAction($var);
+
+    if ($type === 3 && is_string($raw) && gr_is_html_doc($raw)) {
+        return null;
+    }
 
     $valueColor = null;
     if ($type !== 0) {
@@ -995,4 +1023,92 @@ function gr_info_allowed_list(array $obj): string {
     elseif (!empty($info['enum']) && is_array($info['enum'])) { foreach ($info['enum'] as $lab) { $lab = (string)$lab; if ($lab !== '') $labels[] = $lab; } }
     elseif (!empty($info['enumProfile']) && is_string($info['enumProfile'])) { $assoc = gr_get_profile_associations($info['enumProfile']); if (!empty($assoc['byValue'])) $labels = array_values($assoc['byValue']); }
     return $labels ? implode(', ', $labels) : '';
+}
+
+function gr_renderer_config(string $routeKey, array $CFG): array {
+    $list = [];
+    if (isset($CFG['rendererDomains']) && is_array($CFG['rendererDomains'])) {
+        $list = $CFG['rendererDomains'];
+    } elseif (isset($CFG['renderer_domains']) && is_array($CFG['renderer_domains'])) {
+        $list = $CFG['renderer_domains'];
+    }
+
+    $routeKey = strtolower($routeKey);
+    $defaults = gr_renderer_default_entry($routeKey);
+
+    foreach ($list as $entry) {
+        if (!is_array($entry)) {
+            continue;
+        }
+        $route = strtolower(trim((string)($entry['route'] ?? '')));
+        if ($route === '' || $route !== $routeKey) {
+            continue;
+        }
+        $normalized = [];
+        foreach (['logName', 'roomDomain', 'title', 'subtitle', 'speechEmpty', 'aplDoc', 'aplToken', 'toggleVarKey'] as $field) {
+            if (!array_key_exists($field, $entry)) {
+                continue;
+            }
+            $val = trim((string)$entry[$field]);
+            if ($val === '') {
+                continue;
+            }
+            $normalized[$field] = $val;
+        }
+
+        return array_merge($defaults, $normalized);
+    }
+
+    return $defaults;
+}
+
+function gr_renderer_default_entry(string $routeKey): array {
+    $normalizedRoute = strtolower($routeKey);
+    if ($normalizedRoute === '') {
+        $normalizedRoute = 'geraete';
+    }
+    $title = ucfirst($normalizedRoute);
+    $tokenSlug = preg_replace('/[^a-z0-9]+/i', '', $normalizedRoute);
+    if ($tokenSlug === '') {
+        $tokenSlug = 'renderer';
+    }
+
+    $base = [
+        'route'        => $normalizedRoute,
+        'logName'      => $title,
+        'roomDomain'   => 'devices',
+        'title'        => $title,
+        'subtitle'     => 'Steckdosen & mehr',
+        'speechEmpty'  => 'Keine Einträge im RoomsCatalog konfiguriert.',
+        'aplDoc'       => 'doc://alexa/apl/documents/' . $title,
+        'aplToken'     => 'hv-' . $tokenSlug,
+        'toggleVarKey' => $normalizedRoute . '_toggle',
+    ];
+
+    $overrides = [
+        'geraete' => [
+            'logName'     => 'Geraete',
+            'roomDomain'  => 'devices',
+            'title'       => 'Geräte',
+            'speechEmpty' => 'Keine Geräte im RoomsCatalog konfiguriert.',
+            'aplDoc'      => 'doc://alexa/apl/documents/Geraete',
+            'aplToken'    => 'hv-geraete',
+            'toggleVarKey'=> 'geraete_toggle',
+        ],
+        'bewaesserung' => [
+            'logName'     => 'Bewaesserung',
+            'roomDomain'  => 'sprinkler',
+            'title'       => 'Bewässerung',
+            'speechEmpty' => 'Keine Bewässerung im RoomsCatalog konfiguriert.',
+            'aplDoc'      => 'doc://alexa/apl/documents/Bewaesserung',
+            'aplToken'    => 'hv-bewaesserung',
+            'toggleVarKey'=> 'bewaesserung_toggle',
+        ],
+    ];
+
+    if (isset($overrides[$normalizedRoute])) {
+        $base = array_merge($base, $overrides[$normalizedRoute]);
+    }
+
+    return $base;
 }

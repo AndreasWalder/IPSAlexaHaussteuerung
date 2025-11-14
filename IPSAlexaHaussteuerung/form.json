@@ -76,6 +76,31 @@
       ]
     },
     {
+      "type": "ExpansionPanel",
+      "caption": "Renderer-Domains",
+      "items": [
+        {
+          "name": "RendererDomains",
+          "type": "List",
+          "caption": "Renderer-Domains",
+          "add": true,
+          "delete": true,
+          "rowCount": 4,
+          "columns": [
+            { "caption": "Route", "name": "route", "width": "90px", "add": true, "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Log-Label", "name": "logName", "width": "120px", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "RoomsCatalog-Domain", "name": "roomDomain", "width": "150px", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Fallback-Titel", "name": "title", "width": "140px", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Subtitel", "name": "subtitle", "width": "140px", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Fehlermeldung", "name": "speechEmpty", "width": "200px", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "APL-Dokument", "name": "aplDoc", "width": "220px", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "APL-Token", "name": "aplToken", "width": "120px", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Toggle-Variable", "name": "toggleVarKey", "width": "150px", "edit": { "type": "ValidationTextBox" } }
+          ]
+        }
+      ]
+    },
+    {
       "name": "DiagPayload",
       "type": "ValidationTextBox",
       "caption": "Diagnose: Custom Payload (JSON)",
