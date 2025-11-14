@@ -538,6 +538,12 @@ function Execute($request = null)
         $prozent = $getSlotCH($request,'Prozent') ?? null;
         $alles   = $lc($getSlotCH($request,'Alles')  ?? '');
 
+        // PENDING_STAGE lesen (Wizard nur bei aktivem Stage)
+        $stage = '';
+        if (!empty($V['PENDING_STAGE'])) {
+            $stage = @GetValueString($V['PENDING_STAGE']);
+        }
+
         // Falls UI-Override aktiv: Device & Domain hart setzen
         $domain = null;
         if ($navForce) {
@@ -549,42 +555,43 @@ function Execute($request = null)
             SetValueString($V['DOMAIN_FLAG'], "");
         }
 
-        // --------- Device-Map Wizard Flow (ausgelagert) ---------
-        $wizard = require IPS_GetScriptFile((int)$V['DeviceMapWizard']);
+        // --------- Device-Map Wizard Flow (ausgelagert, nur bei aktivem Stage) ---------
+        if ($stage !== '') {
+            $wizard = require IPS_GetScriptFile((int)$V['DeviceMapWizard']);
 
-        $wzResult = $wizard['handle_wizard'](
-            $V,
-            $intentName,
-            (string)$action,
-            (string)$alles,
-            (string)$room,
-            (string)$device,
-            $DM_HELPERS,
-            $STAGE_AWAIT_NAME,
-            $STAGE_AWAIT_APL
-        );
-
-         if ($wzResult !== null) {
-            $type     = (string)($wzResult['type'] ?? '');
-            $text     = (string)($wzResult['text'] ?? '');
-            $reprompt = isset($wzResult['reprompt']) ? (string)$wzResult['reprompt'] : '';
-
-            if ($type === 'ask') {
-                $ask = AskResponse::CreatePlainText($text);
-                if ($reprompt !== '') {
-                    $ask->SetRepromptPlainText($reprompt);
-                }
-                return $ask;
-            }
-
-            if ($type === 'tell') {
-                return TellResponse::CreatePlainText($text);
-            }
-
-            // Fallback, falls der Wizard etwas Unerwartetes liefert
-            return TellResponse::CreatePlainText(
-                $text !== '' ? $text : 'Assistent beendet.'
+            $wzResult = $wizard['handle_wizard'](
+                $V,
+                $intentName,
+                (string)$action,
+                (string)$alles,
+                (string)$room,
+                (string)$device,
+                $DM_HELPERS,
+                $STAGE_AWAIT_NAME,
+                $STAGE_AWAIT_APL
             );
+
+            if ($wzResult !== null) {
+                $type     = (string)($wzResult['type'] ?? '');
+                $text     = (string)($wzResult['text'] ?? '');
+                $reprompt = isset($wzResult['reprompt']) ? (string)$wzResult['reprompt'] : '';
+
+                if ($type === 'ask') {
+                    $ask = AskResponse::CreatePlainText($text);
+                    if ($reprompt !== '') {
+                        $ask->SetRepromptPlainText($reprompt);
+                    }
+                    return $ask;
+                }
+
+                if ($type === 'tell') {
+                    return TellResponse::CreatePlainText($text);
+                }
+
+                return TellResponse::CreatePlainText(
+                    $text !== '' ? $text : 'Assistent beendet.'
+                );
+            }
         }
 
         // --------- Room/Number/Action Normalisierung ---------
@@ -691,7 +698,6 @@ function Execute($request = null)
         $writeRuntimeString($V['NUMBER_VAR'] ?? 0, $number === null ? '' : (string) $number);
         $writeRuntimeString($V['PROZENT_VAR'] ?? 0, $prozent === null ? '' : (string) $prozent);
         $writeRuntimeString($V['ALLES_VAR'] ?? 0, (string) $alles);
-        $writeRuntimeString($V['ALEXA_VAR'] ?? 0, (string) $alexa);
 
         // --------- Außentemperatur-Shortcut ---------
         $AUSSEN_ALIASES = ['außentemperatur','aussentemperatur'];
@@ -709,6 +715,8 @@ function Execute($request = null)
         [$alexa, $aplSupported, $isNewDevice] = $DM_HELPERS['ensure']($V['DEVICE_MAP'], (string)$deviceId);
         IPS_LogMessage("Alexa", 'Alexa: ' . $alexa);
         IPS_LogMessage("Alexa", 'APL Supported: ' . ($aplSupported ? 'true' : 'false'));
+
+        $writeRuntimeString($V['ALEXA_VAR'] ?? 0, (string) $alexa);
 
         if (($APL['a1'] ?? null) === 'delete') {
             $map = $DM_HELPERS['load']($V['DEVICE_MAP']); $deleted = false;
