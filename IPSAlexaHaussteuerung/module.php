@@ -666,6 +666,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $name = 'RoomsCatalog';
         $ident = 'roomsCatalog';
         $id = @IPS_GetObjectIDByIdent($ident, $parent);
+        $isNew = false;
 
         if (!$id) {
             $byName = @IPS_GetObjectIDByName($name, $parent);
@@ -680,13 +681,16 @@ class IPSAlexaHaussteuerung extends IPSModule
             IPS_SetParent($id, $parent);
             IPS_SetName($id, $name);
             IPS_SetIdent($id, $ident);
+            $isNew = true;
         }
 
-        $template = __DIR__ . '/resources/helpers/RoomsCatalog.php';
-        if (is_file($template)) {
-            $content = file_get_contents($template);
-            if ($content !== false) {
-                IPS_SetScriptContent($id, $content);
+        if ($isNew) {
+            $template = __DIR__ . '/resources/helpers/RoomsCatalog.php';
+            if (is_file($template)) {
+                $content = file_get_contents($template);
+                if ($content !== false) {
+                    IPS_SetScriptContent($id, $content);
+                }
             }
         }
 
