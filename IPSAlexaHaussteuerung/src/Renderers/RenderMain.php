@@ -7,6 +7,9 @@ final class RenderMain {
         if ($sid <= 0) return null;
         $payload['V'] = $cfg['V'] ?? [];
         $payload['S'] = $cfg['S'] ?? [];
+        if (!isset($payload['launchCatalog']) && isset($cfg['launchCatalog'])) {
+            $payload['launchCatalog'] = $cfg['launchCatalog'];
+        }
         $args = ['payload' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)];
         $json = @IPS_RunScriptWaitEx($sid, $args);
         $res = @json_decode((string)$json, true);

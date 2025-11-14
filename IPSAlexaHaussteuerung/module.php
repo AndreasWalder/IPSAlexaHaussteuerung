@@ -38,6 +38,23 @@ class IPSAlexaHaussteuerung extends IPSModule
             'RendererDomains',
             json_encode($this->rendererDomainDefaults(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
         );
+        $launchDefaults = $this->launchCatalogDefaults();
+        $this->RegisterPropertyString(
+            'LaunchCatalog',
+            json_encode((array)($launchDefaults['tiles'] ?? []), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+        );
+        $this->RegisterPropertyString('LaunchTitle', (string) ($launchDefaults['title'] ?? 'HAUS VISUALISIERUNG'));
+        $this->RegisterPropertyString(
+            'LaunchSubtitleTemplate',
+            (string) ($launchDefaults['subtitleTemplate'] ?? 'Raumname: {{alexa}}')
+        );
+        $this->RegisterPropertyString(
+            'LaunchFooterText',
+            (string) ($launchDefaults['footerText'] ?? 'Tipp eine Kachel an – oder sage z. B. „Jalousie“.')
+        );
+        $this->RegisterPropertyString('LaunchLogo', (string) ($launchDefaults['logo'] ?? 'Logo.png'));
+        $this->RegisterPropertyString('LaunchHomeIcon', (string) ($launchDefaults['homeIcon'] ?? 'HomeIcon.png'));
+        $this->RegisterPropertyString('LaunchHeaderIcon', (string) ($launchDefaults['headerIcon'] ?? 'Icon.png'));
         $this->RegisterPropertyInteger('SystemConfigScriptId', 0);
         $this->RegisterAttributeString('DelayedPageSwitchPayload', '');
         $this->RegisterTimer('DelayedPageSwitch', 0, 'IAH_HandleDelayedPageSwitch($_IPS["TARGET"]);');
@@ -431,6 +448,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             'V'         => $this->BuildVars(),
             'S'         => $this->BuildScripts(),
             'LOG_LEVEL' => $this->ReadPropertyString('LOG_LEVEL'),
+            'launchCatalog' => $this->readLaunchCatalogProperty(),
         ];
     }
 
@@ -848,6 +866,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             'script' => $scripts,
             'missing' => $missing,
             'rendererDomains' => $this->readRendererDomainsProperty(),
+            'launchCatalog' => $this->readLaunchCatalogProperty(),
         ];
     }
 
@@ -1010,6 +1029,105 @@ class IPSAlexaHaussteuerung extends IPSModule
                 'aplToken'    => 'hv-bewaesserung',
             ],
         ];
+    }
+
+    private function launchCatalogDefaults(): array
+    {
+        $file = __DIR__ . '/resources/helpers/LaunchCatalogDefaults.php';
+        $defaults = @include $file;
+        if (is_array($defaults)) {
+            return $defaults;
+        }
+
+        return [
+            'title' => 'HAUS VISUALISIERUNG',
+            'subtitleTemplate' => 'Raumname: {{alexa}}',
+            'footerText' => 'Tipp eine Kachel an – oder sage z. B. „Jalousie“.',
+            'logo' => 'Logo.png',
+            'homeIcon' => 'HomeIcon.png',
+            'headerIcon' => 'Icon.png',
+            'tiles' => [],
+        ];
+    }
+
+    private function readLaunchCatalogProperty(): array
+    {
+        $defaults = $this->launchCatalogDefaults();
+        $raw = json_decode($this->ReadPropertyString('LaunchCatalog'), true);
+        $tiles = [];
+        if (is_array($raw)) {
+            foreach ($raw as $entry) {
+                if (!is_array($entry)) {
+                    continue;
+                }
+                $tile = $this->sanitizeLaunchCatalogEntry($entry);
+                if ($tile !== null) {
+                    $tiles[] = $tile;
+                }
+            }
+        }
+        if ($tiles === []) {
+            $tiles = (array)($defaults['tiles'] ?? []);
+        }
+
+        $readString = static function (string $value, string $fallback): string {
+            $trimmed = trim($value);
+            return $trimmed !== '' ? $trimmed : $fallback;
+        };
+
+        return [
+            'title' => $readString($this->ReadPropertyString('LaunchTitle'), (string) ($defaults['title'] ?? '')),
+            'subtitleTemplate' => $readString(
+                $this->ReadPropertyString('LaunchSubtitleTemplate'),
+                (string) ($defaults['subtitleTemplate'] ?? '')
+            ),
+            'footerText' => $readString(
+                $this->ReadPropertyString('LaunchFooterText'),
+                (string) ($defaults['footerText'] ?? '')
+            ),
+            'logo' => $readString($this->ReadPropertyString('LaunchLogo'), (string) ($defaults['logo'] ?? 'Logo.png')),
+            'homeIcon' => $readString(
+                $this->ReadPropertyString('LaunchHomeIcon'),
+                (string) ($defaults['homeIcon'] ?? 'HomeIcon.png')
+            ),
+            'headerIcon' => $readString(
+                $this->ReadPropertyString('LaunchHeaderIcon'),
+                (string) ($defaults['headerIcon'] ?? 'Icon.png')
+            ),
+            'tiles' => $tiles,
+        ];
+    }
+
+    private function sanitizeLaunchCatalogEntry(array $entry): ?array
+    {
+        $id = strtolower(trim((string) ($entry['id'] ?? '')));
+        $title = trim((string) ($entry['title'] ?? ''));
+        if ($id === '' || $title === '') {
+            return null;
+        }
+
+        $tile = ['id' => $id, 'title' => $title];
+        $subtitle = trim((string) ($entry['subtitle'] ?? ''));
+        if ($subtitle !== '') {
+            $tile['subtitle'] = $subtitle;
+        }
+
+        $icon = trim((string) ($entry['icon'] ?? ''));
+        if ($icon !== '') {
+            $tile['icon'] = $icon;
+        }
+
+        $color = trim((string) ($entry['color'] ?? ''));
+        if ($color !== '') {
+            if ($color[0] !== '#') {
+                $color = '#' . $color;
+            }
+            if (preg_match('/^#[0-9A-F]{3,6}$/i', $color)) {
+                $tile['color'] = strtoupper($color);
+            }
+        }
+
+        return $tile;
     }
 
     private function rendererDomainBase(string $route): array
