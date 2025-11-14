@@ -213,5 +213,11 @@
       ]
     }
   ],
-  "actions": []
+  "actions": [
+    {
+      "type": "Button",
+      "caption": "Instanz aktualisieren",
+      "onClick": "echo IPS_RequestAction($id, 'ManualRefresh', '');"
+    }
+  ]
 }

@@ -29,7 +29,9 @@ $voice_object = (string)($in['object'] ?? '');
    CFG / ACTION FLAGS / LOGGING
    ========================= */
 $CFG = is_array($in['CFG'] ?? null) ? $in['CFG'] : [];
-$rendererCfg = gr_renderer_config('bewaesserung', $CFG);
+$routeKey = strtolower((string)($in['route'] ?? ''));
+if ($routeKey === '') { $routeKey = 'bewaesserung'; }
+$rendererCfg = gr_renderer_config($routeKey, $CFG);
 $rendererRouteKey = (string)($rendererCfg['route'] ?? 'bewaesserung');
 if ($rendererRouteKey === '') { $rendererRouteKey = 'bewaesserung'; }
 $rendererToggleVarKey = (string)($rendererCfg['toggleVarKey'] ?? ($rendererRouteKey . '_toggle'));
