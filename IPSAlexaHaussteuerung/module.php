@@ -34,6 +34,10 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyString('StartPage', '#45315');
         $this->RegisterPropertyInteger('WfcId', 45315);
         $this->RegisterPropertyString('LOG_LEVEL', 'debug');
+        $this->RegisterPropertyString(
+            'RendererDomains',
+            json_encode($this->rendererDomainDefaults(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+        );
         $this->RegisterPropertyInteger('SystemConfigScriptId', 0);
         $this->RegisterAttributeString('DelayedPageSwitchPayload', '');
         $this->RegisterTimer('DelayedPageSwitch', 0, 'IAH_HandleDelayedPageSwitch($_IPS["TARGET"]);');
@@ -839,7 +843,12 @@ class IPSAlexaHaussteuerung extends IPSModule
             }
         }
 
-        return ['var' => $var, 'script' => $scripts, 'missing' => $missing];
+        return [
+            'var' => $var,
+            'script' => $scripts,
+            'missing' => $missing,
+            'rendererDomains' => $this->readRendererDomainsProperty(),
+        ];
     }
 
     /**
@@ -915,5 +924,113 @@ class IPSAlexaHaussteuerung extends IPSModule
         if ($logId > 0) {
             @SetValueString($logId, '');
         }
+    }
+
+    private function readRendererDomainsProperty(): array
+    {
+        $raw = $this->ReadPropertyString('RendererDomains');
+        $data = json_decode($raw, true);
+        if (!is_array($data)) {
+            $data = [];
+        }
+
+        $map = [];
+        foreach ($data as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            $route = strtolower(trim((string)($entry['route'] ?? '')));
+            if ($route === '') {
+                continue;
+            }
+            $base = $this->rendererDomainBase($route);
+            $override = $this->rendererDomainDefaultsMap()[$route] ?? [];
+            $custom = $this->sanitizeRendererDomainEntry($entry);
+            $custom['route'] = $route;
+            $map[$route] = array_merge($base, $override, $custom);
+        }
+
+        foreach ($this->rendererDomainDefaults() as $def) {
+            $route = $def['route'];
+            if (!isset($map[$route])) {
+                $map[$route] = $def;
+            } else {
+                $map[$route] = array_merge($def, $map[$route]);
+            }
+        }
+
+        return array_values($map);
+    }
+
+    private function sanitizeRendererDomainEntry(array $entry): array
+    {
+        $out = [];
+        $stringFields = ['logName', 'roomDomain', 'title', 'subtitle', 'speechEmpty', 'aplDoc', 'aplToken', 'toggleVarKey'];
+        foreach ($stringFields as $key) {
+            if (!array_key_exists($key, $entry)) {
+                continue;
+            }
+            $val = trim((string)$entry[$key]);
+            if ($val === '') {
+                continue;
+            }
+            $out[$key] = $val;
+        }
+
+        return $out;
+    }
+
+    private function rendererDomainDefaults(): array
+    {
+        $defaults = [];
+        foreach ($this->rendererDomainDefaultsMap() as $route => $override) {
+            $defaults[] = array_merge($this->rendererDomainBase($route), $override);
+        }
+
+        return $defaults;
+    }
+
+    private function rendererDomainDefaultsMap(): array
+    {
+        return [
+            'geraete' => [
+                'logName'     => 'Geraete',
+                'roomDomain'  => 'devices',
+                'title'       => 'Geräte',
+                'speechEmpty' => 'Keine Geräte im RoomsCatalog konfiguriert.',
+                'aplDoc'      => 'doc://alexa/apl/documents/Geraete',
+                'aplToken'    => 'hv-geraete',
+            ],
+            'bewaesserung' => [
+                'logName'     => 'Bewaesserung',
+                'roomDomain'  => 'sprinkler',
+                'title'       => 'Bewässerung',
+                'speechEmpty' => 'Keine Bewässerung im RoomsCatalog konfiguriert.',
+                'aplDoc'      => 'doc://alexa/apl/documents/Bewaesserung',
+                'aplToken'    => 'hv-bewaesserung',
+            ],
+        ];
+    }
+
+    private function rendererDomainBase(string $route): array
+    {
+        $normalizedRoute = strtolower($route);
+        $title = $normalizedRoute !== '' ? ucfirst($normalizedRoute) : 'Renderer';
+        $tokenSlug = preg_replace('/[^a-z0-9]+/i', '', $normalizedRoute);
+        if ($tokenSlug === '') {
+            $tokenSlug = 'renderer';
+        }
+
+        return [
+            'route'        => $normalizedRoute,
+            'logName'      => $title,
+            'roomDomain'   => 'devices',
+            'title'        => $title,
+            'subtitle'     => 'Steckdosen & mehr',
+            'speechEmpty'  => 'Keine Einträge im RoomsCatalog konfiguriert.',
+            'aplDoc'       => 'doc://alexa/apl/documents/' . $title,
+            'aplToken'     => 'hv-' . $tokenSlug,
+            'toggleVarKey' => $normalizedRoute . '_toggle',
+        ];
     }
 }

@@ -102,6 +102,107 @@ function iah_get_instance_properties(int $instanceId): array
     return is_array($props) ? $props : [];
 }
 
+function iah_renderer_domain_defaults_map(): array
+{
+    return [
+        'geraete' => [
+            'logName'     => 'Geraete',
+            'roomDomain'  => 'devices',
+            'title'       => 'Geräte',
+            'speechEmpty' => 'Keine Geräte im RoomsCatalog konfiguriert.',
+            'aplDoc'      => 'doc://alexa/apl/documents/Geraete',
+            'aplToken'    => 'hv-geraete',
+        ],
+        'bewaesserung' => [
+            'logName'     => 'Bewaesserung',
+            'roomDomain'  => 'sprinkler',
+            'title'       => 'Bewässerung',
+            'speechEmpty' => 'Keine Bewässerung im RoomsCatalog konfiguriert.',
+            'aplDoc'      => 'doc://alexa/apl/documents/Bewaesserung',
+            'aplToken'    => 'hv-bewaesserung',
+        ],
+    ];
+}
+
+function iah_renderer_domain_base(string $route): array
+{
+    $normalized = strtolower($route);
+    $title = $normalized !== '' ? ucfirst($normalized) : 'Renderer';
+    $tokenSlug = preg_replace('/[^a-z0-9]+/i', '', $normalized);
+    if ($tokenSlug === '') {
+        $tokenSlug = 'renderer';
+    }
+
+    return [
+        'route'        => $normalized,
+        'logName'      => $title,
+        'roomDomain'   => 'devices',
+        'title'        => $title,
+        'subtitle'     => 'Steckdosen & mehr',
+        'speechEmpty'  => 'Keine Einträge im RoomsCatalog konfiguriert.',
+        'aplDoc'       => 'doc://alexa/apl/documents/' . $title,
+        'aplToken'     => 'hv-' . $tokenSlug,
+        'toggleVarKey' => $normalized . '_toggle',
+    ];
+}
+
+function iah_sanitize_renderer_domain_entry(array $entry): array
+{
+    $out = [];
+    $fields = ['logName', 'roomDomain', 'title', 'subtitle', 'speechEmpty', 'aplDoc', 'aplToken', 'toggleVarKey'];
+    foreach ($fields as $field) {
+        if (!array_key_exists($field, $entry)) {
+            continue;
+        }
+        $val = trim((string) $entry[$field]);
+        if ($val === '') {
+            continue;
+        }
+        $out[$field] = $val;
+    }
+
+    return $out;
+}
+
+function iah_build_renderer_domain_list(array $props): array
+{
+    $raw = $props['RendererDomains'] ?? '[]';
+    if (is_string($raw)) {
+        $data = json_decode($raw, true);
+    } elseif (is_array($raw)) {
+        $data = $raw;
+    } else {
+        $data = [];
+    }
+    if (!is_array($data)) {
+        $data = [];
+    }
+
+    $map = [];
+    foreach ($data as $entry) {
+        if (!is_array($entry)) {
+            continue;
+        }
+        $route = strtolower(trim((string)($entry['route'] ?? '')));
+        if ($route === '') {
+            continue;
+        }
+        $base = iah_renderer_domain_base($route);
+        $override = iah_renderer_domain_defaults_map()[$route] ?? [];
+        $custom = iah_sanitize_renderer_domain_entry($entry);
+        $custom['route'] = $route;
+        $map[$route] = array_merge($base, $override, $custom);
+    }
+
+    foreach (iah_renderer_domain_defaults_map() as $route => $override) {
+        if (!isset($map[$route])) {
+            $map[$route] = array_merge(iah_renderer_domain_base($route), $override);
+        }
+    }
+
+    return array_values($map);
+}
+
 function iah_build_logger(array $props): callable
 {
     $rank = ['error' => 0, 'warn' => 1, 'info' => 2, 'debug' => 3];
@@ -281,7 +382,14 @@ function iah_build_system_configuration_internal(int $instanceId, array $props, 
 
     $missing = iah_detect_missing_entries($var, $scripts);
 
-    return ['var' => $var, 'script' => $scripts, 'missing' => $missing];
+    $rendererDomains = iah_build_renderer_domain_list($props);
+
+    return [
+        'var' => $var,
+        'script' => $scripts,
+        'missing' => $missing,
+        'rendererDomains' => $rendererDomains,
+    ];
 }
 
 function iah_build_system_configuration(int $instanceId): array
@@ -298,7 +406,10 @@ function iah_build_system_configuration(int $instanceId): array
             $scripts = is_array($data['script'] ?? null) ? $data['script'] : [];
             $missing = is_array($data['missing'] ?? null) ? $data['missing'] : iah_detect_missing_entries($var, $scripts);
             $logCfg('debug', 'CFG.load.script', ['script' => $scriptId]);
-            return ['var' => $var, 'script' => $scripts, 'missing' => $missing];
+            $rendererDomains = is_array($data['rendererDomains'] ?? null)
+                ? $data['rendererDomains']
+                : iah_build_renderer_domain_list($props);
+            return ['var' => $var, 'script' => $scripts, 'missing' => $missing, 'rendererDomains' => $rendererDomains];
         }
 
         $logCfg('warn', 'CFG.load.script.invalid', ['script' => $scriptId]);
