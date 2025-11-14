@@ -101,6 +101,63 @@
       ]
     },
     {
+      "type": "ExpansionPanel",
+      "caption": "Launch-Kacheln",
+      "items": [
+        {
+          "name": "LaunchTitle",
+          "type": "ValidationTextBox",
+          "caption": "Titel",
+          "value": "HAUS VISUALISIERUNG"
+        },
+        {
+          "name": "LaunchSubtitleTemplate",
+          "type": "ValidationTextBox",
+          "caption": "Subtitel-Template ({{alexa}})",
+          "value": "Raumname: {{alexa}}"
+        },
+        {
+          "name": "LaunchFooterText",
+          "type": "ValidationTextBox",
+          "caption": "Footer-Text",
+          "value": "Tipp eine Kachel an – oder sage z. B. „Jalousie“."
+        },
+        {
+          "name": "LaunchLogo",
+          "type": "ValidationTextBox",
+          "caption": "Logo-Datei",
+          "value": "Logo.png"
+        },
+        {
+          "name": "LaunchHomeIcon",
+          "type": "ValidationTextBox",
+          "caption": "Home-Icon",
+          "value": "HomeIcon.png"
+        },
+        {
+          "name": "LaunchHeaderIcon",
+          "type": "ValidationTextBox",
+          "caption": "Info-Icon",
+          "value": "Icon.png"
+        },
+        {
+          "name": "LaunchCatalog",
+          "type": "List",
+          "caption": "Tiles",
+          "add": true,
+          "delete": true,
+          "rowCount": 5,
+          "columns": [
+            { "caption": "ID", "name": "id", "width": "100px", "add": true, "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Titel", "name": "title", "width": "160px", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Subtitel", "name": "subtitle", "width": "180px", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Icon-Datei", "name": "icon", "width": "160px", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Farbe (#RRGGBB)", "name": "color", "width": "140px", "edit": { "type": "ValidationTextBox" } }
+          ]
+        }
+      ]
+    },
+    {
       "name": "DiagPayload",
       "type": "ValidationTextBox",
       "caption": "Diagnose: Custom Payload (JSON)",

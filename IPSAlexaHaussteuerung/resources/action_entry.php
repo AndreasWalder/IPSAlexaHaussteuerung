@@ -146,6 +146,98 @@ function iah_renderer_domain_base(string $route): array
     ];
 }
 
+function iah_launch_catalog_defaults(): array
+{
+    static $defaults = null;
+    if ($defaults === null) {
+        $file = __DIR__ . '/helpers/LaunchCatalogDefaults.php';
+        $data = @include $file;
+        if (is_array($data)) {
+            $defaults = $data;
+        } else {
+            $defaults = [
+                'title' => 'HAUS VISUALISIERUNG',
+                'subtitleTemplate' => 'Raumname: {{alexa}}',
+                'footerText' => 'Tipp eine Kachel an – oder sage z. B. „Jalousie“.',
+                'logo' => 'Logo.png',
+                'homeIcon' => 'HomeIcon.png',
+                'headerIcon' => 'Icon.png',
+                'tiles' => [],
+            ];
+        }
+    }
+
+    return $defaults;
+}
+
+function iah_build_launch_catalog(array $props): array
+{
+    $defaults = iah_launch_catalog_defaults();
+    $raw = json_decode((string) ($props['LaunchCatalog'] ?? '[]'), true);
+    $tiles = [];
+    if (is_array($raw)) {
+        foreach ($raw as $entry) {
+            $tile = iah_sanitize_launch_tile($entry);
+            if ($tile !== null) {
+                $tiles[] = $tile;
+            }
+        }
+    }
+    if ($tiles === []) {
+        $tiles = (array)($defaults['tiles'] ?? []);
+    }
+
+    $read = static function (string $key, string $fallback) use ($props): string {
+        $val = trim((string) ($props[$key] ?? ''));
+        return $val !== '' ? $val : $fallback;
+    };
+
+    return [
+        'title' => $read('LaunchTitle', (string) ($defaults['title'] ?? '')),
+        'subtitleTemplate' => $read('LaunchSubtitleTemplate', (string) ($defaults['subtitleTemplate'] ?? '')),
+        'footerText' => $read('LaunchFooterText', (string) ($defaults['footerText'] ?? '')),
+        'logo' => $read('LaunchLogo', (string) ($defaults['logo'] ?? 'Logo.png')),
+        'homeIcon' => $read('LaunchHomeIcon', (string) ($defaults['homeIcon'] ?? 'HomeIcon.png')),
+        'headerIcon' => $read('LaunchHeaderIcon', (string) ($defaults['headerIcon'] ?? 'Icon.png')),
+        'tiles' => $tiles,
+    ];
+}
+
+function iah_sanitize_launch_tile($entry): ?array
+{
+    if (!is_array($entry)) {
+        return null;
+    }
+    $id = strtolower(trim((string) ($entry['id'] ?? '')));
+    $title = trim((string) ($entry['title'] ?? ''));
+    if ($id === '' || $title === '') {
+        return null;
+    }
+
+    $tile = ['id' => $id, 'title' => $title];
+    $subtitle = trim((string) ($entry['subtitle'] ?? ''));
+    if ($subtitle !== '') {
+        $tile['subtitle'] = $subtitle;
+    }
+
+    $icon = trim((string) ($entry['icon'] ?? ''));
+    if ($icon !== '') {
+        $tile['icon'] = $icon;
+    }
+
+    $color = trim((string) ($entry['color'] ?? ''));
+    if ($color !== '') {
+        if ($color[0] !== '#') {
+            $color = '#' . $color;
+        }
+        if (preg_match('/^#[0-9A-F]{3,6}$/i', $color)) {
+            $tile['color'] = strtoupper($color);
+        }
+    }
+
+    return $tile;
+}
+
 function iah_sanitize_renderer_domain_entry(array $entry): array
 {
     $out = [];
@@ -389,6 +481,7 @@ function iah_build_system_configuration_internal(int $instanceId, array $props, 
         'script' => $scripts,
         'missing' => $missing,
         'rendererDomains' => $rendererDomains,
+        'launchCatalog' => iah_build_launch_catalog($props),
     ];
 }
 
@@ -409,7 +502,16 @@ function iah_build_system_configuration(int $instanceId): array
             $rendererDomains = is_array($data['rendererDomains'] ?? null)
                 ? $data['rendererDomains']
                 : iah_build_renderer_domain_list($props);
-            return ['var' => $var, 'script' => $scripts, 'missing' => $missing, 'rendererDomains' => $rendererDomains];
+            $launchCatalog = is_array($data['launchCatalog'] ?? null)
+                ? $data['launchCatalog']
+                : iah_build_launch_catalog($props);
+            return [
+                'var' => $var,
+                'script' => $scripts,
+                'missing' => $missing,
+                'rendererDomains' => $rendererDomains,
+                'launchCatalog' => $launchCatalog,
+            ];
         }
 
         $logCfg('warn', 'CFG.load.script.invalid', ['script' => $scriptId]);

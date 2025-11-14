@@ -135,6 +135,7 @@ try {
                 'baseUrl'             => $baseUrl,
                 'source'              => $source,
                 'token'               => $token,
+                'launchCatalog'       => is_array($CFG['launchCatalog'] ?? null) ? $CFG['launchCatalog'] : [],
             ], $JSON),
         ]);
         IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] return script='.(int)$S['RENDER_MAIN'].' raw='.(string)$data);

@@ -26,39 +26,119 @@ $iconUrl = static function(string $file, string $baseUrl, string $token): string
 if ($baseUrl === '' || $token === '') { throw new Exception('baseUrl oder token fehlt'); }
 $icon = static function(string $f) use ($iconUrl,$baseUrl,$token){ return $iconUrl($f,$baseUrl,$token); };
 
-IPS_LogMessage('Alexa', 'iconUrl test: ' . $icon('Logo.png'));
+$catalogDefaults = (static function () {
+    $file = __DIR__ . '/../helpers/LaunchCatalogDefaults.php';
+    $data = @include $file;
+    if (is_array($data)) {
+        return $data;
+    }
+    return [
+        'title' => 'HAUS VISUALISIERUNG',
+        'subtitleTemplate' => 'Raumname: {{alexa}}',
+        'footerText' => 'Tipp eine Kachel an – oder sage z. B. „Jalousie“.',
+        'logo' => 'Logo.png',
+        'homeIcon' => 'HomeIcon.png',
+        'headerIcon' => 'Icon.png',
+        'tiles' => [],
+    ];
+})();
+
+$catalog = is_array($in['launchCatalog'] ?? null) ? $in['launchCatalog'] : [];
+$resolve = static function ($value, string $fallback): string {
+    $str = is_string($value) ? trim($value) : '';
+    return $str !== '' ? $str : $fallback;
+};
+
+$launchTitle = $resolve($catalog['title'] ?? null, (string) ($catalogDefaults['title'] ?? 'HAUS VISUALISIERUNG'));
+$subtitleTpl = $resolve(
+    $catalog['subtitleTemplate'] ?? null,
+    (string) ($catalogDefaults['subtitleTemplate'] ?? 'Raumname: {{alexa}}')
+);
+$footerText = $resolve($catalog['footerText'] ?? null, (string) ($catalogDefaults['footerText'] ?? ''));
+$logoFile = $resolve($catalog['logo'] ?? null, (string) ($catalogDefaults['logo'] ?? 'Logo.png'));
+$homeIconFile = $resolve($catalog['homeIcon'] ?? null, (string) ($catalogDefaults['homeIcon'] ?? 'HomeIcon.png'));
+$headerIconFile = $resolve($catalog['headerIcon'] ?? null, (string) ($catalogDefaults['headerIcon'] ?? 'Icon.png'));
+
+$alexaName = $ucwords($alexa);
+$subtitleText = str_replace('{{alexa}}', $alexaName, $subtitleTpl);
+
+$sanitizeTile = static function ($entry) {
+    if (!is_array($entry)) {
+        return null;
+    }
+    $id = strtolower(trim((string) ($entry['id'] ?? '')));
+    $title = trim((string) ($entry['title'] ?? ''));
+    if ($id === '' || $title === '') {
+        return null;
+    }
+    $tile = ['id' => $id, 'title' => $title];
+    $subtitle = trim((string) ($entry['subtitle'] ?? ''));
+    if ($subtitle !== '') {
+        $tile['subtitle'] = $subtitle;
+    }
+    $iconFile = trim((string) ($entry['icon'] ?? ''));
+    if ($iconFile !== '') {
+        $tile['icon'] = $iconFile;
+    }
+    $color = trim((string) ($entry['color'] ?? ''));
+    if ($color !== '') {
+        if ($color[0] !== '#') {
+            $color = '#' . $color;
+        }
+        if (preg_match('/^#[0-9A-F]{3,6}$/i', $color)) {
+            $tile['color'] = strtoupper($color);
+        }
+    }
+    return $tile;
+};
+
+$rawTiles = [];
+if (is_array($catalog['tiles'] ?? null)) {
+    $rawTiles = $catalog['tiles'];
+} elseif (is_array($catalogDefaults['tiles'] ?? null)) {
+    $rawTiles = $catalogDefaults['tiles'];
+}
+
+$tiles = [];
+foreach ($rawTiles as $entry) {
+    $tile = $sanitizeTile($entry);
+    if ($tile === null) {
+        continue;
+    }
+    if (!empty($tile['icon'])) {
+        $tile['icon'] = $icon($tile['icon']);
+    }
+    $tiles[] = $tile;
+}
+if ($tiles === [] && is_array($catalogDefaults['tiles'] ?? null)) {
+    foreach ($catalogDefaults['tiles'] as $entry) {
+        $tile = $sanitizeTile($entry);
+        if ($tile === null) {
+            continue;
+        }
+        if (!empty($tile['icon'])) {
+            $tile['icon'] = $icon($tile['icon']);
+        }
+        $tiles[] = $tile;
+    }
+}
 
 $ds = [
  'tilesData'=>[
-  'title'=>'HAUS VISUALISIERUNG',
-  'subtitle'=>'Raumname: ' . $ucwords($alexa),
-  'logoUrl'=> $icon('Logo.png'),
-  'homeIcon'=> $icon('HomeIcon.png'),
-  'footerText'=>'Tipp eine Kachel an – oder sage z. B. „Jalousie“.',
+  'title'=> $launchTitle,
+  'subtitle'=> $subtitleText,
+  'logoUrl'=> $icon($logoFile),
+  'homeIcon'=> $icon($homeIconFile),
+  'footerText'=> $footerText,
   'Text1'=>'Innentemperatur:','Value1'=>(string)($in['kuecheIstTemperatur'] ?? ''),
   'Text2'=>'Status:','Value2'=>(string)($in['meldungen'] ?? ''),
   'Text3'=>'Außentemperatur:','Value3'=>(string)($in['aussenTemperatur'] ?? ''),
   'Text4'=>'Information:','Value4'=>(string)($in['information'] ?? ''),
-  'Icon'=> $icon('Icon.png'),
+  'Icon'=> $icon($headerIconFile),
   'Source'=> $source,
-  'tiles'=>[
-    ['id'=>'licht','title'=>'Licht','subtitle'=>'schalten & dimmen','icon'=>$icon('Licht.png'),'color'=>'#FFE066'],
-    ['id'=>'jalousie','title'=>'Jalousie','subtitle'=>'auf/zu/beschatten','icon'=>$icon('Jalousie.png'),'color'=>'#74C0FC'],
-    ['id'=>'heizung','title'=>'Heizung','subtitle'=>'soll/ist','icon'=>$icon('Heizung.png'),'color'=>'#FF8A80'],
-    ['id'=>'lueftung','title'=>'Lüftung','subtitle'=>'Stufen & Timer','icon'=>$icon('Lueftung.png'),'color'=>'#63E6BE'],
-    ['id'=>'bewaesserung','title'=>'Bewässerung','subtitle'=>'Zonen & Automatik','icon'=>$icon('Bewaesserung.png'),'color'=>'#0FC0FC'],
-    ['id'=>'geraete','title'=>'Geräte','subtitle'=>'Steckdosen & mehr','icon'=>$icon('Geraete.png'),'color'=>'#BAC8FF'],
-    ['id'=>'sicherheit','title'=>'Sicherheit','subtitle'=>'Fenster & Türen','icon'=>$icon('Sicherheit.png'),'color'=>'#FFC9C9'],
-    ['id'=>'listen','title'=>'Listen','subtitle'=>'Aufgaben & Notizen','icon'=>$icon('Listen.png'),'color'=>'#D8F212'],
-    ['id'=>'energie','title'=>'Energie','subtitle'=>'Verbrauch & PV','icon'=>$icon('Energie.png'),'color'=>'#63EE1E'],
-    ['id'=>'kamera','title'=>'Kamera','subtitle'=>'Live','icon'=>$icon('Kamera.png'),'color'=>'#A59CCF'],
-    ['id'=>'info','title'=>'Information','subtitle'=>'System & Wetter','icon'=>$icon('Information.png'),'color'=>'#99E9F2'],
-    ['id'=>'szene','title'=>'Szene','subtitle'=>'auswählen & mehr','icon'=>$icon('Szene.png'),'color'=>'#E599F7'],
-    ['id'=>'einstellungen','title'=>'Einstellungen','subtitle'=>'','icon'=>$icon('Einstellungen.png'),'color'=>'#63E6BE'],
-  ],
+  'tiles'=>$tiles,
  ]
 ];
-
 $speech = ($action === 'zurück' || $args1 === 'zurück') ? '' : ($apl ? 'Willkommen' : ('Willkommen '.$alexa));
 
 $calcSize = static function(array $ds, bool $apl, string $speech): int {
