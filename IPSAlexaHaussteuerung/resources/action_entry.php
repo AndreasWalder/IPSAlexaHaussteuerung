@@ -280,8 +280,17 @@ function iah_infer_tab_domain_title(array $tabs, string $route): string
     return ucfirst($route);
 }
 
-function iah_detect_rooms_catalog_tab_domains(array $ROOMS): array
+function iah_detect_rooms_catalog_tab_domains(array $ROOMS, ?callable $normalizer = null): array
 {
+    $norm = $normalizer ?? static function ($value) {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return '';
+        }
+        $value = preg_replace('/\s+/u', ' ', $value);
+        return mb_strtolower($value, 'UTF-8');
+    };
+
     $routes = [];
     foreach ($ROOMS as $room) {
         if (!is_array($room)) {
@@ -301,12 +310,36 @@ function iah_detect_rooms_catalog_tab_domains(array $ROOMS): array
                 continue;
             }
             $title = iah_infer_tab_domain_title($tabs, $route);
+            $synonyms = [];
+            foreach ($tabs as $tab) {
+                if (!is_array($tab)) {
+                    continue;
+                }
+                $tabSynonyms = $tab['synonyms'] ?? [];
+                if ($tabSynonyms === [] || $tabSynonyms === null) {
+                    continue;
+                }
+                if (!is_array($tabSynonyms)) {
+                    $tabSynonyms = [$tabSynonyms];
+                }
+                foreach ($tabSynonyms as $synonym) {
+                    $normalized = $norm($synonym);
+                    if ($normalized === '') {
+                        continue;
+                    }
+                    $synonyms[$normalized] = true;
+                }
+            }
+            $synonyms[$norm($route)] = true;
             $routes[$route] = [
                 'route'      => $route,
                 'roomDomain' => $route,
                 'title'      => $title,
                 'logName'    => $title,
             ];
+            if ($synonyms !== []) {
+                $routes[$route]['synonyms'] = array_keys($synonyms);
+            }
         }
     }
 
@@ -728,7 +761,16 @@ function Execute($request = null)
             return TellResponse::CreatePlainText('Fehler: RoomsCatalog leer oder ungültig.');
         }
 
-        $tabDomains = iah_detect_rooms_catalog_tab_domains($ROOMS);
+        $tabDomains = iah_detect_rooms_catalog_tab_domains($ROOMS, $lc);
+        $tabDomainSynonyms = [];
+        foreach ($tabDomains as $routeKey => $entry) {
+            foreach ((array)($entry['synonyms'] ?? []) as $synonym) {
+                if ($synonym === '') {
+                    continue;
+                }
+                $tabDomainSynonyms[$synonym] = $routeKey;
+            }
+        }
         $addedDynamicRoute = false;
         foreach ($tabDomains as $routeKey => $entry) {
             $roomDomain = strtolower((string)($entry['roomDomain'] ?? $routeKey));
@@ -1025,6 +1067,20 @@ function Execute($request = null)
         }
         if (($APL['a1'] ?? null) === 'bewaesserung.setEnum' && is_numeric($APL['a2'] ?? null) && is_numeric($APL['a3'] ?? null)) {
             RequestAction((int)$APL['a2'], (int)$APL['a3']);
+        }
+
+        if ($domain === null && !$navForce && !empty($tabDomainSynonyms)) {
+            $slotValues = [$action, $device, $room, $object, $alles, $szene];
+            foreach ($slotValues as $slotValue) {
+                $slotKey = trim((string) $slotValue);
+                if ($slotKey === '') {
+                    continue;
+                }
+                if (isset($tabDomainSynonyms[$slotKey])) {
+                    $domain = $tabDomainSynonyms[$slotKey];
+                    break;
+                }
+            }
         }
 
         // --------- Domain-Autodetect (nur wenn nicht navForce) ---------
