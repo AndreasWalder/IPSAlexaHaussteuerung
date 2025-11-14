@@ -994,11 +994,27 @@ class IPSAlexaHaussteuerung extends IPSModule
             }
         }
 
+        $claimedDomains = [];
+        foreach ($map as $entry) {
+            $roomDomain = strtolower((string)($entry['roomDomain'] ?? ''));
+            if ($roomDomain === '') {
+                $roomDomain = strtolower((string)($entry['route'] ?? ''));
+            }
+            if ($roomDomain !== '') {
+                $claimedDomains[$roomDomain] = true;
+            }
+        }
+
         $dynamicRoutes = $this->discoverRoomsCatalogTabDomains();
         foreach ($dynamicRoutes as $route => $entry) {
+            $roomDomain = strtolower((string)($entry['roomDomain'] ?? $route));
+            if (isset($claimedDomains[$roomDomain])) {
+                continue;
+            }
             if (!isset($map[$route])) {
                 $map[$route] = array_merge($this->rendererDomainBase($route), $entry);
             }
+            $claimedDomains[$roomDomain] = true;
         }
 
         return array_values($map);

@@ -614,6 +614,21 @@ function Execute($request = null)
             }
             $rendererDomainMap[$routeKey] = $entry;
         }
+        $rendererRoomDomainKeys = [];
+        foreach ($rendererDomainMap as $routeKey => $entry) {
+            $roomDomain = strtolower((string)($entry['roomDomain'] ?? ''));
+            if ($roomDomain === '') {
+                $roomDomain = $routeKey;
+            }
+            $rendererRoomDomainKeys[$routeKey] = $roomDomain;
+        }
+        $claimedRoomDomains = [];
+        foreach ($rendererRoomDomainKeys as $roomDomain) {
+            if ($roomDomain === '') {
+                continue;
+            }
+            $claimedRoomDomains[$roomDomain] = true;
+        }
 
         $writeRuntimeString = static function ($varId, string $value): void {
             $id = (int) $varId;
@@ -716,10 +731,19 @@ function Execute($request = null)
         $tabDomains = iah_detect_rooms_catalog_tab_domains($ROOMS);
         $addedDynamicRoute = false;
         foreach ($tabDomains as $routeKey => $entry) {
+            $roomDomain = strtolower((string)($entry['roomDomain'] ?? $routeKey));
+            if ($roomDomain === '') {
+                $roomDomain = $routeKey;
+            }
+            if (isset($claimedRoomDomains[$roomDomain])) {
+                continue;
+            }
             if (!isset($rendererDomainMap[$routeKey])) {
                 $rendererDomainMap[$routeKey] = array_merge(iah_renderer_domain_base($routeKey), $entry);
-                $addedDynamicRoute = true;
             }
+            $rendererRoomDomainKeys[$routeKey] = $roomDomain;
+            $claimedRoomDomains[$roomDomain] = true;
+            $addedDynamicRoute = true;
         }
         if ($addedDynamicRoute) {
             $rendererDomains = array_values($rendererDomainMap);
@@ -792,11 +816,21 @@ function Execute($request = null)
                 if ($routeKey === '' || in_array($routeKey, ['main_launch', 'external', 'settings'], true)) {
                     continue;
                 }
-                $roomDomain = strtolower((string)($entry['roomDomain'] ?? 'devices'));
+                $roomDomainRaw = strtolower((string)($rendererRoomDomainKeys[$routeKey] ?? ($entry['roomDomain'] ?? '')));
+                if ($roomDomainRaw === '') {
+                    $roomDomainRaw = $routeKey;
+                }
+                $domainAlias = $roomDomainRaw;
+                if ($domainAlias === '' || in_array($domainAlias, ['devices', 'sprinkler'], true)) {
+                    $domainAlias = $routeKey;
+                }
                 $NAV_MAP[$routeKey] = [
-                    'domain' => $routeKey,
-                    'device' => ($roomDomain === 'sprinkler') ? 'bewaesserung' : 'geraete',
+                    'domain' => $domainAlias,
+                    'device' => $domainAlias,
                 ];
+                if ($domainAlias !== $routeKey && !isset($NAV_MAP[$domainAlias])) {
+                    $NAV_MAP[$domainAlias] = $NAV_MAP[$routeKey];
+                }
             }
 
             if (isset($NAV_MAP[$navId])) {
@@ -1095,12 +1129,26 @@ function Execute($request = null)
                 continue;
             }
             $routePrefix = $routeKey . '.';
+            $roomDomainRaw = strtolower((string)($rendererRoomDomainKeys[$routeKey] ?? ($entry['roomDomain'] ?? '')));
+            if ($roomDomainRaw === '') {
+                $roomDomainRaw = $routeKey;
+            }
+            $roomDomainPrefix = $roomDomainRaw . '.';
+            $domainAlias = $roomDomainRaw;
+            if ($domainAlias === '' || in_array($domainAlias, ['devices', 'sprinkler'], true)) {
+                $domainAlias = $routeKey;
+            }
             $baseRendererPrefix = (strtolower((string)($entry['roomDomain'] ?? 'devices')) === 'sprinkler')
                 ? 'bewaesserung.'
                 : 'geraete.';
             $ROUTES[$routeKey] = fn() => $domain === $routeKey
+                || ($roomDomainRaw !== '' && $domain === $roomDomainRaw)
+                || $domain === $domainAlias
                 || $device === $routeKey
+                || ($roomDomainRaw !== '' && $device === $roomDomainRaw)
+                || $device === $domainAlias
                 || (is_string($APL['a1']) && str_starts_with((string)$APL['a1'], $routePrefix))
+                || ($roomDomainRaw !== '' && is_string($APL['a1']) && str_starts_with((string)$APL['a1'], $roomDomainPrefix))
                 || (is_string($APL['a1']) && str_starts_with((string)$APL['a1'], $baseRendererPrefix));
         }
 
