@@ -276,7 +276,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             if ($logText === '') {
                 $logText = '– keine Einträge vorhanden –';
             } else {
-                $logText = substr($logText, -20000);
+                $logText = $this->trimUtf8Tail($logText, 20000);
             }
         }
 
@@ -298,6 +298,27 @@ class IPSAlexaHaussteuerung extends IPSModule
                 ],
             ],
         ];
+    }
+
+    private function trimUtf8Tail(string $text, int $maxChars): string
+    {
+        if ($maxChars <= 0 || $text === '') {
+            return $text;
+        }
+
+        if (function_exists('mb_strlen') && function_exists('mb_substr')) {
+            if (mb_strlen($text, 'UTF-8') > $maxChars) {
+                return mb_substr($text, -$maxChars, null, 'UTF-8');
+            }
+
+            return $text;
+        }
+
+        if (strlen($text) > $maxChars) {
+            return substr($text, -$maxChars);
+        }
+
+        return $text;
     }
 
     /**
