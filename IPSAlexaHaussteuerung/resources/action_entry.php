@@ -256,6 +256,63 @@ function iah_sanitize_renderer_domain_entry(array $entry): array
     return $out;
 }
 
+function iah_infer_tab_domain_title(array $tabs, string $route): string
+{
+    foreach ($tabs as $key => $tab) {
+        $title = '';
+        if (is_array($tab)) {
+            $title = trim((string)($tab['title'] ?? ''));
+            if ($title === '') {
+                $title = trim((string)$key);
+            }
+        } else {
+            $title = trim((string)$tab);
+            if ($title === '') {
+                $title = trim((string)$key);
+            }
+        }
+
+        if ($title !== '') {
+            return $title;
+        }
+    }
+
+    return ucfirst($route);
+}
+
+function iah_detect_rooms_catalog_tab_domains(array $ROOMS): array
+{
+    $routes = [];
+    foreach ($ROOMS as $room) {
+        if (!is_array($room)) {
+            continue;
+        }
+        $domains = (array)($room['domains'] ?? []);
+        foreach ($domains as $domainKey => $domainDef) {
+            $route = strtolower((string)$domainKey);
+            if ($route === '' || isset($routes[$route])) {
+                continue;
+            }
+            if (in_array($route, ['devices', 'sprinkler'], true)) {
+                continue;
+            }
+            $tabs = (array)($domainDef['tabs'] ?? []);
+            if ($tabs === []) {
+                continue;
+            }
+            $title = iah_infer_tab_domain_title($tabs, $route);
+            $routes[$route] = [
+                'route'      => $route,
+                'roomDomain' => $route,
+                'title'      => $title,
+                'logName'    => $title,
+            ];
+        }
+    }
+
+    return $routes;
+}
+
 function iah_build_renderer_domain_list(array $props): array
 {
     $raw = $props['RendererDomains'] ?? '[]';
@@ -654,6 +711,19 @@ function Execute($request = null)
         $ROOMS = require IPS_GetScriptFile($S['ROOMS_CATALOG']);
         if (!is_array($ROOMS) || $ROOMS === []) {
             return TellResponse::CreatePlainText('Fehler: RoomsCatalog leer oder ungültig.');
+        }
+
+        $tabDomains = iah_detect_rooms_catalog_tab_domains($ROOMS);
+        $addedDynamicRoute = false;
+        foreach ($tabDomains as $routeKey => $entry) {
+            if (!isset($rendererDomainMap[$routeKey])) {
+                $rendererDomainMap[$routeKey] = array_merge(iah_renderer_domain_base($routeKey), $entry);
+                $addedDynamicRoute = true;
+            }
+        }
+        if ($addedDynamicRoute) {
+            $rendererDomains = array_values($rendererDomainMap);
+            $CFG['rendererDomains'] = $rendererDomains;
         }
 
         // ---------- Frühe Slots (für Exit) ----------
@@ -1109,6 +1179,7 @@ function Execute($request = null)
                 'room_raw'        => (string)$room_raw,
                 'szene'           => (string)$szene,
                 'CFG'             => $CFG,
+                'rendererDomains' => array_values($rendererDomainMap),
             ];
 
             $res = json_decode(IPS_RunScriptWaitEx($S['ROUTE_ALL'], ['payload'=>json_encode($payload, $JSON)]), true);

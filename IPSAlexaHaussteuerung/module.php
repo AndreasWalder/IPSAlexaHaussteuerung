@@ -994,6 +994,13 @@ class IPSAlexaHaussteuerung extends IPSModule
             }
         }
 
+        $dynamicRoutes = $this->discoverRoomsCatalogTabDomains();
+        foreach ($dynamicRoutes as $route => $entry) {
+            if (!isset($map[$route])) {
+                $map[$route] = array_merge($this->rendererDomainBase($route), $entry);
+            }
+        }
+
         return array_values($map);
     }
 
@@ -1013,6 +1020,93 @@ class IPSAlexaHaussteuerung extends IPSModule
         }
 
         return $out;
+    }
+
+    private function discoverRoomsCatalogTabDomains(): array
+    {
+        $settings = $this->getObjectIDByIdentOrName($this->InstanceID, 'iahSettings', 'Einstellungen');
+        if ($settings <= 0) {
+            return [];
+        }
+
+        $scriptId = $this->getObjectIDByIdentOrName($settings, 'roomsCatalog', 'RoomsCatalog');
+        if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) {
+            return [];
+        }
+
+        $path = IPS_GetScriptFile($scriptId);
+        if (!is_string($path) || $path === '' || !is_file($path)) {
+            return [];
+        }
+
+        try {
+            $rooms = @include $path;
+        } catch (\Throwable $e) {
+            $rooms = null;
+        }
+
+        if (!is_array($rooms)) {
+            return [];
+        }
+
+        return $this->extractRoomsCatalogTabDomains($rooms);
+    }
+
+    private function extractRoomsCatalogTabDomains(array $rooms): array
+    {
+        $routes = [];
+        foreach ($rooms as $room) {
+            if (!is_array($room)) {
+                continue;
+            }
+            $domains = (array)($room['domains'] ?? []);
+            foreach ($domains as $domainKey => $definition) {
+                $route = strtolower((string)$domainKey);
+                if ($route === '' || isset($routes[$route])) {
+                    continue;
+                }
+                if (in_array($route, ['devices', 'sprinkler'], true)) {
+                    continue;
+                }
+                $tabs = (array)($definition['tabs'] ?? []);
+                if ($tabs === []) {
+                    continue;
+                }
+                $title = $this->inferRoomsCatalogDomainTitle($tabs, $route);
+                $routes[$route] = [
+                    'route'      => $route,
+                    'roomDomain' => $route,
+                    'title'      => $title,
+                    'logName'    => $title,
+                ];
+            }
+        }
+
+        return $routes;
+    }
+
+    private function inferRoomsCatalogDomainTitle(array $tabs, string $route): string
+    {
+        foreach ($tabs as $key => $tab) {
+            $title = '';
+            if (is_array($tab)) {
+                $title = trim((string)($tab['title'] ?? ''));
+                if ($title === '') {
+                    $title = trim((string)$key);
+                }
+            } else {
+                $title = trim((string)$tab);
+                if ($title === '') {
+                    $title = trim((string)$key);
+                }
+            }
+
+            if ($title !== '') {
+                return $title;
+            }
+        }
+
+        return ucfirst($route);
     }
 
     private function rendererDomainDefaults(): array
