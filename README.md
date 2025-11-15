@@ -21,8 +21,10 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
 - **Auto-Deployment aller Skripte**
   Action-, Route- und Renderer-Skripte inklusive `SystemConfiguration` werden beim `ApplyChanges()` erzeugt oder aktualisiert.
   Die erzeugte `SystemConfiguration` enthält alle relevanten IDs und wird automatisch mit dem Action-Skript verknüpft.
-- **RoomsCatalog-Template inklusive**
-  Beim ersten `ApplyChanges()` erzeugt das Modul automatisch ein Skript **„RoomsCatalog“** in der Kategorie *Einstellungen* und befüllt es mit dem Beispiel aus `resources/helpers/RoomsCatalog.php`. Dieses Skript kannst du direkt bearbeiten und dessen ID z. B. im `SystemConfiguration`-Skript verwenden.
+  - **RoomsCatalog-Template inklusive**
+    Beim ersten `ApplyChanges()` erzeugt das Modul automatisch ein Skript **„RoomsCatalog“** in der Kategorie *Einstellungen* und befüllt es mit dem Beispiel aus `resources/helpers/RoomsCatalog.php`. Dieses Skript kannst du direkt bearbeiten und dessen ID z. B. im `SystemConfiguration`-Skript verwenden.
+  - **RoomsCatalog Konfigurator**
+    Eine eigene Configurator-Instanz („RoomsCatalogConfigurator“) erzeugt bei Bedarf ein bearbeitbares `RoomsCatalogEdit`-Skript, markiert Unterschiede farblich und kann die geprüften Änderungen auf Knopfdruck in den produktiven RoomsCatalog übernehmen.
 - **Konfig-Skript frei wählbar**
   Hinterlege dein bestehendes `SystemConfiguration`-Skript direkt in der Instanz (*Config ScriptID*). Das Action-Entry-Skript lädt diese ID automatisch – keine hart codierte Script-ID `48789` mehr notwendig.
 - **V/S-Mapping**  
@@ -94,47 +96,64 @@ Einstellungen prüfen, insbesondere Script-IDs und LOG_LEVEL.
 
 ```text
 IPSAlexaHaussteuerung/
-├─ module.php
-├─ module.json
-├─ form.json
-├─ resources/
-│  ├─ action_entry.php
-│  ├─ helpers/
-│  │  ├─ CoreHelpers.php
-│  │  ├─ DeviceMap.php
-│  │  ├─ DeviceMapWizard.php
-│  │  ├─ Lexikon.php
-│  │  ├─ Normalizer.php
-│  │  ├─ RoomBuilderHelpers.php
-│  │  ├─ RoomsCatalog.php
-│  │  ├─ WfcDelayedPageSwitch.php
-│  │  └─ WebHookIcons.php
-│  └─ renderers/
-│     ├─ LaunchRequest.php
-│     ├─ RenderBewaesserung.php
-│     ├─ RenderGeraete.php
-│     ├─ RenderHeizung.php
-│     ├─ RenderJalousie.php
-│     ├─ RenderLicht.php
-│     ├─ RenderLueftung.php
-│     ├─ RenderSettings.php
-│     └─ Route_allRenderer.php
-├─ src/
-│  ├─ Helpers.php
-│  ├─ LogTrait.php
-│  ├─ Router.php
-│  ├─ Routes/
-│  │  └─ RouteAll.php
-│  └─ Renderers/
-│     ├─ RenderMain.php
-│     ├─ RenderHeizung.php
-│     ├─ RenderJalousie.php
-│     ├─ RenderLicht.php
-│     ├─ RenderLueftung.php
-│     ├─ RenderGeraete.php
-│     ├─ RenderBewaesserung.php
-│     └─ RenderSettings.php
+├─ IPSAlexaHaussteuerung/
+│  ├─ module.php
+│  ├─ module.json
+│  ├─ form.json
+│  ├─ resources/
+│  │  ├─ action_entry.php
+│  │  ├─ helpers/
+│  │  │  ├─ CoreHelpers.php
+│  │  │  ├─ DeviceMap.php
+│  │  │  ├─ DeviceMapWizard.php
+│  │  │  ├─ Lexikon.php
+│  │  │  ├─ Normalizer.php
+│  │  │  ├─ RoomBuilderHelpers.php
+│  │  │  ├─ RoomsCatalog.php
+│  │  │  ├─ WfcDelayedPageSwitch.php
+│  │  │  └─ WebHookIcons.php
+│  │  └─ renderers/
+│  │     ├─ LaunchRequest.php
+│  │     ├─ RenderBewaesserung.php
+│  │     ├─ RenderGeraete.php
+│  │     ├─ RenderHeizung.php
+│  │     ├─ RenderJalousie.php
+│  │     ├─ RenderLicht.php
+│  │     ├─ RenderLueftung.php
+│  │     ├─ RenderSettings.php
+│  │     └─ Route_allRenderer.php
+│  └─ src/
+│     ├─ Helpers.php
+│     ├─ LogTrait.php
+│     ├─ Router.php
+│     ├─ Routes/
+│     │  └─ RouteAll.php
+│     └─ Renderers/
+│        ├─ RenderMain.php
+│        ├─ RenderHeizung.php
+│        ├─ RenderJalousie.php
+│        ├─ RenderLicht.php
+│        ├─ RenderLueftung.php
+│        ├─ RenderGeraete.php
+│        ├─ RenderBewaesserung.php
+│        └─ RenderSettings.php
+└─ RoomsCatalogConfigurator/
+   ├─ module.php
+   └─ module.json
 ```
+
+## 🧱 RoomsCatalog Konfigurator
+
+Der zusätzliche Modul-Ordner `RoomsCatalogConfigurator/` stellt eine eigenständige **Configurator-Instanz** bereit. Typischer Ablauf:
+
+1. Instanz hinzufügen → „RoomsCatalog Konfigurator“ auswählen.
+2. Im Formular das produktive RoomsCatalog-Skript auswählen.
+3. Optional: per Button „RoomsCatalogEdit erstellen/aktualisieren“ eine bearbeitbare Kopie erzeugen.
+4. Änderungen nimmst du direkt im `RoomsCatalogEdit`-Skript vor.
+5. Die Liste „Räume, Domains & Status“ markiert neue (grün), fehlende (gelb) und geänderte (rot) Einträge.
+6. Sobald alles passt → Button „RoomsCatalog mit Edit überschreiben“ drückt die geprüften Änderungen zurück ins aktive RoomsCatalog.
+
+So hast du jederzeit einen visuellen Überblick über Unterschiede und kannst neue Räume, Domains oder Geräte gefahrlos vorbereiten.
 
 ### 📂 Helper-Skripte
 
