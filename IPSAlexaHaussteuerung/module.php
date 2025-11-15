@@ -944,7 +944,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $summary = $this->DiagRebind();
         $this->log('info', 'Manual refresh completed', ['summary' => $summary]);
 
-        return $summary;
+        return 'alles neu aktualisiert';
     }
 
     private function readRendererDomainsProperty(): array
