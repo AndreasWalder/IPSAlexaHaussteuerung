@@ -52,10 +52,6 @@
       "value": "debug"
     },
     {
-      "type": "Label",
-      "caption": "Page IDs"
-    },
-    {
       "name": "StartPage",
       "type": "ValidationTextBox",
       "caption": "StartPage (leer = #<WFC-ID>)",
@@ -121,10 +117,6 @@
       ]
     },
     {
-      "type": "Label",
-      "caption": "Launch-Kacheln"
-    },
-    {
       "name": "LaunchTitle",
       "type": "ValidationTextBox",
       "caption": "Titel",
@@ -187,10 +179,6 @@
       "type": "SelectScript",
       "caption": "Config ScriptID",
       "value": 0
-    },
-    {
-      "type": "Label",
-      "caption": "Status-Variablen"
     },
     {
       "name": "VarInformation",
