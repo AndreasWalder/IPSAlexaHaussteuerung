@@ -60,6 +60,11 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterTimer('DelayedPageSwitch', 0, 'IAH_HandleDelayedPageSwitch($_IPS["TARGET"]);');
 
         // Pages
+        $this->RegisterPropertyString(
+            'PageMappings',
+            json_encode($this->pageMappingDefaults(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+        );
+        // Legacy fallbacks (migrated into PageMappings automatically)
         $this->RegisterPropertyString('EnergiePageId', 'item2124');
         $this->RegisterPropertyString('KameraPageId', 'item9907');
 
@@ -118,7 +123,8 @@ class IPSAlexaHaussteuerung extends IPSModule
 
         // WFC PageSwitch Params → Default aus Instanz-Settings
         $wfc = $this->ReadPropertyInteger('WfcId');
-        $page = $this->ReadPropertyString('EnergiePageId');
+        $pageMappings = $this->readPageMappingsProperty();
+        $page = $this->findDefaultWfcPageId($pageMappings);
         $this->ensureVar(
             $catSettings,
             'WFC PageSwitch Params',
@@ -349,9 +355,19 @@ class IPSAlexaHaussteuerung extends IPSModule
     public function TestOpenPage(int $which)
     {
         $V = $this->BuildVars();
-        $page = ($which === 1)
-            ? $this->ReadPropertyString('EnergiePageId')
-            : $this->ReadPropertyString('KameraPageId');
+        $pageMappings = (array)($V['pageMappings'] ?? []);
+        $key = $which === 1 ? 'energie' : 'kamera';
+        $page = '';
+        if (isset($pageMappings[$key]) && ($pageMappings[$key]['type'] ?? '') === 'wfc_item') {
+            $page = (string) ($pageMappings[$key]['value'] ?? '');
+        }
+        if ($page === '') {
+            $legacy = $which === 1
+                ? $this->ReadPropertyString('EnergiePageId')
+                : $this->ReadPropertyString('KameraPageId');
+            $page = trim($legacy);
+        }
+
         $this->TriggerPageSwitch($page, (int) $V['WfcId']);
     }
 
@@ -480,15 +496,29 @@ class IPSAlexaHaussteuerung extends IPSModule
 
         $deviceMapJsonVar = $get((int) $helper, 'deviceMapJson');
 
+        $pageMappings = $this->readPageMappingsProperty();
+        $startPage = $this->deriveStartPage();
+        $energieLegacy = $this->legacyPageIdFromMappings(
+            $pageMappings,
+            'energie',
+            $this->ReadPropertyString('EnergiePageId')
+        );
+        $kameraLegacy = $this->legacyPageIdFromMappings(
+            $pageMappings,
+            'kamera',
+            $this->ReadPropertyString('KameraPageId')
+        );
+
         return [
             'BaseUrl'       => $this->ReadPropertyString('BaseUrl'),
             'Source'        => $this->ReadPropertyString('Source'),
             'Token'         => $this->ReadPropertyString('Token'),
             'Passwort'      => $this->ReadPropertyString('Passwort'),
-            'StartPage'     => $this->ReadPropertyString('StartPage'),
+            'StartPage'     => $startPage,
             'WfcId'         => $this->ReadPropertyInteger('WfcId'),
-            'EnergiePageId' => $this->ReadPropertyString('EnergiePageId'),
-            'KameraPageId'  => $this->ReadPropertyString('KameraPageId'),
+            'EnergiePageId' => $energieLegacy,
+            'KameraPageId'  => $kameraLegacy,
+            'pageMappings'  => $pageMappings,
             'InstanceID'    => $this->InstanceID,
             // IDs der erzeugten/verknüpften Variablen
             'vars'          => [
@@ -783,16 +813,30 @@ class IPSAlexaHaussteuerung extends IPSModule
             $diagCat = $root;
         }
 
+        $pageMappings = $this->readPageMappingsProperty();
+        $startPage = $this->deriveStartPage();
+        $energieLegacy = $this->legacyPageIdFromMappings(
+            $pageMappings,
+            'energie',
+            $this->ReadPropertyString('EnergiePageId')
+        );
+        $kameraLegacy = $this->legacyPageIdFromMappings(
+            $pageMappings,
+            'kamera',
+            $this->ReadPropertyString('KameraPageId')
+        );
+
         $var = [
             'BaseUrl'       => $this->ReadPropertyString('BaseUrl'),
             'Source'        => $this->ReadPropertyString('Source'),
             'Token'         => $this->ReadPropertyString('Token'),
             'Passwort'      => $this->ReadPropertyString('Passwort'),
-            'StartPage'     => $this->ReadPropertyString('StartPage'),
+            'StartPage'     => $startPage,
             'LOG_LEVEL'     => $this->ReadPropertyString('LOG_LEVEL'),
             'WfcId'         => $this->ReadPropertyInteger('WfcId'),
-            'EnergiePageId' => $this->ReadPropertyString('EnergiePageId'),
-            'KameraPageId'  => $this->ReadPropertyString('KameraPageId'),
+            'EnergiePageId' => $energieLegacy,
+            'KameraPageId'  => $kameraLegacy,
+            'pageMappings'  => $pageMappings,
             'ActionsEnabled' => [
                 'heizung_stellen'     => $getVar($settingsCat, 'heizungStellen', 'heizung_stellen'),
                 'jalousie_steuern'    => $getVar($settingsCat, 'jalousieSteuern', 'jalousie_steuern'),
@@ -1254,6 +1298,150 @@ class IPSAlexaHaussteuerung extends IPSModule
         }
 
         return $tile;
+    }
+
+    private function pageMappingDefaults(): array
+    {
+        return [
+            ['key' => 'energie', 'type' => 'wfc_item', 'value' => 'item2124', 'label' => 'Energie'],
+            ['key' => 'kamera', 'type' => 'wfc_item', 'value' => 'item9907', 'label' => 'Kamera'],
+        ];
+    }
+
+    private function readPageMappingsProperty(): array
+    {
+        $raw = json_decode($this->ReadPropertyString('PageMappings'), true);
+        $map = [];
+        if (is_array($raw)) {
+            foreach ($raw as $entry) {
+                if (!is_array($entry)) {
+                    continue;
+                }
+                $parsed = $this->sanitizePageMappingEntry($entry);
+                if ($parsed === null) {
+                    continue;
+                }
+                $key = $parsed['key'];
+                unset($parsed['key']);
+                $map[$key] = $parsed;
+            }
+        }
+
+        if ($map === []) {
+            $fallbacks = [
+                'energie' => trim($this->ReadPropertyString('EnergiePageId')),
+                'kamera'  => trim($this->ReadPropertyString('KameraPageId')),
+            ];
+            foreach ($fallbacks as $key => $value) {
+                if ($value === '') {
+                    continue;
+                }
+                $map[$key] = [
+                    'type'  => 'wfc_item',
+                    'value' => $value,
+                    'label' => ucfirst($key),
+                ];
+            }
+        }
+
+        if ($map === []) {
+            foreach ($this->pageMappingDefaults() as $entry) {
+                $parsed = $this->sanitizePageMappingEntry($entry);
+                if ($parsed === null) {
+                    continue;
+                }
+                $key = $parsed['key'];
+                unset($parsed['key']);
+                $map[$key] = $parsed;
+            }
+        }
+
+        return $map;
+    }
+
+    private function sanitizePageMappingEntry(array $entry): ?array
+    {
+        $key = strtolower(trim((string) ($entry['key'] ?? '')));
+        if ($key === '') {
+            return null;
+        }
+
+        $type = strtolower(trim((string) ($entry['type'] ?? 'wfc_item')));
+        if (!in_array($type, ['wfc_item', 'external_url'], true)) {
+            $type = 'wfc_item';
+        }
+
+        $value = trim((string) ($entry['value'] ?? ''));
+        if ($value === '') {
+            return null;
+        }
+        if ($type === 'external_url' && stripos($value, 'https://') !== 0) {
+            return null;
+        }
+
+        $normalized = [
+            'key'   => $key,
+            'type'  => $type,
+            'value' => $value,
+        ];
+
+        $label = trim((string) ($entry['label'] ?? ''));
+        if ($label !== '') {
+            $normalized['label'] = $label;
+        }
+
+        return $normalized;
+    }
+
+    private function legacyPageIdFromMappings(array $pageMappings, string $key, string $fallback): string
+    {
+        $normKey = strtolower($key);
+        if (isset($pageMappings[$normKey]) && ($pageMappings[$normKey]['type'] ?? '') === 'wfc_item') {
+            $value = trim((string) ($pageMappings[$normKey]['value'] ?? ''));
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return trim($fallback);
+    }
+
+    private function findDefaultWfcPageId(array $pageMappings): string
+    {
+        if (isset($pageMappings['energie']) && ($pageMappings['energie']['type'] ?? '') === 'wfc_item') {
+            $value = trim((string) ($pageMappings['energie']['value'] ?? ''));
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        foreach ($pageMappings as $entry) {
+            if (($entry['type'] ?? '') !== 'wfc_item') {
+                continue;
+            }
+            $value = trim((string) ($entry['value'] ?? ''));
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return trim($this->ReadPropertyString('EnergiePageId'));
+    }
+
+    private function deriveStartPage(): string
+    {
+        $raw = trim($this->ReadPropertyString('StartPage'));
+        $wfcId = (int) $this->ReadPropertyInteger('WfcId');
+
+        if ($raw !== '' && !preg_match('/^#?\d+$/', $raw)) {
+            return $raw;
+        }
+
+        if ($wfcId > 0) {
+            return '#' . $wfcId;
+        }
+
+        return $raw;
     }
 
     private function rendererDomainBase(string $route): array
