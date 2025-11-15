@@ -14,10 +14,12 @@ class RoomsCatalogConfigurator extends IPSModule
 
         $this->RegisterPropertyInteger('RoomsCatalogScriptId', 0);
         $this->RegisterPropertyInteger('RoomsCatalogEditScriptId', 0);
+        $this->RegisterAttributeString('TreeFilter', '');
     }
 
     public function ApplyChanges()
     {
+        $this->RegisterAttributeString('TreeFilter', $this->ReadAttributeString('TreeFilter'));
         parent::ApplyChanges();
     }
 
@@ -42,6 +44,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $defaultElement = $elementOptions[0]['value'] ?? '';
         $treeVisible = $error === null;
         $treeElement = $this->buildTreeElement($treeVisible);
+        $treeFilter = $this->ReadAttributeString('TreeFilter');
 
         $form = [
             'elements' => [
@@ -73,6 +76,35 @@ class RoomsCatalogConfigurator extends IPSModule
                     'type'    => 'Button',
                     'caption' => 'Differenzen aktualisieren',
                     'onClick' => 'IPS_RequestAction($id, "RefreshDiff", 0);',
+                ],
+                [
+                    'type'    => 'ValidationTextBox',
+                    'name'    => 'TreeFilter',
+                    'caption' => 'Struktur-Filter',
+                    'visible' => $treeVisible,
+                    'value'   => $treeFilter,
+                    'onChange' => 'IPS_RequestAction($id, "UpdateTreeFilter", $TreeFilter);',
+                ],
+                [
+                    'type'    => 'Button',
+                    'name'    => 'TreeRefreshButton',
+                    'caption' => 'Strukturierte Ansicht aktualisieren',
+                    'visible' => $treeVisible,
+                    'onClick' => 'IPS_RequestAction($id, "RefreshTree", 0);',
+                ],
+                $treeElement,
+                [
+                    'type'    => 'List',
+                    'name'    => 'DiffList',
+                    'caption' => 'Räume, Domains & Status',
+                    'rowCount' => 20,
+                    'columns' => [
+                        ['caption' => 'Raum', 'name' => 'room', 'width' => '25%'],
+                        ['caption' => 'Domain', 'name' => 'domain', 'width' => '20%'],
+                        ['caption' => 'Details', 'name' => 'details', 'width' => '45%'],
+                        ['caption' => 'Status', 'name' => 'status', 'width' => '10%'],
+                    ],
+                    'values' => $values,
                 ],
                 [
                     'type'    => 'PopupButton',
@@ -127,20 +159,6 @@ class RoomsCatalogConfigurator extends IPSModule
                         ],
                     ],
                 ],
-                $treeElement,
-                [
-                    'type'    => 'List',
-                    'name'    => 'DiffList',
-                    'caption' => 'Räume, Domains & Status',
-                    'rowCount' => 20,
-                    'columns' => [
-                        ['caption' => 'Raum', 'name' => 'room', 'width' => '25%'],
-                        ['caption' => 'Domain', 'name' => 'domain', 'width' => '20%'],
-                        ['caption' => 'Details', 'name' => 'details', 'width' => '45%'],
-                        ['caption' => 'Status', 'name' => 'status', 'width' => '10%'],
-                    ],
-                    'values' => $values,
-                ],
             ],
         ];
 
@@ -163,6 +181,12 @@ class RoomsCatalogConfigurator extends IPSModule
                     break;
                 case 'RefreshDiff':
                     $this->refreshDiffList();
+                    break;
+                case 'UpdateTreeFilter':
+                    $this->handleTreeFilterUpdate((string) $Value);
+                    break;
+                case 'RefreshTree':
+                    $this->updateTreeView($this->hasValidTreeData());
                     break;
                 case 'SelectAddRoom':
                     $this->handleSelectAddRoom((string) $Value);
@@ -429,30 +453,89 @@ class RoomsCatalogConfigurator extends IPSModule
         sort($keys);
 
         $values = [];
+        $filter = mb_strtolower($this->ReadAttributeString('TreeFilter'));
         foreach ($keys as $key) {
             $orig = $roomsCatalog[$key] ?? null;
             $edit = $roomsEdit[$key] ?? null;
             $state = $this->diffState($orig, $edit);
-            $values[] = [
+            $children = $this->buildDomainTreeValues($key, $orig, $edit, $filter);
+            $row = [
                 'id'       => 'tree-room:' . $key,
                 'label'    => $this->resolveRoomTitle($key, $orig, $edit),
                 'details'  => $this->buildRoomDetails($orig ?? $edit ?? []),
                 'status'   => $state['label'],
                 'rowColor' => $state['color'],
+                'children' => $children,
             ];
 
-            foreach ($this->buildDomainRows($key, $orig, $edit, false) as $domainRow) {
-                $values[] = [
-                    'id'       => sprintf('tree-domain:%s:%s', $key, $domainRow['domain']),
-                    'label'    => '↳ ' . $domainRow['domain'],
-                    'details'  => $domainRow['details'],
-                    'status'   => $domainRow['status'],
-                    'rowColor' => $domainRow['rowColor'] ?? '',
-                ];
+            if ($this->passesTreeFilter($row, $filter) || $this->hasVisibleChildren($children)) {
+                $values[] = $row;
             }
         }
 
         return $values;
+    }
+
+    private function buildDomainTreeValues(string $roomKey, ?array $orig, ?array $edit, string $filter): array
+    {
+        $domainsOrig = is_array($orig['domains'] ?? null) ? array_keys($orig['domains']) : [];
+        $domainsEdit = is_array($edit['domains'] ?? null) ? array_keys($edit['domains']) : [];
+        $domainKeys = array_unique(array_merge($domainsOrig, $domainsEdit));
+        sort($domainKeys);
+
+        $children = [];
+        foreach ($domainKeys as $domain) {
+            $origDomain = $orig['domains'][$domain] ?? null;
+            $editDomain = $edit['domains'][$domain] ?? null;
+            $state = $this->diffState($origDomain, $editDomain);
+            $row = [
+                'id'       => sprintf('tree-domain:%s:%s', $roomKey, $domain),
+                'label'    => $domain,
+                'details'  => $this->buildDomainDetails($origDomain ?? $editDomain ?? []),
+                'status'   => $state['label'],
+                'rowColor' => $state['color'],
+            ];
+            if ($this->passesTreeFilter($row, $filter)) {
+                $children[] = $row;
+            }
+        }
+
+        return $children;
+    }
+
+    private function passesTreeFilter(array $row, string $filter): bool
+    {
+        if ($filter === '') {
+            return true;
+        }
+
+        foreach (['label', 'details', 'status'] as $field) {
+            $value = mb_strtolower((string) ($row[$field] ?? ''));
+            if ($value !== '' && mb_strpos($value, $filter) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function hasVisibleChildren(array $children): bool
+    {
+        return $children !== [];
+    }
+
+    private function handleTreeFilterUpdate(string $value): void
+    {
+        $normalized = trim($value);
+        $this->WriteAttributeString('TreeFilter', $normalized);
+        $this->UpdateFormField('TreeFilter', 'value', $normalized);
+        $this->updateTreeView($this->hasValidTreeData());
+    }
+
+    private function hasValidTreeData(): bool
+    {
+        $values = $this->buildDiffRows();
+        return $this->buildErrorRowIfNeeded($values) === null;
     }
 
     private function resolveScriptPath(string $file): string
@@ -858,7 +941,7 @@ class RoomsCatalogConfigurator extends IPSModule
     private function buildTreeElement(bool $visible): array
     {
         return [
-            'type'    => 'List',
+            'type'    => 'Configurator',
             'name'    => 'DiffTree',
             'caption' => 'Strukturierte Ansicht',
             'visible' => $visible,
@@ -875,6 +958,8 @@ class RoomsCatalogConfigurator extends IPSModule
     private function updateTreeView(bool $hasData): void
     {
         $this->UpdateFormField('DiffTree', 'visible', $hasData);
+        $this->UpdateFormField('TreeFilter', 'visible', $hasData);
+        $this->UpdateFormField('TreeRefreshButton', 'visible', $hasData);
         if ($hasData) {
             $this->UpdateFormField(
                 'DiffTree',
