@@ -3,7 +3,7 @@
  * Template for the IPSAlexaHaussteuerung SystemConfiguration script.
  *
  * The module overrides credentials like BaseUrl/Token/Passwort/StartPage and the
- * WfcId/Energie- und Kamera-Page-IDs with the values from the
+ * WfcId/PageMappings (inkl. Energie-/Kamera-Fallbacks) with the values from the
  * instance configuration. All other IDs have to be configured manually below.
  */
 return [
@@ -44,6 +44,7 @@ return [
         'ALLES_VAR'          => 0,
         'ALEXA_VAR'          => 0,
         'externalKey'        => '',
+        'pageMappings'       => [],
         // Helper scripts (these point to scripts located below the instance)
         'CoreHelpers'        => 0,
         'DeviceMap'          => 0,

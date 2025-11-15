@@ -58,20 +58,34 @@
         {
           "name": "StartPage",
           "type": "ValidationTextBox",
-          "caption": "StartPage (z.B. #45315)",
+          "caption": "StartPage (leer = #<WFC-ID>)",
           "value": "#45315"
         },
         {
-          "name": "EnergiePageId",
-          "type": "ValidationTextBox",
-          "caption": "Energie PageId",
-          "value": "item2124"
-        },
-        {
-          "name": "KameraPageId",
-          "type": "ValidationTextBox",
-          "caption": "Kamera PageId",
-          "value": "item9907"
+          "name": "PageMappings",
+          "type": "List",
+          "caption": "Page-Zuordnungen",
+          "add": true,
+          "delete": true,
+          "rowCount": 5,
+          "columns": [
+            { "caption": "Key", "name": "key", "width": "120px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            {
+              "caption": "Typ",
+              "name": "type",
+              "width": "140px",
+              "add": "wfc_item",
+              "edit": {
+                "type": "Select",
+                "options": [
+                  { "caption": "IPS Item", "value": "wfc_item" },
+                  { "caption": "Externe URL", "value": "external_url" }
+                ]
+              }
+            },
+            { "caption": "Wert / URL", "name": "value", "width": "260px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Label", "name": "label", "width": "180px", "add": "", "edit": { "type": "ValidationTextBox" } }
+          ]
         }
       ]
     },

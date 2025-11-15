@@ -10,7 +10,7 @@
  * 2025-11-10: Robust-Decode: inneres payload (String/Array) wird ausgepackt; rooms/ROOMS/ACTIONS_ENABLED/aplArgs
  *              werden aus JSON-Strings automatisch zu Arrays normalisiert. Ist-Temperatur als formatierter Wert.
  * 2025-11-10: External: externalKey top-level akzeptiert; kontextabhängige Page-ID aus SystemConfiguration
- *              (EnergiePageId/KameraPageId) mit Fallback. PageSwitch intern über Modul-Funktion
+ *              (pageMappings inkl. Energie/Kamera-Fallback) mit dynamischem PageSwitch über Modul-Funktion
  *              und Übergabe ['page'=>$pageId,'wfc'=>$wfcId].
  *
  * Aufruf:
@@ -20,7 +20,7 @@
  *   route: 'main_launch'|'heizung'|'jalousie'|'licht'|'lueftung'|'geraete'|'bewaesserung'|'settings'|'external'
  *   S: ['RENDER_MAIN'=>id,'RENDER_HEIZUNG'=>id,'RENDER_JALOUSIE'=>id,'RENDER_LICHT'=>id,'RENDER_LUEFTUNG'=>id,'RENDER_GERAETE'=>id,'RENDER_BEWAESSERUNG'=>id,'RENDER_SETTINGS'=>id]
  *   V: Variablen-IDs (AUSSEN_TEMP, INFORMATION, MELDUNGEN, DOMAIN_FLAG, SKILL_ACTIVE, StartPage, WfcId,
- *                     EnergiePageId, KameraPageId, ...)
+ *                     pageMappings, EnergiePageId, KameraPageId, ...)
  *   rooms, ROOMS, ACTIONS_ENABLED
  *   args1v,args2v,args3v,args4v, aplSupported, action, device, room, object, alles, number, prozent, power,
  *   aplArgs, skillActive, alexaKey, alexa, baseUrl, source, token, room_raw, szene, externalKey
@@ -417,13 +417,37 @@ try {
         $startPage   = (string)($V['StartPage'] ?? '');
         $wfcId       = (int)   ($V['WfcId'] ?? 0);
         $instanceId  = (int)   ($V['InstanceID'] ?? 0);
+        $pageMappings = is_array($V['pageMappings'] ?? null) ? $V['pageMappings'] : [];
+        $pageEntry = is_array($pageMappings[$externalKey] ?? null) ? $pageMappings[$externalKey] : null;
+        $pageKeyOverride = strtolower((string)($cfg['pageKey'] ?? ''));
+        if ($pageEntry === null && $pageKeyOverride !== '') {
+            $pageEntry = is_array($pageMappings[$pageKeyOverride] ?? null) ? $pageMappings[$pageKeyOverride] : null;
+        }
+        $legacyVar = trim((string)($cfg['pageIdVar'] ?? ''));
+        if ($pageEntry === null && $legacyVar !== '') {
+            $legacyValue = trim((string)($V[$legacyVar] ?? ''));
+            if ($legacyValue !== '') {
+                $pageEntry = ['type' => 'wfc_item', 'value' => $legacyValue];
+            }
+        }
+        if ($pageEntry === null && in_array($externalKey, ['energie', 'kamera'], true)) {
+            $legacyKey = $externalKey === 'energie' ? 'EnergiePageId' : 'KameraPageId';
+            $legacyValue = trim((string)($V[$legacyKey] ?? ''));
+            if ($legacyValue !== '') {
+                $pageEntry = ['type' => 'wfc_item', 'value' => $legacyValue];
+            }
+        }
 
-        // Page-ID kontextabhängig aus SystemConfiguration mit Fallbacks
-        $pageIdMap = [
-            'energie' => (string)($V['EnergiePageId'] ?? ''),
-            'kamera'  => (string)($V['KameraPageId']  ?? ''),
-        ];
-        $pageId = $pageIdMap[$externalKey] ?? '';
+        $pageType  = (string)($pageEntry['type'] ?? '');
+        $pageValue = trim((string)($pageEntry['value'] ?? ''));
+        if ($pageType === '') {
+            $pageType = 'wfc_item';
+        }
+        $isExternalUrl = $pageType === 'external_url';
+        if ($pageValue === '') {
+            $pageEntry = null;
+        }
+        $pageId = $isExternalUrl ? '' : (string) $pageValue;
 
         // Debug-Logging
         IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] external.debug ' . $j([
@@ -431,7 +455,8 @@ try {
             'cfg.keys'=>array_keys($cfg),
             'wfcId'=>$wfcId,
             'instanceId'=>$instanceId,
-            'pageId'=>$pageId,
+            'pageType'=>$pageType,
+            'pageValue'=>$pageValue,
             'baseUrl'=>$baseUrl !== '' ? '(set)' : '(empty)',
             'token'=>$token !== '' ? '(set)' : '(empty)'
         ]));
@@ -441,8 +466,15 @@ try {
             echo json_encode(['ok'=>false,'route'=>$route,'err'=>'missing external config'], $JSON);
             return;
         }
+        if ($pageEntry === null) {
+            IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] external.error missing page mapping');
+            echo json_encode(['ok'=>false,'route'=>$route,'err'=>'missing page mapping'], $JSON);
+            return;
+        }
 
-        $tileBase = rtrim($baseUrl, '/').'/?password='.$passwort.$startPage;
+        $tileBase = $isExternalUrl
+            ? $pageValue
+            : rtrim($baseUrl, '/').'/?password='.$passwort.$startPage;
         $logoFile = (string)($cfg['logo'] ?? '');
         $titleTxt = (string)($cfg['title'] ?? $externalKey);
         $logoUrl  = $logoFile !== '' ? (rtrim($baseUrl,'/').'/hook/icons?'.http_build_query([
@@ -464,7 +496,7 @@ try {
         ]));
 
         // Delayed PageSwitch direkt über Modul-Instanz anstoßen
-        if ($instanceId > 0 && $pageId !== '' && $wfcId > 0) {
+        if (!$isExternalUrl && $instanceId > 0 && $pageId !== '' && $wfcId > 0) {
             IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] external.delay dispatch ' . $j([
                 'instanceId'=>$instanceId,
                 'args'=>['page'=>$pageId,'wfc'=>$wfcId]
