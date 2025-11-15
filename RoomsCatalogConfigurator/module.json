@@ -1,0 +1,14 @@
+{
+  "id": "{0AD6D448-0E89-4F15-AC66-2B6698E5AA60}",
+  "name": "RoomsCatalogConfigurator",
+  "type": 4,
+  "vendor": "Haussteuerung",
+  "aliases": [
+    "RoomsCatalog Konfigurator"
+  ],
+  "parentRequirements": [],
+  "childRequirements": [],
+  "implemented": [],
+  "prefix": "RCC",
+  "url": "https://github.com/andreaswalder/IPSAlexaHaussteuerung"
+}
