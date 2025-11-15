@@ -308,8 +308,8 @@ class RoomsCatalogConfigurator extends IPSModule
             return [];
         }
 
-        $file = IPS_GetScriptFile($scriptId);
-        if (!is_file($file)) {
+        $file = $this->resolveScriptPath(IPS_GetScriptFile($scriptId));
+        if ($file === '' || !is_file($file)) {
             return [];
         }
 
@@ -319,6 +319,32 @@ class RoomsCatalogConfigurator extends IPSModule
         }
 
         return $result;
+    }
+
+    private function resolveScriptPath(string $file): string
+    {
+        if ($file === '') {
+            return '';
+        }
+
+        if ($this->isAbsolutePath($file)) {
+            return $file;
+        }
+
+        return IPS_GetKernelDir() . 'scripts' . DIRECTORY_SEPARATOR . $file;
+    }
+
+    private function isAbsolutePath(string $path): bool
+    {
+        if ($path === '') {
+            return false;
+        }
+
+        if ($path[0] === '/' || $path[0] === '\\') {
+            return true;
+        }
+
+        return (bool) preg_match('/^[A-Za-z]:[\\\\\/]/', $path);
     }
 
     private function updateProperty(string $name, $value): void
