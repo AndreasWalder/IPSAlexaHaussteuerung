@@ -52,10 +52,6 @@
       "value": "debug"
     },
     {
-      "type": "Label",
-      "caption": "Page IDs"
-    },
-    {
       "name": "StartPage",
       "type": "ValidationTextBox",
       "caption": "StartPage (leer = #<WFC-ID>)",
@@ -88,10 +84,6 @@
       ]
     },
     {
-      "type": "Label",
-      "caption": "Renderer-Domains"
-    },
-    {
       "name": "RendererDomains",
       "type": "List",
       "caption": "Renderer-Domains",
@@ -109,10 +101,6 @@
         { "caption": "APL-Token", "name": "aplToken", "width": "120px", "add": "", "edit": { "type": "ValidationTextBox" } },
         { "caption": "Toggle-Variable", "name": "toggleVarKey", "width": "150px", "add": "", "edit": { "type": "ValidationTextBox" } }
       ]
-    },
-    {
-      "type": "Label",
-      "caption": "Launch-Kacheln"
     },
     {
       "name": "LaunchTitle",
@@ -177,10 +165,6 @@
       "type": "SelectScript",
       "caption": "Config ScriptID",
       "value": 0
-    },
-    {
-      "type": "Label",
-      "caption": "Status-Variablen"
     },
     {
       "name": "VarInformation",
