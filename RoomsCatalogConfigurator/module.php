@@ -31,10 +31,7 @@ class RoomsCatalogConfigurator extends IPSModule
         ]);
 
         $values = $this->buildDiffRows();
-        $error = $this->buildErrorRowIfNeeded($values);
-        if ($error !== null) {
-            $values = [$error];
-        }
+        $errorMessage = $this->determineDataErrorMessage($values);
 
         $roomOptions = $this->buildRoomOptions();
         $defaultRoom = $roomOptions[0]['value'] ?? '';
@@ -42,7 +39,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $defaultDomain = $domainOptions[0]['value'] ?? '';
         $elementOptions = $this->buildElementOptions($defaultRoom, $defaultDomain);
         $defaultElement = $elementOptions[0]['value'] ?? '';
-        $treeVisible = $error === null;
+        $treeVisible = $errorMessage === null;
         $treeElement = $this->buildTreeElement($treeVisible);
         $treeFilter = $this->ReadAttributeString('TreeFilter');
 
@@ -94,17 +91,10 @@ class RoomsCatalogConfigurator extends IPSModule
                 ],
                 $treeElement,
                 [
-                    'type'    => 'List',
-                    'name'    => 'DiffList',
-                    'caption' => 'Räume, Domains & Status',
-                    'rowCount' => 20,
-                    'columns' => [
-                        ['caption' => 'Raum', 'name' => 'room', 'width' => '25%'],
-                        ['caption' => 'Domain', 'name' => 'domain', 'width' => '20%'],
-                        ['caption' => 'Details', 'name' => 'details', 'width' => '45%'],
-                        ['caption' => 'Status', 'name' => 'status', 'width' => '10%'],
-                    ],
-                    'values' => $values,
+                    'type'    => 'Label',
+                    'name'    => 'TreeErrorLabel',
+                    'caption' => $errorMessage ?? '',
+                    'visible' => $errorMessage !== null,
                 ],
                 [
                     'type'    => 'PopupButton',
@@ -214,20 +204,12 @@ class RoomsCatalogConfigurator extends IPSModule
     private function refreshDiffList(): void
     {
         $values = $this->buildDiffRows();
-        $error = $this->buildErrorRowIfNeeded($values);
-        if ($error !== null) {
-            $values = [$error];
-        }
+        $errorMessage = $this->determineDataErrorMessage($values);
 
-        $this->log('Refreshing diff list', ['rowCount' => count($values)]);
+        $this->UpdateFormField('TreeErrorLabel', 'caption', $errorMessage ?? '');
+        $this->UpdateFormField('TreeErrorLabel', 'visible', $errorMessage !== null);
 
-        $this->UpdateFormField(
-            'DiffList',
-            'values',
-            json_encode($values, JSON_THROW_ON_ERROR)
-        );
-
-        $hasData = $error === null;
+        $hasData = $errorMessage === null;
         $this->updateTreeView($hasData);
     }
 
@@ -454,29 +436,32 @@ class RoomsCatalogConfigurator extends IPSModule
 
         $values = [];
         $filter = mb_strtolower($this->ReadAttributeString('TreeFilter'));
+        $nextId = 1;
         foreach ($keys as $key) {
             $orig = $roomsCatalog[$key] ?? null;
             $edit = $roomsEdit[$key] ?? null;
             $state = $this->diffState($orig, $edit);
-            $children = $this->buildDomainTreeValues($key, $orig, $edit, $filter);
+            $rowId = $nextId++;
+            $children = $this->buildDomainTreeValues($rowId, $orig, $edit, $filter, $nextId);
             $row = [
-                'id'       => 'tree-room:' . $key,
+                'id'       => $rowId,
+                'parent'   => 0,
                 'label'    => $this->resolveRoomTitle($key, $orig, $edit),
                 'details'  => $this->buildRoomDetails($orig ?? $edit ?? []),
                 'status'   => $state['label'],
                 'rowColor' => $state['color'],
-                'children' => $children,
             ];
 
-            if ($this->passesTreeFilter($row, $filter) || $this->hasVisibleChildren($children)) {
+            if ($this->passesTreeFilter($row, $filter) || $children !== []) {
                 $values[] = $row;
+                $values = array_merge($values, $children);
             }
         }
 
         return $values;
     }
 
-    private function buildDomainTreeValues(string $roomKey, ?array $orig, ?array $edit, string $filter): array
+    private function buildDomainTreeValues(int $parentId, ?array $orig, ?array $edit, string $filter, int &$nextId): array
     {
         $domainsOrig = is_array($orig['domains'] ?? null) ? array_keys($orig['domains']) : [];
         $domainsEdit = is_array($edit['domains'] ?? null) ? array_keys($edit['domains']) : [];
@@ -489,7 +474,8 @@ class RoomsCatalogConfigurator extends IPSModule
             $editDomain = $edit['domains'][$domain] ?? null;
             $state = $this->diffState($origDomain, $editDomain);
             $row = [
-                'id'       => sprintf('tree-domain:%s:%s', $roomKey, $domain),
+                'id'       => $nextId++,
+                'parent'   => $parentId,
                 'label'    => $domain,
                 'details'  => $this->buildDomainDetails($origDomain ?? $editDomain ?? []),
                 'status'   => $state['label'],
@@ -519,11 +505,6 @@ class RoomsCatalogConfigurator extends IPSModule
         return false;
     }
 
-    private function hasVisibleChildren(array $children): bool
-    {
-        return $children !== [];
-    }
-
     private function handleTreeFilterUpdate(string $value): void
     {
         $normalized = trim($value);
@@ -535,7 +516,7 @@ class RoomsCatalogConfigurator extends IPSModule
     private function hasValidTreeData(): bool
     {
         $values = $this->buildDiffRows();
-        return $this->buildErrorRowIfNeeded($values) === null;
+        return $this->determineDataErrorMessage($values) === null;
     }
 
     private function resolveScriptPath(string $file): string
@@ -573,29 +554,15 @@ class RoomsCatalogConfigurator extends IPSModule
         IPS_ApplyChanges($this->InstanceID);
     }
 
-    private function buildErrorRowIfNeeded(array $values): ?array
+    private function determineDataErrorMessage(array $values): ?string
     {
         if ($this->ReadPropertyInteger('RoomsCatalogScriptId') === 0) {
-            return [
-                'id'      => 'error',
-                'room'    => 'RoomsCatalog nicht ausgewählt',
-                'domain'  => '',
-                'details' => 'Bitte ursprüngliches RoomsCatalog-Skript auswählen.',
-                'status'  => 'Fehlende Konfiguration',
-                'rowColor' => self::COLOR_REMOVED,
-            ];
+            return 'RoomsCatalog nicht ausgewählt. Bitte ursprüngliches RoomsCatalog-Skript auswählen.';
         }
         if ($values !== []) {
             return null;
         }
-        return [
-            'id'      => 'empty',
-            'room'    => 'Keine Daten',
-            'domain'  => '',
-            'details' => 'Keine Räume gefunden oder Skripte liefern kein Array.',
-            'status'  => 'Leer',
-            'rowColor' => self::COLOR_CHANGED,
-        ];
+        return 'Keine Räume gefunden oder Skripte liefern kein Array.';
     }
 
     private function buildRoomOptions(): array
