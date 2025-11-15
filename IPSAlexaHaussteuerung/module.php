@@ -1408,22 +1408,3 @@ class IPSAlexaHaussteuerung extends IPSModule
         ];
     }
 }
-
-function IAH_ManualRefresh(int $InstanceID): string
-{
-    if (!IPS_InstanceExists($InstanceID)) {
-        throw new InvalidArgumentException('Instance does not exist');
-    }
-
-    $instance = IPS_GetInstance($InstanceID);
-    if (($instance['ModuleInfo']['ModuleID'] ?? '') !== '{F528D4D0-5729-4315-AE88-9BBABDBD0392}') {
-        throw new InvalidArgumentException('InstanceID does not reference IPSAlexaHaussteuerung');
-    }
-
-    $module = IPS\InstanceManager::GetInstanceInterface($InstanceID);
-    if ($module === null) {
-        throw new RuntimeException('Instance interface is not available');
-    }
-
-    return (string) $module->ManualRefresh();
-}
