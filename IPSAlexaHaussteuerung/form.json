@@ -52,123 +52,117 @@
       "value": "debug"
     },
     {
-      "type": "ExpansionPanel",
-      "caption": "Page IDs",
-      "items": [
+      "type": "Label",
+      "caption": "Page IDs"
+    },
+    {
+      "name": "StartPage",
+      "type": "ValidationTextBox",
+      "caption": "StartPage (leer = #<WFC-ID>)",
+      "value": "#45315"
+    },
+    {
+      "name": "PageMappings",
+      "type": "List",
+      "caption": "Page-Zuordnungen",
+      "add": true,
+      "delete": true,
+      "rowCount": 5,
+      "columns": [
+        { "caption": "Key", "name": "key", "width": "120px", "add": "", "edit": { "type": "ValidationTextBox" } },
         {
-          "name": "StartPage",
-          "type": "ValidationTextBox",
-          "caption": "StartPage (leer = #<WFC-ID>)",
-          "value": "#45315"
+          "caption": "Typ",
+          "name": "type",
+          "width": "140px",
+          "add": "wfc_item",
+          "edit": {
+            "type": "Select",
+            "options": [
+              { "caption": "IPS Item", "value": "wfc_item" },
+              { "caption": "Externe URL", "value": "external_url" }
+            ]
+          }
         },
-        {
-          "name": "PageMappings",
-          "type": "List",
-          "caption": "Page-Zuordnungen",
-          "add": true,
-          "delete": true,
-          "rowCount": 5,
-          "columns": [
-            { "caption": "Key", "name": "key", "width": "120px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            {
-              "caption": "Typ",
-              "name": "type",
-              "width": "140px",
-              "add": "wfc_item",
-              "edit": {
-                "type": "Select",
-                "options": [
-                  { "caption": "IPS Item", "value": "wfc_item" },
-                  { "caption": "Externe URL", "value": "external_url" }
-                ]
-              }
-            },
-            { "caption": "Wert / URL", "name": "value", "width": "260px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Label", "name": "label", "width": "180px", "add": "", "edit": { "type": "ValidationTextBox" } }
-          ]
-        }
+        { "caption": "Wert / URL", "name": "value", "width": "260px", "add": "", "edit": { "type": "ValidationTextBox" } },
+        { "caption": "Label", "name": "label", "width": "180px", "add": "", "edit": { "type": "ValidationTextBox" } }
       ]
     },
     {
-      "type": "ExpansionPanel",
+      "type": "Label",
+      "caption": "Renderer-Domains"
+    },
+    {
+      "name": "RendererDomains",
+      "type": "List",
       "caption": "Renderer-Domains",
-      "items": [
-        {
-          "name": "RendererDomains",
-          "type": "List",
-          "caption": "Renderer-Domains",
-          "add": true,
-          "delete": true,
-          "rowCount": 4,
-          "columns": [
-            { "caption": "Route", "name": "route", "width": "90px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Log-Label", "name": "logName", "width": "120px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "RoomsCatalog-Domain", "name": "roomDomain", "width": "150px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Fallback-Titel", "name": "title", "width": "140px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Subtitel", "name": "subtitle", "width": "140px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Fehlermeldung", "name": "speechEmpty", "width": "200px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "APL-Dokument", "name": "aplDoc", "width": "220px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "APL-Token", "name": "aplToken", "width": "120px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Toggle-Variable", "name": "toggleVarKey", "width": "150px", "add": "", "edit": { "type": "ValidationTextBox" } }
-          ]
-        }
+      "add": true,
+      "delete": true,
+      "rowCount": 4,
+      "columns": [
+        { "caption": "Route", "name": "route", "width": "90px", "add": "", "edit": { "type": "ValidationTextBox" } },
+        { "caption": "Log-Label", "name": "logName", "width": "120px", "add": "", "edit": { "type": "ValidationTextBox" } },
+        { "caption": "RoomsCatalog-Domain", "name": "roomDomain", "width": "150px", "add": "", "edit": { "type": "ValidationTextBox" } },
+        { "caption": "Fallback-Titel", "name": "title", "width": "140px", "add": "", "edit": { "type": "ValidationTextBox" } },
+        { "caption": "Subtitel", "name": "subtitle", "width": "140px", "add": "", "edit": { "type": "ValidationTextBox" } },
+        { "caption": "Fehlermeldung", "name": "speechEmpty", "width": "200px", "add": "", "edit": { "type": "ValidationTextBox" } },
+        { "caption": "APL-Dokument", "name": "aplDoc", "width": "220px", "add": "", "edit": { "type": "ValidationTextBox" } },
+        { "caption": "APL-Token", "name": "aplToken", "width": "120px", "add": "", "edit": { "type": "ValidationTextBox" } },
+        { "caption": "Toggle-Variable", "name": "toggleVarKey", "width": "150px", "add": "", "edit": { "type": "ValidationTextBox" } }
       ]
     },
     {
-      "type": "ExpansionPanel",
-      "caption": "Launch-Kacheln",
-      "items": [
-        {
-          "name": "LaunchTitle",
-          "type": "ValidationTextBox",
-          "caption": "Titel",
-          "value": "HAUS VISUALISIERUNG"
-        },
-        {
-          "name": "LaunchSubtitleTemplate",
-          "type": "ValidationTextBox",
-          "caption": "Subtitel-Template ({{alexa}})",
-          "value": "Raumname: {{alexa}}"
-        },
-        {
-          "name": "LaunchFooterText",
-          "type": "ValidationTextBox",
-          "caption": "Footer-Text",
-          "value": "Tipp eine Kachel an – oder sage z. B. „Jalousie“."
-        },
-        {
-          "name": "LaunchLogo",
-          "type": "ValidationTextBox",
-          "caption": "Logo-Datei",
-          "value": "Logo.png"
-        },
-        {
-          "name": "LaunchHomeIcon",
-          "type": "ValidationTextBox",
-          "caption": "Home-Icon",
-          "value": "HomeIcon.png"
-        },
-        {
-          "name": "LaunchHeaderIcon",
-          "type": "ValidationTextBox",
-          "caption": "Info-Icon",
-          "value": "Icon.png"
-        },
-        {
-          "name": "LaunchCatalog",
-          "type": "List",
-          "caption": "Tiles",
-          "add": true,
-          "delete": true,
-          "rowCount": 5,
-          "columns": [
-            { "caption": "ID", "name": "id", "width": "100px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Titel", "name": "title", "width": "160px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Subtitel", "name": "subtitle", "width": "180px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Icon-Datei", "name": "icon", "width": "160px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Farbe (#RRGGBB)", "name": "color", "width": "140px", "add": "", "edit": { "type": "ValidationTextBox" } }
-          ]
-        }
+      "type": "Label",
+      "caption": "Launch-Kacheln"
+    },
+    {
+      "name": "LaunchTitle",
+      "type": "ValidationTextBox",
+      "caption": "Titel",
+      "value": "HAUS VISUALISIERUNG"
+    },
+    {
+      "name": "LaunchSubtitleTemplate",
+      "type": "ValidationTextBox",
+      "caption": "Subtitel-Template ({{alexa}})",
+      "value": "Raumname: {{alexa}}"
+    },
+    {
+      "name": "LaunchFooterText",
+      "type": "ValidationTextBox",
+      "caption": "Footer-Text",
+      "value": "Tipp eine Kachel an – oder sage z. B. „Jalousie“."
+    },
+    {
+      "name": "LaunchLogo",
+      "type": "ValidationTextBox",
+      "caption": "Logo-Datei",
+      "value": "Logo.png"
+    },
+    {
+      "name": "LaunchHomeIcon",
+      "type": "ValidationTextBox",
+      "caption": "Home-Icon",
+      "value": "HomeIcon.png"
+    },
+    {
+      "name": "LaunchHeaderIcon",
+      "type": "ValidationTextBox",
+      "caption": "Info-Icon",
+      "value": "Icon.png"
+    },
+    {
+      "name": "LaunchCatalog",
+      "type": "List",
+      "caption": "Tiles",
+      "add": true,
+      "delete": true,
+      "rowCount": 5,
+      "columns": [
+        { "caption": "ID", "name": "id", "width": "100px", "add": "", "edit": { "type": "ValidationTextBox" } },
+        { "caption": "Titel", "name": "title", "width": "160px", "add": "", "edit": { "type": "ValidationTextBox" } },
+        { "caption": "Subtitel", "name": "subtitle", "width": "180px", "add": "", "edit": { "type": "ValidationTextBox" } },
+        { "caption": "Icon-Datei", "name": "icon", "width": "160px", "add": "", "edit": { "type": "ValidationTextBox" } },
+        { "caption": "Farbe (#RRGGBB)", "name": "color", "width": "140px", "add": "", "edit": { "type": "ValidationTextBox" } }
       ]
     },
     {
@@ -185,46 +179,44 @@
       "value": 0
     },
     {
-      "type": "ExpansionPanel",
-      "caption": "Status-Variablen",
-      "items": [
-        {
-          "name": "VarInformation",
-          "type": "SelectVariable",
-          "caption": "Information",
-          "value": 0
-        },
-        {
-          "name": "VarMeldungen",
-          "type": "SelectVariable",
-          "caption": "Meldungen",
-          "value": 0
-        },
-        {
-          "name": "VarAussenTemp",
-          "type": "SelectVariable",
-          "caption": "Außentemperatur",
-          "value": 0
-        },
-        {
-          "name": "VarHeizraumIst",
-          "type": "SelectVariable",
-          "caption": "Heizraum Ist",
-          "value": 0
-        },
-        {
-          "name": "VarOgGangIst",
-          "type": "SelectVariable",
-          "caption": "OG Gang Ist",
-          "value": 0
-        },
-        {
-          "name": "VarTechnikIst",
-          "type": "SelectVariable",
-          "caption": "Technik Ist",
-          "value": 0
-        }
-      ]
+      "type": "Label",
+      "caption": "Status-Variablen"
+    },
+    {
+      "name": "VarInformation",
+      "type": "SelectVariable",
+      "caption": "Information",
+      "value": 0
+    },
+    {
+      "name": "VarMeldungen",
+      "type": "SelectVariable",
+      "caption": "Meldungen",
+      "value": 0
+    },
+    {
+      "name": "VarAussenTemp",
+      "type": "SelectVariable",
+      "caption": "Außentemperatur",
+      "value": 0
+    },
+    {
+      "name": "VarHeizraumIst",
+      "type": "SelectVariable",
+      "caption": "Heizraum Ist",
+      "value": 0
+    },
+    {
+      "name": "VarOgGangIst",
+      "type": "SelectVariable",
+      "caption": "OG Gang Ist",
+      "value": 0
+    },
+    {
+      "name": "VarTechnikIst",
+      "type": "SelectVariable",
+      "caption": "Technik Ist",
+      "value": 0
     }
   ],
   "actions": [
