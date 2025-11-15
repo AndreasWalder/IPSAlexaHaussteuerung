@@ -288,65 +288,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             $form['actions'] = [];
         }
 
-        $form['elements'][] = $this->buildLogPreviewPanel();
-
         return json_encode($form, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    }
-
-    private function buildLogPreviewPanel(): array
-    {
-        $logId = (int) @IPS_GetObjectIDByIdent('logRecent', $this->InstanceID);
-        if ($logId <= 0) {
-            $logText = 'Variable "log_recent" wurde noch nicht angelegt.';
-        } else {
-            $logText = (string) @GetValue($logId);
-            $logText = trim($logText);
-            if ($logText === '') {
-                $logText = '– keine Einträge vorhanden –';
-            } else {
-                $logText = $this->trimUtf8Tail($logText, 20000);
-            }
-        }
-
-        return [
-            'type'   => 'ExpansionPanel',
-            'caption'=> 'Diagnose: Codex-Protokoll (log_recent)',
-            'items'  => [
-                [
-                    'type'      => 'ValidationTextBox',
-                    'name'      => 'DiagCodexLog',
-                    'caption'   => 'Aktueller Inhalt',
-                    'multiline' => true,
-                    'enabled'   => false,
-                    'value'     => $logText,
-                ],
-                [
-                    'type'    => 'Label',
-                    'caption' => 'Die Ausgabe stammt direkt aus der internen Variable "log_recent".',
-                ],
-            ],
-        ];
-    }
-
-    private function trimUtf8Tail(string $text, int $maxChars): string
-    {
-        if ($maxChars <= 0 || $text === '') {
-            return $text;
-        }
-
-        if (function_exists('mb_strlen') && function_exists('mb_substr')) {
-            if (mb_strlen($text, 'UTF-8') > $maxChars) {
-                return mb_substr($text, -$maxChars, null, 'UTF-8');
-            }
-
-            return $text;
-        }
-
-        if (strlen($text) > $maxChars) {
-            return substr($text, -$maxChars);
-        }
-
-        return $text;
     }
 
     /**
@@ -1002,7 +944,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $summary = $this->DiagRebind();
         $this->log('info', 'Manual refresh completed', ['summary' => $summary]);
 
-        return $summary;
+        return 'alles neu aktualisiert';
     }
 
     private function readRendererDomainsProperty(): array
@@ -1465,4 +1407,23 @@ class IPSAlexaHaussteuerung extends IPSModule
             'toggleVarKey' => $normalizedRoute . '_toggle',
         ];
     }
+}
+
+function IAH_ManualRefresh(int $InstanceID): string
+{
+    if (!IPS_InstanceExists($InstanceID)) {
+        throw new InvalidArgumentException('Instance does not exist');
+    }
+
+    $instance = IPS_GetInstance($InstanceID);
+    if (($instance['ModuleInfo']['ModuleID'] ?? '') !== '{F528D4D0-5729-4315-AE88-9BBABDBD0392}') {
+        throw new InvalidArgumentException('InstanceID does not reference IPSAlexaHaussteuerung');
+    }
+
+    $module = IPS\InstanceManager::GetInstanceInterface($InstanceID);
+    if ($module === null) {
+        throw new RuntimeException('Instance interface is not available');
+    }
+
+    return (string) $module->ManualRefresh();
 }

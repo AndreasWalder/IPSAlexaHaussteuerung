@@ -62,52 +62,62 @@
       "value": "#45315"
     },
     {
-      "name": "PageMappings",
-      "type": "List",
+      "type": "ExpansionPanel",
       "caption": "Page-Zuordnungen",
-      "add": true,
-      "delete": true,
-      "rowCount": 5,
-      "columns": [
-        { "caption": "Key", "name": "key", "width": "120px", "add": "", "edit": { "type": "ValidationTextBox" } },
+      "expanded": false,
+      "items": [
         {
-          "caption": "Typ",
-          "name": "type",
-          "width": "140px",
-          "add": "wfc_item",
-          "edit": {
-            "type": "Select",
-            "options": [
-              { "caption": "IPS Item", "value": "wfc_item" },
-              { "caption": "Externe URL", "value": "external_url" }
-            ]
-          }
-        },
-        { "caption": "Wert / URL", "name": "value", "width": "260px", "add": "", "edit": { "type": "ValidationTextBox" } },
-        { "caption": "Label", "name": "label", "width": "180px", "add": "", "edit": { "type": "ValidationTextBox" } }
+          "name": "PageMappings",
+          "type": "List",
+          "caption": "Page-Zuordnungen",
+          "add": true,
+          "delete": true,
+          "rowCount": 5,
+          "columns": [
+            { "caption": "Key", "name": "key", "width": "120px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            {
+              "caption": "Typ",
+              "name": "type",
+              "width": "140px",
+              "add": "wfc_item",
+              "edit": {
+                "type": "Select",
+                "options": [
+                  { "caption": "IPS Item", "value": "wfc_item" },
+                  { "caption": "Externe URL", "value": "external_url" }
+                ]
+              }
+            },
+            { "caption": "Wert / URL", "name": "value", "width": "260px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Label", "name": "label", "width": "180px", "add": "", "edit": { "type": "ValidationTextBox" } }
+          ]
+        }
       ]
     },
     {
-      "type": "Label",
-      "caption": "Renderer-Domains"
-    },
-    {
-      "name": "RendererDomains",
-      "type": "List",
+      "type": "ExpansionPanel",
       "caption": "Renderer-Domains",
-      "add": true,
-      "delete": true,
-      "rowCount": 4,
-      "columns": [
-        { "caption": "Route", "name": "route", "width": "90px", "add": "", "edit": { "type": "ValidationTextBox" } },
-        { "caption": "Log-Label", "name": "logName", "width": "120px", "add": "", "edit": { "type": "ValidationTextBox" } },
-        { "caption": "RoomsCatalog-Domain", "name": "roomDomain", "width": "150px", "add": "", "edit": { "type": "ValidationTextBox" } },
-        { "caption": "Fallback-Titel", "name": "title", "width": "140px", "add": "", "edit": { "type": "ValidationTextBox" } },
-        { "caption": "Subtitel", "name": "subtitle", "width": "140px", "add": "", "edit": { "type": "ValidationTextBox" } },
-        { "caption": "Fehlermeldung", "name": "speechEmpty", "width": "200px", "add": "", "edit": { "type": "ValidationTextBox" } },
-        { "caption": "APL-Dokument", "name": "aplDoc", "width": "220px", "add": "", "edit": { "type": "ValidationTextBox" } },
-        { "caption": "APL-Token", "name": "aplToken", "width": "120px", "add": "", "edit": { "type": "ValidationTextBox" } },
-        { "caption": "Toggle-Variable", "name": "toggleVarKey", "width": "150px", "add": "", "edit": { "type": "ValidationTextBox" } }
+      "expanded": false,
+      "items": [
+        {
+          "name": "RendererDomains",
+          "type": "List",
+          "caption": "Renderer-Domains",
+          "add": true,
+          "delete": true,
+          "rowCount": 4,
+          "columns": [
+            { "caption": "Route", "name": "route", "width": "90px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Log-Label", "name": "logName", "width": "120px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "RoomsCatalog-Domain", "name": "roomDomain", "width": "150px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Fallback-Titel", "name": "title", "width": "140px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Subtitel", "name": "subtitle", "width": "140px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Fehlermeldung", "name": "speechEmpty", "width": "200px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "APL-Dokument", "name": "aplDoc", "width": "220px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "APL-Token", "name": "aplToken", "width": "120px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Toggle-Variable", "name": "toggleVarKey", "width": "150px", "add": "", "edit": { "type": "ValidationTextBox" } }
+          ]
+        }
       ]
     },
     {
@@ -151,26 +161,26 @@
       "value": "Icon.png"
     },
     {
-      "name": "LaunchCatalog",
-      "type": "List",
-      "caption": "Tiles",
-      "add": true,
-      "delete": true,
-      "rowCount": 5,
-      "columns": [
-        { "caption": "ID", "name": "id", "width": "100px", "add": "", "edit": { "type": "ValidationTextBox" } },
-        { "caption": "Titel", "name": "title", "width": "160px", "add": "", "edit": { "type": "ValidationTextBox" } },
-        { "caption": "Subtitel", "name": "subtitle", "width": "180px", "add": "", "edit": { "type": "ValidationTextBox" } },
-        { "caption": "Icon-Datei", "name": "icon", "width": "160px", "add": "", "edit": { "type": "ValidationTextBox" } },
-        { "caption": "Farbe (#RRGGBB)", "name": "color", "width": "140px", "add": "", "edit": { "type": "ValidationTextBox" } }
+      "type": "ExpansionPanel",
+      "caption": "Launch-Kacheln",
+      "expanded": false,
+      "items": [
+        {
+          "name": "LaunchCatalog",
+          "type": "List",
+          "caption": "Tiles",
+          "add": true,
+          "delete": true,
+          "rowCount": 5,
+          "columns": [
+            { "caption": "ID", "name": "id", "width": "100px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Titel", "name": "title", "width": "160px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Subtitel", "name": "subtitle", "width": "180px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Icon-Datei", "name": "icon", "width": "160px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            { "caption": "Farbe (#RRGGBB)", "name": "color", "width": "140px", "add": "", "edit": { "type": "ValidationTextBox" } }
+          ]
+        }
       ]
-    },
-    {
-      "name": "DiagPayload",
-      "type": "ValidationTextBox",
-      "caption": "Diagnose: Custom Payload (JSON)",
-      "multiline": true,
-      "value": "{\"route\":\"main_launch\",\"aplSupported\":true}"
     },
     {
       "name": "SystemConfigScriptId",
@@ -223,7 +233,7 @@
     {
       "type": "Button",
       "caption": "Instanz aktualisieren",
-      "onClick": "echo IPS_RequestAction($id, 'ManualRefresh', '');"
+      "onClick": "echo IAH_ManualRefresh($id);"
     }
   ]
 }
