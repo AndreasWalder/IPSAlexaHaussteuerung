@@ -52,10 +52,6 @@
       "value": "debug"
     },
     {
-      "type": "Label",
-      "caption": "Page IDs"
-    },
-    {
       "name": "StartPage",
       "type": "ValidationTextBox",
       "caption": "StartPage (leer = #<WFC-ID>)",
@@ -119,10 +115,6 @@
           ]
         }
       ]
-    },
-    {
-      "type": "Label",
-      "caption": "Launch-Kacheln"
     },
     {
       "name": "LaunchTitle",
@@ -189,10 +181,6 @@
       "value": 0
     },
     {
-      "type": "Label",
-      "caption": "Status-Variablen"
-    },
-    {
       "name": "VarInformation",
       "type": "SelectVariable",
       "caption": "Information",
@@ -233,7 +221,7 @@
     {
       "type": "Button",
       "caption": "Instanz aktualisieren",
-      "onClick": "echo IPS_RequestAction($id, 'ManualRefresh', '');"
+      "onClick": "echo IAH_ManualRefresh($id);"
     }
   ]
 }
