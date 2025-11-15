@@ -6,6 +6,7 @@ class RoomsCatalogConfigurator extends IPSModule
     private const COLOR_NEW = '#DCFCE7';
     private const COLOR_REMOVED = '#FEF3C7';
     private const COLOR_CHANGED = '#FEE2E2';
+    private const LOG_CHANNEL = 'Alexa';
 
     public function Create()
     {
@@ -22,6 +23,12 @@ class RoomsCatalogConfigurator extends IPSModule
 
     public function GetConfigurationForm()
     {
+        $this->log('GetConfigurationForm invoked', [
+            'roomsCatalogId'     => $this->ReadPropertyInteger('RoomsCatalogScriptId'),
+            'roomsCatalogEditId' => $this->ReadPropertyInteger('RoomsCatalogEditScriptId'),
+            'treePanelSupported' => $this->supportsExpansionPanel(),
+        ]);
+
         $values = $this->buildDiffRows();
         $error = $this->buildErrorRowIfNeeded($values);
         if ($error !== null) {
@@ -35,6 +42,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $elementOptions = $this->buildElementOptions($defaultRoom, $defaultDomain);
         $defaultElement = $elementOptions[0]['value'] ?? '';
         $treeVisible = $error === null;
+        $treeElement = $this->buildTreeElement($treeVisible);
 
         $form = [
             'elements' => [
@@ -120,13 +128,7 @@ class RoomsCatalogConfigurator extends IPSModule
                         ],
                     ],
                 ],
-                [
-                    'type'    => 'ExpansionPanel',
-                    'name'    => 'DiffTree',
-                    'caption' => 'Strukturierte Ansicht',
-                    'visible' => $treeVisible,
-                    'items'   => $treeVisible ? $this->buildDiffTreePanels() : [],
-                ],
+                $treeElement,
                 [
                     'type'    => 'List',
                     'name'    => 'DiffList',
@@ -148,30 +150,41 @@ class RoomsCatalogConfigurator extends IPSModule
 
     public function RequestAction($Ident, $Value)
     {
-        switch ($Ident) {
-            case 'CreateEditScript':
-                $editId = $this->createOrUpdateEditScript();
-                $this->UpdateFormField('RoomsCatalogEditScriptId', 'value', $editId);
-                $this->refreshDiffList();
-                break;
-            case 'ApplyEditToRoomsCatalog':
-                $this->applyEditToRoomsCatalog();
-                $this->refreshDiffList();
-                break;
-            case 'RefreshDiff':
-                $this->refreshDiffList();
-                break;
-            case 'SelectAddRoom':
-                $this->handleSelectAddRoom((string) $Value);
-                break;
-            case 'SelectAddDomain':
-                $this->handleSelectAddDomain((string) $Value);
-                break;
-            case 'AddElementFromCatalog':
-                $this->handleAddElementFromCatalog((string) $Value);
-                break;
-            default:
-                throw new Exception(sprintf('Unsupported action "%s"', $Ident));
+        $this->log('RequestAction received', ['ident' => $Ident]);
+        try {
+            switch ($Ident) {
+                case 'CreateEditScript':
+                    $editId = $this->createOrUpdateEditScript();
+                    $this->UpdateFormField('RoomsCatalogEditScriptId', 'value', $editId);
+                    $this->refreshDiffList();
+                    break;
+                case 'ApplyEditToRoomsCatalog':
+                    $this->applyEditToRoomsCatalog();
+                    $this->refreshDiffList();
+                    break;
+                case 'RefreshDiff':
+                    $this->refreshDiffList();
+                    break;
+                case 'SelectAddRoom':
+                    $this->handleSelectAddRoom((string) $Value);
+                    break;
+                case 'SelectAddDomain':
+                    $this->handleSelectAddDomain((string) $Value);
+                    break;
+                case 'AddElementFromCatalog':
+                    $this->handleAddElementFromCatalog((string) $Value);
+                    break;
+                default:
+                    throw new Exception(sprintf('Unsupported action "%s"', $Ident));
+            }
+        } catch (Throwable $exception) {
+            $this->log('RequestAction failed', [
+                'ident' => $Ident,
+                'error' => $exception->getMessage(),
+                'file'  => $exception->getFile(),
+                'line'  => $exception->getLine(),
+            ]);
+            throw $exception;
         }
     }
 
@@ -183,6 +196,8 @@ class RoomsCatalogConfigurator extends IPSModule
             $values = [$error];
         }
 
+        $this->log('Refreshing diff list', ['rowCount' => count($values)]);
+
         $this->UpdateFormField(
             'DiffList',
             'values',
@@ -190,14 +205,7 @@ class RoomsCatalogConfigurator extends IPSModule
         );
 
         $hasData = $error === null;
-        $this->UpdateFormField('DiffTree', 'visible', $hasData);
-        if ($hasData) {
-            $this->UpdateFormField(
-                'DiffTree',
-                'items',
-                json_encode($this->buildDiffTreePanels(), JSON_THROW_ON_ERROR)
-            );
-        }
+        $this->updateTreeView($hasData);
     }
 
     private function createOrUpdateEditScript(): int
@@ -222,6 +230,7 @@ class RoomsCatalogConfigurator extends IPSModule
         }
 
         IPS_SetScriptContent($editId, $content);
+        $this->log('RoomsCatalogEdit updated', ['scriptId' => $editId]);
         $this->updateProperty('RoomsCatalogEditScriptId', $editId);
 
         return (int) $editId;
@@ -241,6 +250,7 @@ class RoomsCatalogConfigurator extends IPSModule
 
         $content = IPS_GetScriptContent($editId);
         IPS_SetScriptContent($sourceId, $content);
+        $this->log('RoomsCatalog overwritten from edit script', ['roomsCatalogId' => $sourceId, 'editId' => $editId]);
     }
 
     private function buildDiffRows(): array
@@ -479,6 +489,41 @@ class RoomsCatalogConfigurator extends IPSModule
         return $panels;
     }
 
+    private function buildDiffTreeListValues(): array
+    {
+        $roomsCatalog = $this->loadRoomsCatalog($this->ReadPropertyInteger('RoomsCatalogScriptId'));
+        $roomsEdit = $this->loadRoomsCatalog($this->ReadPropertyInteger('RoomsCatalogEditScriptId'));
+
+        $keys = array_unique(array_merge(array_keys($roomsCatalog), array_keys($roomsEdit)));
+        sort($keys);
+
+        $values = [];
+        foreach ($keys as $key) {
+            $orig = $roomsCatalog[$key] ?? null;
+            $edit = $roomsEdit[$key] ?? null;
+            $state = $this->diffState($orig, $edit);
+            $values[] = [
+                'id'       => 'tree-room:' . $key,
+                'label'    => $this->resolveRoomTitle($key, $orig, $edit),
+                'details'  => $this->buildRoomDetails($orig ?? $edit ?? []),
+                'status'   => $state['label'],
+                'rowColor' => $state['color'],
+            ];
+
+            foreach ($this->buildDomainRows($key, $orig, $edit, false) as $domainRow) {
+                $values[] = [
+                    'id'       => sprintf('tree-domain:%s:%s', $key, $domainRow['domain']),
+                    'label'    => '↳ ' . $domainRow['domain'],
+                    'details'  => $domainRow['details'],
+                    'status'   => $domainRow['status'],
+                    'rowColor' => $domainRow['rowColor'] ?? '',
+                ];
+            }
+        }
+
+        return $values;
+    }
+
     private function resolveScriptPath(string $file): string
     {
         if ($file === '') {
@@ -675,6 +720,7 @@ class RoomsCatalogConfigurator extends IPSModule
 
     private function handleSelectAddRoom(string $roomKey): void
     {
+        $this->log('handleSelectAddRoom', ['room' => $roomKey]);
         $domainOptions = $this->buildDomainOptions($roomKey);
         $domainValue = $domainOptions[0]['value'] ?? '';
         $this->UpdateFormField('AddDomainSelect', 'options', json_encode($domainOptions, JSON_THROW_ON_ERROR));
@@ -697,6 +743,8 @@ class RoomsCatalogConfigurator extends IPSModule
         $room = (string) ($data['room'] ?? '');
         $domain = (string) ($data['domain'] ?? '');
 
+        $this->log('handleSelectAddDomain', ['room' => $room, 'domain' => $domain]);
+
         $elementOptions = $this->buildElementOptions($room, $domain);
         $this->UpdateFormField('AddElementSelect', 'options', json_encode($elementOptions, JSON_THROW_ON_ERROR));
         $this->UpdateFormField('AddElementSelect', 'value', $elementOptions[0]['value'] ?? '');
@@ -715,6 +763,14 @@ class RoomsCatalogConfigurator extends IPSModule
         $element = (string) ($data['element'] ?? '');
         $customKey = trim((string) ($data['customKey'] ?? ''));
         $copyRoom = !empty($data['copyRoom']);
+
+        $this->log('handleAddElementFromCatalog', [
+            'room'      => $room,
+            'domain'    => $domain,
+            'element'   => $element,
+            'customKey' => $customKey,
+            'copyRoom'  => $copyRoom,
+        ]);
 
         $this->addElementToEditScript($room, $domain, $element, $customKey, $copyRoom);
         $this->refreshDiffList();
@@ -743,6 +799,7 @@ class RoomsCatalogConfigurator extends IPSModule
             $targetRoomKey = $customKey !== '' ? $customKey : $roomKey;
             $editRooms[$targetRoomKey] = $sourceRooms[$roomKey];
             $this->writeRoomsCatalogScript($editId, $editRooms);
+            $this->log('Room copied into edit script', ['room' => $roomKey, 'targetKey' => $targetRoomKey]);
             return;
         }
 
@@ -772,6 +829,7 @@ class RoomsCatalogConfigurator extends IPSModule
             case 'domain':
                 $domainTargetKey = $customKey !== '' ? $customKey : $domainSourceKey;
                 $editRooms[$roomKey]['domains'][$domainTargetKey] = $sourceRooms[$roomKey]['domains'][$domainSourceKey];
+                $this->log('Domain copied', ['room' => $roomKey, 'sourceDomain' => $domainSourceKey, 'targetDomain' => $domainTargetKey]);
                 break;
             case 'section':
                 if (!isset($sourceRooms[$roomKey]['domains'][$domainSourceKey][$sectionKey])) {
@@ -782,6 +840,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 }
                 $sectionTargetKey = $customKey !== '' ? $customKey : $sectionKey;
                 $editRooms[$roomKey]['domains'][$domainSourceKey][$sectionTargetKey] = $sourceRooms[$roomKey]['domains'][$domainSourceKey][$sectionKey];
+                $this->log('Section copied', ['room' => $roomKey, 'domain' => $domainSourceKey, 'section' => $sectionKey, 'targetSection' => $sectionTargetKey]);
                 break;
             case 'item':
                 $targetSection = $sectionKey;
@@ -796,6 +855,7 @@ class RoomsCatalogConfigurator extends IPSModule
                         throw new Exception('Element im RoomsCatalog nicht vorhanden.');
                     }
                     $editRooms[$roomKey]['domains'][$domainSourceKey][$itemTargetKey] = $sourceDomain[$itemKey];
+                    $this->log('Root item copied', ['room' => $roomKey, 'domain' => $domainSourceKey, 'item' => $itemKey, 'target' => $itemTargetKey]);
                     break;
                 }
                 if (!isset($editRooms[$roomKey]['domains'][$domainSourceKey][$targetSection]) || !is_array($editRooms[$roomKey]['domains'][$domainSourceKey][$targetSection])) {
@@ -805,6 +865,7 @@ class RoomsCatalogConfigurator extends IPSModule
                     throw new Exception('Element im RoomsCatalog nicht vorhanden.');
                 }
                 $editRooms[$roomKey]['domains'][$domainSourceKey][$targetSection][$itemTargetKey] = $sourceDomain[$targetSection][$itemKey];
+                $this->log('Section item copied', ['room' => $roomKey, 'domain' => $domainSourceKey, 'section' => $targetSection, 'item' => $itemKey, 'target' => $itemTargetKey]);
                 break;
             default:
                 throw new Exception('Element-Auswahl unbekannt.');
@@ -855,5 +916,75 @@ class RoomsCatalogConfigurator extends IPSModule
             return 'null';
         }
         return (string) $value;
+    }
+
+    private function log(string $message, array $context = []): void
+    {
+        $contextString = $context === [] ? '' : ' ' . json_encode($context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        IPS_LogMessage(self::LOG_CHANNEL, sprintf('RoomsCatalogConfigurator[%d] %s%s', $this->InstanceID, $message, $contextString));
+    }
+
+    private function supportsExpansionPanel(): bool
+    {
+        if (!function_exists('IPS_GetKernelVersion')) {
+            return false;
+        }
+        $version = (string) IPS_GetKernelVersion();
+        if ($version === '') {
+            return false;
+        }
+
+        return version_compare($version, '7.1', '>=');
+    }
+
+    private function buildTreeElement(bool $visible): array
+    {
+        if ($this->supportsExpansionPanel()) {
+            return [
+                'type'    => 'ExpansionPanel',
+                'name'    => 'DiffTree',
+                'caption' => 'Strukturierte Ansicht',
+                'visible' => $visible,
+                'items'   => $visible ? $this->buildDiffTreePanels() : [],
+            ];
+        }
+
+        return [
+            'type'    => 'List',
+            'name'    => 'DiffTreeFallback',
+            'caption' => 'Strukturierte Ansicht (kompakt)',
+            'visible' => $visible,
+            'rowCount' => 20,
+            'columns' => [
+                ['caption' => 'Raum / Bereich', 'name' => 'label', 'width' => '40%'],
+                ['caption' => 'Details', 'name' => 'details', 'width' => '40%'],
+                ['caption' => 'Status', 'name' => 'status', 'width' => '20%'],
+            ],
+            'values' => $visible ? $this->buildDiffTreeListValues() : [],
+        ];
+    }
+
+    private function updateTreeView(bool $hasData): void
+    {
+        if ($this->supportsExpansionPanel()) {
+            $this->UpdateFormField('DiffTree', 'visible', $hasData);
+            if ($hasData) {
+                $this->UpdateFormField(
+                    'DiffTree',
+                    'items',
+                    json_encode($this->buildDiffTreePanels(), JSON_THROW_ON_ERROR)
+                );
+            }
+            return;
+        }
+
+        $this->UpdateFormField('DiffTreeFallback', 'visible', $hasData);
+        if ($hasData) {
+            $this->UpdateFormField(
+                'DiffTreeFallback',
+                'values',
+                json_encode($this->buildDiffTreeListValues(), JSON_THROW_ON_ERROR)
+            );
+        }
     }
 }
