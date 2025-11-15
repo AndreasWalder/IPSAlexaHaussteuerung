@@ -105,7 +105,12 @@ class RoomsCatalogConfigurator extends IPSModule
         if ($error !== null) {
             $values = [$error];
         }
-        $this->UpdateFormField('DiffList', 'values', $values);
+
+        $this->UpdateFormField(
+            'DiffList',
+            'values',
+            json_encode($values, JSON_THROW_ON_ERROR)
+        );
     }
 
     private function createOrUpdateEditScript(): int
