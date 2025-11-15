@@ -10,7 +10,7 @@
  * 2025-11-10: Robust-Decode: inneres payload (String/Array) wird ausgepackt; rooms/ROOMS/ACTIONS_ENABLED/aplArgs
  *              werden aus JSON-Strings automatisch zu Arrays normalisiert. Ist-Temperatur als formatierter Wert.
  * 2025-11-10: External: externalKey top-level akzeptiert; kontextabhängige Page-ID aus SystemConfiguration
- *              (EnergiePageId/KameraPageId) mit Fallback. PageSwitch intern über Modul-Funktion
+ *              (pageMappings inkl. Energie/Kamera-Fallback) mit dynamischem PageSwitch über Modul-Funktion
  *              und Übergabe ['page'=>$pageId,'wfc'=>$wfcId].
  *
  * Aufruf:
@@ -20,7 +20,7 @@
  *   route: 'main_launch'|'heizung'|'jalousie'|'licht'|'lueftung'|'geraete'|'bewaesserung'|'settings'|'external'
  *   S: ['RENDER_MAIN'=>id,'RENDER_HEIZUNG'=>id,'RENDER_JALOUSIE'=>id,'RENDER_LICHT'=>id,'RENDER_LUEFTUNG'=>id,'RENDER_GERAETE'=>id,'RENDER_BEWAESSERUNG'=>id,'RENDER_SETTINGS'=>id]
  *   V: Variablen-IDs (AUSSEN_TEMP, INFORMATION, MELDUNGEN, DOMAIN_FLAG, SKILL_ACTIVE, StartPage, WfcId,
- *                     EnergiePageId, KameraPageId, ...)
+ *                     pageMappings, EnergiePageId, KameraPageId, ...)
  *   rooms, ROOMS, ACTIONS_ENABLED
  *   args1v,args2v,args3v,args4v, aplSupported, action, device, room, object, alles, number, prozent, power,
  *   aplArgs, skillActive, alexaKey, alexa, baseUrl, source, token, room_raw, szene, externalKey
@@ -30,6 +30,110 @@
  */
 
 declare(strict_types=1);
+
+if (!function_exists('iah_external_page_list')) {
+    function iah_external_page_list(array $values, string $fallback): array
+    {
+        $set = [];
+        foreach ($values as $value) {
+            $val = strtolower(trim((string) $value));
+            if ($val === '') {
+                continue;
+            }
+            $set[$val] = true;
+        }
+        if ($fallback !== '') {
+            $key = strtolower($fallback);
+            if (!isset($set[$key])) {
+                $set[$key] = true;
+            }
+        }
+
+        return array_keys($set);
+    }
+}
+
+if (!function_exists('iah_build_external_page_catalog')) {
+    function iah_build_external_page_catalog(array $rooms, array $pageMappings, array $launchCatalog): array
+    {
+        $catalog = [];
+        $base = [];
+        if (isset($rooms['global']['external_pages']) && is_array($rooms['global']['external_pages'])) {
+            $base = $rooms['global']['external_pages'];
+        }
+        foreach ($base as $key => $cfg) {
+            if (!is_array($cfg)) {
+                continue;
+            }
+            $normKey = strtolower((string) $key);
+            if ($normKey === '') {
+                continue;
+            }
+            $catalog[$normKey] = [
+                'title'     => (string) ($cfg['title'] ?? ''),
+                'logo'      => (string) ($cfg['logo'] ?? ''),
+                'pageKey'   => strtolower((string) ($cfg['pageKey'] ?? $normKey)),
+                'pageIdVar' => trim((string) ($cfg['pageIdVar'] ?? '')),
+                'actions'   => iah_external_page_list((array) ($cfg['actions'] ?? []), $normKey),
+                'navs'      => iah_external_page_list((array) ($cfg['navs'] ?? []), $normKey),
+            ];
+        }
+
+        $tiles = is_array($launchCatalog['tiles'] ?? null) ? $launchCatalog['tiles'] : [];
+        $tileMap = [];
+        foreach ($tiles as $tile) {
+            if (!is_array($tile)) {
+                continue;
+            }
+            $tileId = strtolower((string) ($tile['id'] ?? ''));
+            if ($tileId === '') {
+                continue;
+            }
+            $tileMap[$tileId] = $tile;
+        }
+
+        foreach ($pageMappings as $key => $entry) {
+            $normKey = strtolower((string) $key);
+            if ($normKey === '') {
+                continue;
+            }
+            $tile = $tileMap[$normKey] ?? null;
+            if (!isset($catalog[$normKey])) {
+                $title = (string) ($tile['title'] ?? ($entry['label'] ?? ''));
+                if ($title === '') {
+                    $title = ucfirst($normKey);
+                }
+                $logo = (string) ($tile['icon'] ?? '');
+                $catalog[$normKey] = [
+                    'title'     => $title,
+                    'logo'      => $logo,
+                    'pageKey'   => $normKey,
+                    'pageIdVar' => '',
+                    'actions'   => [$normKey],
+                    'navs'      => [$normKey],
+                ];
+            } else {
+                if (($catalog[$normKey]['title'] ?? '') === '') {
+                    $catalog[$normKey]['title'] = (string) ($tile['title'] ?? ($entry['label'] ?? ucfirst($normKey)));
+                }
+                if (($catalog[$normKey]['logo'] ?? '') === '' && ($tile['icon'] ?? '') !== '') {
+                    $catalog[$normKey]['logo'] = (string) $tile['icon'];
+                }
+                if (($catalog[$normKey]['pageKey'] ?? '') === '') {
+                    $catalog[$normKey]['pageKey'] = $normKey;
+                }
+                if (!in_array($normKey, $catalog[$normKey]['actions'], true)) {
+                    $catalog[$normKey]['actions'][] = $normKey;
+                }
+                if (!in_array($normKey, $catalog[$normKey]['navs'], true)) {
+                    $catalog[$normKey]['navs'][] = $normKey;
+                }
+            }
+        }
+
+        return $catalog;
+    }
+}
 
 $JSON = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
 
@@ -95,6 +199,30 @@ try {
         $rendererDomainMap[$routeKey] = $entry;
     }
     $knownStaticRoutes = ['main_launch','heizung','jalousie','licht','lueftung','geraete','bewaesserung','settings','external'];
+    $pageMappings = is_array($V['pageMappings'] ?? null) ? $V['pageMappings'] : [];
+    $launchCatalog = is_array($CFG['launchCatalog'] ?? null) ? $CFG['launchCatalog'] : [];
+    $externalPagesPayload = $payload['externalPages'] ?? null;
+    if (is_array($externalPagesPayload)) {
+        $externalPages = [];
+        foreach ($externalPagesPayload as $key => $cfg) {
+            if (!is_array($cfg)) {
+                continue;
+            }
+            $normKey = '';
+            if (is_string($key)) {
+                $normKey = strtolower($key);
+            }
+            if ($normKey === '' && isset($cfg['key'])) {
+                $normKey = strtolower((string) $cfg['key']);
+            }
+            if ($normKey === '') {
+                continue;
+            }
+            $externalPages[$normKey] = $cfg;
+        }
+    } else {
+        $externalPages = iah_build_external_page_catalog($ROOMS, $pageMappings, $launchCatalog);
+    }
 
     $args1v         = $payload['args1v'] ?? null;
     $args2v         = $payload['args2v'] ?? null;
@@ -118,7 +246,7 @@ try {
     $token          = (string)($payload['token'] ?? '');
     $room_raw       = (string)($payload['room_raw'] ?? '');
     $szene          = (string)($payload['szene'] ?? '');
-    $CFG            = $payload['CFG'] ?? null;
+    $CFG            = is_array($payload['CFG'] ?? null) ? $payload['CFG'] : [];
 
     $mkCid = static function(): string { return substr(hash('crc32b', microtime(true) . mt_rand()), 0, 8); };
     $j = static function(array $a) use($JSON){ return json_encode($a, $JSON); };
@@ -410,20 +538,42 @@ try {
 
         // externalKey robust lesen (top-level ODER aus V)
         $externalKey = (string)($payload['externalKey'] ?? ($V['externalKey'] ?? ''));
-        $EP          = (array)($ROOMS['global']['external_pages'] ?? []);
-        $cfg         = (array)($EP[$externalKey] ?? []);
+        $cfg         = is_array($externalPages[$externalKey] ?? null) ? $externalPages[$externalKey] : [];
 
         $passwort    = (string)($V['Passwort'] ?? '');
         $startPage   = (string)($V['StartPage'] ?? '');
         $wfcId       = (int)   ($V['WfcId'] ?? 0);
         $instanceId  = (int)   ($V['InstanceID'] ?? 0);
+        $pageEntry = is_array($pageMappings[$externalKey] ?? null) ? $pageMappings[$externalKey] : null;
+        $pageKeyOverride = strtolower((string)($cfg['pageKey'] ?? ''));
+        if ($pageEntry === null && $pageKeyOverride !== '') {
+            $pageEntry = is_array($pageMappings[$pageKeyOverride] ?? null) ? $pageMappings[$pageKeyOverride] : null;
+        }
+        $legacyVar = trim((string)($cfg['pageIdVar'] ?? ''));
+        if ($pageEntry === null && $legacyVar !== '') {
+            $legacyValue = trim((string)($V[$legacyVar] ?? ''));
+            if ($legacyValue !== '') {
+                $pageEntry = ['type' => 'wfc_item', 'value' => $legacyValue];
+            }
+        }
+        if ($pageEntry === null && in_array($externalKey, ['energie', 'kamera'], true)) {
+            $legacyKey = $externalKey === 'energie' ? 'EnergiePageId' : 'KameraPageId';
+            $legacyValue = trim((string)($V[$legacyKey] ?? ''));
+            if ($legacyValue !== '') {
+                $pageEntry = ['type' => 'wfc_item', 'value' => $legacyValue];
+            }
+        }
 
-        // Page-ID kontextabhängig aus SystemConfiguration mit Fallbacks
-        $pageIdMap = [
-            'energie' => (string)($V['EnergiePageId'] ?? ''),
-            'kamera'  => (string)($V['KameraPageId']  ?? ''),
-        ];
-        $pageId = $pageIdMap[$externalKey] ?? '';
+        $pageType  = (string)($pageEntry['type'] ?? '');
+        $pageValue = trim((string)($pageEntry['value'] ?? ''));
+        if ($pageType === '') {
+            $pageType = 'wfc_item';
+        }
+        $isExternalUrl = $pageType === 'external_url';
+        if ($pageValue === '') {
+            $pageEntry = null;
+        }
+        $pageId = $isExternalUrl ? '' : (string) $pageValue;
 
         // Debug-Logging
         IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] external.debug ' . $j([
@@ -431,7 +581,8 @@ try {
             'cfg.keys'=>array_keys($cfg),
             'wfcId'=>$wfcId,
             'instanceId'=>$instanceId,
-            'pageId'=>$pageId,
+            'pageType'=>$pageType,
+            'pageValue'=>$pageValue,
             'baseUrl'=>$baseUrl !== '' ? '(set)' : '(empty)',
             'token'=>$token !== '' ? '(set)' : '(empty)'
         ]));
@@ -441,8 +592,15 @@ try {
             echo json_encode(['ok'=>false,'route'=>$route,'err'=>'missing external config'], $JSON);
             return;
         }
+        if ($pageEntry === null) {
+            IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] external.error missing page mapping');
+            echo json_encode(['ok'=>false,'route'=>$route,'err'=>'missing page mapping'], $JSON);
+            return;
+        }
 
-        $tileBase = rtrim($baseUrl, '/').'/?password='.$passwort.$startPage;
+        $tileBase = $isExternalUrl
+            ? $pageValue
+            : rtrim($baseUrl, '/').'/?password='.$passwort.$startPage;
         $logoFile = (string)($cfg['logo'] ?? '');
         $titleTxt = (string)($cfg['title'] ?? $externalKey);
         $logoUrl  = $logoFile !== '' ? (rtrim($baseUrl,'/').'/hook/icons?'.http_build_query([
@@ -464,7 +622,7 @@ try {
         ]));
 
         // Delayed PageSwitch direkt über Modul-Instanz anstoßen
-        if ($instanceId > 0 && $pageId !== '' && $wfcId > 0) {
+        if (!$isExternalUrl && $instanceId > 0 && $pageId !== '' && $wfcId > 0) {
             IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] external.delay dispatch ' . $j([
                 'instanceId'=>$instanceId,
                 'args'=>['page'=>$pageId,'wfc'=>$wfcId]

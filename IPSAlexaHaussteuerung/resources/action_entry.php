@@ -203,6 +203,232 @@ function iah_build_launch_catalog(array $props): array
     ];
 }
 
+if (!function_exists('iah_external_page_list')) {
+    function iah_external_page_list(array $values, string $fallback): array
+    {
+        $set = [];
+        foreach ($values as $value) {
+            $val = strtolower(trim((string) $value));
+            if ($val === '') {
+                continue;
+            }
+            $set[$val] = true;
+        }
+        if ($fallback !== '') {
+            $key = strtolower($fallback);
+            if (!isset($set[$key])) {
+                $set[$key] = true;
+            }
+        }
+
+        return array_keys($set);
+    }
+}
+
+if (!function_exists('iah_build_external_page_catalog')) {
+    function iah_build_external_page_catalog(array $rooms, array $pageMappings, array $launchCatalog): array
+    {
+        $catalog = [];
+        $base = [];
+        if (isset($rooms['global']['external_pages']) && is_array($rooms['global']['external_pages'])) {
+            $base = $rooms['global']['external_pages'];
+        }
+        foreach ($base as $key => $cfg) {
+            if (!is_array($cfg)) {
+                continue;
+            }
+            $normKey = strtolower((string) $key);
+            if ($normKey === '') {
+                continue;
+            }
+            $catalog[$normKey] = [
+                'title'     => (string) ($cfg['title'] ?? ''),
+                'logo'      => (string) ($cfg['logo'] ?? ''),
+                'pageKey'   => strtolower((string) ($cfg['pageKey'] ?? $normKey)),
+                'pageIdVar' => trim((string) ($cfg['pageIdVar'] ?? '')),
+                'actions'   => iah_external_page_list((array) ($cfg['actions'] ?? []), $normKey),
+                'navs'      => iah_external_page_list((array) ($cfg['navs'] ?? []), $normKey),
+            ];
+        }
+
+        $tiles = is_array($launchCatalog['tiles'] ?? null) ? $launchCatalog['tiles'] : [];
+        $tileMap = [];
+        foreach ($tiles as $tile) {
+            if (!is_array($tile)) {
+                continue;
+            }
+            $tileId = strtolower((string) ($tile['id'] ?? ''));
+            if ($tileId === '') {
+                continue;
+            }
+            $tileMap[$tileId] = $tile;
+        }
+
+        foreach ($pageMappings as $key => $entry) {
+            $normKey = strtolower((string) $key);
+            if ($normKey === '') {
+                continue;
+            }
+            $tile = $tileMap[$normKey] ?? null;
+            if (!isset($catalog[$normKey])) {
+                $title = (string) ($tile['title'] ?? ($entry['label'] ?? ''));
+                if ($title === '') {
+                    $title = ucfirst($normKey);
+                }
+                $logo = (string) ($tile['icon'] ?? '');
+                $catalog[$normKey] = [
+                    'title'     => $title,
+                    'logo'      => $logo,
+                    'pageKey'   => $normKey,
+                    'pageIdVar' => '',
+                    'actions'   => [$normKey],
+                    'navs'      => [$normKey],
+                ];
+            } else {
+                if (($catalog[$normKey]['title'] ?? '') === '') {
+                    $catalog[$normKey]['title'] = (string) ($tile['title'] ?? ($entry['label'] ?? ucfirst($normKey)));
+                }
+                if (($catalog[$normKey]['logo'] ?? '') === '' && ($tile['icon'] ?? '') !== '') {
+                    $catalog[$normKey]['logo'] = (string) $tile['icon'];
+                }
+                if (($catalog[$normKey]['pageKey'] ?? '') === '') {
+                    $catalog[$normKey]['pageKey'] = $normKey;
+                }
+                if (!in_array($normKey, $catalog[$normKey]['actions'], true)) {
+                    $catalog[$normKey]['actions'][] = $normKey;
+                }
+                if (!in_array($normKey, $catalog[$normKey]['navs'], true)) {
+                    $catalog[$normKey]['navs'][] = $normKey;
+                }
+            }
+        }
+
+        return $catalog;
+    }
+}
+
+function iah_page_mapping_defaults(): array
+{
+    return [
+        ['key' => 'energie', 'type' => 'wfc_item', 'value' => 'item2124', 'label' => 'Energie'],
+        ['key' => 'kamera', 'type' => 'wfc_item', 'value' => 'item9907', 'label' => 'Kamera'],
+    ];
+}
+
+function iah_sanitize_page_mapping_entry(array $entry): ?array
+{
+    $key = strtolower(trim((string) ($entry['key'] ?? '')));
+    if ($key === '') {
+        return null;
+    }
+
+    $type = strtolower(trim((string) ($entry['type'] ?? 'wfc_item')));
+    if (!in_array($type, ['wfc_item', 'external_url'], true)) {
+        $type = 'wfc_item';
+    }
+
+    $value = trim((string) ($entry['value'] ?? ''));
+    if ($value === '') {
+        return null;
+    }
+    if ($type === 'external_url' && stripos($value, 'https://') !== 0) {
+        return null;
+    }
+
+    $normalized = [
+        'key'   => $key,
+        'type'  => $type,
+        'value' => $value,
+    ];
+
+    $label = trim((string) ($entry['label'] ?? ''));
+    if ($label !== '') {
+        $normalized['label'] = $label;
+    }
+
+    return $normalized;
+}
+
+function iah_build_page_mappings(array $props): array
+{
+    $raw = json_decode((string) ($props['PageMappings'] ?? '[]'), true);
+    $map = [];
+    if (is_array($raw)) {
+        foreach ($raw as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            $parsed = iah_sanitize_page_mapping_entry($entry);
+            if ($parsed === null) {
+                continue;
+            }
+            $key = $parsed['key'];
+            unset($parsed['key']);
+            $map[$key] = $parsed;
+        }
+    }
+
+    if ($map === []) {
+        $fallbacks = [
+            'energie' => trim((string) ($props['EnergiePageId'] ?? '')),
+            'kamera'  => trim((string) ($props['KameraPageId'] ?? '')),
+        ];
+        foreach ($fallbacks as $key => $value) {
+            if ($value === '') {
+                continue;
+            }
+            $map[$key] = [
+                'type'  => 'wfc_item',
+                'value' => $value,
+                'label' => ucfirst($key),
+            ];
+        }
+    }
+
+    if ($map === []) {
+        foreach (iah_page_mapping_defaults() as $entry) {
+            $parsed = iah_sanitize_page_mapping_entry($entry);
+            if ($parsed === null) {
+                continue;
+            }
+            $key = $parsed['key'];
+            unset($parsed['key']);
+            $map[$key] = $parsed;
+        }
+    }
+
+    return $map;
+}
+
+function iah_legacy_page_id_from_mappings(array $pageMappings, string $key, string $fallback): string
+{
+    $normKey = strtolower($key);
+    if (isset($pageMappings[$normKey]) && ($pageMappings[$normKey]['type'] ?? '') === 'wfc_item') {
+        $value = trim((string) ($pageMappings[$normKey]['value'] ?? ''));
+        if ($value !== '') {
+            return $value;
+        }
+    }
+
+    return trim($fallback);
+}
+
+function iah_derive_start_page(array $props): string
+{
+    $raw = trim((string) ($props['StartPage'] ?? ''));
+    $wfcId = (int) ($props['WfcId'] ?? 0);
+
+    if ($raw !== '' && !preg_match('/^#?\d+$/', $raw)) {
+        return $raw;
+    }
+
+    if ($wfcId > 0) {
+        return '#' . $wfcId;
+    }
+
+    return $raw;
+}
+
 function iah_sanitize_launch_tile($entry): ?array
 {
     if (!is_array($entry)) {
@@ -500,17 +726,22 @@ function iah_build_system_configuration_internal(int $instanceId, array $props, 
     ]);
 
     $lueftungToggle = iah_get_child_object($settings, 'lueftungToggle', 'lueftung_toggle');
+    $pageMappings = iah_build_page_mappings($props);
+    $startPage = iah_derive_start_page($props);
+    $energieLegacy = iah_legacy_page_id_from_mappings($pageMappings, 'energie', (string) ($props['EnergiePageId'] ?? ''));
+    $kameraLegacy = iah_legacy_page_id_from_mappings($pageMappings, 'kamera', (string) ($props['KameraPageId'] ?? ''));
 
     $var = [
         'BaseUrl'       => (string) ($props['BaseUrl'] ?? ''),
         'Source'        => (string) ($props['Source'] ?? ''),
         'Token'         => (string) ($props['Token'] ?? ''),
         'Passwort'      => (string) ($props['Passwort'] ?? ''),
-        'StartPage'     => (string) ($props['StartPage'] ?? '#45315'),
+        'StartPage'     => $startPage,
         'LOG_LEVEL'     => (string) ($props['LOG_LEVEL'] ?? 'info'),
         'WfcId'         => (int) ($props['WfcId'] ?? 0),
-        'EnergiePageId' => (string) ($props['EnergiePageId'] ?? ''),
-        'KameraPageId'  => (string) ($props['KameraPageId'] ?? ''),
+        'EnergiePageId' => $energieLegacy,
+        'KameraPageId'  => $kameraLegacy,
+        'pageMappings'  => $pageMappings,
         'ActionsEnabled' => [
             'heizung_stellen'   => iah_get_child_object($settings, 'heizungStellen', 'heizung_stellen'),
             'jalousie_steuern'  => iah_get_child_object($settings, 'jalousieSteuern', 'jalousie_steuern'),
@@ -595,6 +826,9 @@ function iah_build_system_configuration(int $instanceId): array
             $launchCatalog = is_array($data['launchCatalog'] ?? null)
                 ? $data['launchCatalog']
                 : iah_build_launch_catalog($props);
+            if (!isset($var['pageMappings']) || !is_array($var['pageMappings'])) {
+                $var['pageMappings'] = iah_build_page_mappings($props);
+            }
             return [
                 'var' => $var,
                 'script' => $scripts,
@@ -635,6 +869,8 @@ function Execute($request = null)
 
         $V = $CFG['var'];
         $S = $CFG['script'];
+        $pageMappings = is_array($V['pageMappings'] ?? null) ? $V['pageMappings'] : [];
+        $launchCatalog = is_array($CFG['launchCatalog'] ?? null) ? $CFG['launchCatalog'] : [];
         $rendererDomains = is_array($CFG['rendererDomains'] ?? null) ? $CFG['rendererDomains'] : [];
         $rendererDomainMap = [];
         foreach ($rendererDomains as $entry) {
@@ -757,6 +993,7 @@ function Execute($request = null)
 
         // --------- RoomsCatalog ---------
         $ROOMS = require IPS_GetScriptFile($S['ROOMS_CATALOG']);
+        $externalPages = iah_build_external_page_catalog($ROOMS, $pageMappings, $launchCatalog);
         if (!is_array($ROOMS) || $ROOMS === []) {
             return TellResponse::CreatePlainText('Fehler: RoomsCatalog leer oder ungültig.');
         }
@@ -894,13 +1131,14 @@ function Execute($request = null)
         }
 
         // --------- External Pages → nur Route markieren ---------
-        $EP = (array)($ROOMS['global']['external_pages'] ?? []);
-        $nav = $APL['a1'] ?? '';
+        $nav = strtolower((string) ($APL['a1'] ?? ''));
         $selected = null;
-        foreach ($EP as $key => $cfg) {
-            $actions = (array)($cfg['actions'] ?? []);
-            $navs    = (array)($cfg['navs'] ?? []);
-            $hit = in_array($action1,$actions,true) || in_array((string)$nav,$navs,true) || ($navForce && $forcedDomain===$key);
+        foreach ($externalPages as $key => $cfg) {
+            $actions = is_array($cfg['actions'] ?? null) ? $cfg['actions'] : [];
+            $navs    = is_array($cfg['navs'] ?? null) ? $cfg['navs'] : [];
+            $hit = in_array($action1, $actions, true)
+                || in_array($nav, $navs, true)
+                || ($navForce && strtolower((string) $forcedDomain) === $key);
             if ($hit) { $selected = $key; break; }
         }
         if ($selected !== null) { $__route = 'external'; }
@@ -1255,6 +1493,7 @@ function Execute($request = null)
                     'WfcId'         => $V['WfcId'],
                     'EnergiePageId' => $V['EnergiePageId'],
                     'KameraPageId'  => $V['KameraPageId'],
+                    'pageMappings'  => $pageMappings,
                     'InstanceID'    => $instanceId,
                     'externalKey'   => $selected ?? null,
                 ],
@@ -1284,6 +1523,7 @@ function Execute($request = null)
                 'szene'           => (string)$szene,
                 'CFG'             => $CFG,
                 'rendererDomains' => array_values($rendererDomainMap),
+                'externalPages'   => $externalPages,
             ];
 
             $res = json_decode(IPS_RunScriptWaitEx($S['ROUTE_ALL'], ['payload'=>json_encode($payload, $JSON)]), true);

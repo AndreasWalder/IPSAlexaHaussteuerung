@@ -1575,16 +1575,23 @@ return [
             'energie' => [
                 'title'     => 'Energie',
                 'logo'      => 'Energie.png',
-                'pageIdVar' => 'EnergiePageId',
+                'pageKey'   => 'energie',
                 'actions'   => ['energie'],
                 'navs'      => ['external.energy-main', 'energie'],
             ],
             'kamera' => [
                 'title'     => 'Kamera',
                 'logo'      => 'Kamera.png',
-                'pageIdVar' => 'KameraPageId',
+                'pageKey'   => 'kamera',
                 'actions'   => ['kamera'],
                 'navs'      => ['kamera.energy-main', 'kamera'],
+            ],
+            'information' => [
+                'title'     => 'Information',
+                'logo'      => 'Information.png',
+                'pageKey'   => 'information',
+                'actions'   => ['information', 'info'],
+                'navs'      => ['information'],
             ],
         ],
     ]
