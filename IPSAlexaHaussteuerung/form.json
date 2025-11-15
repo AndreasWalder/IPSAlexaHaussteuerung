@@ -221,7 +221,7 @@
     {
       "type": "Button",
       "caption": "Instanz aktualisieren",
-      "onClick": "echo IPS_RequestAction($id, 'ManualRefresh', '');"
+      "onClick": "echo IAH_ManualRefresh($id);"
     }
   ]
 }
