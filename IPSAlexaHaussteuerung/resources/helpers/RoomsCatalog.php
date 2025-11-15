@@ -1586,6 +1586,13 @@ return [
                 'actions'   => ['kamera'],
                 'navs'      => ['kamera.energy-main', 'kamera'],
             ],
+            'information' => [
+                'title'     => 'Information',
+                'logo'      => 'Information.png',
+                'pageKey'   => 'information',
+                'actions'   => ['information', 'info'],
+                'navs'      => ['information'],
+            ],
         ],
     ]
 ];
