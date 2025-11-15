@@ -150,8 +150,10 @@ Der zusätzliche Modul-Ordner `RoomsCatalogConfigurator/` stellt eine eigenstän
 2. Im Formular das produktive RoomsCatalog-Skript auswählen.
 3. Optional: per Button „RoomsCatalogEdit erstellen/aktualisieren“ eine bearbeitbare Kopie erzeugen.
 4. Änderungen nimmst du direkt im `RoomsCatalogEdit`-Skript vor.
-5. Die Liste „Räume, Domains & Status“ markiert neue (grün), fehlende (gelb) und geänderte (rot) Einträge.
-6. Sobald alles passt → Button „RoomsCatalog mit Edit überschreiben“ drückt die geprüften Änderungen zurück ins aktive RoomsCatalog.
+5. Die Liste „Räume, Domains & Status“ markiert neue (grün), fehlende (gelb) und geänderte (rot) Einträge und nutzt jetzt die komplette Formularbreite.
+6. Die neue strukturierte Ansicht (Expansion Panel) erlaubt dir, Räume auf- und zuzuklappen und Domains kompakt je Raum zu prüfen – ähnlich wie ein klassischer Baum.
+7. Über den Popup-Button „Eintrag aus RoomsCatalog hinzufügen“ kannst du Räume, Domains oder einzelne Bereiche direkt aus dem produktiven RoomsCatalog auswählen, optional duplizieren und per Klick in dein `RoomsCatalogEdit` übernehmen.
+8. Sobald alles passt → Button „RoomsCatalog mit Edit überschreiben“ drückt die geprüften Änderungen zurück ins aktive RoomsCatalog.
 
 So hast du jederzeit einen visuellen Überblick über Unterschiede und kannst neue Räume, Domains oder Geräte gefahrlos vorbereiten.
 
