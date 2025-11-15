@@ -26,7 +26,6 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->log('GetConfigurationForm invoked', [
             'roomsCatalogId'     => $this->ReadPropertyInteger('RoomsCatalogScriptId'),
             'roomsCatalogEditId' => $this->ReadPropertyInteger('RoomsCatalogEditScriptId'),
-            'treePanelSupported' => $this->supportsExpansionPanel(),
         ]);
 
         $values = $this->buildDiffRows();
@@ -315,19 +314,6 @@ class RoomsCatalogConfigurator extends IPSModule
         return $rows;
     }
 
-    private function buildRoomPanelRow(string $key, ?array $orig, ?array $edit): array
-    {
-        $state = $this->diffState($orig, $edit);
-
-        return [
-            'id'       => 'panel-room:' . $key,
-            'domain'   => 'Raum',
-            'details'  => $this->buildRoomDetails($orig ?? $edit ?? []),
-            'status'   => $state['label'],
-            'rowColor' => $state['color'],
-        ];
-    }
-
     private function buildRoomDetails(array $room): string
     {
         $domains = isset($room['domains']) && is_array($room['domains']) ? array_keys($room['domains']) : [];
@@ -381,22 +367,6 @@ class RoomsCatalogConfigurator extends IPSModule
         return ['label' => 'Geändert', 'color' => self::COLOR_CHANGED];
     }
 
-    private function diffStateIcon(array $state): string
-    {
-        switch ($state['label']) {
-            case 'Neu (Edit)':
-                return 'Plus';
-            case 'Fehlt in Edit':
-                return 'Warning';
-            case 'Geändert':
-                return 'Warning';
-            case 'Unverändert':
-                return 'Ok';
-            default:
-                return '';
-        }
-    }
-
     private function normalizedJson($value): string
     {
         return json_encode($this->normalizeValue($value), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
@@ -448,45 +418,6 @@ class RoomsCatalogConfigurator extends IPSModule
         }
 
         return $result;
-    }
-
-    private function buildDiffTreePanels(): array
-    {
-        $roomsCatalog = $this->loadRoomsCatalog($this->ReadPropertyInteger('RoomsCatalogScriptId'));
-        $roomsEdit = $this->loadRoomsCatalog($this->ReadPropertyInteger('RoomsCatalogEditScriptId'));
-
-        $keys = array_unique(array_merge(array_keys($roomsCatalog), array_keys($roomsEdit)));
-        sort($keys);
-
-        $panels = [];
-        foreach ($keys as $key) {
-            $orig = $roomsCatalog[$key] ?? null;
-            $edit = $roomsEdit[$key] ?? null;
-            $state = $this->diffState($orig, $edit);
-            $values = array_merge([
-                $this->buildRoomPanelRow($key, $orig, $edit),
-            ], $this->buildDomainRows($key, $orig, $edit, false));
-
-            $panels[] = [
-                'caption' => $this->resolveRoomTitle($key, $orig, $edit),
-                'icon'    => $this->diffStateIcon($state),
-                'items'   => [
-                    [
-                        'type'    => 'List',
-                        'name'    => 'DiffTree_' . $key,
-                        'rowCount' => count($values) + 1,
-                        'columns' => [
-                            ['caption' => 'Domain / Bereich', 'name' => 'domain', 'width' => '35%'],
-                            ['caption' => 'Details', 'name' => 'details', 'width' => '45%'],
-                            ['caption' => 'Status', 'name' => 'status', 'width' => '20%'],
-                        ],
-                        'values'  => $values,
-                    ],
-                ],
-            ];
-        }
-
-        return $panels;
     }
 
     private function buildDiffTreeListValues(): array
@@ -924,35 +855,12 @@ class RoomsCatalogConfigurator extends IPSModule
         IPS_LogMessage(self::LOG_CHANNEL, sprintf('RoomsCatalogConfigurator[%d] %s%s', $this->InstanceID, $message, $contextString));
     }
 
-    private function supportsExpansionPanel(): bool
-    {
-        if (!function_exists('IPS_GetKernelVersion')) {
-            return false;
-        }
-        $version = (string) IPS_GetKernelVersion();
-        if ($version === '') {
-            return false;
-        }
-
-        return version_compare($version, '7.1', '>=');
-    }
-
     private function buildTreeElement(bool $visible): array
     {
-        if ($this->supportsExpansionPanel()) {
-            return [
-                'type'    => 'ExpansionPanel',
-                'name'    => 'DiffTree',
-                'caption' => 'Strukturierte Ansicht',
-                'visible' => $visible,
-                'items'   => $visible ? $this->buildDiffTreePanels() : [],
-            ];
-        }
-
         return [
             'type'    => 'List',
-            'name'    => 'DiffTreeFallback',
-            'caption' => 'Strukturierte Ansicht (kompakt)',
+            'name'    => 'DiffTree',
+            'caption' => 'Strukturierte Ansicht',
             'visible' => $visible,
             'rowCount' => 20,
             'columns' => [
@@ -966,22 +874,10 @@ class RoomsCatalogConfigurator extends IPSModule
 
     private function updateTreeView(bool $hasData): void
     {
-        if ($this->supportsExpansionPanel()) {
-            $this->UpdateFormField('DiffTree', 'visible', $hasData);
-            if ($hasData) {
-                $this->UpdateFormField(
-                    'DiffTree',
-                    'items',
-                    json_encode($this->buildDiffTreePanels(), JSON_THROW_ON_ERROR)
-                );
-            }
-            return;
-        }
-
-        $this->UpdateFormField('DiffTreeFallback', 'visible', $hasData);
+        $this->UpdateFormField('DiffTree', 'visible', $hasData);
         if ($hasData) {
             $this->UpdateFormField(
-                'DiffTreeFallback',
+                'DiffTree',
                 'values',
                 json_encode($this->buildDiffTreeListValues(), JSON_THROW_ON_ERROR)
             );
