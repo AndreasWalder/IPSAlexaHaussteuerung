@@ -84,6 +84,28 @@ class RoomsCatalogConfigurator extends IPSModule
                     'visible' => $errorMessage !== null,
                 ],
                 [
+                    'type'    => 'ValidationTextBox',
+                    'name'    => 'TreeFilter',
+                    'caption' => 'Struktur-Filter',
+                    'visible' => $treeVisible,
+                    'value'   => $treeFilter,
+                    'onChange' => 'IPS_RequestAction($id, "UpdateTreeFilter", $TreeFilter);',
+                ],
+                [
+                    'type'    => 'Button',
+                    'name'    => 'TreeRefreshButton',
+                    'caption' => 'Strukturierte Ansicht aktualisieren',
+                    'visible' => $treeVisible,
+                    'onClick' => 'IPS_RequestAction($id, "RefreshTree", 0);',
+                ],
+                $treeElement,
+                [
+                    'type'    => 'Label',
+                    'name'    => 'TreeErrorLabel',
+                    'caption' => $errorMessage ?? '',
+                    'visible' => $errorMessage !== null,
+                ],
+                [
                     'type'    => 'PopupButton',
                     'caption' => 'Eintrag aus RoomsCatalog hinzufügen',
                     'visible' => $roomOptions !== [],
