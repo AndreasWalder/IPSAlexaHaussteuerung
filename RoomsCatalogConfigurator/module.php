@@ -42,6 +42,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $treeVisible = $errorMessage === null;
         $treeElement = $this->buildTreeElement($treeVisible);
         $treeFilter = $this->ReadAttributeString('TreeFilter');
+        $treeToolbar = $this->buildTreeToolbar($treeVisible, $treeFilter);
 
         $form = [
             'elements' => [
@@ -73,6 +74,14 @@ class RoomsCatalogConfigurator extends IPSModule
                     'type'    => 'Button',
                     'caption' => 'Differenzen aktualisieren',
                     'onClick' => 'IPS_RequestAction($id, "RefreshDiff", 0);',
+                ],
+                $treeToolbar,
+                $treeElement,
+                [
+                    'type'    => 'Label',
+                    'name'    => 'TreeErrorLabel',
+                    'caption' => $errorMessage ?? '',
+                    'visible' => $errorMessage !== null,
                 ],
                 [
                     'type'    => 'ValidationTextBox',
@@ -509,7 +518,7 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         $normalized = trim($value);
         $this->WriteAttributeString('TreeFilter', $normalized);
-        $this->UpdateFormField('TreeFilter', 'value', $normalized);
+        $this->UpdateFormField('TreeFilterInput', 'value', $normalized);
         $this->updateTreeView($this->hasValidTreeData());
     }
 
@@ -925,8 +934,7 @@ class RoomsCatalogConfigurator extends IPSModule
     private function updateTreeView(bool $hasData): void
     {
         $this->UpdateFormField('DiffTree', 'visible', $hasData);
-        $this->UpdateFormField('TreeFilter', 'visible', $hasData);
-        $this->UpdateFormField('TreeRefreshButton', 'visible', $hasData);
+        $this->UpdateFormField('TreeToolbar', 'visible', $hasData);
         if ($hasData) {
             $this->UpdateFormField(
                 'DiffTree',
@@ -934,5 +942,46 @@ class RoomsCatalogConfigurator extends IPSModule
                 json_encode($this->buildDiffTreeListValues(), JSON_THROW_ON_ERROR)
             );
         }
+    }
+
+    private function buildTreeToolbar(bool $visible, string $treeFilter): array
+    {
+        return [
+            'type'    => 'RowLayout',
+            'name'    => 'TreeToolbar',
+            'visible' => $visible,
+            'items'   => [
+                [
+                    'type'    => 'PopupButton',
+                    'name'    => 'TreeFilterPopup',
+                    'caption' => 'Filter',
+                    'popup'   => [
+                        'caption' => 'Struktur-Filter',
+                        'items'   => [
+                            [
+                                'type'    => 'ValidationTextBox',
+                                'name'    => 'TreeFilterInput',
+                                'caption' => 'Filter',
+                                'value'   => $treeFilter,
+                                'onChange' => 'IPS_RequestAction($id, "UpdateTreeFilter", $TreeFilterInput);',
+                            ],
+                        ],
+                        'buttons' => [
+                            ['caption' => 'Schließen'],
+                        ],
+                    ],
+                ],
+                [
+                    'type'    => 'Label',
+                    'caption' => '|',
+                ],
+                [
+                    'type'    => 'Button',
+                    'name'    => 'TreeRefreshButton',
+                    'caption' => 'Aktualisieren',
+                    'onClick' => 'IPS_RequestAction($id, "RefreshTree", 0);',
+                ],
+            ],
+        ];
     }
 }
