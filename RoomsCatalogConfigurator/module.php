@@ -167,15 +167,13 @@ class RoomsCatalogConfigurator extends IPSModule
                             'type'     => 'SelectScript',
                             'name'     => 'RoomsCatalogScriptID',
                             'caption'  => 'Produktiver RoomsCatalog',
-                            'value'    => $this->getActiveRoomsCatalogScriptID(),
-                            'onChange' => 'IPS_RequestAction($id, "RoomsCatalogScriptID", $RoomsCatalogScriptID);'
+                            'value'    => $this->getActiveRoomsCatalogScriptID()
                         ],
                         [
                             'type'     => 'SelectScript',
                             'name'     => 'RoomsCatalogEditScriptID',
                             'caption'  => 'RoomsCatalog Edit-Script',
-                            'value'    => $this->getActiveRoomsCatalogEditScriptID(),
-                            'onChange' => 'IPS_RequestAction($id, "RoomsCatalogEditScriptID", $RoomsCatalogEditScriptID);'
+                            'value'    => $this->getActiveRoomsCatalogEditScriptID()
                         ]
                     ]
                 ],
