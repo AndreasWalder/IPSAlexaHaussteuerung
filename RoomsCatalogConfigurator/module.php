@@ -152,6 +152,7 @@ class RoomsCatalogConfigurator extends IPSModule
                                     'caption' => 'Markiert',
                                     'name'    => 'selected',
                                     'width'   => '60px',
+                                    'add'     => false,
                                     'edit'    => [
                                         'type' => 'CheckBox'
                                     ]
@@ -160,6 +161,7 @@ class RoomsCatalogConfigurator extends IPSModule
                                     'caption' => 'Key',
                                     'name'    => 'key',
                                     'width'   => '150px',
+                                    'add'     => '',
                                     'edit'    => [
                                         'type' => 'ValidationTextBox'
                                     ]
@@ -168,6 +170,7 @@ class RoomsCatalogConfigurator extends IPSModule
                                     'caption' => 'Label',
                                     'name'    => 'label',
                                     'width'   => '200px',
+                                    'add'     => '',
                                     'edit'    => [
                                         'type' => 'ValidationTextBox'
                                     ]
@@ -176,6 +179,7 @@ class RoomsCatalogConfigurator extends IPSModule
                                     'caption' => 'EntityId',
                                     'name'    => 'entityId',
                                     'width'   => '90px',
+                                    'add'     => 0,
                                     'edit'    => [
                                         'type' => 'NumberSpinner'
                                     ]
@@ -184,6 +188,7 @@ class RoomsCatalogConfigurator extends IPSModule
                                     'caption' => 'Entity-Name',
                                     'name'    => 'entityName',
                                     'width'   => '200px',
+                                    'add'     => '',
                                     'edit'    => [
                                         'type' => 'ValidationTextBox'
                                     ]
@@ -192,6 +197,7 @@ class RoomsCatalogConfigurator extends IPSModule
                                     'caption' => 'ControlId',
                                     'name'    => 'controlId',
                                     'width'   => '90px',
+                                    'add'     => 0,
                                     'edit'    => [
                                         'type' => 'NumberSpinner'
                                     ]
@@ -200,6 +206,7 @@ class RoomsCatalogConfigurator extends IPSModule
                                     'caption' => 'StatusId',
                                     'name'    => 'statusId',
                                     'width'   => '90px',
+                                    'add'     => 0,
                                     'edit'    => [
                                         'type' => 'NumberSpinner'
                                     ]
@@ -208,6 +215,7 @@ class RoomsCatalogConfigurator extends IPSModule
                                     'caption' => 'TiltId',
                                     'name'    => 'tiltId',
                                     'width'   => '90px',
+                                    'add'     => 0,
                                     'edit'    => [
                                         'type' => 'NumberSpinner'
                                     ]
@@ -216,6 +224,7 @@ class RoomsCatalogConfigurator extends IPSModule
                                     'caption' => 'Sprach-Key',
                                     'name'    => 'speechKey',
                                     'width'   => '160px',
+                                    'add'     => '',
                                     'edit'    => [
                                         'type' => 'ValidationTextBox'
                                     ]
@@ -224,6 +233,7 @@ class RoomsCatalogConfigurator extends IPSModule
                                     'caption' => 'Icon',
                                     'name'    => 'icon',
                                     'width'   => '140px',
+                                    'add'     => '',
                                     'edit'    => [
                                         'type' => 'ValidationTextBox'
                                     ]
@@ -232,6 +242,7 @@ class RoomsCatalogConfigurator extends IPSModule
                                     'caption' => 'Order',
                                     'name'    => 'order',
                                     'width'   => '70px',
+                                    'add'     => 0,
                                     'edit'    => [
                                         'type' => 'NumberSpinner'
                                     ]
@@ -365,16 +376,16 @@ class RoomsCatalogConfigurator extends IPSModule
 
     public function LoadContext()
     {
+        if (!$this->ensureContextSelection()) {
+            echo 'Bitte zuerst Raum, Domain und Untergruppe auswählen (RoomsCatalog Script wählen?).';
+            return;
+        }
+
         $roomsCatalog = $this->loadRoomsCatalogEdit();
 
         $roomKey = $this->ReadPropertyString('SelectedRoom');
         $domain  = $this->ReadPropertyString('SelectedDomain');
         $group   = $this->ReadPropertyString('SelectedGroup');
-
-        if ($roomKey === '' || $domain === '' || $group === '') {
-            echo 'Bitte zuerst Raum, Domain und Untergruppe auswählen.';
-            return;
-        }
 
         if (!isset($roomsCatalog['rooms'][$roomKey]['domains'][$domain][$group])) {
             $entries = [];
@@ -397,16 +408,16 @@ class RoomsCatalogConfigurator extends IPSModule
 
     public function LoadContextFromProductive()
     {
+        if (!$this->ensureContextSelection()) {
+            echo 'Bitte zuerst Raum, Domain und Untergruppe auswählen (RoomsCatalog Script wählen?).';
+            return;
+        }
+
         $roomsCatalog = $this->loadRoomsCatalog();
 
         $roomKey = $this->ReadPropertyString('SelectedRoom');
         $domain  = $this->ReadPropertyString('SelectedDomain');
         $group   = $this->ReadPropertyString('SelectedGroup');
-
-        if ($roomKey === '' || $domain === '' || $group === '') {
-            echo 'Bitte zuerst Raum, Domain und Untergruppe auswählen.';
-            return;
-        }
 
         if (!isset($roomsCatalog['rooms'][$roomKey]['domains'][$domain][$group])) {
             echo 'Im produktiven RoomsCatalog wurde dieser Kontext nicht gefunden.';
@@ -428,17 +439,17 @@ class RoomsCatalogConfigurator extends IPSModule
 
     public function CreateContextFromProductive()
     {
+        if (!$this->ensureContextSelection()) {
+            echo 'Bitte zuerst Raum, Domain und Untergruppe auswählen (RoomsCatalog Script wählen?).';
+            return;
+        }
+
         $productiveCatalog = $this->loadRoomsCatalog();
         $editCatalog       = $this->loadRoomsCatalogEdit();
 
         $roomKey = $this->ReadPropertyString('SelectedRoom');
         $domain  = $this->ReadPropertyString('SelectedDomain');
         $group   = $this->ReadPropertyString('SelectedGroup');
-
-        if ($roomKey === '' || $domain === '' || $group === '') {
-            echo 'Bitte zuerst Raum, Domain und Untergruppe auswählen.';
-            return;
-        }
 
         $productiveGroup = $productiveCatalog['rooms'][$roomKey]['domains'][$domain][$group] ?? [];
 
@@ -476,16 +487,16 @@ class RoomsCatalogConfigurator extends IPSModule
 
     public function SaveContext(string $entriesJson)
     {
+        if (!$this->ensureContextSelection()) {
+            echo 'Bitte zuerst Raum, Domain und Untergruppe auswählen (RoomsCatalog Script wählen?).';
+            return;
+        }
+
         $roomsCatalog = $this->loadRoomsCatalogEdit();
 
         $roomKey = $this->ReadPropertyString('SelectedRoom');
         $domain  = $this->ReadPropertyString('SelectedDomain');
         $group   = $this->ReadPropertyString('SelectedGroup');
-
-        if ($roomKey === '' || $domain === '' || $group === '') {
-            echo 'Bitte zuerst Raum, Domain und Untergruppe auswählen.';
-            return;
-        }
 
         $entries = json_decode($entriesJson, true);
         if (!is_array($entries)) {
@@ -780,10 +791,10 @@ class RoomsCatalogConfigurator extends IPSModule
         IPS_SetProperty($this->InstanceID, 'Entries', '[]');
     }
 
-    private function autoPopulateContextFromCatalog(): void
+    private function autoPopulateContextFromCatalog(): bool
     {
         if ($this->populateEntriesForCurrentSelection()) {
-            return;
+            return true;
         }
 
         $catalogsToInspect = [
@@ -819,13 +830,34 @@ class RoomsCatalogConfigurator extends IPSModule
                         IPS_SetProperty($this->InstanceID, 'SelectedDomain', (string)$domainKey);
                         IPS_SetProperty($this->InstanceID, 'SelectedGroup', (string)$groupKey);
                         IPS_SetProperty($this->InstanceID, 'Entries', json_encode($entries));
-                        return;
+                        return true;
                     }
                 }
             }
         }
 
         IPS_SetProperty($this->InstanceID, 'Entries', '[]');
+        return false;
+    }
+
+    private function ensureContextSelection(): bool
+    {
+        $roomKey = $this->ReadPropertyString('SelectedRoom');
+        $domain  = $this->ReadPropertyString('SelectedDomain');
+        $group   = $this->ReadPropertyString('SelectedGroup');
+
+        if ($roomKey !== '' && $domain !== '' && $group !== '') {
+            return true;
+        }
+
+        if (!$this->autoPopulateContextFromCatalog()) {
+            return false;
+        }
+
+        IPS_ApplyChanges($this->InstanceID);
+        $this->ReloadForm();
+
+        return true;
     }
 
     private function populateEntriesForCurrentSelection(): bool
