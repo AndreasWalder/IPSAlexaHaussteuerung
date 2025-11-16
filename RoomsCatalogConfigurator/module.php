@@ -57,6 +57,7 @@ class RoomsCatalogConfigurator extends IPSModule
             case 'RoomsCatalogEditScriptID':
                 IPS_SetProperty($this->InstanceID, $Ident, (int)$Value);
                 $this->resetContextSelection();
+                $this->autoPopulateContextFromCatalog();
                 break;
             case 'SelectedRoom':
                 IPS_SetProperty($this->InstanceID, 'SelectedRoom', (string)$Value);
@@ -71,7 +72,13 @@ class RoomsCatalogConfigurator extends IPSModule
                 break;
             case 'SelectedGroup':
                 IPS_SetProperty($this->InstanceID, 'SelectedGroup', (string)$Value);
-                IPS_SetProperty($this->InstanceID, 'Entries', '[]');
+                if ((string)$Value === '') {
+                    IPS_SetProperty($this->InstanceID, 'Entries', '[]');
+                } else {
+                    if (!$this->populateEntriesForCurrentSelection()) {
+                        IPS_SetProperty($this->InstanceID, 'Entries', '[]');
+                    }
+                }
                 break;
             default:
                 throw new Exception('Invalid Ident');
@@ -771,6 +778,81 @@ class RoomsCatalogConfigurator extends IPSModule
         IPS_SetProperty($this->InstanceID, 'SelectedDomain', '');
         IPS_SetProperty($this->InstanceID, 'SelectedGroup', '');
         IPS_SetProperty($this->InstanceID, 'Entries', '[]');
+    }
+
+    private function autoPopulateContextFromCatalog(): void
+    {
+        if ($this->populateEntriesForCurrentSelection()) {
+            return;
+        }
+
+        $catalogsToInspect = [
+            $this->loadRoomsCatalogEdit(),
+            $this->loadRoomsCatalog()
+        ];
+
+        foreach ($catalogsToInspect as $catalog) {
+            if (!isset($catalog['rooms']) || !is_array($catalog['rooms'])) {
+                continue;
+            }
+
+            foreach ($catalog['rooms'] as $roomKey => $roomCfg) {
+                $domains = $roomCfg['domains'] ?? [];
+                if (!is_array($domains) || $domains === []) {
+                    continue;
+                }
+
+                foreach ($domains as $domainKey => $domainCfg) {
+                    if (!is_array($domainCfg) || $domainCfg === []) {
+                        continue;
+                    }
+
+                    foreach ($domainCfg as $groupKey => $groupCfg) {
+                        $entries = $this->buildEntriesFromCatalog(
+                            is_array($groupCfg) ? $groupCfg : [],
+                            (string)$roomKey,
+                            (string)$domainKey,
+                            (string)$groupKey
+                        );
+
+                        IPS_SetProperty($this->InstanceID, 'SelectedRoom', (string)$roomKey);
+                        IPS_SetProperty($this->InstanceID, 'SelectedDomain', (string)$domainKey);
+                        IPS_SetProperty($this->InstanceID, 'SelectedGroup', (string)$groupKey);
+                        IPS_SetProperty($this->InstanceID, 'Entries', json_encode($entries));
+                        return;
+                    }
+                }
+            }
+        }
+
+        IPS_SetProperty($this->InstanceID, 'Entries', '[]');
+    }
+
+    private function populateEntriesForCurrentSelection(): bool
+    {
+        $roomKey = $this->ReadPropertyString('SelectedRoom');
+        $domain  = $this->ReadPropertyString('SelectedDomain');
+        $group   = $this->ReadPropertyString('SelectedGroup');
+
+        if ($roomKey === '' || $domain === '' || $group === '') {
+            return false;
+        }
+
+        $catalog = $this->loadRoomsCatalogEdit();
+        $groupCfg = $catalog['rooms'][$roomKey]['domains'][$domain][$group] ?? null;
+
+        if (!is_array($groupCfg)) {
+            $catalog  = $this->loadRoomsCatalog();
+            $groupCfg = $catalog['rooms'][$roomKey]['domains'][$domain][$group] ?? null;
+            if (!is_array($groupCfg)) {
+                return false;
+            }
+        }
+
+        $entries = $this->buildEntriesFromCatalog($groupCfg, $roomKey, $domain, $group);
+        IPS_SetProperty($this->InstanceID, 'Entries', json_encode($entries));
+
+        return true;
     }
 
     private function loadRoomsCatalogEdit(): array
