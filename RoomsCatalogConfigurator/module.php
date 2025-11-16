@@ -50,6 +50,37 @@ class RoomsCatalogConfigurator extends IPSModule
         parent::ApplyChanges();
     }
 
+    public function RequestAction($Ident, $Value)
+    {
+        switch ($Ident) {
+            case 'RoomsCatalogScriptID':
+            case 'RoomsCatalogEditScriptID':
+                IPS_SetProperty($this->InstanceID, $Ident, (int)$Value);
+                $this->resetContextSelection();
+                break;
+            case 'SelectedRoom':
+                IPS_SetProperty($this->InstanceID, 'SelectedRoom', (string)$Value);
+                IPS_SetProperty($this->InstanceID, 'SelectedDomain', '');
+                IPS_SetProperty($this->InstanceID, 'SelectedGroup', '');
+                IPS_SetProperty($this->InstanceID, 'Entries', '[]');
+                break;
+            case 'SelectedDomain':
+                IPS_SetProperty($this->InstanceID, 'SelectedDomain', (string)$Value);
+                IPS_SetProperty($this->InstanceID, 'SelectedGroup', '');
+                IPS_SetProperty($this->InstanceID, 'Entries', '[]');
+                break;
+            case 'SelectedGroup':
+                IPS_SetProperty($this->InstanceID, 'SelectedGroup', (string)$Value);
+                IPS_SetProperty($this->InstanceID, 'Entries', '[]');
+                break;
+            default:
+                throw new Exception('Invalid Ident');
+        }
+
+        IPS_ApplyChanges($this->InstanceID);
+        $this->ReloadForm();
+    }
+
     public function GetConfigurationForm()
     {
         $roomsCatalog = $this->loadRoomsCatalog();
@@ -85,13 +116,15 @@ class RoomsCatalogConfigurator extends IPSModule
                             'type'    => 'SelectScript',
                             'name'    => 'RoomsCatalogScriptID',
                             'caption' => 'Produktiver RoomsCatalog',
-                            'value'   => $this->ReadPropertyInteger('RoomsCatalogScriptID')
+                            'value'   => $this->ReadPropertyInteger('RoomsCatalogScriptID'),
+                            'onChange' => 'IPS_RequestAction($id, "RoomsCatalogScriptID", $RoomsCatalogScriptID);'
                         ],
                         [
                             'type'    => 'SelectScript',
                             'name'    => 'RoomsCatalogEditScriptID',
                             'caption' => 'RoomsCatalog Edit-Script',
-                            'value'   => $this->ReadPropertyInteger('RoomsCatalogEditScriptID')
+                            'value'   => $this->ReadPropertyInteger('RoomsCatalogEditScriptID'),
+                            'onChange' => 'IPS_RequestAction($id, "RoomsCatalogEditScriptID", $RoomsCatalogEditScriptID);'
                         ]
                     ]
                 ],
@@ -104,21 +137,24 @@ class RoomsCatalogConfigurator extends IPSModule
                             'name'    => 'SelectedRoom',
                             'caption' => 'Raum',
                             'options' => $roomOptions,
-                            'value'   => $selectedRoom
+                            'value'   => $selectedRoom,
+                            'onChange' => 'IPS_RequestAction($id, "SelectedRoom", $SelectedRoom);'
                         ],
                         [
                             'type'    => 'Select',
                             'name'    => 'SelectedDomain',
                             'caption' => 'Funktion / Domain',
                             'options' => $domainOptions,
-                            'value'   => $selectedDomain
+                            'value'   => $selectedDomain,
+                            'onChange' => 'IPS_RequestAction($id, "SelectedDomain", $SelectedDomain);'
                         ],
                         [
                             'type'    => 'Select',
                             'name'    => 'SelectedGroup',
                             'caption' => 'Untergruppe',
                             'options' => $groupOptions,
-                            'value'   => $selectedGroup
+                            'value'   => $selectedGroup,
+                            'onChange' => 'IPS_RequestAction($id, "SelectedGroup", $SelectedGroup);'
                         ]
                     ]
                 ],
@@ -639,6 +675,14 @@ class RoomsCatalogConfigurator extends IPSModule
         }
 
         return $catalog;
+    }
+
+    private function resetContextSelection(): void
+    {
+        IPS_SetProperty($this->InstanceID, 'SelectedRoom', '');
+        IPS_SetProperty($this->InstanceID, 'SelectedDomain', '');
+        IPS_SetProperty($this->InstanceID, 'SelectedGroup', '');
+        IPS_SetProperty($this->InstanceID, 'Entries', '[]');
     }
 
     private function loadRoomsCatalogEdit(): array
