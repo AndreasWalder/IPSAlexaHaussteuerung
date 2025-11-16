@@ -130,36 +130,6 @@ class RoomsCatalogConfigurator extends IPSModule
                 ],
                 [
                     'type'    => 'ExpansionPanel',
-                    'caption' => 'Kontext',
-                    'items'   => [
-                        [
-                            'type'    => 'Select',
-                            'name'    => 'SelectedRoom',
-                            'caption' => 'Raum',
-                            'options' => $roomOptions,
-                            'value'   => $selectedRoom,
-                            'onChange' => 'IPS_RequestAction($id, "SelectedRoom", $SelectedRoom);'
-                        ],
-                        [
-                            'type'    => 'Select',
-                            'name'    => 'SelectedDomain',
-                            'caption' => 'Funktion / Domain',
-                            'options' => $domainOptions,
-                            'value'   => $selectedDomain,
-                            'onChange' => 'IPS_RequestAction($id, "SelectedDomain", $SelectedDomain);'
-                        ],
-                        [
-                            'type'    => 'Select',
-                            'name'    => 'SelectedGroup',
-                            'caption' => 'Untergruppe',
-                            'options' => $groupOptions,
-                            'value'   => $selectedGroup,
-                            'onChange' => 'IPS_RequestAction($id, "SelectedGroup", $SelectedGroup);'
-                        ]
-                    ]
-                ],
-                [
-                    'type'    => 'ExpansionPanel',
                     'caption' => 'Einträge im aktuellen Kontext',
                     'items'   => [
                         [
@@ -271,9 +241,48 @@ class RoomsCatalogConfigurator extends IPSModule
                     'caption' => 'Kontext laden / speichern',
                     'items'   => [
                         [
+                            'type'  => 'RowLayout',
+                            'items' => [
+                                [
+                                    'type'    => 'Select',
+                                    'name'    => 'SelectedRoom',
+                                    'caption' => 'Raum',
+                                    'options' => $roomOptions,
+                                    'value'   => $selectedRoom,
+                                    'onChange' => 'IPS_RequestAction($id, "SelectedRoom", $SelectedRoom);'
+                                ],
+                                [
+                                    'type'    => 'Select',
+                                    'name'    => 'SelectedDomain',
+                                    'caption' => 'Funktion / Domain',
+                                    'options' => $domainOptions,
+                                    'value'   => $selectedDomain,
+                                    'onChange' => 'IPS_RequestAction($id, "SelectedDomain", $SelectedDomain);'
+                                ],
+                                [
+                                    'type'    => 'Select',
+                                    'name'    => 'SelectedGroup',
+                                    'caption' => 'Untergruppe',
+                                    'options' => $groupOptions,
+                                    'value'   => $selectedGroup,
+                                    'onChange' => 'IPS_RequestAction($id, "SelectedGroup", $SelectedGroup);'
+                                ]
+                            ]
+                        ],
+                        [
                             'type'    => 'Button',
                             'caption' => 'Kontext aus RoomsCatalogEdit laden',
                             'onClick' => 'RCC_LoadContext($id);'
+                        ],
+                        [
+                            'type'    => 'Button',
+                            'caption' => 'Kontext aus produktivem RoomsCatalog laden',
+                            'onClick' => 'RCC_LoadContextFromProductive($id);'
+                        ],
+                        [
+                            'type'    => 'Button',
+                            'caption' => 'Kontext in RoomsCatalogEdit aus produktivem RoomsCatalog erstellen',
+                            'onClick' => 'RCC_CreateContextFromProductive($id);'
                         ],
                         [
                             'type'    => 'Button',
@@ -377,6 +386,85 @@ class RoomsCatalogConfigurator extends IPSModule
         IPS_ApplyChanges($this->InstanceID);
 
         echo 'Kontext geladen. Einträge können jetzt bearbeitet werden.';
+    }
+
+    public function LoadContextFromProductive()
+    {
+        $roomsCatalog = $this->loadRoomsCatalog();
+
+        $roomKey = $this->ReadPropertyString('SelectedRoom');
+        $domain  = $this->ReadPropertyString('SelectedDomain');
+        $group   = $this->ReadPropertyString('SelectedGroup');
+
+        if ($roomKey === '' || $domain === '' || $group === '') {
+            echo 'Bitte zuerst Raum, Domain und Untergruppe auswählen.';
+            return;
+        }
+
+        if (!isset($roomsCatalog['rooms'][$roomKey]['domains'][$domain][$group])) {
+            echo 'Im produktiven RoomsCatalog wurde dieser Kontext nicht gefunden.';
+            return;
+        }
+
+        $entries = $this->buildEntriesFromCatalog(
+            $roomsCatalog['rooms'][$roomKey]['domains'][$domain][$group],
+            $roomKey,
+            $domain,
+            $group
+        );
+
+        IPS_SetProperty($this->InstanceID, 'Entries', json_encode($entries));
+        IPS_ApplyChanges($this->InstanceID);
+
+        echo 'Kontext aus produktivem RoomsCatalog geladen. Änderungen werden nicht automatisch gespeichert.';
+    }
+
+    public function CreateContextFromProductive()
+    {
+        $productiveCatalog = $this->loadRoomsCatalog();
+        $editCatalog       = $this->loadRoomsCatalogEdit();
+
+        $roomKey = $this->ReadPropertyString('SelectedRoom');
+        $domain  = $this->ReadPropertyString('SelectedDomain');
+        $group   = $this->ReadPropertyString('SelectedGroup');
+
+        if ($roomKey === '' || $domain === '' || $group === '') {
+            echo 'Bitte zuerst Raum, Domain und Untergruppe auswählen.';
+            return;
+        }
+
+        $productiveGroup = $productiveCatalog['rooms'][$roomKey]['domains'][$domain][$group] ?? [];
+
+        if (!isset($editCatalog['rooms'])) {
+            $editCatalog['rooms'] = [];
+        }
+        if (!isset($editCatalog['rooms'][$roomKey])) {
+            $editCatalog['rooms'][$roomKey] = [
+                'display' => $productiveCatalog['rooms'][$roomKey]['display'] ?? $roomKey,
+                'domains' => []
+            ];
+        } elseif (!isset($editCatalog['rooms'][$roomKey]['domains'])) {
+            $editCatalog['rooms'][$roomKey]['domains'] = [];
+        }
+        if (!isset($editCatalog['rooms'][$roomKey]['domains'][$domain])) {
+            $editCatalog['rooms'][$roomKey]['domains'][$domain] = [];
+        }
+
+        $editCatalog['rooms'][$roomKey]['domains'][$domain][$group] = $productiveGroup;
+
+        $this->writeRoomsCatalogEdit($editCatalog);
+
+        $entries = $this->buildEntriesFromCatalog(
+            $productiveGroup,
+            $roomKey,
+            $domain,
+            $group
+        );
+
+        IPS_SetProperty($this->InstanceID, 'Entries', json_encode($entries));
+        IPS_ApplyChanges($this->InstanceID);
+
+        echo 'Kontext wurde aus dem produktiven RoomsCatalog in das Edit-Script übernommen.';
     }
 
     public function SaveContext(string $entriesJson)
