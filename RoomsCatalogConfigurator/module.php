@@ -26,6 +26,8 @@ declare(strict_types=1);
 
 class RoomsCatalogConfigurator extends IPSModule
 {
+    private bool $autoInitializingContext = false;
+
     public function Create()
     {
         // Diese Zeile nicht löschen
@@ -48,6 +50,59 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         // Diese Zeile nicht löschen
         parent::ApplyChanges();
+
+        if ($this->autoInitializingContext) {
+            return;
+        }
+
+        if ($this->shouldInitializeContextFromCatalog()) {
+            $this->autoInitializingContext = true;
+            $initialized                  = $this->autoPopulateContextFromCatalog();
+            $this->autoInitializingContext = false;
+
+            if ($initialized) {
+                IPS_ApplyChanges($this->InstanceID);
+                $this->ReloadForm();
+            }
+        }
+    }
+
+    public function RequestAction($Ident, $Value)
+    {
+        switch ($Ident) {
+            case 'RoomsCatalogScriptID':
+            case 'RoomsCatalogEditScriptID':
+                IPS_SetProperty($this->InstanceID, $Ident, (int)$Value);
+                $this->resetContextSelection();
+                $this->autoPopulateContextFromCatalog();
+                break;
+            case 'SelectedRoom':
+                IPS_SetProperty($this->InstanceID, 'SelectedRoom', (string)$Value);
+                IPS_SetProperty($this->InstanceID, 'SelectedDomain', '');
+                IPS_SetProperty($this->InstanceID, 'SelectedGroup', '');
+                IPS_SetProperty($this->InstanceID, 'Entries', '[]');
+                break;
+            case 'SelectedDomain':
+                IPS_SetProperty($this->InstanceID, 'SelectedDomain', (string)$Value);
+                IPS_SetProperty($this->InstanceID, 'SelectedGroup', '');
+                IPS_SetProperty($this->InstanceID, 'Entries', '[]');
+                break;
+            case 'SelectedGroup':
+                IPS_SetProperty($this->InstanceID, 'SelectedGroup', (string)$Value);
+                if ((string)$Value === '') {
+                    IPS_SetProperty($this->InstanceID, 'Entries', '[]');
+                } else {
+                    if (!$this->populateEntriesForCurrentSelection()) {
+                        IPS_SetProperty($this->InstanceID, 'Entries', '[]');
+                    }
+                }
+                break;
+            default:
+                throw new Exception('Invalid Ident');
+        }
+
+        IPS_ApplyChanges($this->InstanceID);
+        $this->ReloadForm();
     }
 
     public function RequestAction($Ident, $Value)
@@ -840,13 +895,39 @@ class RoomsCatalogConfigurator extends IPSModule
         return false;
     }
 
+    private function shouldInitializeContextFromCatalog(): bool
+    {
+        $hasScript = $this->ReadPropertyInteger('RoomsCatalogScriptID') > 0
+            || $this->ReadPropertyInteger('RoomsCatalogEditScriptID') > 0;
+
+        if (!$hasScript) {
+            return false;
+        }
+
+        if (!$this->hasCompleteContextSelection()) {
+            return true;
+        }
+
+        $entriesJson = $this->ReadPropertyString('Entries');
+        $entries     = json_decode($entriesJson, true);
+
+        if (!is_array($entries) || $entries === []) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function hasCompleteContextSelection(): bool
+    {
+        return $this->ReadPropertyString('SelectedRoom') !== ''
+            && $this->ReadPropertyString('SelectedDomain') !== ''
+            && $this->ReadPropertyString('SelectedGroup') !== '';
+    }
+
     private function ensureContextSelection(): bool
     {
-        $roomKey = $this->ReadPropertyString('SelectedRoom');
-        $domain  = $this->ReadPropertyString('SelectedDomain');
-        $group   = $this->ReadPropertyString('SelectedGroup');
-
-        if ($roomKey !== '' && $domain !== '' && $group !== '') {
+        if ($this->hasCompleteContextSelection()) {
             return true;
         }
 
