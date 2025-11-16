@@ -237,22 +237,22 @@ class RoomsCatalogConfigurator extends IPSModule
                         [
                             'type'    => 'Button',
                             'caption' => 'Kontext aus RoomsCatalogEdit laden',
-                            'onClick' => 'RoomsCatalogConfigurator_LoadContext($id);'
+                            'onClick' => 'RCC_LoadContext($id);'
                         ],
                         [
                             'type'    => 'Button',
                             'caption' => 'Einträge in RoomsCatalogEdit speichern',
-                            'onClick' => 'RoomsCatalogConfigurator_SaveContext($id, json_encode($Entries));'
+                            'onClick' => 'RCC_SaveContext($id, json_encode($Entries));'
                         ],
                         [
                             'type'    => 'Button',
                             'caption' => 'Diff: produktiv vs. Edit (Textausgabe)',
-                            'onClick' => 'RoomsCatalogConfigurator_ShowDiff($id);'
+                            'onClick' => 'RCC_ShowDiff($id);'
                         ],
                         [
                             'type'    => 'Button',
                             'caption' => 'RoomsCatalogEdit → produktiver RoomsCatalog kopieren',
-                            'onClick' => 'RoomsCatalogConfigurator_ApplyEditToProductive($id);'
+                            'onClick' => 'RCC_ApplyEditToProductive($id);'
                         ]
                     ]
                 ],
@@ -275,12 +275,12 @@ class RoomsCatalogConfigurator extends IPSModule
                                 [
                                     'type'    => 'Button',
                                     'caption' => 'Als Haupt-Entity setzen',
-                                    'onClick' => 'RoomsCatalogConfigurator_ApplySelectedObjectMain($id, $SelectedObject, json_encode($Entries));'
+                                    'onClick' => 'RCC_ApplySelectedObjectMain($id, $SelectedObject, json_encode($Entries));'
                                 ],
                                 [
                                     'type'    => 'Button',
                                     'caption' => 'Als Steuer-ID setzen',
-                                    'onClick' => 'RoomsCatalogConfigurator_ApplySelectedObjectControl($id, $SelectedObject, json_encode($Entries));'
+                                    'onClick' => 'RCC_ApplySelectedObjectControl($id, $SelectedObject, json_encode($Entries));'
                                 ]
                             ]
                         ],
@@ -290,12 +290,12 @@ class RoomsCatalogConfigurator extends IPSModule
                                 [
                                     'type'    => 'Button',
                                     'caption' => 'Als Status-ID setzen',
-                                    'onClick' => 'RoomsCatalogConfigurator_ApplySelectedObjectStatus($id, $SelectedObject, json_encode($Entries));'
+                                    'onClick' => 'RCC_ApplySelectedObjectStatus($id, $SelectedObject, json_encode($Entries));'
                                 ],
                                 [
                                     'type'    => 'Button',
                                     'caption' => 'Als Tilt-ID setzen',
-                                    'onClick' => 'RoomsCatalogConfigurator_ApplySelectedObjectTilt($id, $SelectedObject, json_encode($Entries));'
+                                    'onClick' => 'RCC_ApplySelectedObjectTilt($id, $SelectedObject, json_encode($Entries));'
                                 ]
                             ]
                         ]
