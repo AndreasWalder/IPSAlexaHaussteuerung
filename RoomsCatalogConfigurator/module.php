@@ -105,6 +105,44 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->ReloadForm();
     }
 
+    public function RequestAction($Ident, $Value)
+    {
+        switch ($Ident) {
+            case 'RoomsCatalogScriptID':
+            case 'RoomsCatalogEditScriptID':
+                IPS_SetProperty($this->InstanceID, $Ident, (int)$Value);
+                $this->resetContextSelection();
+                $this->autoPopulateContextFromCatalog();
+                break;
+            case 'SelectedRoom':
+                IPS_SetProperty($this->InstanceID, 'SelectedRoom', (string)$Value);
+                IPS_SetProperty($this->InstanceID, 'SelectedDomain', '');
+                IPS_SetProperty($this->InstanceID, 'SelectedGroup', '');
+                IPS_SetProperty($this->InstanceID, 'Entries', '[]');
+                break;
+            case 'SelectedDomain':
+                IPS_SetProperty($this->InstanceID, 'SelectedDomain', (string)$Value);
+                IPS_SetProperty($this->InstanceID, 'SelectedGroup', '');
+                IPS_SetProperty($this->InstanceID, 'Entries', '[]');
+                break;
+            case 'SelectedGroup':
+                IPS_SetProperty($this->InstanceID, 'SelectedGroup', (string)$Value);
+                if ((string)$Value === '') {
+                    IPS_SetProperty($this->InstanceID, 'Entries', '[]');
+                } else {
+                    if (!$this->populateEntriesForCurrentSelection()) {
+                        IPS_SetProperty($this->InstanceID, 'Entries', '[]');
+                    }
+                }
+                break;
+            default:
+                throw new Exception('Invalid Ident');
+        }
+
+        IPS_ApplyChanges($this->InstanceID);
+        $this->ReloadForm();
+    }
+
     public function GetConfigurationForm()
     {
         $roomsCatalog = $this->loadRoomsCatalog();
