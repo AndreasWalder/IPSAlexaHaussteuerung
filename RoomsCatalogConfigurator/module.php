@@ -17,12 +17,6 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('TreeFilter', '');
     }
 
-    public function ApplyChanges()
-    {
-        $this->RegisterAttributeString('TreeFilter', $this->ReadAttributeString('TreeFilter'));
-        parent::ApplyChanges();
-    }
-
     public function GetConfigurationForm()
     {
         $this->log('GetConfigurationForm invoked', [
@@ -76,28 +70,6 @@ class RoomsCatalogConfigurator extends IPSModule
                     'onClick' => 'IPS_RequestAction($id, "RefreshDiff", 0);',
                 ],
                 $treeToolbar,
-                $treeElement,
-                [
-                    'type'    => 'Label',
-                    'name'    => 'TreeErrorLabel',
-                    'caption' => $errorMessage ?? '',
-                    'visible' => $errorMessage !== null,
-                ],
-                [
-                    'type'    => 'ValidationTextBox',
-                    'name'    => 'TreeFilter',
-                    'caption' => 'Struktur-Filter',
-                    'visible' => $treeVisible,
-                    'value'   => $treeFilter,
-                    'onChange' => 'IPS_RequestAction($id, "UpdateTreeFilter", $TreeFilter);',
-                ],
-                [
-                    'type'    => 'Button',
-                    'name'    => 'TreeRefreshButton',
-                    'caption' => 'Strukturierte Ansicht aktualisieren',
-                    'visible' => $treeVisible,
-                    'onClick' => 'IPS_RequestAction($id, "RefreshTree", 0);',
-                ],
                 $treeElement,
                 [
                     'type'    => 'Label',
