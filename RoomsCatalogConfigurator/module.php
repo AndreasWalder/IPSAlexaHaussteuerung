@@ -1,959 +1,792 @@
 <?php
+
+/**
+ * ============================================================
+ * ROOMS CATALOG CONFIGURATOR — IP-Symcon Modul
+ * ============================================================
+ *
+ * Änderungsverlauf
+ * 2025-11-16: Basisversion
+ * - Kontext-Auswahl: Raum / Domain / Gruppe
+ * - Eintragsliste (Key, Label, Entity, Icon, Order)
+ * - Laden/Speichern aus/in RoomsCatalogEdit-Script
+ *
+ * 2025-11-16: Erweiterung Jalousie / Entity-Felder
+ * - Zusätzliche Spalten: selected, controlId, statusId, tiltId, speechKey
+ * - Entity-Zuweisung über SelectObject auf markierte Zeilen
+ *   (Haupt-Entity / Steuer-ID / Status-ID / Tilt-ID)
+ * - Button zum Kopieren von RoomsCatalogEdit → produktiver RoomsCatalog
+ *
+ * 2025-11-16: Validierungsfarben & Diff-Vorschau
+ * - Zeilenfärbung (rowColor) nach Vollständigkeit: rot/gelb/normal
+ * - Diff-Vorschau produktiver RoomsCatalog vs. Edit (Textausgabe)
+ */
+
 declare(strict_types=1);
 
 class RoomsCatalogConfigurator extends IPSModule
 {
-    private const COLOR_NEW = '#DCFCE7';
-    private const COLOR_REMOVED = '#FEF3C7';
-    private const COLOR_CHANGED = '#FEE2E2';
-    private const LOG_CHANNEL = 'Alexa';
-
     public function Create()
     {
+        // Diese Zeile nicht löschen
         parent::Create();
 
-        $this->RegisterPropertyInteger('RoomsCatalogScriptId', 0);
-        $this->RegisterPropertyInteger('RoomsCatalogEditScriptId', 0);
-        $this->RegisterAttributeString('TreeFilter', '');
+        // Grundkonfiguration
+        $this->RegisterPropertyInteger('RoomsCatalogScriptID', 0);
+        $this->RegisterPropertyInteger('RoomsCatalogEditScriptID', 0);
+
+        // Kontext-Auswahl
+        $this->RegisterPropertyString('SelectedRoom', '');
+        $this->RegisterPropertyString('SelectedDomain', '');
+        $this->RegisterPropertyString('SelectedGroup', '');
+
+        // Eintragsliste für aktuellen Kontext (als JSON)
+        $this->RegisterPropertyString('Entries', '[]');
+    }
+
+    public function ApplyChanges()
+    {
+        // Diese Zeile nicht löschen
+        parent::ApplyChanges();
     }
 
     public function GetConfigurationForm()
     {
-        $this->log('GetConfigurationForm invoked', [
-            'roomsCatalogId'     => $this->ReadPropertyInteger('RoomsCatalogScriptId'),
-            'roomsCatalogEditId' => $this->ReadPropertyInteger('RoomsCatalogEditScriptId'),
-        ]);
+        $roomsCatalog = $this->loadRoomsCatalog();
+        $rooms        = $roomsCatalog['rooms'] ?? [];
 
-        $values = $this->buildDiffRows();
-        $errorMessage = $this->determineDataErrorMessage($values);
+        $selectedRoom   = $this->ReadPropertyString('SelectedRoom');
+        $selectedDomain = $this->ReadPropertyString('SelectedDomain');
+        $selectedGroup  = $this->ReadPropertyString('SelectedGroup');
 
-        $roomOptions = $this->buildRoomOptions();
-        $defaultRoom = $roomOptions[0]['value'] ?? '';
-        $domainOptions = $this->buildDomainOptions($defaultRoom);
-        $defaultDomain = $domainOptions[0]['value'] ?? '';
-        $elementOptions = $this->buildElementOptions($defaultRoom, $defaultDomain);
-        $defaultElement = $elementOptions[0]['value'] ?? '';
-        $treeVisible = $errorMessage === null;
-        $treeElement = $this->buildTreeElement($treeVisible);
-        $treeFilter = $this->ReadAttributeString('TreeFilter');
-        $treeToolbar = $this->buildTreeToolbar($treeVisible, $treeFilter);
+        $roomOptions   = $this->buildRoomOptions($rooms);
+        $domainOptions = $this->buildDomainOptions($rooms, $selectedRoom);
+        $groupOptions  = $this->buildGroupOptions($rooms, $selectedRoom, $selectedDomain);
+
+        $entriesJson = $this->ReadPropertyString('Entries');
+        if ($entriesJson === '' || $entriesJson === null) {
+            $entriesJson = '[]';
+        }
+        $entries = json_decode($entriesJson, true);
+        if (!is_array($entries)) {
+            $entries = [];
+        }
+
+        // Zeilenfärbung nach Vollständigkeit anwenden
+        $entries = $this->applyRowColors($entries, $selectedDomain, $selectedGroup);
 
         $form = [
             'elements' => [
                 [
-                    'name'    => 'RoomsCatalogScriptId',
-                    'type'    => 'SelectScript',
-                    'caption' => 'RoomsCatalog Skript',
-                    'value'   => $this->ReadPropertyInteger('RoomsCatalogScriptId'),
+                    'type'    => 'ExpansionPanel',
+                    'caption' => 'RoomsCatalog Scripts',
+                    'items'   => [
+                        [
+                            'type'    => 'SelectScript',
+                            'name'    => 'RoomsCatalogScriptID',
+                            'caption' => 'Produktiver RoomsCatalog',
+                            'value'   => $this->ReadPropertyInteger('RoomsCatalogScriptID')
+                        ],
+                        [
+                            'type'    => 'SelectScript',
+                            'name'    => 'RoomsCatalogEditScriptID',
+                            'caption' => 'RoomsCatalog Edit-Script',
+                            'value'   => $this->ReadPropertyInteger('RoomsCatalogEditScriptID')
+                        ]
+                    ]
                 ],
                 [
-                    'name'    => 'RoomsCatalogEditScriptId',
-                    'type'    => 'SelectScript',
-                    'caption' => 'RoomsCatalog Edit Skript',
-                    'value'   => $this->ReadPropertyInteger('RoomsCatalogEditScriptId'),
+                    'type'    => 'ExpansionPanel',
+                    'caption' => 'Kontext',
+                    'items'   => [
+                        [
+                            'type'    => 'Select',
+                            'name'    => 'SelectedRoom',
+                            'caption' => 'Raum',
+                            'options' => $roomOptions,
+                            'value'   => $selectedRoom
+                        ],
+                        [
+                            'type'    => 'Select',
+                            'name'    => 'SelectedDomain',
+                            'caption' => 'Funktion / Domain',
+                            'options' => $domainOptions,
+                            'value'   => $selectedDomain
+                        ],
+                        [
+                            'type'    => 'Select',
+                            'name'    => 'SelectedGroup',
+                            'caption' => 'Untergruppe',
+                            'options' => $groupOptions,
+                            'value'   => $selectedGroup
+                        ]
+                    ]
                 ],
+                [
+                    'type'    => 'ExpansionPanel',
+                    'caption' => 'Einträge im aktuellen Kontext',
+                    'items'   => [
+                        [
+                            'type'       => 'List',
+                            'name'       => 'Entries',
+                            'caption'    => 'Einträge',
+                            'rowCount'   => 15,
+                            'add'        => true,
+                            'delete'     => true,
+                            'sort'       => false,
+                            'columns'    => [
+                                [
+                                    'caption' => 'Markiert',
+                                    'name'    => 'selected',
+                                    'width'   => '60px',
+                                    'edit'    => [
+                                        'type' => 'CheckBox'
+                                    ]
+                                ],
+                                [
+                                    'caption' => 'Key',
+                                    'name'    => 'key',
+                                    'width'   => '150px',
+                                    'edit'    => [
+                                        'type' => 'ValidationTextBox'
+                                    ]
+                                ],
+                                [
+                                    'caption' => 'Label',
+                                    'name'    => 'label',
+                                    'width'   => '200px',
+                                    'edit'    => [
+                                        'type' => 'ValidationTextBox'
+                                    ]
+                                ],
+                                [
+                                    'caption' => 'EntityId',
+                                    'name'    => 'entityId',
+                                    'width'   => '90px',
+                                    'edit'    => [
+                                        'type' => 'NumberSpinner'
+                                    ]
+                                ],
+                                [
+                                    'caption' => 'Entity-Name',
+                                    'name'    => 'entityName',
+                                    'width'   => '200px',
+                                    'edit'    => [
+                                        'type' => 'ValidationTextBox'
+                                    ]
+                                ],
+                                [
+                                    'caption' => 'ControlId',
+                                    'name'    => 'controlId',
+                                    'width'   => '90px',
+                                    'edit'    => [
+                                        'type' => 'NumberSpinner'
+                                    ]
+                                ],
+                                [
+                                    'caption' => 'StatusId',
+                                    'name'    => 'statusId',
+                                    'width'   => '90px',
+                                    'edit'    => [
+                                        'type' => 'NumberSpinner'
+                                    ]
+                                ],
+                                [
+                                    'caption' => 'TiltId',
+                                    'name'    => 'tiltId',
+                                    'width'   => '90px',
+                                    'edit'    => [
+                                        'type' => 'NumberSpinner'
+                                    ]
+                                ],
+                                [
+                                    'caption' => 'Sprach-Key',
+                                    'name'    => 'speechKey',
+                                    'width'   => '160px',
+                                    'edit'    => [
+                                        'type' => 'ValidationTextBox'
+                                    ]
+                                ],
+                                [
+                                    'caption' => 'Icon',
+                                    'name'    => 'icon',
+                                    'width'   => '140px',
+                                    'edit'    => [
+                                        'type' => 'ValidationTextBox'
+                                    ]
+                                ],
+                                [
+                                    'caption' => 'Order',
+                                    'name'    => 'order',
+                                    'width'   => '70px',
+                                    'edit'    => [
+                                        'type' => 'NumberSpinner'
+                                    ]
+                                ]
+                            ],
+                            'values' => $entries
+                        ]
+                    ]
+                ]
             ],
             'actions'  => [
                 [
-                    'type'    => 'Button',
-                    'caption' => 'RoomsCatalogEdit erstellen/aktualisieren',
-                    'onClick' => 'IPS_RequestAction($id, "CreateEditScript", 0);',
-                ],
-                [
-                    'type'    => 'Button',
-                    'caption' => 'RoomsCatalog mit Edit überschreiben',
-                    'onClick' => 'IPS_RequestAction($id, "ApplyEditToRoomsCatalog", 0);',
-                ],
-                [
-                    'type'    => 'Button',
-                    'caption' => 'Differenzen aktualisieren',
-                    'onClick' => 'IPS_RequestAction($id, "RefreshDiff", 0);',
-                ],
-                $treeToolbar,
-                $treeElement,
-                [
-                    'type'    => 'Label',
-                    'name'    => 'TreeErrorLabel',
-                    'caption' => $errorMessage ?? '',
-                    'visible' => $errorMessage !== null,
-                ],
-                [
-                    'type'    => 'PopupButton',
-                    'caption' => 'Eintrag aus RoomsCatalog hinzufügen',
-                    'visible' => $roomOptions !== [],
-                    'popup'   => [
-                        'caption' => 'Element übernehmen',
-                        'items'   => [
-                            [
-                                'type'    => 'Select',
-                                'name'    => 'AddRoomSelect',
-                                'caption' => 'Raum',
-                                'options' => $roomOptions,
-                                'value'   => $defaultRoom,
-                                'onChange' => 'IPS_RequestAction($id, "SelectAddRoom", $AddRoomSelect);',
-                            ],
-                            [
-                                'type'    => 'Select',
-                                'name'    => 'AddDomainSelect',
-                                'caption' => 'Domain',
-                                'options' => $domainOptions,
-                                'value'   => $defaultDomain,
-                                'enabled' => $domainOptions !== [],
-                                'onChange' => 'IPS_RequestAction($id, "SelectAddDomain", json_encode(["room" => $AddRoomSelect, "domain" => $AddDomainSelect]));',
-                            ],
-                            [
-                                'type'    => 'Select',
-                                'name'    => 'AddElementSelect',
-                                'caption' => 'Bereich/Element',
-                                'options' => $elementOptions,
-                                'value'   => $defaultElement,
-                                'enabled' => $elementOptions !== [],
-                            ],
-                            [
-                                'type'    => 'CheckBox',
-                                'name'    => 'AddCopyRoom',
-                                'caption' => 'Kompletten Raum übernehmen',
-                                'value'   => false,
-                            ],
-                            [
-                                'type'    => 'ValidationTextBox',
-                                'name'    => 'AddCustomKey',
-                                'caption' => 'Neuer Schlüssel (optional)',
-                                'value'   => '',
-                            ],
+                    'type'    => 'ExpansionPanel',
+                    'caption' => 'Kontext laden / speichern',
+                    'items'   => [
+                        [
+                            'type'    => 'Button',
+                            'caption' => 'Kontext aus RoomsCatalogEdit laden',
+                            'onClick' => 'RoomsCatalogConfigurator_LoadContext($id);'
                         ],
-                        'buttons' => [
-                            [
-                                'caption' => 'Übernehmen',
-                                'onClick' => 'IPS_RequestAction($id, "AddElementFromCatalog", json_encode(["room" => $AddRoomSelect, "domain" => $AddDomainSelect, "element" => $AddElementSelect, "customKey" => $AddCustomKey, "copyRoom" => $AddCopyRoom]));',
-                            ],
+                        [
+                            'type'    => 'Button',
+                            'caption' => 'Einträge in RoomsCatalogEdit speichern',
+                            'onClick' => 'RoomsCatalogConfigurator_SaveContext($id, json_encode($Entries));'
                         ],
-                    ],
+                        [
+                            'type'    => 'Button',
+                            'caption' => 'Diff: produktiv vs. Edit (Textausgabe)',
+                            'onClick' => 'RoomsCatalogConfigurator_ShowDiff($id);'
+                        ],
+                        [
+                            'type'    => 'Button',
+                            'caption' => 'RoomsCatalogEdit → produktiver RoomsCatalog kopieren',
+                            'onClick' => 'RoomsCatalogConfigurator_ApplyEditToProductive($id);'
+                        ]
+                    ]
                 ],
-            ],
+                [
+                    'type'    => 'ExpansionPanel',
+                    'caption' => 'Entity-Zuweisung (auf markierte Zeilen)',
+                    'items'   => [
+                        [
+                            'type'    => 'SelectObject',
+                            'name'    => 'SelectedObject',
+                            'caption' => 'IP-Symcon Objekt wählen'
+                        ],
+                        [
+                            'type'    => 'Label',
+                            'caption' => 'Hinweis: In der Liste Zeilen über "Markiert" auswählen und dann eine der Aktionen ausführen.'
+                        ],
+                        [
+                            'type'    => 'RowLayout',
+                            'items'   => [
+                                [
+                                    'type'    => 'Button',
+                                    'caption' => 'Als Haupt-Entity setzen',
+                                    'onClick' => 'RoomsCatalogConfigurator_ApplySelectedObjectMain($id, $SelectedObject, json_encode($Entries));'
+                                ],
+                                [
+                                    'type'    => 'Button',
+                                    'caption' => 'Als Steuer-ID setzen',
+                                    'onClick' => 'RoomsCatalogConfigurator_ApplySelectedObjectControl($id, $SelectedObject, json_encode($Entries));'
+                                ]
+                            ]
+                        ],
+                        [
+                            'type'    => 'RowLayout',
+                            'items'   => [
+                                [
+                                    'type'    => 'Button',
+                                    'caption' => 'Als Status-ID setzen',
+                                    'onClick' => 'RoomsCatalogConfigurator_ApplySelectedObjectStatus($id, $SelectedObject, json_encode($Entries));'
+                                ],
+                                [
+                                    'type'    => 'Button',
+                                    'caption' => 'Als Tilt-ID setzen',
+                                    'onClick' => 'RoomsCatalogConfigurator_ApplySelectedObjectTilt($id, $SelectedObject, json_encode($Entries));'
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ]
         ];
 
-        return json_encode($form, JSON_THROW_ON_ERROR);
+        return json_encode($form);
     }
 
-    public function RequestAction($Ident, $Value)
+    // ========================================================================================
+    // Public API (wird aus dem Formular aufgerufen)
+    // ========================================================================================
+
+    public function LoadContext()
     {
-        $this->log('RequestAction received', ['ident' => $Ident]);
-        try {
-            switch ($Ident) {
-                case 'CreateEditScript':
-                    $editId = $this->createOrUpdateEditScript();
-                    $this->UpdateFormField('RoomsCatalogEditScriptId', 'value', $editId);
-                    $this->refreshDiffList();
-                    break;
-                case 'ApplyEditToRoomsCatalog':
-                    $this->applyEditToRoomsCatalog();
-                    $this->refreshDiffList();
-                    break;
-                case 'RefreshDiff':
-                    $this->refreshDiffList();
-                    break;
-                case 'UpdateTreeFilter':
-                    $this->handleTreeFilterUpdate((string) $Value);
-                    break;
-                case 'RefreshTree':
-                    $this->updateTreeView($this->hasValidTreeData());
-                    break;
-                case 'SelectAddRoom':
-                    $this->handleSelectAddRoom((string) $Value);
-                    break;
-                case 'SelectAddDomain':
-                    $this->handleSelectAddDomain((string) $Value);
-                    break;
-                case 'AddElementFromCatalog':
-                    $this->handleAddElementFromCatalog((string) $Value);
-                    break;
-                default:
-                    throw new Exception(sprintf('Unsupported action "%s"', $Ident));
+        $roomsCatalog = $this->loadRoomsCatalogEdit();
+
+        $roomKey = $this->ReadPropertyString('SelectedRoom');
+        $domain  = $this->ReadPropertyString('SelectedDomain');
+        $group   = $this->ReadPropertyString('SelectedGroup');
+
+        if ($roomKey === '' || $domain === '' || $group === '') {
+            echo 'Bitte zuerst Raum, Domain und Untergruppe auswählen.';
+            return;
+        }
+
+        if (!isset($roomsCatalog['rooms'][$roomKey]['domains'][$domain][$group])) {
+            $entries = [];
+        } else {
+            $entries = $this->buildEntriesFromCatalog(
+                $roomsCatalog['rooms'][$roomKey]['domains'][$domain][$group],
+                $roomKey,
+                $domain,
+                $group
+            );
+        }
+
+        $entriesJson = json_encode($entries);
+
+        IPS_SetProperty($this->InstanceID, 'Entries', $entriesJson);
+        IPS_ApplyChanges($this->InstanceID);
+
+        echo 'Kontext geladen. Einträge können jetzt bearbeitet werden.';
+    }
+
+    public function SaveContext(string $entriesJson)
+    {
+        $roomsCatalog = $this->loadRoomsCatalogEdit();
+
+        $roomKey = $this->ReadPropertyString('SelectedRoom');
+        $domain  = $this->ReadPropertyString('SelectedDomain');
+        $group   = $this->ReadPropertyString('SelectedGroup');
+
+        if ($roomKey === '' || $domain === '' || $group === '') {
+            echo 'Bitte zuerst Raum, Domain und Untergruppe auswählen.';
+            return;
+        }
+
+        $entries = json_decode($entriesJson, true);
+        if (!is_array($entries)) {
+            $entries = [];
+        }
+
+        $oldGroup = $roomsCatalog['rooms'][$roomKey]['domains'][$domain][$group] ?? [];
+        if (!is_array($oldGroup)) {
+            $oldGroup = [];
+        }
+
+        $newGroup = [];
+
+        foreach ($entries as $row) {
+            $key = trim((string)($row['key'] ?? ''));
+            if ($key === '') {
+                continue;
             }
-        } catch (Throwable $exception) {
-            $this->log('RequestAction failed', [
-                'ident' => $Ident,
-                'error' => $exception->getMessage(),
-                'file'  => $exception->getFile(),
-                'line'  => $exception->getLine(),
-            ]);
-            throw $exception;
-        }
-    }
 
-    private function refreshDiffList(): void
-    {
-        $values = $this->buildDiffRows();
-        $errorMessage = $this->determineDataErrorMessage($values);
+            $cfg = $oldGroup[$key] ?? [];
 
-        $this->UpdateFormField('TreeErrorLabel', 'caption', $errorMessage ?? '');
-        $this->UpdateFormField('TreeErrorLabel', 'visible', $errorMessage !== null);
+            $cfg['label']      = (string)($row['label'] ?? '');
+            $cfg['entityId']   = (int)($row['entityId'] ?? 0);
+            $cfg['entityName'] = (string)($row['entityName'] ?? '');
+            $cfg['controlId']  = (int)($row['controlId'] ?? 0);
+            $cfg['statusId']   = (int)($row['statusId'] ?? 0);
+            $cfg['tiltId']     = (int)($row['tiltId'] ?? 0);
+            $cfg['speechKey']  = (string)($row['speechKey'] ?? '');
+            $cfg['icon']       = (string)($row['icon'] ?? '');
+            $cfg['order']      = (int)($row['order'] ?? 0);
 
-        $hasData = $errorMessage === null;
-        $this->updateTreeView($hasData);
-    }
-
-    private function createOrUpdateEditScript(): int
-    {
-        $sourceId = $this->ReadPropertyInteger('RoomsCatalogScriptId');
-        if ($sourceId <= 0 || !IPS_ScriptExists($sourceId)) {
-            throw new Exception('RoomsCatalog Skript ungültig.');
+            $newGroup[$key] = $cfg;
         }
 
-        $content = IPS_GetScriptContent($sourceId);
-        $parent = IPS_GetParent($sourceId);
+        $roomsCatalog['rooms'][$roomKey]['domains'][$domain][$group] = $newGroup;
 
-        $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptId');
+        $this->writeRoomsCatalogEdit($roomsCatalog);
+
+        // Entries-Property aktualisieren (damit bei nächstem Öffnen konsistent)
+        IPS_SetProperty($this->InstanceID, 'Entries', json_encode($entries));
+        IPS_ApplyChanges($this->InstanceID);
+
+        echo 'Einträge wurden in RoomsCatalogEdit gespeichert.';
+    }
+
+    public function ApplySelectedObjectMain(int $SelectedObject, string $entriesJson)
+    {
+        $this->applySelectedObjectToEntries($SelectedObject, $entriesJson, 'main');
+    }
+
+    public function ApplySelectedObjectControl(int $SelectedObject, string $entriesJson)
+    {
+        $this->applySelectedObjectToEntries($SelectedObject, $entriesJson, 'control');
+    }
+
+    public function ApplySelectedObjectStatus(int $SelectedObject, string $entriesJson)
+    {
+        $this->applySelectedObjectToEntries($SelectedObject, $entriesJson, 'status');
+    }
+
+    public function ApplySelectedObjectTilt(int $SelectedObject, string $entriesJson)
+    {
+        $this->applySelectedObjectToEntries($SelectedObject, $entriesJson, 'tilt');
+    }
+
+    public function ApplyEditToProductive()
+    {
+        $prodId = $this->ReadPropertyInteger('RoomsCatalogScriptID');
+        $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+
+        if ($prodId <= 0 || !IPS_ScriptExists($prodId)) {
+            echo 'Produktiver RoomsCatalog (RoomsCatalogScriptID) ist nicht gesetzt oder existiert nicht.';
+            return;
+        }
         if ($editId <= 0 || !IPS_ScriptExists($editId)) {
-            $editId = @IPS_GetObjectIDByName('RoomsCatalogEdit', $parent);
-            if (!$editId) {
-                $editId = IPS_CreateScript(0);
-                IPS_SetParent($editId, $parent);
-                IPS_SetName($editId, 'RoomsCatalogEdit');
-                IPS_SetIdent($editId, 'roomsCatalogEdit');
+            echo 'RoomsCatalogEditScriptID ist nicht gesetzt oder Script existiert nicht.';
+            return;
+        }
+
+        $editContent = IPS_GetScriptContent($editId);
+        if ($editContent === '') {
+            echo 'RoomsCatalogEdit ist leer. Abbruch.';
+            return;
+        }
+
+        IPS_SetScriptContent($prodId, $editContent);
+
+        echo 'RoomsCatalogEdit wurde in den produktiven RoomsCatalog kopiert.';
+    }
+
+    public function ShowDiff()
+    {
+        $prod  = $this->loadRoomsCatalog();
+        $edit  = $this->loadRoomsCatalogEdit();
+
+        $prodRooms = $prod['rooms'] ?? [];
+        $editRooms = $edit['rooms'] ?? [];
+
+        $lines = [];
+
+        $allRoomKeys = array_unique(array_merge(array_keys($prodRooms), array_keys($editRooms)));
+        sort($allRoomKeys);
+
+        foreach ($allRoomKeys as $roomKey) {
+            $prodDomains = $prodRooms[$roomKey]['domains'] ?? [];
+            $editDomains = $editRooms[$roomKey]['domains'] ?? [];
+
+            $allDomainKeys = array_unique(array_merge(array_keys($prodDomains), array_keys($editDomains)));
+            sort($allDomainKeys);
+
+            foreach ($allDomainKeys as $domainKey) {
+                $prodGroups = $prodDomains[$domainKey] ?? [];
+                $editGroups = $editDomains[$domainKey] ?? [];
+
+                $allGroupKeys = array_unique(array_merge(array_keys($prodGroups), array_keys($editGroups)));
+                sort($allGroupKeys);
+
+                foreach ($allGroupKeys as $groupKey) {
+                    $prodEntries = $prodGroups[$groupKey] ?? [];
+                    $editEntries = $editGroups[$groupKey] ?? [];
+
+                    if (!is_array($prodEntries)) {
+                        $prodEntries = [];
+                    }
+                    if (!is_array($editEntries)) {
+                        $editEntries = [];
+                    }
+
+                    $allEntryKeys = array_unique(array_merge(array_keys($prodEntries), array_keys($editEntries)));
+                    sort($allEntryKeys);
+
+                    foreach ($allEntryKeys as $entryKey) {
+                        $path = $roomKey . '.' . $domainKey . '.' . $groupKey . '.' . $entryKey;
+
+                        $hasProd = array_key_exists($entryKey, $prodEntries);
+                        $hasEdit = array_key_exists($entryKey, $editEntries);
+
+                        if ($hasProd && !$hasEdit) {
+                            $lines[] = '[DEL] ' . $path;
+                        } elseif (!$hasProd && $hasEdit) {
+                            $lines[] = '[NEW] ' . $path;
+                        } else {
+                            // beides vorhanden → vergleichen
+                            $prodCfg = $prodEntries[$entryKey];
+                            $editCfg = $editEntries[$entryKey];
+
+                            if (!is_array($prodCfg)) {
+                                $prodCfg = [];
+                            }
+                            if (!is_array($editCfg)) {
+                                $editCfg = [];
+                            }
+
+                            // einfache Normalisierung: sortierte JSONs vergleichen
+                            $prodJson = json_encode($this->normalizeCfg($prodCfg));
+                            $editJson = json_encode($this->normalizeCfg($editCfg));
+
+                            if ($prodJson !== $editJson) {
+                                $lines[] = '[CHG] ' . $path;
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        IPS_SetScriptContent($editId, $content);
-        $this->log('RoomsCatalogEdit updated', ['scriptId' => $editId]);
-        $this->updateProperty('RoomsCatalogEditScriptId', $editId);
-
-        return (int) $editId;
+        if (empty($lines)) {
+            echo "Keine Unterschiede zwischen produktivem RoomsCatalog und Edit gefunden.";
+        } else {
+            echo implode("\n", $lines);
+        }
     }
 
-    private function applyEditToRoomsCatalog(): void
+    // ========================================================================================
+    // Interne Helfer
+    // ========================================================================================
+
+    private function applySelectedObjectToEntries(int $objectId, string $entriesJson, string $mode): void
     {
-        $sourceId = $this->ReadPropertyInteger('RoomsCatalogScriptId');
-        $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptId');
-
-        if ($sourceId <= 0 || !IPS_ScriptExists($sourceId)) {
-            throw new Exception('RoomsCatalog Skript ungültig.');
-        }
-        if ($editId <= 0 || !IPS_ScriptExists($editId)) {
-            throw new Exception('RoomsCatalogEdit Skript ungültig.');
-        }
-
-        $content = IPS_GetScriptContent($editId);
-        IPS_SetScriptContent($sourceId, $content);
-        $this->log('RoomsCatalog overwritten from edit script', ['roomsCatalogId' => $sourceId, 'editId' => $editId]);
-    }
-
-    private function buildDiffRows(): array
-    {
-        $roomsCatalog = $this->loadRoomsCatalog($this->ReadPropertyInteger('RoomsCatalogScriptId'));
-        $roomsEdit = $this->loadRoomsCatalog($this->ReadPropertyInteger('RoomsCatalogEditScriptId'));
-
-        $keys = array_unique(array_merge(array_keys($roomsCatalog), array_keys($roomsEdit)));
-        sort($keys);
-
-        $rows = [];
-        foreach ($keys as $key) {
-            $orig = $roomsCatalog[$key] ?? null;
-            $edit = $roomsEdit[$key] ?? null;
-            $rows[] = $this->buildRoomRow($key, $orig, $edit);
-            $rows = array_merge($rows, $this->buildDomainRows($key, $orig, $edit));
+        if ($objectId <= 0 || !IPS_ObjectExists($objectId)) {
+            echo 'Kein gültiges Objekt ausgewählt.';
+            return;
         }
 
-        return $rows;
-    }
+        $entries = json_decode($entriesJson, true);
+        if (!is_array($entries)) {
+            $entries = [];
+        }
 
-    private function buildRoomRow(string $key, ?array $orig, ?array $edit): array
-    {
-        $state = $this->diffState($orig, $edit);
-        $details = $this->buildRoomDetails($orig ?? $edit ?? []);
-
-        return [
-            'id'      => 'room:' . $key,
-            'room'    => $this->resolveRoomTitle($key, $orig, $edit),
-            'domain'  => '',
-            'details' => $details,
-            'status'  => $state['label'],
-            'rowColor' => $state['color'],
-        ];
-    }
-
-    private function buildDomainRows(string $roomKey, ?array $orig, ?array $edit, bool $includeRoomColumn = true): array
-    {
-        $domainsOrig = is_array($orig['domains'] ?? null) ? array_keys($orig['domains']) : [];
-        $domainsEdit = is_array($edit['domains'] ?? null) ? array_keys($edit['domains']) : [];
-        $domainKeys = array_unique(array_merge($domainsOrig, $domainsEdit));
-        sort($domainKeys);
-
-        $rows = [];
-        foreach ($domainKeys as $domain) {
-            $origDomain = $orig['domains'][$domain] ?? null;
-            $editDomain = $edit['domains'][$domain] ?? null;
-            $state = $this->diffState($origDomain, $editDomain);
-            $row = [
-                'id'       => sprintf('domain:%s:%s', $roomKey, $domain),
-                'domain'   => $domain,
-                'details'  => $this->buildDomainDetails($origDomain ?? $editDomain ?? []),
-                'status'   => $state['label'],
-                'rowColor' => $state['color'],
-            ];
-            if ($includeRoomColumn) {
-                $row['room'] = '↳ ' . $this->resolveRoomTitle($roomKey, $orig, $edit);
+        foreach ($entries as &$row) {
+            $selected = !empty($row['selected']);
+            if (!$selected) {
+                continue;
             }
-            $rows[] = $row;
-        }
 
-        return $rows;
+            switch ($mode) {
+                case 'main':
+                    $row['entityId']   = $objectId;
+                    $row['entityName'] = IPS_GetName($objectId);
+                    break;
+
+                case 'control':
+                    $row['controlId'] = $objectId;
+                    break;
+
+                case 'status':
+                    $row['statusId'] = $objectId;
+                    break;
+
+                case 'tilt':
+                    $row['tiltId'] = $objectId;
+                    break;
+            }
+        }
+        unset($row);
+
+        $newJson = json_encode($entries);
+
+        // Property & Formular aktualisieren
+        IPS_SetProperty($this->InstanceID, 'Entries', $newJson);
+        IPS_ApplyChanges($this->InstanceID);
+
+        echo 'Objekt wurde auf markierte Zeilen angewendet.';
     }
 
-    private function buildRoomDetails(array $room): string
+    private function applyRowColors(array $entries, string $domain, string $group): array
     {
-        $domains = isset($room['domains']) && is_array($room['domains']) ? array_keys($room['domains']) : [];
-        if ($domains === []) {
-            return '';
-        }
-        return 'Domains: ' . implode(', ', $domains);
-    }
+        foreach ($entries as &$row) {
+            $key      = trim((string)($row['key'] ?? ''));
+            $label    = trim((string)($row['label'] ?? ''));
+            $entityId = (int)($row['entityId'] ?? 0);
+            $control  = (int)($row['controlId'] ?? 0);
+            $status   = (int)($row['statusId'] ?? 0);
+            $tilt     = (int)($row['tiltId'] ?? 0);
 
-    private function buildDomainDetails($domainData): string
-    {
-        if (!is_array($domainData)) {
-            return '';
-        }
+            $rowColor = '';
 
-        $parts = [];
-        foreach ($domainData as $key => $value) {
-            if (is_array($value)) {
-                $parts[] = sprintf('%s (%d)', $key, count($value));
+            // Harte Fehler: Key/Label fehlen oder gar keine steuernde Entity
+            if ($key === '' || $label === '' || ($entityId === 0 && $control === 0)) {
+                $rowColor = '#FFCDD2'; // helles Rot
             } else {
-                $parts[] = (string) $key;
+                // Domain-spezifische "Warnungen"
+                if ($domain === 'jalousie') {
+                    if ($status === 0 || $tilt === 0) {
+                        $rowColor = '#FFF9C4'; // helles Gelb
+                    }
+                } elseif ($domain === 'licht') {
+                    if ($entityId === 0 && $control === 0) {
+                        $rowColor = '#FFF9C4';
+                    }
+                }
+            }
+
+            if ($rowColor !== '') {
+                $row['rowColor'] = $rowColor;
+            } else {
+                if (isset($row['rowColor'])) {
+                    unset($row['rowColor']);
+                }
             }
         }
+        unset($row);
 
-        return implode(', ', $parts);
+        return $entries;
     }
 
-    private function resolveRoomTitle(string $key, ?array $orig, ?array $edit): string
+    private function loadRoomsCatalog(): array
     {
-        $room = $edit ?? $orig ?? [];
-        if (is_array($room) && isset($room['display'])) {
-            return (string) $room['display'];
-        }
-        return $key;
-    }
-
-    private function diffState($orig, $edit): array
-    {
-        if ($orig === null && $edit === null) {
-            return ['label' => '', 'color' => ''];
-        }
-        if ($orig === null) {
-            return ['label' => 'Neu (Edit)', 'color' => self::COLOR_NEW];
-        }
-        if ($edit === null) {
-            return ['label' => 'Fehlt in Edit', 'color' => self::COLOR_REMOVED];
-        }
-        if ($this->normalizedJson($orig) === $this->normalizedJson($edit)) {
-            return ['label' => 'Unverändert', 'color' => ''];
-        }
-        return ['label' => 'Geändert', 'color' => self::COLOR_CHANGED];
-    }
-
-    private function normalizedJson($value): string
-    {
-        return json_encode($this->normalizeValue($value), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-    }
-
-    private function normalizeValue($value)
-    {
-        if (!is_array($value)) {
-            return $value;
-        }
-
-        if ($this->isAssoc($value)) {
-            ksort($value);
-            foreach ($value as $key => $item) {
-                $value[$key] = $this->normalizeValue($item);
-            }
-            return $value;
-        }
-
-        $normalized = [];
-        foreach ($value as $item) {
-            $normalized[] = $this->normalizeValue($item);
-        }
-        return $normalized;
-    }
-
-    private function isAssoc(array $array): bool
-    {
-        if ($array === []) {
-            return false;
-        }
-        return array_keys($array) !== range(0, count($array) - 1);
-    }
-
-    private function loadRoomsCatalog(int $scriptId): array
-    {
+        $scriptId = $this->ReadPropertyInteger('RoomsCatalogScriptID');
         if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) {
             return [];
         }
 
-        $file = $this->resolveScriptPath(IPS_GetScriptFile($scriptId));
-        if ($file === '' || !is_file($file)) {
+        $file = IPS_GetScriptFile($scriptId);
+        if ($file === '' || !file_exists($file)) {
             return [];
         }
 
-        $result = include $file;
-        if (!is_array($result)) {
+        $catalog = @require $file;
+        if (!is_array($catalog)) {
             return [];
         }
 
-        return $result;
+        return $catalog;
     }
 
-    private function buildDiffTreeListValues(): array
+    private function loadRoomsCatalogEdit(): array
     {
-        $roomsCatalog = $this->loadRoomsCatalog($this->ReadPropertyInteger('RoomsCatalogScriptId'));
-        $roomsEdit = $this->loadRoomsCatalog($this->ReadPropertyInteger('RoomsCatalogEditScriptId'));
-
-        $keys = array_unique(array_merge(array_keys($roomsCatalog), array_keys($roomsEdit)));
-        sort($keys);
-
-        $values = [];
-        $filter = mb_strtolower($this->ReadAttributeString('TreeFilter'));
-        $nextId = 1;
-        foreach ($keys as $key) {
-            $orig = $roomsCatalog[$key] ?? null;
-            $edit = $roomsEdit[$key] ?? null;
-            $state = $this->diffState($orig, $edit);
-            $rowId = $nextId++;
-            $children = $this->buildDomainTreeValues($rowId, $orig, $edit, $filter, $nextId);
-            $row = [
-                'id'       => $rowId,
-                'parent'   => 0,
-                'label'    => $this->resolveRoomTitle($key, $orig, $edit),
-                'details'  => $this->buildRoomDetails($orig ?? $edit ?? []),
-                'status'   => $state['label'],
-                'rowColor' => $state['color'],
-            ];
-
-            if ($this->passesTreeFilter($row, $filter) || $children !== []) {
-                $values[] = $row;
-                $values = array_merge($values, $children);
-            }
+        $scriptId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) {
+            // Fallback: produktives Script
+            return $this->loadRoomsCatalog();
         }
 
-        return $values;
+        $file = IPS_GetScriptFile($scriptId);
+        if ($file === '' || !file_exists($file)) {
+            return $this->loadRoomsCatalog();
+        }
+
+        $catalog = @require $file;
+        if (!is_array($catalog)) {
+            return $this->loadRoomsCatalog();
+        }
+
+        return $catalog;
     }
 
-    private function buildDomainTreeValues(int $parentId, ?array $orig, ?array $edit, string $filter, int &$nextId): array
+    private function writeRoomsCatalogEdit(array $catalog): void
     {
-        $domainsOrig = is_array($orig['domains'] ?? null) ? array_keys($orig['domains']) : [];
-        $domainsEdit = is_array($edit['domains'] ?? null) ? array_keys($edit['domains']) : [];
-        $domainKeys = array_unique(array_merge($domainsOrig, $domainsEdit));
-        sort($domainKeys);
-
-        $children = [];
-        foreach ($domainKeys as $domain) {
-            $origDomain = $orig['domains'][$domain] ?? null;
-            $editDomain = $edit['domains'][$domain] ?? null;
-            $state = $this->diffState($origDomain, $editDomain);
-            $row = [
-                'id'       => $nextId++,
-                'parent'   => $parentId,
-                'label'    => $domain,
-                'details'  => $this->buildDomainDetails($origDomain ?? $editDomain ?? []),
-                'status'   => $state['label'],
-                'rowColor' => $state['color'],
-            ];
-            if ($this->passesTreeFilter($row, $filter)) {
-                $children[] = $row;
-            }
-        }
-
-        return $children;
-    }
-
-    private function passesTreeFilter(array $row, string $filter): bool
-    {
-        if ($filter === '') {
-            return true;
-        }
-
-        foreach (['label', 'details', 'status'] as $field) {
-            $value = mb_strtolower((string) ($row[$field] ?? ''));
-            if ($value !== '' && mb_strpos($value, $filter) !== false) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private function handleTreeFilterUpdate(string $value): void
-    {
-        $normalized = trim($value);
-        $this->WriteAttributeString('TreeFilter', $normalized);
-        $this->UpdateFormField('TreeFilterInput', 'value', $normalized);
-        $this->updateTreeView($this->hasValidTreeData());
-    }
-
-    private function hasValidTreeData(): bool
-    {
-        $values = $this->buildDiffRows();
-        return $this->determineDataErrorMessage($values) === null;
-    }
-
-    private function resolveScriptPath(string $file): string
-    {
-        if ($file === '') {
-            return '';
-        }
-
-        if ($this->isAbsolutePath($file)) {
-            return $file;
-        }
-
-        return IPS_GetKernelDir() . 'scripts' . DIRECTORY_SEPARATOR . $file;
-    }
-
-    private function isAbsolutePath(string $path): bool
-    {
-        if ($path === '') {
-            return false;
-        }
-
-        if ($path[0] === '/' || $path[0] === '\\') {
-            return true;
-        }
-
-        return (bool) preg_match('/^[A-Za-z]:[\\\\\/]/', $path);
-    }
-
-    private function updateProperty(string $name, $value): void
-    {
-        if (IPS_GetProperty($this->InstanceID, $name) === $value) {
+        $scriptId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) {
+            echo 'RoomsCatalogEditScriptID ist nicht gesetzt oder Script existiert nicht.';
             return;
         }
-        IPS_SetProperty($this->InstanceID, $name, $value);
-        IPS_ApplyChanges($this->InstanceID);
+
+        $php = "<?php\nreturn " . var_export($catalog, true) . ";\n";
+        IPS_SetScriptContent($scriptId, $php);
     }
 
-    private function determineDataErrorMessage(array $values): ?string
+    private function buildRoomOptions(array $rooms): array
     {
-        if ($this->ReadPropertyInteger('RoomsCatalogScriptId') === 0) {
-            return 'RoomsCatalog nicht ausgewählt. Bitte ursprüngliches RoomsCatalog-Skript auswählen.';
-        }
-        if ($values !== []) {
-            return null;
-        }
-        return 'Keine Räume gefunden oder Skripte liefern kein Array.';
-    }
-
-    private function buildRoomOptions(): array
-    {
-        $roomsCatalog = $this->loadRoomsCatalog($this->ReadPropertyInteger('RoomsCatalogScriptId'));
-        $roomsEdit = $this->loadRoomsCatalog($this->ReadPropertyInteger('RoomsCatalogEditScriptId'));
-
-        $keys = array_unique(array_merge(array_keys($roomsCatalog), array_keys($roomsEdit)));
-        sort($keys);
-
-        $options = [];
-        foreach ($keys as $key) {
-            $title = $this->resolveRoomTitle($key, $roomsCatalog[$key] ?? null, $roomsEdit[$key] ?? null);
-            $options[] = ['caption' => sprintf('%s (%s)', $title, $key), 'value' => $key];
-        }
-
-        return $options;
-    }
-
-    private function buildDomainOptions(string $roomKey): array
-    {
-        if ($roomKey === '') {
-            return [];
-        }
-
-        $room = $this->getRoomData($roomKey);
-        if (!isset($room['domains']) || !is_array($room['domains'])) {
-            return [];
-        }
-
-        $domains = array_keys($room['domains']);
-        sort($domains);
-        $options = [];
-        foreach ($domains as $domain) {
-            $options[] = ['caption' => sprintf('%s (%s)', ucfirst($domain), $domain), 'value' => $domain];
-        }
-
-        return $options;
-    }
-
-    private function buildElementOptions(string $roomKey, string $domainKey): array
-    {
-        if ($roomKey === '' || $domainKey === '') {
-            return [];
-        }
-
-        $room = $this->getRoomData($roomKey);
-        if (!isset($room['domains'][$domainKey]) || !is_array($room['domains'][$domainKey])) {
-            return [];
-        }
-
-        $domain = $room['domains'][$domainKey];
-        $options = [
-            ['caption' => 'Gesamte Domain übernehmen', 'value' => 'domain|' . $domainKey],
+        $options   = [];
+        $options[] = [
+            'caption' => '– bitte wählen –',
+            'value'   => ''
         ];
 
-        foreach ($domain as $sectionKey => $sectionValue) {
-            if (!is_array($sectionValue)) {
-                continue;
-            }
-
-            if ($this->isLeafItem($sectionValue)) {
-                $options[] = [
-                    'caption' => sprintf('Element: %s', $this->resolveItemCaption($sectionValue, $sectionKey)),
-                    'value'   => sprintf('item|%s|__root__|%s', $domainKey, $sectionKey),
-                ];
-                continue;
-            }
-
+        foreach ($rooms as $key => $room) {
+            $caption   = $room['display'] ?? (string)$key;
             $options[] = [
-                'caption' => sprintf('Bereich: %s', $sectionKey),
-                'value'   => sprintf('section|%s|%s', $domainKey, $sectionKey),
+                'caption' => $caption . ' [' . $key . ']',
+                'value'   => (string)$key
             ];
-            foreach ($sectionValue as $itemKey => $itemValue) {
-                if (!is_array($itemValue)) {
-                    continue;
-                }
-                if (!$this->isLeafItem($itemValue)) {
-                    continue;
-                }
-                $options[] = [
-                    'caption' => sprintf('  • %s', $this->resolveItemCaption($itemValue, $itemKey)),
-                    'value'   => sprintf('item|%s|%s|%s', $domainKey, $sectionKey, $itemKey),
-                ];
-            }
         }
 
         return $options;
     }
 
-    private function resolveItemCaption(array $item, string $fallback): string
+    private function buildDomainOptions(array $rooms, string $selectedRoom): array
     {
-        if (isset($item['title']) && is_string($item['title'])) {
-            return $item['title'];
+        $options   = [];
+        $options[] = [
+            'caption' => '– bitte wählen –',
+            'value'   => ''
+        ];
+
+        if ($selectedRoom === '' || !isset($rooms[$selectedRoom]['domains'])) {
+            return $options;
         }
-        if (isset($item['display']) && is_string($item['display'])) {
-            return $item['display'];
+
+        $domains = $rooms[$selectedRoom]['domains'];
+
+        foreach ($domains as $key => $_domainCfg) {
+            $options[] = [
+                'caption' => (string)$key,
+                'value'   => (string)$key
+            ];
         }
-        if (isset($item['entityId']) && is_string($item['entityId'])) {
-            return $item['entityId'];
-        }
-        if (isset($item['id'])) {
-            return (string) $item['id'];
-        }
-        return $fallback;
+
+        return $options;
     }
 
-    private function getRoomData(string $roomKey): array
+    private function buildGroupOptions(array $rooms, string $selectedRoom, string $selectedDomain): array
     {
-        $roomsCatalog = $this->loadRoomsCatalog($this->ReadPropertyInteger('RoomsCatalogScriptId'));
-        $roomsEdit = $this->loadRoomsCatalog($this->ReadPropertyInteger('RoomsCatalogEditScriptId'));
+        $options   = [];
+        $options[] = [
+            'caption' => '– bitte wählen –',
+            'value'   => ''
+        ];
 
-        if (isset($roomsCatalog[$roomKey])) {
-            return $roomsCatalog[$roomKey];
+        if ($selectedRoom === '' || $selectedDomain === '') {
+            return $options;
         }
-        if (isset($roomsEdit[$roomKey])) {
-            return $roomsEdit[$roomKey];
+
+        if (!isset($rooms[$selectedRoom]['domains'][$selectedDomain])) {
+            return $options;
         }
-        return [];
+
+        $domainCfg = $rooms[$selectedRoom]['domains'][$selectedDomain];
+
+        foreach ($domainCfg as $groupKey => $_groupCfg) {
+            $options[] = [
+                'caption' => (string)$groupKey,
+                'value'   => (string)$groupKey
+            ];
+        }
+
+        return $options;
     }
 
-    private function isLeafItem(array $value): bool
+    private function buildEntriesFromCatalog(array $groupCfg, string $roomKey, string $domain, string $group): array
     {
-        if (isset($value['title']) || isset($value['entityId']) || isset($value['display']) || isset($value['id'])) {
-            return true;
+        $rows = [];
+
+        foreach ($groupCfg as $entryKey => $cfg) {
+            if (!is_array($cfg)) {
+                $cfg = [];
+            }
+
+            $rows[] = [
+                'selected'   => false,
+                'key'        => (string)$entryKey,
+                'label'      => (string)($cfg['label'] ?? ($cfg['name'] ?? '')),
+                'entityId'   => (int)($cfg['entityId'] ?? 0),
+                'entityName' => (string)($cfg['entityName'] ?? ''),
+                'controlId'  => (int)($cfg['controlId'] ?? 0),
+                'statusId'   => (int)($cfg['statusId'] ?? 0),
+                'tiltId'     => (int)($cfg['tiltId'] ?? 0),
+                'speechKey'  => (string)($cfg['speechKey'] ?? ''),
+                'icon'       => (string)($cfg['icon'] ?? ''),
+                'order'      => (int)($cfg['order'] ?? 0)
+            ];
         }
 
-        foreach ($value as $child) {
-            if (is_array($child) && $this->isAssoc($child)) {
-                return false;
+        return $rows;
+    }
+
+    private function normalizeCfg(array $cfg): array
+    {
+        // Nur die relevanten Keys sortiert vergleichen
+        $keys = [
+            'label', 'entityId', 'entityName',
+            'controlId', 'statusId', 'tiltId',
+            'speechKey', 'icon', 'order'
+        ];
+        $norm = [];
+        foreach ($keys as $k) {
+            if (array_key_exists($k, $cfg)) {
+                $norm[$k] = $cfg[$k];
             }
         }
-
-        return true;
-    }
-
-    private function handleSelectAddRoom(string $roomKey): void
-    {
-        $this->log('handleSelectAddRoom', ['room' => $roomKey]);
-        $domainOptions = $this->buildDomainOptions($roomKey);
-        $domainValue = $domainOptions[0]['value'] ?? '';
-        $this->UpdateFormField('AddDomainSelect', 'options', json_encode($domainOptions, JSON_THROW_ON_ERROR));
-        $this->UpdateFormField('AddDomainSelect', 'value', $domainValue);
-        $this->UpdateFormField('AddDomainSelect', 'enabled', $domainOptions !== []);
-
-        $elementOptions = $this->buildElementOptions($roomKey, $domainValue);
-        $this->UpdateFormField('AddElementSelect', 'options', json_encode($elementOptions, JSON_THROW_ON_ERROR));
-        $this->UpdateFormField('AddElementSelect', 'value', $elementOptions[0]['value'] ?? '');
-        $this->UpdateFormField('AddElementSelect', 'enabled', $elementOptions !== []);
-    }
-
-    private function handleSelectAddDomain(string $payload): void
-    {
-        $data = json_decode($payload, true);
-        if (!is_array($data)) {
-            return;
-        }
-
-        $room = (string) ($data['room'] ?? '');
-        $domain = (string) ($data['domain'] ?? '');
-
-        $this->log('handleSelectAddDomain', ['room' => $room, 'domain' => $domain]);
-
-        $elementOptions = $this->buildElementOptions($room, $domain);
-        $this->UpdateFormField('AddElementSelect', 'options', json_encode($elementOptions, JSON_THROW_ON_ERROR));
-        $this->UpdateFormField('AddElementSelect', 'value', $elementOptions[0]['value'] ?? '');
-        $this->UpdateFormField('AddElementSelect', 'enabled', $elementOptions !== []);
-    }
-
-    private function handleAddElementFromCatalog(string $payload): void
-    {
-        $data = json_decode($payload, true);
-        if (!is_array($data)) {
-            throw new Exception('Ungültige Eingabe.');
-        }
-
-        $room = (string) ($data['room'] ?? '');
-        $domain = (string) ($data['domain'] ?? '');
-        $element = (string) ($data['element'] ?? '');
-        $customKey = trim((string) ($data['customKey'] ?? ''));
-        $copyRoom = !empty($data['copyRoom']);
-
-        $this->log('handleAddElementFromCatalog', [
-            'room'      => $room,
-            'domain'    => $domain,
-            'element'   => $element,
-            'customKey' => $customKey,
-            'copyRoom'  => $copyRoom,
-        ]);
-
-        $this->addElementToEditScript($room, $domain, $element, $customKey, $copyRoom);
-        $this->refreshDiffList();
-    }
-
-    private function addElementToEditScript(string $roomKey, string $domainKey, string $elementSelection, string $customKey, bool $copyRoom): void
-    {
-        $sourceId = $this->ReadPropertyInteger('RoomsCatalogScriptId');
-        $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptId');
-
-        if ($sourceId <= 0 || !IPS_ScriptExists($sourceId)) {
-            throw new Exception('RoomsCatalog Skript ungültig.');
-        }
-        if ($editId <= 0 || !IPS_ScriptExists($editId)) {
-            throw new Exception('RoomsCatalogEdit Skript ungültig.');
-        }
-
-        $sourceRooms = $this->loadRoomsCatalog($sourceId);
-        $editRooms = $this->loadRoomsCatalog($editId);
-
-        if ($roomKey === '' || !isset($sourceRooms[$roomKey])) {
-            throw new Exception('Raum im RoomsCatalog nicht gefunden.');
-        }
-
-        if ($copyRoom) {
-            $targetRoomKey = $customKey !== '' ? $customKey : $roomKey;
-            $editRooms[$targetRoomKey] = $sourceRooms[$roomKey];
-            $this->writeRoomsCatalogScript($editId, $editRooms);
-            $this->log('Room copied into edit script', ['room' => $roomKey, 'targetKey' => $targetRoomKey]);
-            return;
-        }
-
-        if ($domainKey === '') {
-            throw new Exception('Bitte eine Domain auswählen.');
-        }
-
-        [$type, $domainValue, $sectionKey, $itemKey] = array_pad(explode('|', $elementSelection), 4, '');
-        if ($type === '') {
-            throw new Exception('Bitte ein Element auswählen.');
-        }
-
-        $domainSourceKey = $domainValue !== '' ? $domainValue : $domainKey;
-
-        if (!isset($sourceRooms[$roomKey]['domains'][$domainSourceKey])) {
-            throw new Exception('Domain im RoomsCatalog nicht vorhanden.');
-        }
-
-        if (!isset($editRooms[$roomKey])) {
-            $editRooms[$roomKey] = $sourceRooms[$roomKey];
-        }
-        if (!isset($editRooms[$roomKey]['domains']) || !is_array($editRooms[$roomKey]['domains'])) {
-            $editRooms[$roomKey]['domains'] = [];
-        }
-
-        switch ($type) {
-            case 'domain':
-                $domainTargetKey = $customKey !== '' ? $customKey : $domainSourceKey;
-                $editRooms[$roomKey]['domains'][$domainTargetKey] = $sourceRooms[$roomKey]['domains'][$domainSourceKey];
-                $this->log('Domain copied', ['room' => $roomKey, 'sourceDomain' => $domainSourceKey, 'targetDomain' => $domainTargetKey]);
-                break;
-            case 'section':
-                if (!isset($sourceRooms[$roomKey]['domains'][$domainSourceKey][$sectionKey])) {
-                    throw new Exception('Bereich im RoomsCatalog nicht vorhanden.');
-                }
-                if (!isset($editRooms[$roomKey]['domains'][$domainSourceKey]) || !is_array($editRooms[$roomKey]['domains'][$domainSourceKey])) {
-                    $editRooms[$roomKey]['domains'][$domainSourceKey] = [];
-                }
-                $sectionTargetKey = $customKey !== '' ? $customKey : $sectionKey;
-                $editRooms[$roomKey]['domains'][$domainSourceKey][$sectionTargetKey] = $sourceRooms[$roomKey]['domains'][$domainSourceKey][$sectionKey];
-                $this->log('Section copied', ['room' => $roomKey, 'domain' => $domainSourceKey, 'section' => $sectionKey, 'targetSection' => $sectionTargetKey]);
-                break;
-            case 'item':
-                $targetSection = $sectionKey;
-                $sourceDomain = $sourceRooms[$roomKey]['domains'][$domainSourceKey];
-                $sectionExists = $targetSection === '__root__' ? true : isset($sourceDomain[$targetSection]);
-                if (!$sectionExists) {
-                    throw new Exception('Element im RoomsCatalog nicht vorhanden.');
-                }
-                $itemTargetKey = $customKey !== '' ? $customKey : $itemKey;
-                if ($targetSection === '__root__') {
-                    if (!isset($sourceDomain[$itemKey])) {
-                        throw new Exception('Element im RoomsCatalog nicht vorhanden.');
-                    }
-                    $editRooms[$roomKey]['domains'][$domainSourceKey][$itemTargetKey] = $sourceDomain[$itemKey];
-                    $this->log('Root item copied', ['room' => $roomKey, 'domain' => $domainSourceKey, 'item' => $itemKey, 'target' => $itemTargetKey]);
-                    break;
-                }
-                if (!isset($editRooms[$roomKey]['domains'][$domainSourceKey][$targetSection]) || !is_array($editRooms[$roomKey]['domains'][$domainSourceKey][$targetSection])) {
-                    $editRooms[$roomKey]['domains'][$domainSourceKey][$targetSection] = [];
-                }
-                if (!isset($sourceDomain[$targetSection][$itemKey])) {
-                    throw new Exception('Element im RoomsCatalog nicht vorhanden.');
-                }
-                $editRooms[$roomKey]['domains'][$domainSourceKey][$targetSection][$itemTargetKey] = $sourceDomain[$targetSection][$itemKey];
-                $this->log('Section item copied', ['room' => $roomKey, 'domain' => $domainSourceKey, 'section' => $targetSection, 'item' => $itemKey, 'target' => $itemTargetKey]);
-                break;
-            default:
-                throw new Exception('Element-Auswahl unbekannt.');
-        }
-
-        ksort($editRooms[$roomKey]['domains']);
-        $this->writeRoomsCatalogScript($editId, $editRooms);
-    }
-
-    private function writeRoomsCatalogScript(int $scriptId, array $data): void
-    {
-        $export = $this->exportArray($data);
-        $content = "<?php\nreturn {$export};\n";
-        IPS_SetScriptContent($scriptId, $content);
-    }
-
-    private function exportArray($value, int $indent = 0): string
-    {
-        if (!is_array($value)) {
-            return $this->exportScalar($value);
-        }
-
-        if ($value === []) {
-            return '[]';
-        }
-
-        $indentStr = str_repeat('    ', $indent);
-        $nextIndent = str_repeat('    ', $indent + 1);
-        $parts = [];
-        $assoc = $this->isAssoc($value);
-        foreach ($value as $key => $item) {
-            $prefix = $assoc ? $nextIndent . $this->exportScalar($key) . ' => ' : $nextIndent;
-            $parts[] = $prefix . $this->exportArray($item, $indent + 1);
-        }
-
-        return "[\n" . implode(",\n", $parts) . "\n" . $indentStr . ']';
-    }
-
-    private function exportScalar($value): string
-    {
-        if (is_string($value)) {
-            return var_export($value, true);
-        }
-        if (is_bool($value)) {
-            return $value ? 'true' : 'false';
-        }
-        if ($value === null) {
-            return 'null';
-        }
-        return (string) $value;
-    }
-
-    private function log(string $message, array $context = []): void
-    {
-        $contextString = $context === [] ? '' : ' ' . json_encode($context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        IPS_LogMessage(self::LOG_CHANNEL, sprintf('RoomsCatalogConfigurator[%d] %s%s', $this->InstanceID, $message, $contextString));
-    }
-
-    private function buildTreeElement(bool $visible): array
-    {
-        return [
-            'type'    => 'Configurator',
-            'name'    => 'DiffTree',
-            'caption' => 'Strukturierte Ansicht',
-            'visible' => $visible,
-            'rowCount' => 20,
-            'columns' => [
-                ['caption' => 'Raum / Bereich', 'name' => 'label', 'width' => '40%'],
-                ['caption' => 'Details', 'name' => 'details', 'width' => '40%'],
-                ['caption' => 'Status', 'name' => 'status', 'width' => '20%'],
-            ],
-            'values' => $visible ? $this->buildDiffTreeListValues() : [],
-        ];
-    }
-
-    private function updateTreeView(bool $hasData): void
-    {
-        $this->UpdateFormField('DiffTree', 'visible', $hasData);
-        $this->UpdateFormField('TreeToolbar', 'visible', $hasData);
-        if ($hasData) {
-            $this->UpdateFormField(
-                'DiffTree',
-                'values',
-                json_encode($this->buildDiffTreeListValues(), JSON_THROW_ON_ERROR)
-            );
-        }
-    }
-
-    private function buildTreeToolbar(bool $visible, string $treeFilter): array
-    {
-        return [
-            'type'    => 'RowLayout',
-            'name'    => 'TreeToolbar',
-            'visible' => $visible,
-            'items'   => [
-                [
-                    'type'    => 'PopupButton',
-                    'name'    => 'TreeFilterPopup',
-                    'caption' => 'Filter',
-                    'popup'   => [
-                        'caption' => 'Struktur-Filter',
-                        'items'   => [
-                            [
-                                'type'    => 'ValidationTextBox',
-                                'name'    => 'TreeFilterInput',
-                                'caption' => 'Filter',
-                                'value'   => $treeFilter,
-                                'onChange' => 'IPS_RequestAction($id, "UpdateTreeFilter", $TreeFilterInput);',
-                            ],
-                        ],
-                        'buttons' => [
-                            ['caption' => 'Schließen'],
-                        ],
-                    ],
-                ],
-                [
-                    'type'    => 'Label',
-                    'caption' => '|',
-                ],
-                [
-                    'type'    => 'Button',
-                    'name'    => 'TreeRefreshButton',
-                    'caption' => 'Aktualisieren',
-                    'onClick' => 'IPS_RequestAction($id, "RefreshTree", 0);',
-                ],
-            ],
-        ];
+        ksort($norm);
+        return $norm;
     }
 }
