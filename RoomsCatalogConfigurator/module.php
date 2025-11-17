@@ -21,9 +21,11 @@
  * - Zeilenfärbung (rowColor) nach Vollständigkeit: rot/gelb/normal
  * - Diff-Vorschau produktiver RoomsCatalog vs. Edit (Textausgabe)
  *
- * 2025-11-16: RoomsCatalog-Normalisierung + Logging
- * - Unterstützt Top-Level-Räume (buero, kueche, …, global) ODER ['rooms'=>[…]]
- * - Alle wichtigen Schritte loggen auf Kanal "Alexa" (RCC-DEBUG)
+ * 2025-11-17: Top-Level-Räume + ScriptFile-Fix
+ * - Nur noch Variante: return [ 'buero'=>[…], 'kueche'=>[…], 'global'=>[…], … ];
+ * - Räume = alle Top-Level-Keys mit ['domains'=>…]
+ * - Script-Laden über IPS_GetKernelDir().'scripts/'.IPS_GetScriptFile()
+ * - Vollständiges Logging auf Kanal "Alexa" (RCC-DEBUG)
  */
 
 declare(strict_types=1);
@@ -154,8 +156,8 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         $this->log('START RoomsCatalog-Diagnose');
 
-        $roomsCatalog = $this->loadRoomsCatalog();
-        $rooms        = $roomsCatalog['rooms'] ?? [];
+        $roomsCatalog = $this->loadRoomsCatalog();        // kompletter Katalog
+        $rooms        = $this->extractRooms($roomsCatalog); // nur Räume (mit domains)
 
         $this->log('RoomsCatalog Top-Level-Keys: ' . implode(', ', array_keys($roomsCatalog)));
         $this->log(sprintf(
@@ -176,10 +178,8 @@ class RoomsCatalogConfigurator extends IPSModule
 
         $entries = $this->getRuntimeEntries();
 
-        $this->log(sprintf(
-            'RoomsCatalogEdit Top-Level-Keys: %s',
-            implode(', ', array_keys($this->loadRoomsCatalogEdit()))
-        ));
+        $editCatalog = $this->loadRoomsCatalogEdit();
+        $this->log('RoomsCatalogEdit Top-Level-Keys: ' . implode(', ', array_keys($editCatalog)));
         $this->log(sprintf(
             'Aktueller Kontext: room="%s", domain="%s", group="%s", entries=%d',
             $selectedRoom,
@@ -188,7 +188,6 @@ class RoomsCatalogConfigurator extends IPSModule
             count($entries)
         ));
 
-        // Zeilenfärbung nach Vollständigkeit anwenden
         $entries = $this->applyRowColors($entries, $selectedDomain, $selectedGroup);
 
         $form = [
@@ -465,11 +464,11 @@ class RoomsCatalogConfigurator extends IPSModule
         $domain  = $this->getSelectedDomainKey();
         $group   = $this->getSelectedGroupKey();
 
-        if (!isset($roomsCatalog['rooms'][$roomKey]['domains'][$domain][$group])) {
+        if (!isset($roomsCatalog[$roomKey]['domains'][$domain][$group])) {
             $entries = [];
         } else {
             $entries = $this->buildEntriesFromCatalog(
-                $roomsCatalog['rooms'][$roomKey]['domains'][$domain][$group],
+                $roomsCatalog[$roomKey]['domains'][$domain][$group],
                 $roomKey,
                 $domain,
                 $group
@@ -497,13 +496,13 @@ class RoomsCatalogConfigurator extends IPSModule
         $domain  = $this->getSelectedDomainKey();
         $group   = $this->getSelectedGroupKey();
 
-        if (!isset($roomsCatalog['rooms'][$roomKey]['domains'][$domain][$group])) {
+        if (!isset($roomsCatalog[$roomKey]['domains'][$domain][$group])) {
             echo 'Im produktiven RoomsCatalog wurde dieser Kontext nicht gefunden.';
             return;
         }
 
         $entries = $this->buildEntriesFromCatalog(
-            $roomsCatalog['rooms'][$roomKey]['domains'][$domain][$group],
+            $roomsCatalog[$roomKey]['domains'][$domain][$group],
             $roomKey,
             $domain,
             $group
@@ -531,24 +530,21 @@ class RoomsCatalogConfigurator extends IPSModule
         $domain  = $this->getSelectedDomainKey();
         $group   = $this->getSelectedGroupKey();
 
-        $productiveGroup = $productiveCatalog['rooms'][$roomKey]['domains'][$domain][$group] ?? [];
+        $productiveGroup = $productiveCatalog[$roomKey]['domains'][$domain][$group] ?? [];
 
-        if (!isset($editCatalog['rooms'])) {
-            $editCatalog['rooms'] = [];
-        }
-        if (!isset($editCatalog['rooms'][$roomKey])) {
-            $editCatalog['rooms'][$roomKey] = [
-                'display' => $productiveCatalog['rooms'][$roomKey]['display'] ?? $roomKey,
+        if (!isset($editCatalog[$roomKey])) {
+            $editCatalog[$roomKey] = [
+                'display' => $productiveCatalog[$roomKey]['display'] ?? $roomKey,
                 'domains' => []
             ];
-        } elseif (!isset($editCatalog['rooms'][$roomKey]['domains'])) {
-            $editCatalog['rooms'][$roomKey]['domains'] = [];
+        } elseif (!isset($editCatalog[$roomKey]['domains'])) {
+            $editCatalog[$roomKey]['domains'] = [];
         }
-        if (!isset($editCatalog['rooms'][$roomKey]['domains'][$domain])) {
-            $editCatalog['rooms'][$roomKey]['domains'][$domain] = [];
+        if (!isset($editCatalog[$roomKey]['domains'][$domain])) {
+            $editCatalog[$roomKey]['domains'][$domain] = [];
         }
 
-        $editCatalog['rooms'][$roomKey]['domains'][$domain][$group] = $productiveGroup;
+        $editCatalog[$roomKey]['domains'][$domain][$group] = $productiveGroup;
 
         $this->writeRoomsCatalogEdit($editCatalog);
 
@@ -585,7 +581,7 @@ class RoomsCatalogConfigurator extends IPSModule
             $entries = [];
         }
 
-        $oldGroup = $roomsCatalog['rooms'][$roomKey]['domains'][$domain][$group] ?? [];
+        $oldGroup = $roomsCatalog[$roomKey]['domains'][$domain][$group] ?? [];
         if (!is_array($oldGroup)) {
             $oldGroup = [];
         }
@@ -613,7 +609,19 @@ class RoomsCatalogConfigurator extends IPSModule
             $newGroup[$key] = $cfg;
         }
 
-        $roomsCatalog['rooms'][$roomKey]['domains'][$domain][$group] = $newGroup;
+        if (!isset($roomsCatalog[$roomKey])) {
+            $roomsCatalog[$roomKey] = [
+                'display' => $roomKey,
+                'domains' => []
+            ];
+        } elseif (!isset($roomsCatalog[$roomKey]['domains'])) {
+            $roomsCatalog[$roomKey]['domains'] = [];
+        }
+        if (!isset($roomsCatalog[$roomKey]['domains'][$domain])) {
+            $roomsCatalog[$roomKey]['domains'][$domain] = [];
+        }
+
+        $roomsCatalog[$roomKey]['domains'][$domain][$group] = $newGroup;
 
         $this->writeRoomsCatalogEdit($roomsCatalog);
 
@@ -679,11 +687,11 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         $this->log('RCC_ShowDiff()');
 
-        $prod  = $this->loadRoomsCatalog();
-        $edit  = $this->loadRoomsCatalogEdit();
+        $prod = $this->loadRoomsCatalog();
+        $edit = $this->loadRoomsCatalogEdit();
 
-        $prodRooms = $prod['rooms'] ?? [];
-        $editRooms = $edit['rooms'] ?? [];
+        $prodRooms = $this->extractRooms($prod);
+        $editRooms = $this->extractRooms($edit);
 
         $lines = [];
 
@@ -855,20 +863,15 @@ class RoomsCatalogConfigurator extends IPSModule
         return $entries;
     }
 
-    private function normalizeRoomsCatalogArray(array $catalog): array
+    private function extractRooms(array $catalog): array
     {
-        // Falls es schon ein ['rooms'=>…] ist → direkt verwenden
-        if (isset($catalog['rooms']) && is_array($catalog['rooms'])) {
-            return $catalog;
+        $rooms = [];
+        foreach ($catalog as $key => $cfg) {
+            if (is_array($cfg) && isset($cfg['domains']) && is_array($cfg['domains'])) {
+                $rooms[$key] = $cfg;
+            }
         }
-
-        // Ansonsten nehmen wir den gesamten Array als rooms
-        // (deine Struktur: buero, kueche, …, global)
-        $this->log('normalizeRoomsCatalogArray(): Top-Level ohne "rooms" → wrap in rooms[]');
-
-        return [
-            'rooms' => $catalog
-        ];
+        return $rooms;
     }
 
     private function loadRoomsCatalog(): array
@@ -876,56 +879,42 @@ class RoomsCatalogConfigurator extends IPSModule
         $scriptId = $this->getActiveRoomsCatalogScriptID();
         if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) {
             $this->log('RoomsCatalog: ScriptID leer oder existiert nicht');
-            return ['rooms' => []];
+            return [];
         }
 
-        $file = IPS_GetScriptFile($scriptId);
-        if ($file === '' || !file_exists($file)) {
+        $fileRel = IPS_GetScriptFile($scriptId);
+        if ($fileRel === '') {
+            $this->log('RoomsCatalog: ScriptFile leer für ID=' . $scriptId);
+            return [];
+        }
+
+        $file = IPS_GetKernelDir() . 'scripts/' . $fileRel;
+        $this->log('RoomsCatalog: ScriptFile=' . $file);
+
+        if (!file_exists($file)) {
             $this->log('RoomsCatalog: ScriptFile nicht gefunden: ' . $file);
-            return ['rooms' => []];
+            return [];
         }
 
-        $this->log('RoomsCatalog require() file=' . $file);
+        $this->log('RoomsCatalog require() file=' . $fileRel);
         $catalog = @require $file;
         $this->log('RoomsCatalog require() type=' . gettype($catalog));
 
         if (!is_array($catalog)) {
             $this->log('RoomsCatalog: require() ergab kein Array');
-            return ['rooms' => []];
+            return [];
         }
 
-        if (count($catalog) <= 50) {
+        if (count($catalog) <= 100) {
             $this->log('RoomsCatalog Top-Level-Keys: ' . implode(', ', array_keys($catalog)));
         }
 
-        $catalog = $this->normalizeRoomsCatalogArray($catalog);
-
-        $rooms = $catalog['rooms'] ?? [];
+        $rooms = $this->extractRooms($catalog);
         $this->log(sprintf(
-            'RoomsCatalog: Räume=%d Domains=%d Licht-Einträge=%d Jalousie-Einträge=%d',
+            'RoomsCatalog: Räume=%d Domains=%d',
             count($rooms),
             array_sum(array_map(static function ($r) {
                 return isset($r['domains']) && is_array($r['domains']) ? count($r['domains']) : 0;
-            }, $rooms)),
-            array_sum(array_map(static function ($r) {
-                $d = $r['domains']['licht'] ?? [];
-                if (!is_array($d)) {
-                    return 0;
-                }
-                $sum = 0;
-                foreach ($d as $g) {
-                    if (is_array($g)) {
-                        $sum += count($g);
-                    }
-                }
-                return $sum;
-            }, $rooms)),
-            array_sum(array_map(static function ($r) {
-                $d = $r['domains']['jalousie'] ?? [];
-                if (!is_array($d)) {
-                    return 0;
-                }
-                return count($d);
             }, $rooms))
         ));
 
@@ -955,13 +944,13 @@ class RoomsCatalogConfigurator extends IPSModule
         ];
 
         foreach ($catalogsToInspect as $idx => $catalog) {
-            $src = $idx === 0 ? 'EDIT' : 'PROD';
-
-            if (!isset($catalog['rooms']) || !is_array($catalog['rooms'])) {
+            $src   = $idx === 0 ? 'EDIT' : 'PROD';
+            $rooms = $this->extractRooms($catalog);
+            if ($rooms === []) {
                 continue;
             }
 
-            foreach ($catalog['rooms'] as $roomKey => $roomCfg) {
+            foreach ($rooms as $roomKey => $roomCfg) {
                 $domains = $roomCfg['domains'] ?? [];
                 if (!is_array($domains) || $domains === []) {
                     continue;
@@ -1072,12 +1061,12 @@ class RoomsCatalogConfigurator extends IPSModule
         }
 
         $catalog  = $this->loadRoomsCatalogEdit();
-        $groupCfg = $catalog['rooms'][$roomKey]['domains'][$domain][$group] ?? null;
+        $groupCfg = $catalog[$roomKey]['domains'][$domain][$group] ?? null;
 
         if (!is_array($groupCfg)) {
             $this->log('populateEntriesForCurrentSelection(): im EDIT nicht gefunden, versuche PROD');
             $catalog  = $this->loadRoomsCatalog();
-            $groupCfg = $catalog['rooms'][$roomKey]['domains'][$domain][$group] ?? null;
+            $groupCfg = $catalog[$roomKey]['domains'][$domain][$group] ?? null;
             if (!is_array($groupCfg)) {
                 $this->log('populateEntriesForCurrentSelection(): auch in PROD nicht gefunden → false');
                 return false;
@@ -1100,13 +1089,21 @@ class RoomsCatalogConfigurator extends IPSModule
             return $this->loadRoomsCatalog();
         }
 
-        $file = IPS_GetScriptFile($scriptId);
-        if ($file === '' || !file_exists($file)) {
+        $fileRel = IPS_GetScriptFile($scriptId);
+        if ($fileRel === '') {
+            $this->log('RoomsCatalogEdit: ScriptFile leer für ID=' . $scriptId . ' → Fallback PROD');
+            return $this->loadRoomsCatalog();
+        }
+
+        $file = IPS_GetKernelDir() . 'scripts/' . $fileRel;
+        $this->log('RoomsCatalogEdit: ScriptFile=' . $file);
+
+        if (!file_exists($file)) {
             $this->log('RoomsCatalogEdit: ScriptFile nicht gefunden: ' . $file . ' → Fallback PROD');
             return $this->loadRoomsCatalog();
         }
 
-        $this->log('RoomsCatalogEdit require() file=' . $file);
+        $this->log('RoomsCatalogEdit require() file=' . $fileRel);
         $catalog = @require $file;
         $this->log('RoomsCatalogEdit require() type=' . gettype($catalog));
 
@@ -1115,13 +1112,11 @@ class RoomsCatalogConfigurator extends IPSModule
             return $this->loadRoomsCatalog();
         }
 
-        if (count($catalog) <= 50) {
+        if (count($catalog) <= 100) {
             $this->log('RoomsCatalogEdit Top-Level-Keys: ' . implode(', ', array_keys($catalog)));
         }
 
-        $catalog = $this->normalizeRoomsCatalogArray($catalog);
-
-        $rooms = $catalog['rooms'] ?? [];
+        $rooms = $this->extractRooms($catalog);
         $this->log(sprintf(
             'RoomsCatalogEdit: Räume=%d Domains=%d',
             count($rooms),
