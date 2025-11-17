@@ -353,16 +353,15 @@ class RoomsCatalogConfigurator extends IPSModule
         }
 
         $file = IPS_GetScriptFile($scriptId);
-        if ($file === '' || !file_exists($file)) {
-            $this->debug("loadRoomsCatalog($label): ScriptFile nicht gefunden: {$file}");
-            return [];
-        }
 
+        // Kein file_exists() mehr – wir verlassen uns auf IPS_GetScriptFile
         $this->debug("loadRoomsCatalog($label): ScriptFile={$file}");
 
         $catalog = @require $file;
+
         if (!is_array($catalog)) {
-            $this->debug("loadRoomsCatalog($label): require() lieferte kein Array");
+            $type = gettype($catalog);
+            $this->debug("loadRoomsCatalog($label): require() lieferte kein Array (Typ={$type})");
             return [];
         }
 
@@ -372,6 +371,7 @@ class RoomsCatalogConfigurator extends IPSModule
 
         return $catalog;
     }
+
 
     private function countRoomsInCatalog(array $catalog): int
     {
