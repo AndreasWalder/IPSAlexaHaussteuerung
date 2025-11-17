@@ -21,21 +21,19 @@
  * - Zeilenfärbung (rowColor) nach Vollständigkeit: rot/gelb/normal
  * - Diff-Vorschau produktiver RoomsCatalog vs. Edit (Textausgabe)
  *
- * 2025-11-17: Top-Level-Räume + ScriptFile-Fix
- * - Nur noch Variante: return [ 'buero'=>[…], 'kueche'=>[…], 'global'=>[…], … ];
- * - Räume = alle Top-Level-Keys mit ['domains'=>…]
- * - Script-Laden über IPS_GetKernelDir().'scripts/'.IPS_GetScriptFile()
- * - Vollständiges Logging auf Kanal "Alexa" (RCC-DEBUG)
+ * 2025-11-17: Globale Liste aller Räume/Domains
+ * - Kein Kontext (SelectedRoom/Domain/Group) mehr
+ * - Eine flache Liste mit allen Räumen + Domains + Gruppen + Einträgen
+ * - Speichern schreibt den kompletten domains-Baum aller Räume zurück
+ * - Logging vollständig über Kanal "Alexa" (RCC-DEBUG)
  */
 
 declare(strict_types=1);
 
 class RoomsCatalogConfigurator extends IPSModule
 {
-    private bool $autoInitializingContext = false;
-
     // =====================================================================
-    // Logging-Helfer
+    // Logging
     // =====================================================================
 
     private function log(string $msg): void
@@ -44,31 +42,23 @@ class RoomsCatalogConfigurator extends IPSModule
     }
 
     // =====================================================================
-    // Standard IPS-Methoden
+    // IPS-Standard
     // =====================================================================
 
     public function Create()
     {
         parent::Create();
 
-        // Grundkonfiguration
+        // Scripte
         $this->RegisterPropertyInteger('RoomsCatalogScriptID', 0);
         $this->RegisterPropertyInteger('RoomsCatalogEditScriptID', 0);
 
-        // Kontext-Auswahl
-        $this->RegisterPropertyString('SelectedRoom', '');
-        $this->RegisterPropertyString('SelectedDomain', '');
-        $this->RegisterPropertyString('SelectedGroup', '');
-
-        // Eintragsliste für aktuellen Kontext (als JSON)
+        // Alte Property weiterführen (wird intern nicht mehr verwendet, schadet aber nicht)
         $this->RegisterPropertyString('Entries', '[]');
 
-        // Laufzeit-Status
+        // Runtime-State
         $this->RegisterAttributeInteger('RuntimeRoomsCatalogScriptID', 0);
         $this->RegisterAttributeInteger('RuntimeRoomsCatalogEditScriptID', 0);
-        $this->RegisterAttributeString('RuntimeSelectedRoom', '');
-        $this->RegisterAttributeString('RuntimeSelectedDomain', '');
-        $this->RegisterAttributeString('RuntimeSelectedGroup', '');
         $this->RegisterAttributeString('RuntimeEntries', '[]');
     }
 
@@ -81,34 +71,15 @@ class RoomsCatalogConfigurator extends IPSModule
 
         $this->synchronizeRuntimeStateFromProperties();
 
-        $this->log(sprintf(
-            'Instanz-Konfiguration: {"Entries":"%s","RoomsCatalogEditScriptID":%d,"RoomsCatalogScriptID":%d,"SelectedDomain":"%s","SelectedGroup":"%s","SelectedRoom":"%s"}',
-            $this->ReadPropertyString('Entries'),
-            $this->ReadPropertyInteger('RoomsCatalogEditScriptID'),
-            $this->ReadPropertyInteger('RoomsCatalogScriptID'),
-            $this->ReadPropertyString('SelectedDomain'),
-            $this->ReadPropertyString('SelectedGroup'),
-            $this->ReadPropertyString('SelectedRoom')
-        ));
-
-        if ($this->autoInitializingContext) {
-            $this->log('ApplyChanges: autoInitializingContext=true → Abbruch');
-            return;
-        }
-
-        if ($this->shouldInitializeContextFromCatalog()) {
-            $this->log('ApplyChanges: shouldInitializeContextFromCatalog() = true → autoPopulateContextFromCatalog()');
-            $this->autoInitializingContext = true;
-            $initialized                   = $this->autoPopulateContextFromCatalog();
-            $this->autoInitializingContext = false;
-
-            $this->log('ApplyChanges: autoPopulateContextFromCatalog() result=' . ($initialized ? 'true' : 'false'));
-
-            if ($initialized) {
-                $this->ReloadForm();
-            }
+        // Wenn noch keine Runtime-Einträge vorhanden sind → aus Edit (Fallback Prod) laden und flach machen
+        $entries = $this->getRuntimeEntries();
+        if ($entries === []) {
+            $this->log('ApplyChanges: RuntimeEntries leer → lade aus RoomsCatalogEdit/Prod');
+            $catalog = $this->loadRoomsCatalogEdit(); // macht selbst Fallback auf Prod
+            $flat    = $this->buildFlatEntriesFromCatalog($catalog);
+            $this->setRuntimeEntries($flat);
         } else {
-            $this->log('ApplyChanges: Kein Initialisierungsbedarf.');
+            $this->log('ApplyChanges: RuntimeEntries vorhanden, Anzahl=' . count($entries));
         }
 
         $this->log('ApplyChanges ENDE');
@@ -120,75 +91,53 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->log('RequestAction: ' . $Ident . ' = ' . json_encode($Value));
 
         switch ($Ident) {
-            case 'SelectedRoom':
-                $this->setSelectedRoomKey((string)$Value);
-                $this->setSelectedDomainKey('');
-                $this->setSelectedGroupKey('');
-                $this->resetRuntimeEntries();
+            case 'RoomsCatalogScriptID':
+                $this->setActiveRoomsCatalogScriptID((int)$Value);
+                // bei Scriptwechsel Liste neu aus EDIT/PROD laden
+                $catalog = $this->loadRoomsCatalogEdit();
+                $flat    = $this->buildFlatEntriesFromCatalog($catalog);
+                $this->setRuntimeEntries($flat);
+                $this->ReloadForm();
                 break;
 
-            case 'SelectedDomain':
-                $this->setSelectedDomainKey((string)$Value);
-                $this->setSelectedGroupKey('');
-                $this->resetRuntimeEntries();
-                break;
-
-            case 'SelectedGroup':
-                if ((string)$Value === '') {
-                    $this->setSelectedGroupKey('');
-                    $this->resetRuntimeEntries();
-                } else {
-                    $this->setSelectedGroupKey((string)$Value);
-                    if (!$this->populateEntriesForCurrentSelection()) {
-                        $this->resetRuntimeEntries();
-                    }
-                }
+            case 'RoomsCatalogEditScriptID':
+                $this->setActiveRoomsCatalogEditScriptID((int)$Value);
+                // bei Scriptwechsel Liste neu aus EDIT/PROD laden
+                $catalog = $this->loadRoomsCatalogEdit();
+                $flat    = $this->buildFlatEntriesFromCatalog($catalog);
+                $this->setRuntimeEntries($flat);
+                $this->ReloadForm();
                 break;
 
             default:
                 throw new Exception('Invalid Ident');
         }
-
-        $this->ReloadForm();
     }
 
     public function GetConfigurationForm()
     {
         $this->log('START RoomsCatalog-Diagnose');
 
-        $roomsCatalog = $this->loadRoomsCatalog();        // kompletter Katalog
-        $rooms        = $this->extractRooms($roomsCatalog); // nur Räume (mit domains)
+        $prodCatalog = $this->loadRoomsCatalog();
+        $editCatalog = $this->loadRoomsCatalogEdit();
 
-        $this->log('RoomsCatalog Top-Level-Keys: ' . implode(', ', array_keys($roomsCatalog)));
+        $prodRooms = $this->extractRooms($prodCatalog);
+        $editRooms = $this->extractRooms($editCatalog);
+
         $this->log(sprintf(
-            'RoomsCatalog: Räume=%d Domains=%d',
-            count($rooms),
-            array_sum(array_map(static function ($r) {
-                return isset($r['domains']) && is_array($r['domains']) ? count($r['domains']) : 0;
-            }, $rooms))
+            'RoomsCatalog PROD: Räume=%d',
+            count($prodRooms)
         ));
-
-        $selectedRoom   = $this->getSelectedRoomKey();
-        $selectedDomain = $this->getSelectedDomainKey();
-        $selectedGroup  = $this->getSelectedGroupKey();
-
-        $roomOptions   = $this->buildRoomOptions($rooms);
-        $domainOptions = $this->buildDomainOptions($rooms, $selectedRoom);
-        $groupOptions  = $this->buildGroupOptions($rooms, $selectedRoom, $selectedDomain);
+        $this->log(sprintf(
+            'RoomsCatalog EDIT: Räume=%d',
+            count($editRooms)
+        ));
 
         $entries = $this->getRuntimeEntries();
+        $this->log('GetConfigurationForm: RuntimeEntries=' . count($entries));
 
-        $editCatalog = $this->loadRoomsCatalogEdit();
-        $this->log('RoomsCatalogEdit Top-Level-Keys: ' . implode(', ', array_keys($editCatalog)));
-        $this->log(sprintf(
-            'Aktueller Kontext: room="%s", domain="%s", group="%s", entries=%d',
-            $selectedRoom,
-            $selectedDomain,
-            $selectedGroup,
-            count($entries)
-        ));
-
-        $entries = $this->applyRowColors($entries, $selectedDomain, $selectedGroup);
+        // Row-Farben anhand der Domain pro Zeile
+        $entries = $this->applyRowColors($entries);
 
         $form = [
             'elements' => [
@@ -200,25 +149,27 @@ class RoomsCatalogConfigurator extends IPSModule
                             'type'    => 'SelectScript',
                             'name'    => 'RoomsCatalogScriptID',
                             'caption' => 'Produktiver RoomsCatalog',
-                            'value'   => $this->getActiveRoomsCatalogScriptID()
+                            'value'   => $this->getActiveRoomsCatalogScriptID(),
+                            'onChange' => 'IPS_RequestAction($id, "RoomsCatalogScriptID", $RoomsCatalogScriptID);'
                         ],
                         [
                             'type'    => 'SelectScript',
                             'name'    => 'RoomsCatalogEditScriptID',
                             'caption' => 'RoomsCatalog Edit-Script',
-                            'value'   => $this->getActiveRoomsCatalogEditScriptID()
+                            'value'   => $this->getActiveRoomsCatalogEditScriptID(),
+                            'onChange' => 'IPS_RequestAction($id, "RoomsCatalogEditScriptID", $RoomsCatalogEditScriptID);'
                         ]
                     ]
                 ],
                 [
                     'type'    => 'ExpansionPanel',
-                    'caption' => 'Einträge im aktuellen Kontext',
+                    'caption' => 'Alle Einträge (alle Räume / Domains / Gruppen)',
                     'items'   => [
                         [
                             'type'       => 'List',
                             'name'       => 'Entries',
                             'caption'    => 'Einträge',
-                            'rowCount'   => 15,
+                            'rowCount'   => 20,
                             'add'        => true,
                             'delete'     => true,
                             'sort'       => false,
@@ -230,6 +181,42 @@ class RoomsCatalogConfigurator extends IPSModule
                                     'add'     => false,
                                     'edit'    => [
                                         'type' => 'CheckBox'
+                                    ]
+                                ],
+                                [
+                                    'caption' => 'Raum-Key',
+                                    'name'    => 'roomKey',
+                                    'width'   => '120px',
+                                    'add'     => '',
+                                    'edit'    => [
+                                        'type' => 'ValidationTextBox'
+                                    ]
+                                ],
+                                [
+                                    'caption' => 'Raum-Label',
+                                    'name'    => 'roomLabel',
+                                    'width'   => '160px',
+                                    'add'     => '',
+                                    'edit'    => [
+                                        'type' => 'ValidationTextBox'
+                                    ]
+                                ],
+                                [
+                                    'caption' => 'Domain',
+                                    'name'    => 'domain',
+                                    'width'   => '110px',
+                                    'add'     => '',
+                                    'edit'    => [
+                                        'type' => 'ValidationTextBox'
+                                    ]
+                                ],
+                                [
+                                    'caption' => 'Gruppe',
+                                    'name'    => 'group',
+                                    'width'   => '140px',
+                                    'add'     => '',
+                                    'edit'    => [
+                                        'type' => 'ValidationTextBox'
                                     ]
                                 ],
                                 [
@@ -331,65 +318,31 @@ class RoomsCatalogConfigurator extends IPSModule
             'actions'  => [
                 [
                     'type'    => 'ExpansionPanel',
-                    'caption' => 'Kontext laden / speichern',
+                    'caption' => 'Katalog-Aktionen (gesamt)',
                     'items'   => [
                         [
-                            'type'  => 'RowLayout',
-                            'items' => [
-                                [
-                                    'type'    => 'Select',
-                                    'name'    => 'SelectedRoom',
-                                    'caption' => 'Raum',
-                                    'options' => $roomOptions,
-                                    'value'   => $selectedRoom,
-                                    'onChange' => 'IPS_RequestAction($id, "SelectedRoom", $SelectedRoom);'
-                                ],
-                                [
-                                    'type'    => 'Select',
-                                    'name'    => 'SelectedDomain',
-                                    'caption' => 'Funktion / Domain',
-                                    'options' => $domainOptions,
-                                    'value'   => $selectedDomain,
-                                    'onChange' => 'IPS_RequestAction($id, "SelectedDomain", $SelectedDomain);'
-                                ],
-                                [
-                                    'type'    => 'Select',
-                                    'name'    => 'SelectedGroup',
-                                    'caption' => 'Untergruppe',
-                                    'options' => $groupOptions,
-                                    'value'   => $selectedGroup,
-                                    'onChange' => 'IPS_RequestAction($id, "SelectedGroup", $SelectedGroup);'
-                                ]
-                            ]
+                            'type'    => 'Button',
+                            'caption' => 'RoomsCatalogEdit aus produktivem RoomsCatalog füllen (komplett)',
+                            'onClick' => 'RCC_CopyProdToEdit($id);'
                         ],
                         [
                             'type'    => 'Button',
-                            'caption' => 'Kontext aus RoomsCatalogEdit laden',
-                            'onClick' => 'RCC_LoadContext($id);'
+                            'caption' => 'Liste aus RoomsCatalogEdit neu laden',
+                            'onClick' => 'RCC_ReloadFromEdit($id);'
                         ],
                         [
                             'type'    => 'Button',
-                            'caption' => 'Kontext aus produktivem RoomsCatalog laden',
-                            'onClick' => 'RCC_LoadContextFromProductive($id);'
+                            'caption' => 'Einträge in RoomsCatalogEdit speichern (komplett)',
+                            'onClick' => 'RCC_SaveAll($id, json_encode($Entries));'
                         ],
                         [
                             'type'    => 'Button',
-                            'caption' => 'Kontext in RoomsCatalogEdit aus produktivem RoomsCatalog erstellen',
-                            'onClick' => 'RCC_CreateContextFromProductive($id);'
-                        ],
-                        [
-                            'type'    => 'Button',
-                            'caption' => 'Einträge in RoomsCatalogEdit speichern',
-                            'onClick' => 'RCC_SaveContext($id, json_encode($Entries));'
-                        ],
-                        [
-                            'type'    => 'Button',
-                            'caption' => 'Diff: produktiv vs. Edit (Textausgabe)',
+                            'caption' => 'Diff: produktiv vs. Edit (Textausgabe, gesamt)',
                             'onClick' => 'RCC_ShowDiff($id);'
                         ],
                         [
                             'type'    => 'Button',
-                            'caption' => 'RoomsCatalogEdit → produktiver RoomsCatalog kopieren',
+                            'caption' => 'RoomsCatalogEdit → produktiver RoomsCatalog kopieren (gesamtes Script)',
                             'onClick' => 'RCC_ApplyEditToProductive($id);'
                         ]
                     ]
@@ -446,194 +399,147 @@ class RoomsCatalogConfigurator extends IPSModule
     }
 
     // =====================================================================
-    // Public API (Form-Buttons)
+    // Public API – Buttons
     // =====================================================================
 
-    public function LoadContext()
+    public function ReloadFromEdit()
     {
-        $this->log('RCC_LoadContext()');
-
-        if (!$this->ensureContextSelection()) {
-            echo 'Bitte zuerst Raum, Domain und Untergruppe auswählen (RoomsCatalog Script wählen?).';
-            return;
-        }
-
-        $roomsCatalog = $this->loadRoomsCatalogEdit();
-
-        $roomKey = $this->getSelectedRoomKey();
-        $domain  = $this->getSelectedDomainKey();
-        $group   = $this->getSelectedGroupKey();
-
-        if (!isset($roomsCatalog[$roomKey]['domains'][$domain][$group])) {
-            $entries = [];
-        } else {
-            $entries = $this->buildEntriesFromCatalog(
-                $roomsCatalog[$roomKey]['domains'][$domain][$group],
-                $roomKey,
-                $domain,
-                $group
-            );
-        }
-
-        $this->setRuntimeEntries($entries);
+        $this->log('RCC_ReloadFromEdit()');
+        $catalog = $this->loadRoomsCatalogEdit();
+        $flat    = $this->buildFlatEntriesFromCatalog($catalog);
+        $this->setRuntimeEntries($flat);
         $this->ReloadForm();
-
-        echo 'Kontext geladen. Einträge können jetzt bearbeitet werden.';
+        echo 'Liste wurde aus RoomsCatalogEdit neu geladen.';
     }
 
-    public function LoadContextFromProductive()
+    public function CopyProdToEdit()
     {
-        $this->log('RCC_LoadContextFromProductive()');
+        $this->log('RCC_CopyProdToEdit()');
 
-        if (!$this->ensureContextSelection()) {
-            echo 'Bitte zuerst Raum, Domain und Untergruppe auswählen (RoomsCatalog Script wählen?).';
+        $prodId = $this->getActiveRoomsCatalogScriptID();
+        $editId = $this->getActiveRoomsCatalogEditScriptID();
+
+        if ($prodId <= 0 || !IPS_ScriptExists($prodId)) {
+            echo 'Produktiver RoomsCatalog (RoomsCatalogScriptID) ist nicht gesetzt oder existiert nicht.';
+            return;
+        }
+        if ($editId <= 0 || !IPS_ScriptExists($editId)) {
+            echo 'RoomsCatalogEditScriptID ist nicht gesetzt oder Script existiert nicht.';
             return;
         }
 
-        $roomsCatalog = $this->loadRoomsCatalog();
-
-        $roomKey = $this->getSelectedRoomKey();
-        $domain  = $this->getSelectedDomainKey();
-        $group   = $this->getSelectedGroupKey();
-
-        if (!isset($roomsCatalog[$roomKey]['domains'][$domain][$group])) {
-            echo 'Im produktiven RoomsCatalog wurde dieser Kontext nicht gefunden.';
+        $prodContent = IPS_GetScriptContent($prodId);
+        if ($prodContent === '') {
+            echo 'Produktiver RoomsCatalog ist leer. Abbruch.';
             return;
         }
 
-        $entries = $this->buildEntriesFromCatalog(
-            $roomsCatalog[$roomKey]['domains'][$domain][$group],
-            $roomKey,
-            $domain,
-            $group
-        );
+        IPS_SetScriptContent($editId, $prodContent);
+        $this->log('CopyProdToEdit: PROD → EDIT kopiert');
 
-        $this->setRuntimeEntries($entries);
+        // Liste neu aus EDIT laden
+        $catalog = $this->loadRoomsCatalogEdit();
+        $flat    = $this->buildFlatEntriesFromCatalog($catalog);
+        $this->setRuntimeEntries($flat);
         $this->ReloadForm();
 
-        echo 'Kontext aus produktivem RoomsCatalog geladen. Änderungen werden nicht automatisch gespeichert.';
+        echo 'Produktiver RoomsCatalog wurde nach RoomsCatalogEdit kopiert und geladen.';
     }
 
-    public function CreateContextFromProductive()
+    public function SaveAll(string $entriesJson)
     {
-        $this->log('RCC_CreateContextFromProductive()');
-
-        if (!$this->ensureContextSelection()) {
-            echo 'Bitte zuerst Raum, Domain und Untergruppe auswählen (RoomsCatalog Script wählen?).';
-            return;
-        }
-
-        $productiveCatalog = $this->loadRoomsCatalog();
-        $editCatalog       = $this->loadRoomsCatalogEdit();
-
-        $roomKey = $this->getSelectedRoomKey();
-        $domain  = $this->getSelectedDomainKey();
-        $group   = $this->getSelectedGroupKey();
-
-        $productiveGroup = $productiveCatalog[$roomKey]['domains'][$domain][$group] ?? [];
-
-        if (!isset($editCatalog[$roomKey])) {
-            $editCatalog[$roomKey] = [
-                'display' => $productiveCatalog[$roomKey]['display'] ?? $roomKey,
-                'domains' => []
-            ];
-        } elseif (!isset($editCatalog[$roomKey]['domains'])) {
-            $editCatalog[$roomKey]['domains'] = [];
-        }
-        if (!isset($editCatalog[$roomKey]['domains'][$domain])) {
-            $editCatalog[$roomKey]['domains'][$domain] = [];
-        }
-
-        $editCatalog[$roomKey]['domains'][$domain][$group] = $productiveGroup;
-
-        $this->writeRoomsCatalogEdit($editCatalog);
-
-        $entries = $this->buildEntriesFromCatalog(
-            $productiveGroup,
-            $roomKey,
-            $domain,
-            $group
-        );
-
-        $this->setRuntimeEntries($entries);
-        $this->ReloadForm();
-
-        echo 'Kontext wurde aus dem produktiven RoomsCatalog in das Edit-Script übernommen.';
-    }
-
-    public function SaveContext(string $entriesJson)
-    {
-        $this->log('RCC_SaveContext() entriesJson length=' . strlen($entriesJson));
-
-        if (!$this->ensureContextSelection()) {
-            echo 'Bitte zuerst Raum, Domain und Untergruppe auswählen (RoomsCatalog Script wählen?).';
-            return;
-        }
-
-        $roomsCatalog = $this->loadRoomsCatalogEdit();
-
-        $roomKey = $this->getSelectedRoomKey();
-        $domain  = $this->getSelectedDomainKey();
-        $group   = $this->getSelectedGroupKey();
+        $this->log('RCC_SaveAll() len=' . strlen($entriesJson));
 
         $entries = json_decode($entriesJson, true);
         if (!is_array($entries)) {
             $entries = [];
         }
 
-        $oldGroup = $roomsCatalog[$roomKey]['domains'][$domain][$group] ?? [];
-        if (!is_array($oldGroup)) {
-            $oldGroup = [];
-        }
-
-        $newGroup = [];
+        // Neue domains-Struktur pro Raum aufbauen
+        $domainsByRoom = [];
 
         foreach ($entries as $row) {
-            $key = trim((string)($row['key'] ?? ''));
-            if ($key === '') {
+            $roomKey   = trim((string)($row['roomKey'] ?? ''));
+            $roomLabel = trim((string)($row['roomLabel'] ?? ''));
+            $domain    = trim((string)($row['domain'] ?? ''));
+            $group     = trim((string)($row['group'] ?? ''));
+            $key       = trim((string)($row['key'] ?? ''));
+
+            if ($roomKey === '' || $domain === '' || $group === '' || $key === '') {
+                // unvollständige Zeilen ignorieren
                 continue;
             }
 
-            $cfg = $oldGroup[$key] ?? [];
+            if (!isset($domainsByRoom[$roomKey])) {
+                $domainsByRoom[$roomKey] = [
+                    '_display' => $roomLabel !== '' ? $roomLabel : $roomKey,
+                    'domains'  => []
+                ];
+            }
 
-            $cfg['label']      = (string)($row['label'] ?? '');
-            $cfg['entityId']   = (int)($row['entityId'] ?? 0);
-            $cfg['entityName'] = (string)($row['entityName'] ?? '');
-            $cfg['controlId']  = (int)($row['controlId'] ?? 0);
-            $cfg['statusId']   = (int)($row['statusId'] ?? 0);
-            $cfg['tiltId']     = (int)($row['tiltId'] ?? 0);
-            $cfg['speechKey']  = (string)($row['speechKey'] ?? '');
-            $cfg['icon']       = (string)($row['icon'] ?? '');
-            $cfg['order']      = (int)($row['order'] ?? 0);
+            if (!isset($domainsByRoom[$roomKey]['domains'][$domain])) {
+                $domainsByRoom[$roomKey]['domains'][$domain] = [];
+            }
+            if (!isset($domainsByRoom[$roomKey]['domains'][$domain][$group])) {
+                $domainsByRoom[$roomKey]['domains'][$domain][$group] = [];
+            }
 
-            $newGroup[$key] = $cfg;
-        }
-
-        if (!isset($roomsCatalog[$roomKey])) {
-            $roomsCatalog[$roomKey] = [
-                'display' => $roomKey,
-                'domains' => []
+            $cfg = [
+                'label'      => (string)($row['label'] ?? ''),
+                'entityId'   => (int)($row['entityId'] ?? 0),
+                'entityName' => (string)($row['entityName'] ?? ''),
+                'controlId'  => (int)($row['controlId'] ?? 0),
+                'statusId'   => (int)($row['statusId'] ?? 0),
+                'tiltId'     => (int)($row['tiltId'] ?? 0),
+                'speechKey'  => (string)($row['speechKey'] ?? ''),
+                'icon'       => (string)($row['icon'] ?? ''),
+                'order'      => (int)($row['order'] ?? 0)
             ];
-        } elseif (!isset($roomsCatalog[$roomKey]['domains'])) {
-            $roomsCatalog[$roomKey]['domains'] = [];
-        }
-        if (!isset($roomsCatalog[$roomKey]['domains'][$domain])) {
-            $roomsCatalog[$roomKey]['domains'][$domain] = [];
+
+            $domainsByRoom[$roomKey]['domains'][$domain][$group][$key] = $cfg;
         }
 
-        $roomsCatalog[$roomKey]['domains'][$domain][$group] = $newGroup;
+        $this->log('RCC_SaveAll: Räume in neuer Struktur=' . count($domainsByRoom));
 
-        $this->writeRoomsCatalogEdit($roomsCatalog);
+        // Bestehenden Edit-Katalog holen
+        $catalog = $this->loadRoomsCatalogEdit();
+        $rooms   = $this->extractRooms($catalog);
 
-        $this->setRuntimeEntries($this->buildEntriesFromCatalog(
-            $newGroup,
-            $roomKey,
-            $domain,
-            $group
-        ));
+        // Erst alle bestehenden domains leeren
+        foreach (array_keys($rooms) as $roomKey) {
+            if (isset($catalog[$roomKey]['domains'])) {
+                $catalog[$roomKey]['domains'] = [];
+            }
+        }
+
+        // Neue domains einsetzen / Räume ggf. neu anlegen
+        foreach ($domainsByRoom as $roomKey => $roomData) {
+            $display = $roomData['_display'];
+            $domains = $roomData['domains'];
+
+            if (!isset($catalog[$roomKey])) {
+                $catalog[$roomKey] = [
+                    'display' => $display,
+                    'domains' => []
+                ];
+            }
+
+            if (!isset($catalog[$roomKey]['display']) || $catalog[$roomKey]['display'] === '') {
+                $catalog[$roomKey]['display'] = $display;
+            }
+
+            $catalog[$roomKey]['domains'] = $domains;
+        }
+
+        // Katalog zurückschreiben
+        $this->writeRoomsCatalogEdit($catalog);
+
+        // Liste aus gespeichertem Katalog neu bauen
+        $flat = $this->buildFlatEntriesFromCatalog($catalog);
+        $this->setRuntimeEntries($flat);
         $this->ReloadForm();
 
-        echo 'Einträge wurden in RoomsCatalogEdit gespeichert.';
+        echo 'Alle Einträge wurden in RoomsCatalogEdit gespeichert.';
     }
 
     public function ApplySelectedObjectMain(int $SelectedObject, string $entriesJson)
@@ -824,7 +730,7 @@ class RoomsCatalogConfigurator extends IPSModule
         echo 'Objekt wurde auf markierte Zeilen angewendet.';
     }
 
-    private function applyRowColors(array $entries, string $domain, string $group): array
+    private function applyRowColors(array $entries): array
     {
         foreach ($entries as &$row) {
             $key      = trim((string)($row['key'] ?? ''));
@@ -833,6 +739,7 @@ class RoomsCatalogConfigurator extends IPSModule
             $control  = (int)($row['controlId'] ?? 0);
             $status   = (int)($row['statusId'] ?? 0);
             $tilt     = (int)($row['tiltId'] ?? 0);
+            $domain   = trim((string)($row['domain'] ?? ''));
 
             $rowColor = '';
 
@@ -874,6 +781,60 @@ class RoomsCatalogConfigurator extends IPSModule
         return $rooms;
     }
 
+    private function buildFlatEntriesFromCatalog(array $catalog): array
+    {
+        $rooms = $this->extractRooms($catalog);
+        $rows  = [];
+
+        foreach ($rooms as $roomKey => $roomCfg) {
+            $roomLabel = $roomCfg['display'] ?? $roomKey;
+            $domains   = $roomCfg['domains'] ?? [];
+            if (!is_array($domains)) {
+                continue;
+            }
+
+            foreach ($domains as $domainKey => $domainCfg) {
+                if (!is_array($domainCfg)) {
+                    continue;
+                }
+
+                foreach ($domainCfg as $groupKey => $groupCfg) {
+                    if (!is_array($groupCfg)) {
+                        continue;
+                    }
+
+                    foreach ($groupCfg as $entryKey => $cfg) {
+                        if (!is_array($cfg)) {
+                            $cfg = [];
+                        }
+
+                        $rows[] = [
+                            'selected'   => false,
+                            'roomKey'    => (string)$roomKey,
+                            'roomLabel'  => (string)$roomLabel,
+                            'domain'     => (string)$domainKey,
+                            'group'      => (string)$groupKey,
+                            'key'        => (string)$entryKey,
+                            'label'      => (string)($cfg['label'] ?? ($cfg['name'] ?? '')),
+                            'entityId'   => (int)($cfg['entityId'] ?? 0),
+                            'entityName' => (string)($cfg['entityName'] ?? ''),
+                            'controlId'  => (int)($cfg['controlId'] ?? 0),
+                            'statusId'   => (int)($cfg['statusId'] ?? 0),
+                            'tiltId'     => (int)($cfg['tiltId'] ?? 0),
+                            'speechKey'  => (string)($cfg['speechKey'] ?? ''),
+                            'icon'       => (string)($cfg['icon'] ?? ''),
+                            'order'      => (int)($cfg['order'] ?? 0)
+                        ];
+                    }
+                }
+            }
+        }
+
+        $this->log('buildFlatEntriesFromCatalog(): rows=' . count($rows));
+
+        return $rows;
+    }
+
     private function loadRoomsCatalog(): array
     {
         $scriptId = $this->getActiveRoomsCatalogScriptID();
@@ -909,176 +870,7 @@ class RoomsCatalogConfigurator extends IPSModule
             $this->log('RoomsCatalog Top-Level-Keys: ' . implode(', ', array_keys($catalog)));
         }
 
-        $rooms = $this->extractRooms($catalog);
-        $this->log(sprintf(
-            'RoomsCatalog: Räume=%d Domains=%d',
-            count($rooms),
-            array_sum(array_map(static function ($r) {
-                return isset($r['domains']) && is_array($r['domains']) ? count($r['domains']) : 0;
-            }, $rooms))
-        ));
-
         return $catalog;
-    }
-
-    private function resetContextSelection(): void
-    {
-        $this->setSelectedRoomKey('');
-        $this->setSelectedDomainKey('');
-        $this->setSelectedGroupKey('');
-        $this->resetRuntimeEntries();
-    }
-
-    private function autoPopulateContextFromCatalog(): bool
-    {
-        $this->log('autoPopulateContextFromCatalog() START');
-
-        if ($this->populateEntriesForCurrentSelection()) {
-            $this->log('autoPopulateContextFromCatalog(): aktueller Kontext war gültig');
-            return true;
-        }
-
-        $catalogsToInspect = [
-            $this->loadRoomsCatalogEdit(),
-            $this->loadRoomsCatalog()
-        ];
-
-        foreach ($catalogsToInspect as $idx => $catalog) {
-            $src   = $idx === 0 ? 'EDIT' : 'PROD';
-            $rooms = $this->extractRooms($catalog);
-            if ($rooms === []) {
-                continue;
-            }
-
-            foreach ($rooms as $roomKey => $roomCfg) {
-                $domains = $roomCfg['domains'] ?? [];
-                if (!is_array($domains) || $domains === []) {
-                    continue;
-                }
-
-                foreach ($domains as $domainKey => $domainCfg) {
-                    if (!is_array($domainCfg) || $domainCfg === []) {
-                        continue;
-                    }
-
-                    foreach ($domainCfg as $groupKey => $groupCfg) {
-                        $entries = $this->buildEntriesFromCatalog(
-                            is_array($groupCfg) ? $groupCfg : [],
-                            (string)$roomKey,
-                            (string)$domainKey,
-                            (string)$groupKey
-                        );
-
-                        $this->setSelectedRoomKey((string)$roomKey);
-                        $this->setSelectedDomainKey((string)$domainKey);
-                        $this->setSelectedGroupKey((string)$groupKey);
-                        $this->setRuntimeEntries($entries);
-
-                        $this->log(sprintf(
-                            'autoPopulateContextFromCatalog(): erster Kontext gefunden (%s): room="%s", domain="%s", group="%s", entries=%d',
-                            $src,
-                            $roomKey,
-                            $domainKey,
-                            $groupKey,
-                            count($entries)
-                        ));
-
-                        return true;
-                    }
-                }
-            }
-        }
-
-        $this->log('autoPopulateContextFromCatalog(): kein Kontext gefunden');
-        $this->resetRuntimeEntries();
-        return false;
-    }
-
-    private function shouldInitializeContextFromCatalog(): bool
-    {
-        $hasScript = $this->getActiveRoomsCatalogScriptID() > 0
-            || $this->getActiveRoomsCatalogEditScriptID() > 0;
-
-        if (!$hasScript) {
-            $this->log('shouldInitializeContextFromCatalog(): kein Script gesetzt');
-            return false;
-        }
-
-        if (!$this->hasCompleteContextSelection()) {
-            $this->log('shouldInitializeContextFromCatalog(): Kontext unvollständig → true');
-            return true;
-        }
-
-        $entries = $this->getRuntimeEntries();
-
-        if ($entries === []) {
-            $this->log('shouldInitializeContextFromCatalog(): Kontext leer (entries==[]) → true');
-            return true;
-        }
-
-        $this->log('shouldInitializeContextFromCatalog(): Kontext vorhanden → false');
-        return false;
-    }
-
-    private function hasCompleteContextSelection(): bool
-    {
-        return $this->getSelectedRoomKey() !== ''
-            && $this->getSelectedDomainKey() !== ''
-            && $this->getSelectedGroupKey() !== '';
-    }
-
-    private function ensureContextSelection(): bool
-    {
-        if ($this->hasCompleteContextSelection()) {
-            return true;
-        }
-
-        if (!$this->autoPopulateContextFromCatalog()) {
-            return false;
-        }
-
-        $this->ReloadForm();
-
-        return true;
-    }
-
-    private function populateEntriesForCurrentSelection(): bool
-    {
-        $roomKey = $this->getSelectedRoomKey();
-        $domain  = $this->getSelectedDomainKey();
-        $group   = $this->getSelectedGroupKey();
-
-        $this->log(sprintf(
-            'populateEntriesForCurrentSelection(): room="%s", domain="%s", group="%s"',
-            $roomKey,
-            $domain,
-            $group
-        ));
-
-        if ($roomKey === '' || $domain === '' || $group === '') {
-            $this->log('populateEntriesForCurrentSelection(): Kontext unvollständig → false');
-            return false;
-        }
-
-        $catalog  = $this->loadRoomsCatalogEdit();
-        $groupCfg = $catalog[$roomKey]['domains'][$domain][$group] ?? null;
-
-        if (!is_array($groupCfg)) {
-            $this->log('populateEntriesForCurrentSelection(): im EDIT nicht gefunden, versuche PROD');
-            $catalog  = $this->loadRoomsCatalog();
-            $groupCfg = $catalog[$roomKey]['domains'][$domain][$group] ?? null;
-            if (!is_array($groupCfg)) {
-                $this->log('populateEntriesForCurrentSelection(): auch in PROD nicht gefunden → false');
-                return false;
-            }
-        }
-
-        $entries = $this->buildEntriesFromCatalog($groupCfg, $roomKey, $domain, $group);
-        $this->setRuntimeEntries($entries);
-
-        $this->log('populateEntriesForCurrentSelection(): entries=' . count($entries));
-
-        return true;
     }
 
     private function loadRoomsCatalogEdit(): array
@@ -1116,15 +908,6 @@ class RoomsCatalogConfigurator extends IPSModule
             $this->log('RoomsCatalogEdit Top-Level-Keys: ' . implode(', ', array_keys($catalog)));
         }
 
-        $rooms = $this->extractRooms($catalog);
-        $this->log(sprintf(
-            'RoomsCatalogEdit: Räume=%d Domains=%d',
-            count($rooms),
-            array_sum(array_map(static function ($r) {
-                return isset($r['domains']) && is_array($r['domains']) ? count($r['domains']) : 0;
-            }, $rooms))
-        ));
-
         return $catalog;
     }
 
@@ -1139,104 +922,6 @@ class RoomsCatalogConfigurator extends IPSModule
         $php = "<?php\nreturn " . var_export($catalog, true) . ";\n";
         IPS_SetScriptContent($scriptId, $php);
         $this->log('writeRoomsCatalogEdit(): ScriptID=' . $scriptId . ', length=' . strlen($php));
-    }
-
-    private function buildRoomOptions(array $rooms): array
-    {
-        $options   = [];
-        $options[] = [
-            'caption' => '– bitte wählen –',
-            'value'   => ''
-        ];
-
-        foreach ($rooms as $key => $room) {
-            $caption = $room['display'] ?? (string)$key;
-            $options[] = [
-                'caption' => $caption . ' [' . $key . ']',
-                'value'   => (string)$key
-            ];
-        }
-
-        return $options;
-    }
-
-    private function buildDomainOptions(array $rooms, string $selectedRoom): array
-    {
-        $options   = [];
-        $options[] = [
-            'caption' => '– bitte wählen –',
-            'value'   => ''
-        ];
-
-        if ($selectedRoom === '' || !isset($rooms[$selectedRoom]['domains'])) {
-            return $options;
-        }
-
-        $domains = $rooms[$selectedRoom]['domains'];
-
-        foreach ($domains as $key => $_domainCfg) {
-            $options[] = [
-                'caption' => (string)$key,
-                'value'   => (string)$key
-            ];
-        }
-
-        return $options;
-    }
-
-    private function buildGroupOptions(array $rooms, string $selectedRoom, string $selectedDomain): array
-    {
-        $options   = [];
-        $options[] = [
-            'caption' => '– bitte wählen –',
-            'value'   => ''
-        ];
-
-        if ($selectedRoom === '' || $selectedDomain === '') {
-            return $options;
-        }
-
-        if (!isset($rooms[$selectedRoom]['domains'][$selectedDomain])) {
-            return $options;
-        }
-
-        $domainCfg = $rooms[$selectedRoom]['domains'][$selectedDomain];
-
-        foreach ($domainCfg as $groupKey => $_groupCfg) {
-            $options[] = [
-                'caption' => (string)$groupKey,
-                'value'   => (string)$groupKey
-            ];
-        }
-
-        return $options;
-    }
-
-    private function buildEntriesFromCatalog(array $groupCfg, string $roomKey, string $domain, string $group): array
-    {
-        $rows = [];
-
-        foreach ($groupCfg as $entryKey => $cfg) {
-            if (!is_array($cfg)) {
-                $cfg = [];
-            }
-
-            $rows[] = [
-                'selected'   => false,
-                'key'        => (string)$entryKey,
-                'label'      => (string)($cfg['label'] ?? ($cfg['name'] ?? '')),
-                'entityId'   => (int)($cfg['entityId'] ?? 0),
-                'entityName' => (string)($cfg['entityName'] ?? ''),
-                'controlId'  => (int)($cfg['controlId'] ?? 0),
-                'statusId'   => (int)($cfg['statusId'] ?? 0),
-                'tiltId'     => (int)($cfg['tiltId'] ?? 0),
-                'speechKey'  => (string)($cfg['speechKey'] ?? ''),
-                'icon'       => (string)($cfg['icon'] ?? ''),
-                'order'      => (int)($cfg['order'] ?? 0)
-            ];
-        }
-
-        return $rows;
     }
 
     private function normalizeCfg(array $cfg): array
@@ -1260,28 +945,18 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         $this->syncAttributeInteger('RuntimeRoomsCatalogScriptID', $this->ReadPropertyInteger('RoomsCatalogScriptID'));
         $this->syncAttributeInteger('RuntimeRoomsCatalogEditScriptID', $this->ReadPropertyInteger('RoomsCatalogEditScriptID'));
-        $this->syncAttributeString('RuntimeSelectedRoom', $this->ReadPropertyString('SelectedRoom'));
-        $this->syncAttributeString('RuntimeSelectedDomain', $this->ReadPropertyString('SelectedDomain'));
-        $this->syncAttributeString('RuntimeSelectedGroup', $this->ReadPropertyString('SelectedGroup'));
 
+        // Property Entries nutzen wir aktuell nicht mehr aktiv; könnte später als Persistenz genutzt werden
         $entriesProp = $this->ReadPropertyString('Entries');
-        if ($entriesProp === '' || $entriesProp === null) {
-            $entriesProp = '[]';
+        if ($entriesProp !== '' && $entriesProp !== null) {
+            $this->WriteAttributeString('RuntimeEntries', $entriesProp);
         }
-        $this->syncAttributeString('RuntimeEntries', $entriesProp);
     }
 
     private function syncAttributeInteger(string $attribute, int $value): void
     {
         if ($this->ReadAttributeInteger($attribute) !== $value) {
             $this->WriteAttributeInteger($attribute, $value);
-        }
-    }
-
-    private function syncAttributeString(string $attribute, string $value): void
-    {
-        if ($this->ReadAttributeString($attribute) !== $value) {
-            $this->WriteAttributeString($attribute, $value);
         }
     }
 
@@ -1317,54 +992,6 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->WriteAttributeInteger('RuntimeRoomsCatalogEditScriptID', $scriptId);
     }
 
-    private function getSelectedRoomKey(): string
-    {
-        $room = $this->ReadAttributeString('RuntimeSelectedRoom');
-        if ($room !== '') {
-            return $room;
-        }
-        $room = $this->ReadPropertyString('SelectedRoom');
-        $this->WriteAttributeString('RuntimeSelectedRoom', $room);
-        return $room;
-    }
-
-    private function getSelectedDomainKey(): string
-    {
-        $domain = $this->ReadAttributeString('RuntimeSelectedDomain');
-        if ($domain !== '') {
-            return $domain;
-        }
-        $domain = $this->ReadPropertyString('SelectedDomain');
-        $this->WriteAttributeString('RuntimeSelectedDomain', $domain);
-        return $domain;
-    }
-
-    private function getSelectedGroupKey(): string
-    {
-        $group = $this->ReadAttributeString('RuntimeSelectedGroup');
-        if ($group !== '') {
-            return $group;
-        }
-        $group = $this->ReadPropertyString('SelectedGroup');
-        $this->WriteAttributeString('RuntimeSelectedGroup', $group);
-        return $group;
-    }
-
-    private function setSelectedRoomKey(string $room): void
-    {
-        $this->WriteAttributeString('RuntimeSelectedRoom', $room);
-    }
-
-    private function setSelectedDomainKey(string $domain): void
-    {
-        $this->WriteAttributeString('RuntimeSelectedDomain', $domain);
-    }
-
-    private function setSelectedGroupKey(string $group): void
-    {
-        $this->WriteAttributeString('RuntimeSelectedGroup', $group);
-    }
-
     private function getRuntimeEntries(): array
     {
         $json = $this->ReadAttributeString('RuntimeEntries');
@@ -1390,10 +1017,5 @@ class RoomsCatalogConfigurator extends IPSModule
             $entries = [];
         }
         $this->setRuntimeEntries($entries);
-    }
-
-    private function resetRuntimeEntries(): void
-    {
-        $this->WriteAttributeString('RuntimeEntries', '[]');
     }
 }
