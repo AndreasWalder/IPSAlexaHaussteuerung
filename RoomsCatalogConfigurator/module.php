@@ -21,11 +21,9 @@
  * - Zeilenfärbung (rowColor) nach Vollständigkeit: rot/gelb/normal
  * - Diff-Vorschau produktiver RoomsCatalog vs. Edit (Textausgabe)
  *
- * 2025-11-16: Struktur-Normalisierung & Logging
- * - Unterstützt Storage ohne "rooms"-Key (buero, kueche, ..., global)
- * - Interne Normalisierung auf $catalog['rooms']
- * - Schreibweg konvertiert zurück ins flache Format
- * - Diagnose-Logging über IPS_LogMessage("Alexa", "RCC-DEBUG: ...")
+ * 2025-11-16: RoomsCatalog-Normalisierung + Logging
+ * - Unterstützt Top-Level-Räume (buero, kueche, …, global) ODER ['rooms'=>[…]]
+ * - Alle wichtigen Schritte loggen auf Kanal "Alexa" (RCC-DEBUG)
  */
 
 declare(strict_types=1);
@@ -33,6 +31,19 @@ declare(strict_types=1);
 class RoomsCatalogConfigurator extends IPSModule
 {
     private bool $autoInitializingContext = false;
+
+    // =====================================================================
+    // Logging-Helfer
+    // =====================================================================
+
+    private function log(string $msg): void
+    {
+        IPS_LogMessage('Alexa', 'RCC-DEBUG: ' . $msg);
+    }
+
+    // =====================================================================
+    // Standard IPS-Methoden
+    // =====================================================================
 
     public function Create()
     {
@@ -50,7 +61,7 @@ class RoomsCatalogConfigurator extends IPSModule
         // Eintragsliste für aktuellen Kontext (als JSON)
         $this->RegisterPropertyString('Entries', '[]');
 
-        // Laufzeit-Status (für sofortige Formular-Reaktionen ohne Apply)
+        // Laufzeit-Status
         $this->RegisterAttributeInteger('RuntimeRoomsCatalogScriptID', 0);
         $this->RegisterAttributeInteger('RuntimeRoomsCatalogEditScriptID', 0);
         $this->RegisterAttributeString('RuntimeSelectedRoom', '');
@@ -63,26 +74,43 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         parent::ApplyChanges();
 
+        $this->log('==============================');
+        $this->log('ApplyChanges START');
+
         $this->synchronizeRuntimeStateFromProperties();
 
-        $this->runDiagnostics();
+        $this->log(sprintf(
+            'Instanz-Konfiguration: {"Entries":"%s","RoomsCatalogEditScriptID":%d,"RoomsCatalogScriptID":%d,"SelectedDomain":"%s","SelectedGroup":"%s","SelectedRoom":"%s"}',
+            $this->ReadPropertyString('Entries'),
+            $this->ReadPropertyInteger('RoomsCatalogEditScriptID'),
+            $this->ReadPropertyInteger('RoomsCatalogScriptID'),
+            $this->ReadPropertyString('SelectedDomain'),
+            $this->ReadPropertyString('SelectedGroup'),
+            $this->ReadPropertyString('SelectedRoom')
+        ));
 
         if ($this->autoInitializingContext) {
+            $this->log('ApplyChanges: autoInitializingContext=true → Abbruch');
             return;
         }
 
         if ($this->shouldInitializeContextFromCatalog()) {
+            $this->log('ApplyChanges: shouldInitializeContextFromCatalog() = true → autoPopulateContextFromCatalog()');
             $this->autoInitializingContext = true;
             $initialized                   = $this->autoPopulateContextFromCatalog();
             $this->autoInitializingContext = false;
 
+            $this->log('ApplyChanges: autoPopulateContextFromCatalog() result=' . ($initialized ? 'true' : 'false'));
+
             if ($initialized) {
-                $this->log('autoPopulateContextFromCatalog(): erster Kontext erfolgreich geladen');
                 $this->ReloadForm();
-            } else {
-                $this->log('autoPopulateContextFromCatalog(): kein Kontext gefunden');
             }
+        } else {
+            $this->log('ApplyChanges: Kein Initialisierungsbedarf.');
         }
+
+        $this->log('ApplyChanges ENDE');
+        $this->log('==============================');
     }
 
     public function RequestAction($Ident, $Value)
@@ -124,8 +152,19 @@ class RoomsCatalogConfigurator extends IPSModule
 
     public function GetConfigurationForm()
     {
+        $this->log('START RoomsCatalog-Diagnose');
+
         $roomsCatalog = $this->loadRoomsCatalog();
         $rooms        = $roomsCatalog['rooms'] ?? [];
+
+        $this->log('RoomsCatalog Top-Level-Keys: ' . implode(', ', array_keys($roomsCatalog)));
+        $this->log(sprintf(
+            'RoomsCatalog: Räume=%d Domains=%d',
+            count($rooms),
+            array_sum(array_map(static function ($r) {
+                return isset($r['domains']) && is_array($r['domains']) ? count($r['domains']) : 0;
+            }, $rooms))
+        ));
 
         $selectedRoom   = $this->getSelectedRoomKey();
         $selectedDomain = $this->getSelectedDomainKey();
@@ -136,6 +175,18 @@ class RoomsCatalogConfigurator extends IPSModule
         $groupOptions  = $this->buildGroupOptions($rooms, $selectedRoom, $selectedDomain);
 
         $entries = $this->getRuntimeEntries();
+
+        $this->log(sprintf(
+            'RoomsCatalogEdit Top-Level-Keys: %s',
+            implode(', ', array_keys($this->loadRoomsCatalogEdit()))
+        ));
+        $this->log(sprintf(
+            'Aktueller Kontext: room="%s", domain="%s", group="%s", entries=%d',
+            $selectedRoom,
+            $selectedDomain,
+            $selectedGroup,
+            count($entries)
+        ));
 
         // Zeilenfärbung nach Vollständigkeit anwenden
         $entries = $this->applyRowColors($entries, $selectedDomain, $selectedGroup);
@@ -395,12 +446,14 @@ class RoomsCatalogConfigurator extends IPSModule
         return json_encode($form);
     }
 
-    // ========================================================================================
-    // Public API (wird aus dem Formular aufgerufen)
-    // ========================================================================================
+    // =====================================================================
+    // Public API (Form-Buttons)
+    // =====================================================================
 
     public function LoadContext()
     {
+        $this->log('RCC_LoadContext()');
+
         if (!$this->ensureContextSelection()) {
             echo 'Bitte zuerst Raum, Domain und Untergruppe auswählen (RoomsCatalog Script wählen?).';
             return;
@@ -431,6 +484,8 @@ class RoomsCatalogConfigurator extends IPSModule
 
     public function LoadContextFromProductive()
     {
+        $this->log('RCC_LoadContextFromProductive()');
+
         if (!$this->ensureContextSelection()) {
             echo 'Bitte zuerst Raum, Domain und Untergruppe auswählen (RoomsCatalog Script wählen?).';
             return;
@@ -462,6 +517,8 @@ class RoomsCatalogConfigurator extends IPSModule
 
     public function CreateContextFromProductive()
     {
+        $this->log('RCC_CreateContextFromProductive()');
+
         if (!$this->ensureContextSelection()) {
             echo 'Bitte zuerst Raum, Domain und Untergruppe auswählen (RoomsCatalog Script wählen?).';
             return;
@@ -510,6 +567,8 @@ class RoomsCatalogConfigurator extends IPSModule
 
     public function SaveContext(string $entriesJson)
     {
+        $this->log('RCC_SaveContext() entriesJson length=' . strlen($entriesJson));
+
         if (!$this->ensureContextSelection()) {
             echo 'Bitte zuerst Raum, Domain und Untergruppe auswählen (RoomsCatalog Script wählen?).';
             return;
@@ -591,6 +650,8 @@ class RoomsCatalogConfigurator extends IPSModule
 
     public function ApplyEditToProductive()
     {
+        $this->log('RCC_ApplyEditToProductive()');
+
         $prodId = $this->getActiveRoomsCatalogScriptID();
         $editId = $this->getActiveRoomsCatalogEditScriptID();
 
@@ -616,6 +677,8 @@ class RoomsCatalogConfigurator extends IPSModule
 
     public function ShowDiff()
     {
+        $this->log('RCC_ShowDiff()');
+
         $prod  = $this->loadRoomsCatalog();
         $edit  = $this->loadRoomsCatalogEdit();
 
@@ -695,12 +758,19 @@ class RoomsCatalogConfigurator extends IPSModule
         }
     }
 
-    // ========================================================================================
+    // =====================================================================
     // Interne Helfer
-    // ========================================================================================
+    // =====================================================================
 
     private function applySelectedObjectToEntries(int $objectId, string $entriesJson, string $mode): void
     {
+        $this->log(sprintf(
+            'applySelectedObjectToEntries(mode=%s, objectId=%d, len=%d)',
+            $mode,
+            $objectId,
+            strlen($entriesJson)
+        ));
+
         if ($objectId <= 0 || !IPS_ObjectExists($objectId)) {
             echo 'Kein gültiges Objekt ausgewählt.';
             return;
@@ -785,52 +855,280 @@ class RoomsCatalogConfigurator extends IPSModule
         return $entries;
     }
 
+    private function normalizeRoomsCatalogArray(array $catalog): array
+    {
+        // Falls es schon ein ['rooms'=>…] ist → direkt verwenden
+        if (isset($catalog['rooms']) && is_array($catalog['rooms'])) {
+            return $catalog;
+        }
+
+        // Ansonsten nehmen wir den gesamten Array als rooms
+        // (deine Struktur: buero, kueche, …, global)
+        $this->log('normalizeRoomsCatalogArray(): Top-Level ohne "rooms" → wrap in rooms[]');
+
+        return [
+            'rooms' => $catalog
+        ];
+    }
+
     private function loadRoomsCatalog(): array
     {
         $scriptId = $this->getActiveRoomsCatalogScriptID();
         if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) {
-            $this->log('loadRoomsCatalog(): kein gültiges Script gesetzt');
-            return [];
+            $this->log('RoomsCatalog: ScriptID leer oder existiert nicht');
+            return ['rooms' => []];
         }
 
         $file = IPS_GetScriptFile($scriptId);
         if ($file === '' || !file_exists($file)) {
-            $this->log('loadRoomsCatalog(): Datei nicht gefunden für ScriptId ' . $scriptId);
-            return [];
+            $this->log('RoomsCatalog: ScriptFile nicht gefunden: ' . $file);
+            return ['rooms' => []];
         }
 
-        $storage = @require $file;
-        if (!is_array($storage)) {
-            $this->log('loadRoomsCatalog(): require() ergab kein Array');
-            return [];
+        $this->log('RoomsCatalog require() file=' . $file);
+        $catalog = @require $file;
+        $this->log('RoomsCatalog require() type=' . gettype($catalog));
+
+        if (!is_array($catalog)) {
+            $this->log('RoomsCatalog: require() ergab kein Array');
+            return ['rooms' => []];
         }
 
-        $catalog = $this->catalogFromStorage($storage);
+        if (count($catalog) <= 50) {
+            $this->log('RoomsCatalog Top-Level-Keys: ' . implode(', ', array_keys($catalog)));
+        }
+
+        $catalog = $this->normalizeRoomsCatalogArray($catalog);
+
+        $rooms = $catalog['rooms'] ?? [];
+        $this->log(sprintf(
+            'RoomsCatalog: Räume=%d Domains=%d Licht-Einträge=%d Jalousie-Einträge=%d',
+            count($rooms),
+            array_sum(array_map(static function ($r) {
+                return isset($r['domains']) && is_array($r['domains']) ? count($r['domains']) : 0;
+            }, $rooms)),
+            array_sum(array_map(static function ($r) {
+                $d = $r['domains']['licht'] ?? [];
+                if (!is_array($d)) {
+                    return 0;
+                }
+                $sum = 0;
+                foreach ($d as $g) {
+                    if (is_array($g)) {
+                        $sum += count($g);
+                    }
+                }
+                return $sum;
+            }, $rooms)),
+            array_sum(array_map(static function ($r) {
+                $d = $r['domains']['jalousie'] ?? [];
+                if (!is_array($d)) {
+                    return 0;
+                }
+                return count($d);
+            }, $rooms))
+        ));
 
         return $catalog;
+    }
+
+    private function resetContextSelection(): void
+    {
+        $this->setSelectedRoomKey('');
+        $this->setSelectedDomainKey('');
+        $this->setSelectedGroupKey('');
+        $this->resetRuntimeEntries();
+    }
+
+    private function autoPopulateContextFromCatalog(): bool
+    {
+        $this->log('autoPopulateContextFromCatalog() START');
+
+        if ($this->populateEntriesForCurrentSelection()) {
+            $this->log('autoPopulateContextFromCatalog(): aktueller Kontext war gültig');
+            return true;
+        }
+
+        $catalogsToInspect = [
+            $this->loadRoomsCatalogEdit(),
+            $this->loadRoomsCatalog()
+        ];
+
+        foreach ($catalogsToInspect as $idx => $catalog) {
+            $src = $idx === 0 ? 'EDIT' : 'PROD';
+
+            if (!isset($catalog['rooms']) || !is_array($catalog['rooms'])) {
+                continue;
+            }
+
+            foreach ($catalog['rooms'] as $roomKey => $roomCfg) {
+                $domains = $roomCfg['domains'] ?? [];
+                if (!is_array($domains) || $domains === []) {
+                    continue;
+                }
+
+                foreach ($domains as $domainKey => $domainCfg) {
+                    if (!is_array($domainCfg) || $domainCfg === []) {
+                        continue;
+                    }
+
+                    foreach ($domainCfg as $groupKey => $groupCfg) {
+                        $entries = $this->buildEntriesFromCatalog(
+                            is_array($groupCfg) ? $groupCfg : [],
+                            (string)$roomKey,
+                            (string)$domainKey,
+                            (string)$groupKey
+                        );
+
+                        $this->setSelectedRoomKey((string)$roomKey);
+                        $this->setSelectedDomainKey((string)$domainKey);
+                        $this->setSelectedGroupKey((string)$groupKey);
+                        $this->setRuntimeEntries($entries);
+
+                        $this->log(sprintf(
+                            'autoPopulateContextFromCatalog(): erster Kontext gefunden (%s): room="%s", domain="%s", group="%s", entries=%d',
+                            $src,
+                            $roomKey,
+                            $domainKey,
+                            $groupKey,
+                            count($entries)
+                        ));
+
+                        return true;
+                    }
+                }
+            }
+        }
+
+        $this->log('autoPopulateContextFromCatalog(): kein Kontext gefunden');
+        $this->resetRuntimeEntries();
+        return false;
+    }
+
+    private function shouldInitializeContextFromCatalog(): bool
+    {
+        $hasScript = $this->getActiveRoomsCatalogScriptID() > 0
+            || $this->getActiveRoomsCatalogEditScriptID() > 0;
+
+        if (!$hasScript) {
+            $this->log('shouldInitializeContextFromCatalog(): kein Script gesetzt');
+            return false;
+        }
+
+        if (!$this->hasCompleteContextSelection()) {
+            $this->log('shouldInitializeContextFromCatalog(): Kontext unvollständig → true');
+            return true;
+        }
+
+        $entries = $this->getRuntimeEntries();
+
+        if ($entries === []) {
+            $this->log('shouldInitializeContextFromCatalog(): Kontext leer (entries==[]) → true');
+            return true;
+        }
+
+        $this->log('shouldInitializeContextFromCatalog(): Kontext vorhanden → false');
+        return false;
+    }
+
+    private function hasCompleteContextSelection(): bool
+    {
+        return $this->getSelectedRoomKey() !== ''
+            && $this->getSelectedDomainKey() !== ''
+            && $this->getSelectedGroupKey() !== '';
+    }
+
+    private function ensureContextSelection(): bool
+    {
+        if ($this->hasCompleteContextSelection()) {
+            return true;
+        }
+
+        if (!$this->autoPopulateContextFromCatalog()) {
+            return false;
+        }
+
+        $this->ReloadForm();
+
+        return true;
+    }
+
+    private function populateEntriesForCurrentSelection(): bool
+    {
+        $roomKey = $this->getSelectedRoomKey();
+        $domain  = $this->getSelectedDomainKey();
+        $group   = $this->getSelectedGroupKey();
+
+        $this->log(sprintf(
+            'populateEntriesForCurrentSelection(): room="%s", domain="%s", group="%s"',
+            $roomKey,
+            $domain,
+            $group
+        ));
+
+        if ($roomKey === '' || $domain === '' || $group === '') {
+            $this->log('populateEntriesForCurrentSelection(): Kontext unvollständig → false');
+            return false;
+        }
+
+        $catalog  = $this->loadRoomsCatalogEdit();
+        $groupCfg = $catalog['rooms'][$roomKey]['domains'][$domain][$group] ?? null;
+
+        if (!is_array($groupCfg)) {
+            $this->log('populateEntriesForCurrentSelection(): im EDIT nicht gefunden, versuche PROD');
+            $catalog  = $this->loadRoomsCatalog();
+            $groupCfg = $catalog['rooms'][$roomKey]['domains'][$domain][$group] ?? null;
+            if (!is_array($groupCfg)) {
+                $this->log('populateEntriesForCurrentSelection(): auch in PROD nicht gefunden → false');
+                return false;
+            }
+        }
+
+        $entries = $this->buildEntriesFromCatalog($groupCfg, $roomKey, $domain, $group);
+        $this->setRuntimeEntries($entries);
+
+        $this->log('populateEntriesForCurrentSelection(): entries=' . count($entries));
+
+        return true;
     }
 
     private function loadRoomsCatalogEdit(): array
     {
         $scriptId = $this->getActiveRoomsCatalogEditScriptID();
         if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) {
-            $this->log('loadRoomsCatalogEdit(): Edit-Script fehlt, Fallback produktiv');
+            $this->log('RoomsCatalogEdit: kein Script → Fallback PROD');
             return $this->loadRoomsCatalog();
         }
 
         $file = IPS_GetScriptFile($scriptId);
         if ($file === '' || !file_exists($file)) {
-            $this->log('loadRoomsCatalogEdit(): Datei nicht gefunden, Fallback produktiv');
+            $this->log('RoomsCatalogEdit: ScriptFile nicht gefunden: ' . $file . ' → Fallback PROD');
             return $this->loadRoomsCatalog();
         }
 
-        $storage = @require $file;
-        if (!is_array($storage)) {
-            $this->log('loadRoomsCatalogEdit(): require() ergab kein Array, Fallback produktiv');
+        $this->log('RoomsCatalogEdit require() file=' . $file);
+        $catalog = @require $file;
+        $this->log('RoomsCatalogEdit require() type=' . gettype($catalog));
+
+        if (!is_array($catalog)) {
+            $this->log('RoomsCatalogEdit: require() ergab kein Array → Fallback PROD');
             return $this->loadRoomsCatalog();
         }
 
-        $catalog = $this->catalogFromStorage($storage);
+        if (count($catalog) <= 50) {
+            $this->log('RoomsCatalogEdit Top-Level-Keys: ' . implode(', ', array_keys($catalog)));
+        }
+
+        $catalog = $this->normalizeRoomsCatalogArray($catalog);
+
+        $rooms = $catalog['rooms'] ?? [];
+        $this->log(sprintf(
+            'RoomsCatalogEdit: Räume=%d Domains=%d',
+            count($rooms),
+            array_sum(array_map(static function ($r) {
+                return isset($r['domains']) && is_array($r['domains']) ? count($r['domains']) : 0;
+            }, $rooms))
+        ));
 
         return $catalog;
     }
@@ -843,12 +1141,9 @@ class RoomsCatalogConfigurator extends IPSModule
             return;
         }
 
-        $storage = $this->catalogToStorage($catalog);
-
-        $php = "<?php\nreturn " . var_export($storage, true) . ";\n";
+        $php = "<?php\nreturn " . var_export($catalog, true) . ";\n";
         IPS_SetScriptContent($scriptId, $php);
-
-        $this->log('writeRoomsCatalogEdit(): ScriptId=' . $scriptId . ' gespeichert');
+        $this->log('writeRoomsCatalogEdit(): ScriptID=' . $scriptId . ', length=' . strlen($php));
     }
 
     private function buildRoomOptions(array $rooms): array
@@ -860,7 +1155,7 @@ class RoomsCatalogConfigurator extends IPSModule
         ];
 
         foreach ($rooms as $key => $room) {
-            $caption   = $room['display'] ?? (string)$key;
+            $caption = $room['display'] ?? (string)$key;
             $options[] = [
                 'caption' => $caption . ' [' . $key . ']',
                 'value'   => (string)$key
@@ -1006,6 +1301,11 @@ class RoomsCatalogConfigurator extends IPSModule
         return $scriptId;
     }
 
+    private function setActiveRoomsCatalogScriptID(int $scriptId): void
+    {
+        $this->WriteAttributeInteger('RuntimeRoomsCatalogScriptID', $scriptId);
+    }
+
     private function getActiveRoomsCatalogEditScriptID(): int
     {
         $scriptId = $this->ReadAttributeInteger('RuntimeRoomsCatalogEditScriptID');
@@ -1017,6 +1317,11 @@ class RoomsCatalogConfigurator extends IPSModule
         return $scriptId;
     }
 
+    private function setActiveRoomsCatalogEditScriptID(int $scriptId): void
+    {
+        $this->WriteAttributeInteger('RuntimeRoomsCatalogEditScriptID', $scriptId);
+    }
+
     private function getSelectedRoomKey(): string
     {
         $room = $this->ReadAttributeString('RuntimeSelectedRoom');
@@ -1024,8 +1329,6 @@ class RoomsCatalogConfigurator extends IPSModule
             return $room;
         }
         $room = $this->ReadPropertyString('SelectedRoom');
-        $this->WriteAttribute
-
         $this->WriteAttributeString('RuntimeSelectedRoom', $room);
         return $room;
     }
