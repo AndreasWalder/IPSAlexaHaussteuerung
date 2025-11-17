@@ -26,9 +26,14 @@
  * - Liste enthält alle Räume / Domains / Gruppen
  * - Filter: Raum + Domain (arbeiten nur auf Anzeige)
  * - Speichern aktualisiert RoomsCatalogEdit strukturiert je Raum/Domain/Gruppe
+ *
  * 2025-11-17: Fix WritePropertyString / Filter-Position
  * - WritePropertyString-Aufrufe entfernt (nur Attribute für Runtime)
  * - Filterzeile unter "Einträge (alle Räume / Domains)" verschoben
+ *
+ * 2025-11-17: Filter aus RuntimeEntries
+ * - Raum-/Domain-Filter werden aus der Eintragsliste gebaut
+ *   (unabhängig vom geladenen Catalog)
  */
 
 declare(strict_types=1);
@@ -39,18 +44,13 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         parent::Create();
 
-        // Scripts
         $this->RegisterPropertyInteger('RoomsCatalogScriptID', 0);
         $this->RegisterPropertyInteger('RoomsCatalogEditScriptID', 0);
 
-        // Vollständige Eintragsliste (flach) als JSON (nur als Startwert)
         $this->RegisterPropertyString('Entries', '[]');
-
-        // Anzeige-Filter (Properties existieren nur für evtl. spätere Nutzung)
         $this->RegisterPropertyString('FilterRoom', '');
         $this->RegisterPropertyString('FilterDomain', '');
 
-        // Runtime-Status
         $this->RegisterAttributeInteger('RuntimeRoomsCatalogScriptID', 0);
         $this->RegisterAttributeInteger('RuntimeRoomsCatalogEditScriptID', 0);
         $this->RegisterAttributeString('RuntimeEntries', '[]');
@@ -66,7 +66,6 @@ class RoomsCatalogConfigurator extends IPSModule
 
         $this->synchronizeRuntimeStateFromProperties();
 
-        // beim ersten Mal / nach Script-Wechsel: alles laden
         $entries = $this->getRuntimeEntries();
         if ($entries === []) {
             $this->logDebug('ApplyChanges: RuntimeEntries leer → lade aus Catalog');
@@ -110,29 +109,25 @@ class RoomsCatalogConfigurator extends IPSModule
 
     public function GetConfigurationForm()
     {
-        $catalogEdit = $this->loadRoomsCatalogEdit();
-        if ($catalogEdit === []) {
-            $catalogEdit = $this->loadRoomsCatalog();
-        }
-
-        $rooms        = $this->extractRoomsFromCatalog($catalogEdit);
-        $roomOptions  = $this->buildRoomFilterOptions($rooms);
-        $domainOptions = $this->buildDomainFilterOptions($rooms);
+        $allEntries = $this->getRuntimeEntries();
+        $this->logDebug('GetConfigurationForm: RuntimeEntries total=' . count($allEntries));
 
         $filterRoom   = $this->getFilterRoom();
         $filterDomain = $this->getFilterDomain();
 
-        $allEntries = $this->getRuntimeEntries();
-        $this->logDebug('GetConfigurationForm: RuntimeEntries total=' . count($allEntries));
+        $roomOptions    = $this->buildRoomFilterOptionsFromEntries($allEntries);
+        $domainOptions  = $this->buildDomainFilterOptionsFromEntries($allEntries);
 
-        $entries = $this->applyFilters($allEntries, $filterRoom, $filterDomain);
         $this->logDebug(
             'GetConfigurationForm: FilterRoom="' . $filterRoom .
             '", FilterDomain="' . $filterDomain .
-            '", sichtbare Einträge=' . count($entries)
+            '", RoomsOptionCount=' . count($roomOptions) .
+            ', DomainOptionCount=' . count($domainOptions)
         );
 
-        // Zeilenfärbung nach Vollständigkeit
+        $entries = $this->applyFilters($allEntries, $filterRoom, $filterDomain);
+        $this->logDebug('GetConfigurationForm: sichtbare Einträge=' . count($entries));
+
         $entries = $this->applyRowColors($entries);
 
         $form = [
@@ -388,7 +383,7 @@ class RoomsCatalogConfigurator extends IPSModule
     }
 
     // ========================================================================================
-    // Public API für Formular (Buttons)
+    // Public API (Buttons)
     // ========================================================================================
 
     public function ReloadAll()
@@ -693,7 +688,6 @@ class RoomsCatalogConfigurator extends IPSModule
                 continue;
             }
             if (!isset($cfg['display'])) {
-                // global / andere Meta-Keys
                 continue;
             }
             $rooms[$key] = $cfg;
@@ -737,7 +731,6 @@ class RoomsCatalogConfigurator extends IPSModule
                             );
                         }
                     } else {
-                        // einfacher Eintrag (z.B. jalousie fenster, heizung)
                         $entryKey = (string)$groupKey;
                         $cfg      = $groupCfg;
                         $rows[]   = $this->rowFromCfg(
@@ -783,7 +776,7 @@ class RoomsCatalogConfigurator extends IPSModule
             return false;
         }
 
-        $allArrays   = true;
+        $allArrays    = true;
         $hasTitleLike = false;
 
         foreach ($groupCfg as $v) {
@@ -920,44 +913,54 @@ class RoomsCatalogConfigurator extends IPSModule
         return $out;
     }
 
-    private function buildRoomFilterOptions(array $rooms): array
+    private function buildRoomFilterOptionsFromEntries(array $entries): array
     {
-        $options = [
-            ['caption' => 'Alle', 'value' => '']
-        ];
+        $rooms = [];
+        foreach ($entries as $row) {
+            $key = trim((string)($row['roomKey'] ?? ''));
+            if ($key === '') {
+                continue;
+            }
+            $label = trim((string)($row['roomLabel'] ?? $key));
+            $rooms[$key] = $label;
+        }
 
-        foreach ($rooms as $key => $room) {
-            $caption   = $room['display'] ?? (string)$key;
+        ksort($rooms);
+
+        $options   = [];
+        $options[] = ['caption' => 'Alle', 'value' => ''];
+
+        foreach ($rooms as $key => $label) {
             $options[] = [
-                'caption' => $caption . ' [' . $key . ']',
-                'value'   => (string)$key
+                'caption' => $label . ' [' . $key . ']',
+                'value'   => $key
             ];
         }
 
         return $options;
     }
 
-    private function buildDomainFilterOptions(array $rooms): array
+    private function buildDomainFilterOptionsFromEntries(array $entries): array
     {
         $domains = [];
-
-        foreach ($rooms as $roomCfg) {
-            $ds = $roomCfg['domains'] ?? [];
-            foreach ($ds as $dKey => $_) {
-                $domains[(string)$dKey] = true;
+        foreach ($entries as $row) {
+            $d = trim((string)($row['domain'] ?? ''));
+            if ($d === '') {
+                continue;
             }
+            $domains[$d] = true;
         }
-
-        $options = [
-            ['caption' => 'Alle', 'value' => '']
-        ];
 
         $keys = array_keys($domains);
         sort($keys);
-        foreach ($keys as $k) {
+
+        $options   = [];
+        $options[] = ['caption' => 'Alle', 'value' => ''];
+
+        foreach ($keys as $d) {
             $options[] = [
-                'caption' => $k,
-                'value'   => $k
+                'caption' => $d,
+                'value'   => $d
             ];
         }
 
@@ -993,7 +996,6 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->syncAttributeInteger('RuntimeRoomsCatalogScriptID', $this->ReadPropertyInteger('RoomsCatalogScriptID'));
         $this->syncAttributeInteger('RuntimeRoomsCatalogEditScriptID', $this->ReadPropertyInteger('RoomsCatalogEditScriptID'));
 
-        // RuntimeEntries nur initial aus Property übernehmen, danach in Attribut belassen
         $attr = $this->ReadAttributeString('RuntimeEntries');
         if ($attr === '' || $attr === null) {
             $entriesProp = $this->ReadPropertyString('Entries');
