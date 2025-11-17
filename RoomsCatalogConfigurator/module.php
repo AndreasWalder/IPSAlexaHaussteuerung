@@ -34,6 +34,11 @@
  * 2025-11-17: Filter aus RuntimeEntries
  * - Raum-/Domain-Filter werden aus der Eintragsliste gebaut
  *   (unabhängig vom geladenen Catalog)
+ *
+ * 2025-11-17: Script-Load Fix
+ * - file_exists()-Checks entfernt, require() benutzt Pfad direkt
+ * - extractRoomsFromCatalog() unterstützt sowohl
+ *   return ['buero' => [...], ...] als auch return ['rooms' => [...]]
  */
 
 declare(strict_types=1);
@@ -115,8 +120,8 @@ class RoomsCatalogConfigurator extends IPSModule
         $filterRoom   = $this->getFilterRoom();
         $filterDomain = $this->getFilterDomain();
 
-        $roomOptions    = $this->buildRoomFilterOptionsFromEntries($allEntries);
-        $domainOptions  = $this->buildDomainFilterOptionsFromEntries($allEntries);
+        $roomOptions   = $this->buildRoomFilterOptionsFromEntries($allEntries);
+        $domainOptions = $this->buildDomainFilterOptionsFromEntries($allEntries);
 
         $this->logDebug(
             'GetConfigurationForm: FilterRoom="' . $filterRoom .
@@ -628,10 +633,7 @@ class RoomsCatalogConfigurator extends IPSModule
         }
 
         $file = IPS_GetScriptFile($scriptId);
-        if ($file === '' || !file_exists($file)) {
-            $this->logDebug('loadRoomsCatalog: ScriptFile nicht gefunden: ' . $file);
-            return [];
-        }
+        $this->logDebug('loadRoomsCatalog: ScriptFile=' . $file);
 
         $catalog = @require $file;
         if (!is_array($catalog)) {
@@ -647,19 +649,16 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         $scriptId = $this->getActiveRoomsCatalogEditScriptID();
         if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) {
-            $this->logDebug('loadRoomsCatalogEdit: Edit-ScriptID leer oder Script existiert nicht → Fallback PROD');
+            $this->logDebug('loadRoomsCatalogEdit: Edit-ScriptID leer oder Script existiert nicht');
             return [];
         }
 
         $file = IPS_GetScriptFile($scriptId);
-        if ($file === '' || !file_exists($file)) {
-            $this->logDebug('loadRoomsCatalogEdit: ScriptFile nicht gefunden: ' . $file . ' → Fallback PROD');
-            return [];
-        }
+        $this->logDebug('loadRoomsCatalogEdit: ScriptFile=' . $file);
 
         $catalog = @require $file;
         if (!is_array($catalog)) {
-            $this->logDebug('loadRoomsCatalogEdit: require() lieferte kein Array → Fallback PROD');
+            $this->logDebug('loadRoomsCatalogEdit: require() lieferte kein Array');
             return [];
         }
 
@@ -681,9 +680,17 @@ class RoomsCatalogConfigurator extends IPSModule
 
     private function extractRoomsFromCatalog(array $catalog): array
     {
+        // Fallback: alte Variante mit Wrapper ['rooms' => [...]]
+        if (isset($catalog['rooms']) && is_array($catalog['rooms'])) {
+            $this->logDebug('extractRoomsFromCatalog: benutze Wrapper-Key "rooms"');
+            $catalogRooms = $catalog['rooms'];
+        } else {
+            $catalogRooms = $catalog;
+        }
+
         $rooms = [];
 
-        foreach ($catalog as $key => $cfg) {
+        foreach ($catalogRooms as $key => $cfg) {
             if (!is_array($cfg)) {
                 continue;
             }
