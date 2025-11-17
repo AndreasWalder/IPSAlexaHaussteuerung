@@ -26,6 +26,9 @@
  * - Liste enthält alle Räume / Domains / Gruppen
  * - Filter: Raum + Domain (arbeiten nur auf Anzeige)
  * - Speichern aktualisiert RoomsCatalogEdit strukturiert je Raum/Domain/Gruppe
+ * 2025-11-17: Fix WritePropertyString / Filter-Position
+ * - WritePropertyString-Aufrufe entfernt (nur Attribute für Runtime)
+ * - Filterzeile unter "Einträge (alle Räume / Domains)" verschoben
  */
 
 declare(strict_types=1);
@@ -40,10 +43,10 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterPropertyInteger('RoomsCatalogScriptID', 0);
         $this->RegisterPropertyInteger('RoomsCatalogEditScriptID', 0);
 
-        // Vollständige Eintragsliste (flach) als JSON
+        // Vollständige Eintragsliste (flach) als JSON (nur als Startwert)
         $this->RegisterPropertyString('Entries', '[]');
 
-        // Anzeige-Filter
+        // Anzeige-Filter (Properties existieren nur für evtl. spätere Nutzung)
         $this->RegisterPropertyString('FilterRoom', '');
         $this->RegisterPropertyString('FilterDomain', '');
 
@@ -112,9 +115,8 @@ class RoomsCatalogConfigurator extends IPSModule
             $catalogEdit = $this->loadRoomsCatalog();
         }
 
-        $rooms = $this->extractRoomsFromCatalog($catalogEdit);
-        $roomOptions = $this->buildRoomFilterOptions($rooms);
-
+        $rooms        = $this->extractRoomsFromCatalog($catalogEdit);
+        $roomOptions  = $this->buildRoomFilterOptions($rooms);
         $domainOptions = $this->buildDomainFilterOptions($rooms);
 
         $filterRoom   = $this->getFilterRoom();
@@ -159,6 +161,27 @@ class RoomsCatalogConfigurator extends IPSModule
                     'type'    => 'ExpansionPanel',
                     'caption' => 'Einträge (alle Räume / Domains)',
                     'items'   => [
+                        [
+                            'type'  => 'RowLayout',
+                            'items' => [
+                                [
+                                    'type'     => 'Select',
+                                    'name'     => 'FilterRoom',
+                                    'caption'  => 'Raum-Filter',
+                                    'options'  => $roomOptions,
+                                    'value'    => $filterRoom,
+                                    'onChange' => 'IPS_RequestAction($id, "FilterRoom", $FilterRoom);'
+                                ],
+                                [
+                                    'type'     => 'Select',
+                                    'name'     => 'FilterDomain',
+                                    'caption'  => 'Domain-Filter',
+                                    'options'  => $domainOptions,
+                                    'value'    => $filterDomain,
+                                    'onChange' => 'IPS_RequestAction($id, "FilterDomain", $FilterDomain);'
+                                ]
+                            ]
+                        ],
                         [
                             'type'     => 'List',
                             'name'     => 'Entries',
@@ -289,29 +312,8 @@ class RoomsCatalogConfigurator extends IPSModule
             'actions'  => [
                 [
                     'type'    => 'ExpansionPanel',
-                    'caption' => 'Filter & Laden/Speichern',
+                    'caption' => 'Laden/Speichern & Diff',
                     'items'   => [
-                        [
-                            'type'  => 'RowLayout',
-                            'items' => [
-                                [
-                                    'type'     => 'Select',
-                                    'name'     => 'FilterRoom',
-                                    'caption'  => 'Raum-Filter',
-                                    'options'  => $roomOptions,
-                                    'value'    => $filterRoom,
-                                    'onChange' => 'IPS_RequestAction($id, "FilterRoom", $FilterRoom);'
-                                ],
-                                [
-                                    'type'     => 'Select',
-                                    'name'     => 'FilterDomain',
-                                    'caption'  => 'Domain-Filter',
-                                    'options'  => $domainOptions,
-                                    'value'    => $filterDomain,
-                                    'onChange' => 'IPS_RequestAction($id, "FilterDomain", $FilterDomain);'
-                                ]
-                            ]
-                        ],
                         [
                             'type'    => 'Button',
                             'caption' => 'Alle Einträge aus RoomsCatalogEdit / produktiv neu laden',
@@ -614,13 +616,12 @@ class RoomsCatalogConfigurator extends IPSModule
             $catalog = $this->loadRoomsCatalog();
         }
 
-        $rooms = $this->extractRoomsFromCatalog($catalog);
+        $rooms   = $this->extractRoomsFromCatalog($catalog);
         $entries = $this->buildEntriesFromRooms($rooms);
 
         $this->logDebug('reloadAllFromCatalog: erzeugte Einträge=' . count($entries));
 
         $this->setRuntimeEntries($entries);
-        $this->WritePropertyString('Entries', json_encode($entries));
     }
 
     private function loadRoomsCatalog(): array
@@ -727,7 +728,7 @@ class RoomsCatalogConfigurator extends IPSModule
                                 $cfg = [];
                             }
                             $rows[] = $this->rowFromCfg(
-                                $roomKey,
+                                (string)$roomKey,
                                 $roomLabel,
                                 (string)$domainKey,
                                 (string)$groupKey,
@@ -740,7 +741,7 @@ class RoomsCatalogConfigurator extends IPSModule
                         $entryKey = (string)$groupKey;
                         $cfg      = $groupCfg;
                         $rows[]   = $this->rowFromCfg(
-                            $roomKey,
+                            (string)$roomKey,
                             $roomLabel,
                             (string)$domainKey,
                             (string)$groupKey,
@@ -782,7 +783,7 @@ class RoomsCatalogConfigurator extends IPSModule
             return false;
         }
 
-        $allArrays = true;
+        $allArrays   = true;
         $hasTitleLike = false;
 
         foreach ($groupCfg as $v) {
@@ -968,22 +969,16 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->logDebug('===============================');
         $this->logDebug('START RoomsCatalog-Diagnose');
 
-        $prod = $this->loadRoomsCatalog();
+        $prod      = $this->loadRoomsCatalog();
         $roomsProd = $this->extractRoomsFromCatalog($prod);
-        $this->logDebug(
-            'RoomsCatalog: Räume=' . count($roomsProd)
-        );
+        $this->logDebug('RoomsCatalog: Räume=' . count($roomsProd));
 
-        $edit = $this->loadRoomsCatalogEdit();
+        $edit      = $this->loadRoomsCatalogEdit();
         $roomsEdit = $this->extractRoomsFromCatalog($edit);
-        $this->logDebug(
-            'RoomsCatalogEdit: Räume=' . count($roomsEdit)
-        );
+        $this->logDebug('RoomsCatalogEdit: Räume=' . count($roomsEdit));
 
         $entries = $this->getRuntimeEntries();
-        $this->logDebug(
-            'Aktuelle Liste: entries=' . count($entries)
-        );
+        $this->logDebug('Aktuelle Liste: entries=' . count($entries));
 
         $this->logDebug('ENDE RoomsCatalog-Diagnose');
         $this->logDebug('===============================');
@@ -998,27 +993,21 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->syncAttributeInteger('RuntimeRoomsCatalogScriptID', $this->ReadPropertyInteger('RoomsCatalogScriptID'));
         $this->syncAttributeInteger('RuntimeRoomsCatalogEditScriptID', $this->ReadPropertyInteger('RoomsCatalogEditScriptID'));
 
-        $entriesProp = $this->ReadPropertyString('Entries');
-        if ($entriesProp === '' || $entriesProp === null) {
-            $entriesProp = '[]';
+        // RuntimeEntries nur initial aus Property übernehmen, danach in Attribut belassen
+        $attr = $this->ReadAttributeString('RuntimeEntries');
+        if ($attr === '' || $attr === null) {
+            $entriesProp = $this->ReadPropertyString('Entries');
+            if ($entriesProp === '' || $entriesProp === null) {
+                $entriesProp = '[]';
+            }
+            $this->WriteAttributeString('RuntimeEntries', $entriesProp);
         }
-        $this->syncAttributeString('RuntimeEntries', $entriesProp);
-
-        $this->syncAttributeString('RuntimeFilterRoom', $this->ReadPropertyString('FilterRoom'));
-        $this->syncAttributeString('RuntimeFilterDomain', $this->ReadPropertyString('FilterDomain'));
     }
 
     private function syncAttributeInteger(string $attribute, int $value): void
     {
         if ($this->ReadAttributeInteger($attribute) !== $value) {
             $this->WriteAttributeInteger($attribute, $value);
-        }
-    }
-
-    private function syncAttributeString(string $attribute, string $value): void
-    {
-        if ($this->ReadAttributeString($attribute) !== $value) {
-            $this->WriteAttributeString($attribute, $value);
         }
     }
 
@@ -1083,36 +1072,22 @@ class RoomsCatalogConfigurator extends IPSModule
 
     private function getFilterRoom(): string
     {
-        $value = $this->ReadAttributeString('RuntimeFilterRoom');
-        if ($value !== '') {
-            return $value;
-        }
-        $value = $this->ReadPropertyString('FilterRoom');
-        $this->WriteAttributeString('RuntimeFilterRoom', $value);
-        return $value;
+        return $this->ReadAttributeString('RuntimeFilterRoom');
     }
 
     private function setFilterRoom(string $room): void
     {
         $this->WriteAttributeString('RuntimeFilterRoom', $room);
-        $this->WritePropertyString('FilterRoom', $room);
     }
 
     private function getFilterDomain(): string
     {
-        $value = $this->ReadAttributeString('RuntimeFilterDomain');
-        if ($value !== '') {
-            return $value;
-        }
-        $value = $this->ReadPropertyString('FilterDomain');
-        $this->WriteAttributeString('RuntimeFilterDomain', $value);
-        return $value;
+        return $this->ReadAttributeString('RuntimeFilterDomain');
     }
 
     private function setFilterDomain(string $domain): void
     {
         $this->WriteAttributeString('RuntimeFilterDomain', $domain);
-        $this->WritePropertyString('FilterDomain', $domain);
     }
 
     private function logDebug(string $msg): void
