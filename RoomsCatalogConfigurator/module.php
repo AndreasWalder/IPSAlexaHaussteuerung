@@ -89,25 +89,31 @@ class RoomsCatalogConfigurator extends IPSModule
 
     public function GetConfigurationForm()
     {
-        $entries     = $this->getRuntimeEntries();
-        $filterRoom  = $this->ReadAttributeString('FilterRoom');
+        $entries      = $this->getRuntimeEntries();
+        $filterRoom   = $this->ReadAttributeString('FilterRoom');
         $filterDomain = $this->ReadAttributeString('FilterDomain');
-
+    
         $this->logDebug(sprintf(
             'GetConfigurationForm: RuntimeEntries total=%d, FilterRoom="%s", FilterDomain="%s"',
             count($entries),
             $filterRoom,
             $filterDomain
         ));
-
+    
         // Filter-Optionen aus den vorhandenen Einträgen aufbauen
         [$roomOptions, $domainOptions] = $this->buildFilterOptionsFromEntries($entries);
-
+    
         // Sichtbare Einträge nach Filter
         $visibleEntries = $this->applyFilters($entries, $filterRoom, $filterDomain);
-
+    
         $this->logDebug('GetConfigurationForm: sichtbare Einträge=' . count($visibleEntries));
-
+    
+        // Analyse, welche Spalten in den sichtbaren Einträgen überhaupt vorkommen
+        $columnStats = $this->analyzeEntriesForColumns($visibleEntries);
+    
+        // Dynamische Spaltenliste mit sicht-/unsichtbaren Headern
+        $columns = $this->buildColumnsForStats($columnStats);
+    
         $form = [
             'elements' => [
                 [
@@ -136,19 +142,19 @@ class RoomsCatalogConfigurator extends IPSModule
                             'type'  => 'RowLayout',
                             'items' => [
                                 [
-                                    'type'    => 'Select',
-                                    'name'    => 'FilterRoom',
-                                    'caption' => 'Raum-Filter',
-                                    'options' => $roomOptions,
-                                    'value'   => $filterRoom,
+                                    'type'     => 'Select',
+                                    'name'     => 'FilterRoom',
+                                    'caption'  => 'Raum-Filter',
+                                    'options'  => $roomOptions,
+                                    'value'    => $filterRoom,
                                     'onChange' => 'RCC_SetRoomFilter($id, $FilterRoom);'
                                 ],
                                 [
-                                    'type'    => 'Select',
-                                    'name'    => 'FilterDomain',
-                                    'caption' => 'Domain-Filter',
-                                    'options' => $domainOptions,
-                                    'value'   => $filterDomain,
+                                    'type'     => 'Select',
+                                    'name'     => 'FilterDomain',
+                                    'caption'  => 'Domain-Filter',
+                                    'options'  => $domainOptions,
+                                    'value'    => $filterDomain,
                                     'onChange' => 'RCC_SetDomainFilter($id, $FilterDomain);'
                                 ],
                                 [
@@ -166,121 +172,8 @@ class RoomsCatalogConfigurator extends IPSModule
                             'add'      => false,
                             'delete'   => false,
                             'sort'     => true,
-                            'columns'  => [
-                                [
-                                    'caption' => 'Markiert',
-                                    'name'    => 'selected',
-                                    'width'   => '60px',
-                                    'add'     => false,
-                                    'edit'    => ['type' => 'CheckBox']
-                                ],
-                                [
-                                    'caption' => 'Raum-Key',
-                                    'name'    => 'roomKey',
-                                    'width'   => '90px',
-                                    'add'     => '',
-                                    'edit'    => ['type' => 'ValidationTextBox']
-                                ],
-                                [
-                                    'caption' => 'Raum-Label',
-                                    'name'    => 'roomLabel',
-                                    'width'   => '120px',
-                                    'add'     => '',
-                                    'edit'    => ['type' => 'ValidationTextBox']
-                                ],
-                                [
-                                    'caption' => 'Domain',
-                                    'name'    => 'domain',
-                                    'width'   => '80px',
-                                    'add'     => '',
-                                    'edit'    => ['type' => 'ValidationTextBox']
-                                ],
-                                [
-                                    'caption' => 'Gruppe',
-                                    'name'    => 'group',
-                                    'width'   => '90px',
-                                    'add'     => '',
-                                    'edit'    => ['type' => 'ValidationTextBox']
-                                ],
-                                [
-                                    'caption' => 'Key',
-                                    'name'    => 'key',
-                                    'width'   => '120px',
-                                    'add'     => '',
-                                    'edit'    => ['type' => 'ValidationTextBox']
-                                ],
-                                [
-                                    'caption' => 'Label',
-                                    'name'    => 'label',
-                                    'width'   => '200px',
-                                    'add'     => '',
-                                    'edit'    => ['type' => 'ValidationTextBox']
-                                ],
-                                [
-                                    'caption' => 'EntityId',
-                                    'name'    => 'entityId',
-                                    'width'   => '180px',
-                                    'add'     => '',
-                                    'edit'    => ['type' => 'ValidationTextBox']
-                                ],
-                                [
-                                    'caption' => 'Entity-Name',
-                                    'name'    => 'entityName',
-                                    'width'   => '180px',
-                                    'add'     => '',
-                                    'edit'    => ['type' => 'ValidationTextBox']
-                                ],
-                                [
-                                    'caption' => 'ControlId',
-                                    'name'    => 'controlId',
-                                    'width'   => '90px',
-                                    'add'     => 0,
-                                    'edit'    => ['type' => 'NumberSpinner']
-                                ],
-                                [
-                                    'caption' => 'StatusId',
-                                    'name'    => 'statusId',
-                                    'width'   => '90px',
-                                    'add'     => 0,
-                                    'edit'    => ['type' => 'NumberSpinner']
-                                ],
-                                [
-                                    'caption' => 'TiltId',
-                                    'name'    => 'tiltId',
-                                    'width'   => '90px',
-                                    'add'     => 0,
-                                    'edit'    => ['type' => 'NumberSpinner']
-                                ],
-                                [
-                                    'caption' => 'Sprach-Key',
-                                    'name'    => 'speechKey',
-                                    'width'   => '140px',
-                                    'add'     => '',
-                                    'edit'    => ['type' => 'ValidationTextBox']
-                                ],
-                                [
-                                    'caption' => 'Icon',
-                                    'name'    => 'icon',
-                                    'width'   => '120px',
-                                    'add'     => '',
-                                    'edit'    => ['type' => 'ValidationTextBox']
-                                ],
-                                [
-                                    'caption' => 'Order',
-                                    'name'    => 'order',
-                                    'width'   => '70px',
-                                    'add'     => 0,
-                                    'edit'    => ['type' => 'NumberSpinner']
-                                ],
-                                [
-                                    'caption' => 'Farbe',
-                                    'name'    => 'rowColor',
-                                    'width'   => '80px',
-                                    'add'     => '',
-                                    'edit'    => ['type' => 'ValidationTextBox']
-                                ]
-                            ],
-                            'values' => $visibleEntries
+                            'columns'  => $columns,
+                            'values'   => $visibleEntries
                         ]
                     ]
                 ]
@@ -293,9 +186,10 @@ class RoomsCatalogConfigurator extends IPSModule
                 ]
             ]
         ];
-
+    
         return json_encode($form);
     }
+
 
     // =====================================================================
     // Interne Logik
@@ -663,6 +557,200 @@ class RoomsCatalogConfigurator extends IPSModule
             return [];
         }
         return $entries;
+    }
+
+    private function analyzeEntriesForColumns(array $entries): array
+    {
+        $stats = [
+            'hasEntityId'   => false,
+            'hasEntityName' => false,
+            'hasControlId'  => false,
+            'hasStatusId'   => false,
+            'hasTiltId'     => false,
+            'hasSpeechKey'  => false,
+            'hasIcon'       => false,
+            'hasOrder'      => false,
+            'hasRowColor'   => false
+        ];
+    
+        foreach ($entries as $row) {
+            if (!empty($row['entityId'] ?? '')) {
+                $stats['hasEntityId']   = true;
+                $stats['hasEntityName'] = true;
+            }
+            if ((int)($row['controlId'] ?? 0) !== 0) {
+                $stats['hasControlId'] = true;
+            }
+            if ((int)($row['statusId'] ?? 0) !== 0) {
+                $stats['hasStatusId'] = true;
+            }
+            if ((int)($row['tiltId'] ?? 0) !== 0) {
+                $stats['hasTiltId'] = true;
+            }
+            if (trim((string)($row['speechKey'] ?? '')) !== '') {
+                $stats['hasSpeechKey'] = true;
+            }
+            if (trim((string)($row['icon'] ?? '')) !== '') {
+                $stats['hasIcon'] = true;
+            }
+            if ((int)($row['order'] ?? 0) !== 0) {
+                $stats['hasOrder'] = true;
+            }
+            if (trim((string)($row['rowColor'] ?? '')) !== '') {
+                $stats['hasRowColor'] = true;
+            }
+        }
+    
+        return $stats;
+    }
+    
+    private function buildColumnsForStats(array $stats): array
+    {
+        $columns = [];
+    
+        // Immer sichtbar: Basis-Spalten
+        $columns[] = [
+            'caption' => 'Markiert',
+            'name'    => 'selected',
+            'width'   => '60px',
+            'add'     => false,
+            'edit'    => ['type' => 'CheckBox'],
+            'visible' => true
+        ];
+        $columns[] = [
+            'caption' => 'Raum-Key',
+            'name'    => 'roomKey',
+            'width'   => '90px',
+            'add'     => '',
+            'edit'    => ['type' => 'ValidationTextBox'],
+            'visible' => true
+        ];
+        $columns[] = [
+            'caption' => 'Raum-Label',
+            'name'    => 'roomLabel',
+            'width'   => '120px',
+            'add'     => '',
+            'edit'    => ['type' => 'ValidationTextBox'],
+            'visible' => true
+        ];
+        $columns[] = [
+            'caption' => 'Domain',
+            'name'    => 'domain',
+            'width'   => '80px',
+            'add'     => '',
+            'edit'    => ['type' => 'ValidationTextBox'],
+            'visible' => true
+        ];
+        $columns[] = [
+            'caption' => 'Gruppe',
+            'name'    => 'group',
+            'width'   => '90px',
+            'add'     => '',
+            'edit'    => ['type' => 'ValidationTextBox'],
+            'visible' => true
+        ];
+        $columns[] = [
+            'caption' => 'Key',
+            'name'    => 'key',
+            'width'   => '120px',
+            'add'     => '',
+            'edit'    => ['type' => 'ValidationTextBox'],
+            'visible' => true
+        ];
+        $columns[] = [
+            'caption' => 'Label',
+            'name'    => 'label',
+            'width'   => '200px',
+            'add'     => '',
+            'edit'    => ['type' => 'ValidationTextBox'],
+            'visible' => true
+        ];
+    
+        // Optional: Entity
+        $columns[] = [
+            'caption' => 'EntityId',
+            'name'    => 'entityId',
+            'width'   => '180px',
+            'add'     => '',
+            'edit'    => ['type' => 'ValidationTextBox'],
+            'visible' => $stats['hasEntityId']
+        ];
+        $columns[] = [
+            'caption' => 'Entity-Name',
+            'name'    => 'entityName',
+            'width'   => '180px',
+            'add'     => '',
+            'edit'    => ['type' => 'ValidationTextBox'],
+            'visible' => $stats['hasEntityName']
+        ];
+    
+        // Optional: Steuer-/Status-/Tilt-IDs
+        $columns[] = [
+            'caption' => 'ControlId',
+            'name'    => 'controlId',
+            'width'   => '90px',
+            'add'     => 0,
+            'edit'    => ['type' => 'NumberSpinner'],
+            'visible' => $stats['hasControlId']
+        ];
+        $columns[] = [
+            'caption' => 'StatusId',
+            'name'    => 'statusId',
+            'width'   => '90px',
+            'add'     => 0,
+            'edit'    => ['type' => 'NumberSpinner'],
+            'visible' => $stats['hasStatusId']
+        ];
+        $columns[] = [
+            'caption' => 'TiltId',
+            'name'    => 'tiltId',
+            'width'   => '90px',
+            'add'     => 0,
+            'edit'    => ['type' => 'NumberSpinner'],
+            'visible' => $stats['hasTiltId']
+        ];
+    
+        // Optional: SpeechKey
+        $columns[] = [
+            'caption' => 'Sprach-Key',
+            'name'    => 'speechKey',
+            'width'   => '140px',
+            'add'     => '',
+            'edit'    => ['type' => 'ValidationTextBox'],
+            'visible' => $stats['hasSpeechKey']
+        ];
+    
+        // Optional: Icon
+        $columns[] = [
+            'caption' => 'Icon',
+            'name'    => 'icon',
+            'width'   => '120px',
+            'add'     => '',
+            'edit'    => ['type' => 'ValidationTextBox'],
+            'visible' => $stats['hasIcon']
+        ];
+    
+        // Optional: Order
+        $columns[] = [
+            'caption' => 'Order',
+            'name'    => 'order',
+            'width'   => '70px',
+            'add'     => 0,
+            'edit'    => ['type' => 'NumberSpinner'],
+            'visible' => $stats['hasOrder']
+        ];
+    
+        // Optional: Farbe
+        $columns[] = [
+            'caption' => 'Farbe',
+            'name'    => 'rowColor',
+            'width'   => '80px',
+            'add'     => '',
+            'edit'    => ['type' => 'ValidationTextBox'],
+            'visible' => $stats['hasRowColor']
+        ];
+    
+        return $columns;
     }
 
     private function buildFilterOptionsFromEntries(array $entries): array
