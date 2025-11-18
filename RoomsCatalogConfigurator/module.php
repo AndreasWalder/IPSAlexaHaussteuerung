@@ -1,121 +1,112 @@
 <?php
 
+declare(strict_types=1);
+
 /**
  * ============================================================
  * ROOMS CATALOG CONFIGURATOR — IP-Symcon Modul
  * ============================================================
  *
  * Änderungsverlauf
- * 2025-11-18: Plain-Root-Schema + Filter (READ-ONLY)
- * - Erwartet RoomsCatalog als: return ['buero'=>[...], 'kueche'=>[...], ..., 'global'=>[...]];
- * - Kein ['rooms']-Container mehr, 'global' wird beim Flatten ignoriert
- * - Lädt immer alle Räume/Domains in eine flache Liste (RuntimeEntries)
- * - Raum- und Domain-Filter oberhalb der Liste (Attribute, nicht Properties)
- * - Nur Lesemodus: keine Schreibzugriffe zurück ins Script (Edit-Funktionen folgen)
+ * 2025-11-16: Basisversion
+ * - Kontext-Auswahl: Raum / Domain / Gruppe
+ * - Eintragsliste (Key, Label, Entity, Icon, Order)
+ * - Laden/Speichern aus/in RoomsCatalogEdit-Script
+ *
+ * 2025-11-16: Erweiterung Jalousie / Entity-Felder
+ * - Zusätzliche Spalten: selected, controlId, statusId, tiltId, speechKey
+ * - Entity-Zuweisung über SelectObject auf markierte Zeilen
+ *   (Haupt-Entity / Steuer-ID / Status-ID / Tilt-ID)
+ * - Button zum Kopieren von RoomsCatalogEdit → produktiver RoomsCatalog
+ *
+ * 2025-11-18: Flat-View über alle Räume/Domains
+ * - RoomsCatalog wird flach aufgelöst (Raum + Domain + Gruppe + Key)
+ * - Raum- und Domain-Filter im Kopf der Liste
+ * - Automatisches Mapping alter Felder → ControlId/StatusId/TiltId
+ *   (heizung: ist/soll, jalousie: wert, licht: state/toggle/value/set,
+ *    lueftung.fans: state/toggle, devices/sprinkler/been.tabs: id)
+ * - EntityId bleibt String (z.B. "light.eg_buero_all")
+ * - Zeilenfärbung (rot/gelb) nach Vollständigkeit
  */
-
-declare(strict_types=1);
 
 class RoomsCatalogConfigurator extends IPSModule
 {
-    private const LOG_TAG = 'Alexa';
-
     public function Create()
     {
         parent::Create();
 
-        // Haupt-Konfiguration: Script-IDs
+        // Grundkonfiguration (Scripts)
         $this->RegisterPropertyInteger('RoomsCatalogScriptID', 0);
         $this->RegisterPropertyInteger('RoomsCatalogEditScriptID', 0);
 
-        // Laufzeitdaten (werden nur in Attributen gehalten)
+        // Laufzeit-Daten
         $this->RegisterAttributeString('RuntimeEntries', '[]');
-        $this->RegisterAttributeString('RuntimeRoomFilter', '');
-        $this->RegisterAttributeString('RuntimeDomainFilter', '');
-        $this->RegisterAttributeString('RuntimeRoomOptions', '[]');
-        $this->RegisterAttributeString('RuntimeDomainOptions', '[]');
+        $this->RegisterAttributeString('FilterRoom', '');
+        $this->RegisterAttributeString('FilterDomain', '');
     }
 
     public function ApplyChanges()
     {
         parent::ApplyChanges();
 
-        $this->debug('ApplyChanges START');
+        $this->logDebug('ApplyChanges START');
 
-        // Bei jeder Konfig-Änderung einmal den Katalog neu einlesen
+        // Beim ersten Aufruf oder nach Konfig-Änderung: komplett neu laden
         $this->reloadAllFromCatalog();
 
-        $this->debug('ApplyChanges ENDE');
+        $this->logDebug('ApplyChanges ENDE');
     }
 
-    public function RequestAction($Ident, $Value)
+    // =====================================================================
+    // Public API (für Formular-Buttons / -Events)
+    // =====================================================================
+
+    public function ReloadCatalog()
     {
-        switch ($Ident) {
-            case 'FilterRoom':
-                $this->WriteAttributeString('RuntimeRoomFilter', (string)$Value);
-                $this->ReloadForm();
-                break;
-
-            case 'FilterDomain':
-                $this->WriteAttributeString('RuntimeDomainFilter', (string)$Value);
-                $this->ReloadForm();
-                break;
-
-            case 'ReloadCatalog':
-                $this->reloadAllFromCatalog();
-                $this->ReloadForm();
-                echo 'RoomsCatalog neu geladen.';
-                break;
-
-            default:
-                throw new Exception('Invalid Ident in RequestAction: ' . $Ident);
-        }
+        $this->logDebug('ReloadCatalog: Button gedrückt');
+        $this->reloadAllFromCatalog();
+        $this->ReloadForm();
+        // Kein echo → keine "C:\Windows\System32\-" Meldung mehr
     }
+
+    public function SetRoomFilter(string $roomKey)
+    {
+        $this->WriteAttributeString('FilterRoom', $roomKey);
+        $this->logDebug('SetRoomFilter: roomKey="' . $roomKey . '"');
+        $this->ReloadForm();
+    }
+
+    public function SetDomainFilter(string $domainKey)
+    {
+        $this->WriteAttributeString('FilterDomain', $domainKey);
+        $this->logDebug('SetDomainFilter: domainKey="' . $domainKey . '"');
+        $this->ReloadForm();
+    }
+
+    // =====================================================================
+    // Konfigurationsformular
+    // =====================================================================
 
     public function GetConfigurationForm()
     {
-        $entriesAll = $this->getRuntimeEntries();
+        $entries     = $this->getRuntimeEntries();
+        $filterRoom  = $this->ReadAttributeString('FilterRoom');
+        $filterDomain = $this->ReadAttributeString('FilterDomain');
 
-        $filterRoom   = $this->ReadAttributeString('RuntimeRoomFilter');
-        $filterDomain = $this->ReadAttributeString('RuntimeDomainFilter');
-
-        // Optionen (bereits bei reloadAllFromCatalog() berechnet)
-        $roomOptions   = $this->getRuntimeRoomOptions();
-        $domainOptions = $this->getRuntimeDomainOptions();
-
-        // Fallback, falls noch nichts geladen wurde
-        if ($roomOptions === []) {
-            $roomOptions[] = ['caption' => 'Alle', 'value' => ''];
-        }
-        if ($domainOptions === []) {
-            $domainOptions[] = ['caption' => 'Alle', 'value' => ''];
-        }
-
-        // Filter anwenden
-        $visibleEntries = [];
-        foreach ($entriesAll as $row) {
-            $roomKey   = (string)($row['roomKey'] ?? '');
-            $domainKey = (string)($row['domain'] ?? '');
-
-            if ($filterRoom !== '' && $roomKey !== $filterRoom) {
-                continue;
-            }
-            if ($filterDomain !== '' && $domainKey !== $filterDomain) {
-                continue;
-            }
-
-            // Zeilenfarbe nach Vollständigkeit (einfach gehalten)
-            $row['rowColor'] = $this->determineRowColor($row);
-            $visibleEntries[] = $row;
-        }
-
-        $this->debug(sprintf(
-            'GetConfigurationForm: RuntimeEntries total=%d, FilterRoom="%s", FilterDomain="%s", sichtbare Einträge=%d',
-            count($entriesAll),
+        $this->logDebug(sprintf(
+            'GetConfigurationForm: RuntimeEntries total=%d, FilterRoom="%s", FilterDomain="%s"',
+            count($entries),
             $filterRoom,
-            $filterDomain,
-            count($visibleEntries)
+            $filterDomain
         ));
+
+        // Filter-Optionen aus den vorhandenen Einträgen aufbauen
+        [$roomOptions, $domainOptions] = $this->buildFilterOptionsFromEntries($entries);
+
+        // Sichtbare Einträge nach Filter
+        $visibleEntries = $this->applyFilters($entries, $filterRoom, $filterDomain);
+
+        $this->logDebug('GetConfigurationForm: sichtbare Einträge=' . count($visibleEntries));
 
         $form = [
             'elements' => [
@@ -126,9 +117,8 @@ class RoomsCatalogConfigurator extends IPSModule
                         [
                             'type'    => 'SelectScript',
                             'name'    => 'RoomsCatalogScriptID',
-                            'caption' => 'Produktiver RoomsCatalog (plain root)',
+                            'caption' => 'Produktiver RoomsCatalog',
                             'value'   => $this->ReadPropertyInteger('RoomsCatalogScriptID')
-                            // KEIN onChange → Wert wird nur über "Übernehmen" gespeichert
                         ],
                         [
                             'type'    => 'SelectScript',
@@ -147,36 +137,36 @@ class RoomsCatalogConfigurator extends IPSModule
                             'items' => [
                                 [
                                     'type'    => 'Select',
-                                    'name'    => 'RoomFilter',
+                                    'name'    => 'FilterRoom',
                                     'caption' => 'Raum-Filter',
                                     'options' => $roomOptions,
                                     'value'   => $filterRoom,
-                                    'onChange' => 'IPS_RequestAction($id, "FilterRoom", $RoomFilter);'
+                                    'onChange' => 'RCC_SetRoomFilter($id, $FilterRoom);'
                                 ],
                                 [
                                     'type'    => 'Select',
-                                    'name'    => 'DomainFilter',
+                                    'name'    => 'FilterDomain',
                                     'caption' => 'Domain-Filter',
                                     'options' => $domainOptions,
                                     'value'   => $filterDomain,
-                                    'onChange' => 'IPS_RequestAction($id, "FilterDomain", $DomainFilter);'
+                                    'onChange' => 'RCC_SetDomainFilter($id, $FilterDomain);'
                                 ],
                                 [
                                     'type'    => 'Button',
-                                    'caption' => 'RoomsCatalog neu laden',
-                                    'onClick' => 'IPS_RequestAction($id, "ReloadCatalog", 0);'
+                                    'caption' => 'ROOMSCATALOG NEU LADEN',
+                                    'onClick' => 'RCC_ReloadCatalog($id);'
                                 ]
                             ]
                         ],
                         [
-                            'type'       => 'List',
-                            'name'       => 'Entries',
-                            'caption'    => 'Einträge',
-                            'rowCount'   => 20,
-                            'add'        => false,
-                            'delete'     => false,
-                            'sort'       => true,
-                            'columns'    => [
+                            'type'     => 'List',
+                            'name'     => 'Entries',
+                            'caption'  => 'Einträge',
+                            'rowCount' => 25,
+                            'add'      => false,
+                            'delete'   => false,
+                            'sort'     => true,
+                            'columns'  => [
                                 [
                                     'caption' => 'Markiert',
                                     'name'    => 'selected',
@@ -189,105 +179,105 @@ class RoomsCatalogConfigurator extends IPSModule
                                     'name'    => 'roomKey',
                                     'width'   => '90px',
                                     'add'     => '',
-                                    'edit'    => ['type' => 'ValidationTextBox', 'enabled' => false]
+                                    'edit'    => ['type' => 'ValidationTextBox']
                                 ],
                                 [
                                     'caption' => 'Raum-Label',
                                     'name'    => 'roomLabel',
                                     'width'   => '120px',
                                     'add'     => '',
-                                    'edit'    => ['type' => 'ValidationTextBox', 'enabled' => false]
+                                    'edit'    => ['type' => 'ValidationTextBox']
                                 ],
                                 [
                                     'caption' => 'Domain',
                                     'name'    => 'domain',
                                     'width'   => '80px',
                                     'add'     => '',
-                                    'edit'    => ['type' => 'ValidationTextBox', 'enabled' => false]
+                                    'edit'    => ['type' => 'ValidationTextBox']
                                 ],
                                 [
                                     'caption' => 'Gruppe',
                                     'name'    => 'group',
                                     'width'   => '90px',
                                     'add'     => '',
-                                    'edit'    => ['type' => 'ValidationTextBox', 'enabled' => false]
+                                    'edit'    => ['type' => 'ValidationTextBox']
                                 ],
                                 [
                                     'caption' => 'Key',
                                     'name'    => 'key',
-                                    'width'   => '100px',
+                                    'width'   => '120px',
                                     'add'     => '',
-                                    'edit'    => ['type' => 'ValidationTextBox', 'enabled' => false]
+                                    'edit'    => ['type' => 'ValidationTextBox']
                                 ],
                                 [
                                     'caption' => 'Label',
                                     'name'    => 'label',
-                                    'width'   => '180px',
+                                    'width'   => '200px',
                                     'add'     => '',
-                                    'edit'    => ['type' => 'ValidationTextBox', 'enabled' => false]
+                                    'edit'    => ['type' => 'ValidationTextBox']
                                 ],
                                 [
                                     'caption' => 'EntityId',
                                     'name'    => 'entityId',
-                                    'width'   => '80px',
-                                    'add'     => 0,
-                                    'edit'    => ['type' => 'NumberSpinner', 'enabled' => false]
+                                    'width'   => '180px',
+                                    'add'     => '',
+                                    'edit'    => ['type' => 'ValidationTextBox']
                                 ],
                                 [
                                     'caption' => 'Entity-Name',
                                     'name'    => 'entityName',
-                                    'width'   => '160px',
+                                    'width'   => '180px',
                                     'add'     => '',
-                                    'edit'    => ['type' => 'ValidationTextBox', 'enabled' => false]
+                                    'edit'    => ['type' => 'ValidationTextBox']
                                 ],
                                 [
                                     'caption' => 'ControlId',
                                     'name'    => 'controlId',
-                                    'width'   => '80px',
+                                    'width'   => '90px',
                                     'add'     => 0,
-                                    'edit'    => ['type' => 'NumberSpinner', 'enabled' => false]
+                                    'edit'    => ['type' => 'NumberSpinner']
                                 ],
                                 [
                                     'caption' => 'StatusId',
                                     'name'    => 'statusId',
-                                    'width'   => '80px',
+                                    'width'   => '90px',
                                     'add'     => 0,
-                                    'edit'    => ['type' => 'NumberSpinner', 'enabled' => false]
+                                    'edit'    => ['type' => 'NumberSpinner']
                                 ],
                                 [
                                     'caption' => 'TiltId',
                                     'name'    => 'tiltId',
-                                    'width'   => '80px',
+                                    'width'   => '90px',
                                     'add'     => 0,
-                                    'edit'    => ['type' => 'NumberSpinner', 'enabled' => false]
+                                    'edit'    => ['type' => 'NumberSpinner']
                                 ],
                                 [
                                     'caption' => 'Sprach-Key',
                                     'name'    => 'speechKey',
-                                    'width'   => '130px',
+                                    'width'   => '140px',
                                     'add'     => '',
-                                    'edit'    => ['type' => 'ValidationTextBox', 'enabled' => false]
+                                    'edit'    => ['type' => 'ValidationTextBox']
                                 ],
                                 [
                                     'caption' => 'Icon',
                                     'name'    => 'icon',
                                     'width'   => '120px',
                                     'add'     => '',
-                                    'edit'    => ['type' => 'ValidationTextBox', 'enabled' => false]
+                                    'edit'    => ['type' => 'ValidationTextBox']
                                 ],
                                 [
                                     'caption' => 'Order',
                                     'name'    => 'order',
                                     'width'   => '70px',
                                     'add'     => 0,
-                                    'edit'    => ['type' => 'NumberSpinner', 'enabled' => false]
+                                    'edit'    => ['type' => 'NumberSpinner']
                                 ],
                                 [
                                     'caption' => 'Farbe',
                                     'name'    => 'rowColor',
                                     'width'   => '80px',
                                     'add'     => '',
-                                    'edit'    => ['type' => 'ValidationTextBox', 'enabled' => false]
+                                    'edit'    => ['type' => 'ValidationTextBox']
                                 ]
                             ],
                             'values' => $visibleEntries
@@ -299,7 +289,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 [
                     'type'    => 'Label',
                     'caption' => 'Hinweis: Aktuell ist der Konfigurator read-only. ' .
-                        'Änderungen an den Einträgen werden noch nicht ins RoomsCatalogEdit-Script zurückgeschrieben.'
+                                 'Änderungen in der Liste werden noch nicht ins RoomsCatalogEdit-Script zurückgeschrieben.'
                 ]
             ]
         ];
@@ -307,207 +297,279 @@ class RoomsCatalogConfigurator extends IPSModule
         return json_encode($form);
     }
 
-    // ========================================================================================
-    // Interne Helfer
-    // ========================================================================================
+    // =====================================================================
+    // Interne Logik
+    // =====================================================================
 
     private function reloadAllFromCatalog(): void
     {
-        $this->debug('reloadAllFromCatalog: START');
+        $this->logDebug('reloadAllFromCatalog: START');
 
-        $prodId = $this->ReadPropertyInteger('RoomsCatalogScriptID');
-        $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
-
-        // 1) Edit-Katalog versuchen
-        $catalog = [];
-        if ($editId > 0) {
-            $catalog = $this->loadCatalogFromScript($editId, 'EDIT');
+        $scriptId = $this->ReadPropertyInteger('RoomsCatalogScriptID');
+        if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) {
+            $this->logDebug('reloadAllFromCatalog: kein gültiges ScriptID gesetzt');
+            $this->WriteAttributeString('RuntimeEntries', '[]');
+            return;
         }
 
-        // 2) Fallback produktiv
+        $catalog = $this->loadRoomsCatalogFromScript($scriptId);
+
         if ($catalog === []) {
-            $catalog = $this->loadCatalogFromScript($prodId, 'PROD');
+            $this->logDebug('reloadAllFromCatalog: Katalog leer oder ungültig');
+            $this->WriteAttributeString('RuntimeEntries', '[]');
+            return;
         }
 
-        $roomsCountBefore = $this->countRoomsInCatalog($catalog);
-        $this->debug('reloadAllFromCatalog: Räume im geladenen Katalog=' . $roomsCountBefore);
+        $rooms = $this->extractRoomsFromCatalog($catalog);
 
-        $entries = $this->extractRoomsFromCatalog($catalog);
+        $this->logDebug('reloadAllFromCatalog: Räume im geladenen Katalog=' . count($rooms));
+
+        $entries = $this->buildFlatEntriesFromRooms($rooms);
+
+        $this->logDebug('reloadAllFromCatalog: erzeugte Einträge=' . count($entries));
 
         $this->WriteAttributeString('RuntimeEntries', json_encode($entries));
-
-        // Filter-Optionen aus den Einträgen bauen
-        $this->buildFilterOptionsFromEntries($entries);
-
-        $this->debug(sprintf(
-            'reloadAllFromCatalog: erzeugte Einträge=%d',
-            count($entries)
-        ));
     }
 
-    private function loadCatalogFromScript(int $scriptId, string $label): array
+    private function loadRoomsCatalogFromScript(int $scriptId): array
     {
-        if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) {
-            $this->debug("loadRoomsCatalog($label): ScriptID ungültig oder Script existiert nicht: {$scriptId}");
+        $file = IPS_GetScriptFile($scriptId);
+        if ($file === '' || !file_exists($file)) {
+            $this->logDebug('loadRoomsCatalog: ScriptFile nicht gefunden: ' . $scriptId . '.ips.php');
             return [];
         }
-
-        $file = IPS_GetScriptFile($scriptId);
-
-        // Kein file_exists() mehr – wir verlassen uns auf IPS_GetScriptFile
-        $this->debug("loadRoomsCatalog($label): ScriptFile={$file}");
 
         $catalog = @require $file;
 
         if (!is_array($catalog)) {
-            $type = gettype($catalog);
-            $this->debug("loadRoomsCatalog($label): require() lieferte kein Array (Typ={$type})");
+            $this->logDebug('loadRoomsCatalog: require() ergab kein Array');
             return [];
         }
-
-        // Erwartet: return ['buero'=>[...], 'kueche'=>[...], ..., 'global'=>[...]];
-        $topKeys = implode(', ', array_keys($catalog));
-        $this->debug("loadRoomsCatalog($label): Top-Level-Keys: {$topKeys}");
 
         return $catalog;
     }
 
-
-    private function countRoomsInCatalog(array $catalog): int
-    {
-        if ($catalog === []) {
-            return 0;
-        }
-        $count = 0;
-        foreach ($catalog as $key => $_cfg) {
-            if ($key === 'global') {
-                continue;
-            }
-            $count++;
-        }
-        return $count;
-    }
-
     /**
-     * Flacht den Katalog in eine Liste von Einträgen ab.
-     *
-     * Jeder Leaf in domains[*][*][*] wird zu einer Tabellenzeile.
+     * Akzeptiert sowohl:
+     *   return ['buero'=>[...], 'kueche'=>[...], 'global'=>[...]];
+     * als auch:
+     *   return ['rooms' => ['buero'=>[...], ...], 'global' => [...]];
      */
     private function extractRoomsFromCatalog(array $catalog): array
     {
-        $roomsCount = $this->countRoomsInCatalog($catalog);
-        $this->debug("extractRoomsFromCatalog: Räume={$roomsCount}");
+        if (isset($catalog['rooms']) && is_array($catalog['rooms'])) {
+            $rooms = $catalog['rooms'];
+        } else {
+            $rooms = $catalog;
+        }
 
-        $entries = [];
+        $result = [];
+        $count  = 0;
 
-        foreach ($catalog as $roomKey => $roomCfg) {
-            if ($roomKey === 'global') {
-                continue; // global-Konfiguration auslassen
-            }
-
+        foreach ($rooms as $roomKey => $roomCfg) {
             if (!is_array($roomCfg)) {
                 continue;
             }
-
-            $roomLabel = (string)($roomCfg['display'] ?? $roomKey);
-            $domains   = $roomCfg['domains'] ?? [];
-            if (!is_array($domains)) {
+            if (!isset($roomCfg['domains']) || !is_array($roomCfg['domains'])) {
+                // "global" etc. überspringen
                 continue;
             }
+            $display = (string)($roomCfg['display'] ?? (string)$roomKey);
+            $result[(string)$roomKey] = [
+                'display' => $display,
+                'domains' => $roomCfg['domains']
+            ];
+            $count++;
+        }
+
+        $this->logDebug('extractRoomsFromCatalog: Räume=' . $count);
+
+        return $result;
+    }
+
+    private function buildFlatEntriesFromRooms(array $rooms): array
+    {
+        $rows = [];
+
+        foreach ($rooms as $roomKey => $roomCfg) {
+            $roomLabel = (string)($roomCfg['display'] ?? (string)$roomKey);
+            $domains   = $roomCfg['domains'] ?? [];
 
             foreach ($domains as $domainKey => $domainCfg) {
                 if (!is_array($domainCfg)) {
                     continue;
                 }
-
                 foreach ($domainCfg as $groupKey => $groupCfg) {
                     if (!is_array($groupCfg)) {
                         continue;
                     }
-
-                    foreach ($groupCfg as $entryKey => $entryCfg) {
-                        if (!is_array($entryCfg)) {
-                            continue;
+                    foreach ($groupCfg as $entryKey => $cfg) {
+                        if (!is_array($cfg)) {
+                            $cfg = [];
                         }
-
-                        $label = (string)($entryCfg['label'] ?? ($entryCfg['title'] ?? $entryKey));
-
-                        $entries[] = [
-                            'selected'   => false,
-                            'roomKey'    => (string)$roomKey,
-                            'roomLabel'  => $roomLabel,
-                            'domain'     => (string)$domainKey,
-                            'group'      => (string)$groupKey,
-                            'key'        => (string)$entryKey,
-                            'label'      => $label,
-                            // Numeric IDs — in deinem jetzigen Katalog sind das meist andere Felder
-                            // (ist/stellung/soll/wert/state/toggle/...). Hier bleiben sie 0, bis
-                            // wir eine Schreib-/Mappinglogik ergänzen.
-                            'entityId'   => (int)($entryCfg['entityId'] ?? 0),
-                            'entityName' => (string)($entryCfg['entityName'] ?? ''),
-                            'controlId'  => (int)($entryCfg['controlId'] ?? 0),
-                            'statusId'   => (int)($entryCfg['statusId'] ?? 0),
-                            'tiltId'     => (int)($entryCfg['tiltId'] ?? 0),
-                            'speechKey'  => (string)($entryCfg['speechKey'] ?? ''),
-                            'icon'       => (string)($entryCfg['icon'] ?? ''),
-                            'order'      => (int)($entryCfg['order'] ?? 0),
-                            'rowColor'   => '' // wird später im Filterlauf gesetzt
-                        ];
+                        $rows[] = $this->buildEntryRow(
+                            (string)$roomKey,
+                            $roomLabel,
+                            (string)$domainKey,
+                            (string)$groupKey,
+                            (string)$entryKey,
+                            $cfg
+                        );
                     }
                 }
             }
         }
 
-        return $entries;
+        return $rows;
     }
 
-    private function buildFilterOptionsFromEntries(array $entries): void
+    private function buildEntryRow(
+        string $roomKey,
+        string $roomLabel,
+        string $domainKey,
+        string $groupKey,
+        string $entryKey,
+        array $cfg
+    ): array {
+        $label = (string)($cfg['title'] ?? $cfg['label'] ?? $entryKey);
+        $icon  = (string)($cfg['icon'] ?? ($cfg['iconOn'] ?? ''));
+        $order = (int)($cfg['order'] ?? 0);
+        $speechKey = (string)($cfg['speechKey'] ?? '');
+
+        $entityId   = '';
+        $entityName = '';
+
+        if (array_key_exists('entityId', $cfg)) {
+            // Hier bewusst String lassen (z.B. "light.eg_buero_all")
+            $entityId   = is_string($cfg['entityId']) ? $cfg['entityId'] : (string)$cfg['entityId'];
+            $entityName = $entityId;
+        }
+
+        $controlId = (int)($cfg['controlId'] ?? 0);
+        $statusId  = (int)($cfg['statusId'] ?? 0);
+        $tiltId    = (int)($cfg['tiltId'] ?? 0);
+
+        // Alte Felder (state/toggle/value/set/ist/soll/wert/id/...) → neue IDs
+        $this->deriveLegacyIds($domainKey, $groupKey, $cfg, $controlId, $statusId, $tiltId);
+
+        $row = [
+            'selected'   => false,
+            'roomKey'    => $roomKey,
+            'roomLabel'  => $roomLabel,
+            'domain'     => $domainKey,
+            'group'      => $groupKey,
+            'key'        => $entryKey,
+            'label'      => $label,
+            'entityId'   => $entityId,
+            'entityName' => $entityName,
+            'controlId'  => $controlId,
+            'statusId'   => $statusId,
+            'tiltId'     => $tiltId,
+            'speechKey'  => $speechKey,
+            'icon'       => $icon,
+            'order'      => $order
+        ];
+
+        $rowColor = $this->deriveRowColor($domainKey, $row);
+        if ($rowColor !== '') {
+            $row['rowColor'] = $rowColor;
+        }
+
+        return $row;
+    }
+
+    private function deriveLegacyIds(
+        string $domain,
+        string $group,
+        array $cfg,
+        int &$controlId,
+        int &$statusId,
+        int &$tiltId
+    ): void {
+        switch ($domain) {
+            case 'jalousie':
+                // 'wert' ist die eigentliche Steuer-Variable
+                if ($controlId === 0 && isset($cfg['wert'])) {
+                    $controlId = (int)$cfg['wert'];
+                }
+                break;
+
+            case 'licht':
+                if ($group === 'switches') {
+                    if ($statusId === 0 && isset($cfg['state'])) {
+                        $statusId = (int)$cfg['state'];
+                    }
+                    if ($controlId === 0 && isset($cfg['toggle'])) {
+                        $controlId = (int)$cfg['toggle'];
+                    }
+                } elseif ($group === 'dimmers') {
+                    if ($statusId === 0 && isset($cfg['value'])) {
+                        $statusId = (int)$cfg['value'];
+                    }
+                    if ($controlId === 0 && isset($cfg['set'])) {
+                        $controlId = (int)$cfg['set'];
+                    }
+                } elseif ($group === 'status') {
+                    if ($statusId === 0 && isset($cfg['value'])) {
+                        $statusId = (int)$cfg['value'];
+                    }
+                }
+                break;
+
+            case 'heizung':
+                if ($statusId === 0 && isset($cfg['ist'])) {
+                    $statusId = (int)$cfg['ist'];
+                }
+                if ($controlId === 0 && isset($cfg['soll'])) {
+                    $controlId = (int)$cfg['soll'];
+                }
+                break;
+
+            case 'lueftung':
+                if ($group === 'fans') {
+                    if ($statusId === 0 && isset($cfg['state'])) {
+                        $statusId = (int)$cfg['state'];
+                    }
+                    if ($controlId === 0 && isset($cfg['toggle'])) {
+                        $controlId = (int)$cfg['toggle'];
+                    }
+                }
+                break;
+
+            case 'devices':
+            case 'sprinkler':
+            case 'been':
+                if ($group === 'tabs') {
+                    if ($controlId === 0 && isset($cfg['id'])) {
+                        $controlId = (int)$cfg['id'];
+                    }
+                }
+                break;
+        }
+    }
+
+    private function deriveRowColor(string $domain, array $row): string
     {
-        $rooms   = [];
-        $domains = [];
+        $key    = trim((string)($row['key'] ?? ''));
+        $label  = trim((string)($row['label'] ?? ''));
+        $control = (int)($row['controlId'] ?? 0);
+        $status  = (int)($row['statusId'] ?? 0);
 
-        foreach ($entries as $row) {
-            $rKey   = (string)($row['roomKey'] ?? '');
-            $rLabel = (string)($row['roomLabel'] ?? $rKey);
-            $dKey   = (string)($row['domain'] ?? '');
+        // Harte Fehler: Key/Label fehlen
+        if ($key === '' || $label === '') {
+            return '#FFCDD2'; // Rot
+        }
 
-            if ($rKey !== '' && !isset($rooms[$rKey])) {
-                $rooms[$rKey] = $rLabel;
+        // Warnung: wichtige Domains ohne irgendwelche IDs
+        $importantDomains = ['heizung', 'jalousie', 'licht', 'lueftung', 'devices', 'sprinkler', 'been'];
+
+        if (in_array($domain, $importantDomains, true)) {
+            if ($control === 0 && $status === 0) {
+                return '#FFF9C4'; // Gelb
             }
-
-            if ($dKey !== '' && !isset($domains[$dKey])) {
-                $domains[$dKey] = $dKey;
-            }
         }
 
-        $roomOptions = [
-            ['caption' => 'Alle', 'value' => '']
-        ];
-        foreach ($rooms as $key => $caption) {
-            $roomOptions[] = [
-                'caption' => $caption . ' [' . $key . ']',
-                'value'   => $key
-            ];
-        }
-
-        $domainOptions = [
-            ['caption' => 'Alle', 'value' => '']
-        ];
-        foreach ($domains as $key => $_caption) {
-            $domainOptions[] = [
-                'caption' => $key,
-                'value'   => $key
-            ];
-        }
-
-        $this->WriteAttributeString('RuntimeRoomOptions', json_encode($roomOptions));
-        $this->WriteAttributeString('RuntimeDomainOptions', json_encode($domainOptions));
-
-        $this->debug(sprintf(
-            'buildFilterOptionsFromEntries: rooms=%d, domains=%d',
-            count($roomOptions) - 1,
-            count($domainOptions) - 1
-        ));
+        return '';
     }
 
     private function getRuntimeEntries(): array
@@ -516,48 +578,96 @@ class RoomsCatalogConfigurator extends IPSModule
         if ($json === '' || $json === null) {
             return [];
         }
-        $data = json_decode($json, true);
-        return is_array($data) ? $data : [];
-    }
-
-    private function getRuntimeRoomOptions(): array
-    {
-        $json = $this->ReadAttributeString('RuntimeRoomOptions');
-        if ($json === '' || $json === null) {
+        $entries = json_decode($json, true);
+        if (!is_array($entries)) {
             return [];
         }
-        $data = json_decode($json, true);
-        return is_array($data) ? $data : [];
+        return $entries;
     }
 
-    private function getRuntimeDomainOptions(): array
+    private function buildFilterOptionsFromEntries(array $entries): array
     {
-        $json = $this->ReadAttributeString('RuntimeDomainOptions');
-        if ($json === '' || $json === null) {
-            return [];
-        }
-        $data = json_decode($json, true);
-        return is_array($data) ? $data : [];
-    }
+        $rooms   = [];
+        $domains = [];
 
-    private function determineRowColor(array $row): string
-    {
-        $label = trim((string)($row['label'] ?? ''));
-        $room  = trim((string)($row['roomKey'] ?? ''));
-        $dom   = trim((string)($row['domain'] ?? ''));
-        $key   = trim((string)($row['key'] ?? ''));
+        foreach ($entries as $row) {
+            $roomKey   = (string)($row['roomKey'] ?? '');
+            $roomLabel = (string)($row['roomLabel'] ?? $roomKey);
+            $domain    = (string)($row['domain'] ?? '');
 
-        if ($room === '' || $dom === '' || $key === '' || $label === '') {
-            // Sehr grobe "Fehler"-Markierung
-            return '#FFCDD2'; // helles Rot
+            if ($roomKey !== '') {
+                $rooms[$roomKey] = $roomLabel;
+            }
+            if ($domain !== '') {
+                $domains[$domain] = true;
+            }
         }
 
-        // Aktuell keine Domain-spezifische Logik → neutral
-        return '';
+        ksort($rooms);
+        ksort($domains);
+
+        $roomOptions = [
+            [
+                'caption' => 'Alle',
+                'value'   => ''
+            ]
+        ];
+        foreach ($rooms as $key => $label) {
+            $roomOptions[] = [
+                'caption' => $label . ' [' . $key . ']',
+                'value'   => $key
+            ];
+        }
+
+        $domainOptions = [
+            [
+                'caption' => 'Alle',
+                'value'   => ''
+            ]
+        ];
+        foreach (array_keys($domains) as $domainKey) {
+            $domainOptions[] = [
+                'caption' => $domainKey,
+                'value'   => $domainKey
+            ];
+        }
+
+        $this->logDebug(sprintf(
+            'buildFilterOptionsFromEntries: rooms=%d, domains=%d',
+            count($roomOptions) - 1,
+            count($domainOptions) - 1
+        ));
+
+        return [$roomOptions, $domainOptions];
     }
 
-    private function debug(string $msg): void
+    private function applyFilters(array $entries, string $roomFilter, string $domainFilter): array
     {
-        IPS_LogMessage(self::LOG_TAG, 'RCC-DEBUG: ' . $msg);
+        if ($roomFilter === '' && $domainFilter === '') {
+            return $entries;
+        }
+
+        $filtered = [];
+
+        foreach ($entries as $row) {
+            $room   = (string)($row['roomKey'] ?? '');
+            $domain = (string)($row['domain'] ?? '');
+
+            if ($roomFilter !== '' && $room !== $roomFilter) {
+                continue;
+            }
+            if ($domainFilter !== '' && $domain !== $domainFilter) {
+                continue;
+            }
+
+            $filtered[] = $row;
+        }
+
+        return $filtered;
+    }
+
+    private function logDebug(string $message): void
+    {
+        IPS_LogMessage('Alexa', 'RCC-DEBUG: ' . $message);
     }
 }
