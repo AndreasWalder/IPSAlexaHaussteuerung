@@ -100,19 +100,17 @@ class RoomsCatalogConfigurator extends IPSModule
             $filterDomain
         ));
     
-        // Filter-Optionen aus den vorhandenen Einträgen aufbauen
         [$roomOptions, $domainOptions] = $this->buildFilterOptionsFromEntries($entries);
     
-        // Sichtbare Einträge nach Filter
         $visibleEntries = $this->applyFilters($entries, $filterRoom, $filterDomain);
     
         $this->logDebug('GetConfigurationForm: sichtbare Einträge=' . count($visibleEntries));
     
-        // Analyse, welche Spalten in den sichtbaren Einträgen überhaupt vorkommen
-        $columnStats = $this->analyzeEntriesForColumns($visibleEntries);
+        // Analyse: Metadaten + dynamische Keys aus dem RoomsCatalog
+        [$metaStats, $dynamicKeys] = $this->analyzeEntriesForColumns($visibleEntries);
     
-        // Dynamische Spaltenliste mit sicht-/unsichtbaren Headern
-        $columns = $this->buildColumnsForStats($columnStats);
+        // Spalten dynamisch bauen
+        $columns = $this->buildColumnsForStats($metaStats, $dynamicKeys);
     
         $form = [
             'elements' => [
@@ -189,7 +187,6 @@ class RoomsCatalogConfigurator extends IPSModule
     
         return json_encode($form);
     }
-
 
     // =====================================================================
     // Interne Logik
@@ -371,7 +368,7 @@ class RoomsCatalogConfigurator extends IPSModule
 
 
 
-    private function buildEntryRow(
+     private function buildEntryRow(
         string $roomKey,
         string $roomLabel,
         string $domainKey,
@@ -383,23 +380,21 @@ class RoomsCatalogConfigurator extends IPSModule
         $icon  = (string)($cfg['icon'] ?? ($cfg['iconOn'] ?? ''));
         $order = (int)($cfg['order'] ?? 0);
         $speechKey = (string)($cfg['speechKey'] ?? '');
-
+    
         $entityId   = '';
         $entityName = '';
-
+    
         if (array_key_exists('entityId', $cfg)) {
-            // Hier bewusst String lassen (z.B. "light.eg_buero_all")
             $entityId   = is_string($cfg['entityId']) ? $cfg['entityId'] : (string)$cfg['entityId'];
             $entityName = $entityId;
         }
-
+    
         $controlId = (int)($cfg['controlId'] ?? 0);
         $statusId  = (int)($cfg['statusId'] ?? 0);
         $tiltId    = (int)($cfg['tiltId'] ?? 0);
-
-        // Alte Felder (state/toggle/value/set/ist/soll/wert/id/...) → neue IDs
+    
         $this->deriveLegacyIds($domainKey, $groupKey, $entryKey, $cfg, $controlId, $statusId, $tiltId);
-
+    
         $row = [
             'selected'   => false,
             'roomKey'    => $roomKey,
@@ -417,12 +412,29 @@ class RoomsCatalogConfigurator extends IPSModule
             'icon'       => $icon,
             'order'      => $order
         ];
-
+    
         $rowColor = $this->deriveRowColor($domainKey, $row);
         if ($rowColor !== '') {
             $row['rowColor'] = $rowColor;
         }
-
+    
+        // HIER: alle Original-Keys aus dem RoomsCatalog als zusätzliche Felder übernehmen
+        // z.B. ist, stellung, eingestellt, soll, wert, state, toggle, value, set, min, max, unit, id, ...
+        foreach ($cfg as $k => $v) {
+            if (array_key_exists($k, $row)) {
+                continue;
+            }
+    
+            if (is_array($v)) {
+                if ($v === []) {
+                    continue;
+                }
+                $row[$k] = implode(', ', array_map('strval', $v));
+            } elseif (is_bool($v) || is_int($v) || is_float($v) || is_string($v)) {
+                $row[$k] = $v;
+            }
+        }
+    
         return $row;
     }
 
@@ -561,7 +573,7 @@ class RoomsCatalogConfigurator extends IPSModule
 
     private function analyzeEntriesForColumns(array $entries): array
     {
-        $stats = [
+        $metaStats = [
             'hasEntityId'   => false,
             'hasEntityName' => false,
             'hasControlId'  => false,
@@ -573,42 +585,84 @@ class RoomsCatalogConfigurator extends IPSModule
             'hasRowColor'   => false
         ];
     
+        $dynamicKeys = [];
+    
+        $baseMeta = [
+            'selected',
+            'roomKey',
+            'roomLabel',
+            'domain',
+            'group',
+            'key',
+            'label',
+            'entityId',
+            'entityName',
+            'controlId',
+            'statusId',
+            'tiltId',
+            'speechKey',
+            'icon',
+            'order',
+            'rowColor'
+        ];
+    
         foreach ($entries as $row) {
             if (!empty($row['entityId'] ?? '')) {
-                $stats['hasEntityId']   = true;
-                $stats['hasEntityName'] = true;
+                $metaStats['hasEntityId']   = true;
+                $metaStats['hasEntityName'] = true;
             }
             if ((int)($row['controlId'] ?? 0) !== 0) {
-                $stats['hasControlId'] = true;
+                $metaStats['hasControlId'] = true;
             }
             if ((int)($row['statusId'] ?? 0) !== 0) {
-                $stats['hasStatusId'] = true;
+                $metaStats['hasStatusId'] = true;
             }
             if ((int)($row['tiltId'] ?? 0) !== 0) {
-                $stats['hasTiltId'] = true;
+                $metaStats['hasTiltId'] = true;
             }
             if (trim((string)($row['speechKey'] ?? '')) !== '') {
-                $stats['hasSpeechKey'] = true;
+                $metaStats['hasSpeechKey'] = true;
             }
             if (trim((string)($row['icon'] ?? '')) !== '') {
-                $stats['hasIcon'] = true;
+                $metaStats['hasIcon'] = true;
             }
             if ((int)($row['order'] ?? 0) !== 0) {
-                $stats['hasOrder'] = true;
+                $metaStats['hasOrder'] = true;
             }
             if (trim((string)($row['rowColor'] ?? '')) !== '') {
-                $stats['hasRowColor'] = true;
+                $metaStats['hasRowColor'] = true;
+            }
+    
+            foreach ($row as $k => $v) {
+                if (in_array($k, $baseMeta, true)) {
+                    continue;
+                }
+    
+                if ($v === null || $v === '' || (is_int($v) && $v === 0)) {
+                    continue;
+                }
+    
+                if (!isset($dynamicKeys[$k])) {
+                    if (is_bool($v)) {
+                        $dynamicKeys[$k] = 'bool';
+                    } elseif (is_int($v) || is_float($v)) {
+                        $dynamicKeys[$k] = 'number';
+                    } else {
+                        $dynamicKeys[$k] = 'string';
+                    }
+                }
             }
         }
     
-        return $stats;
+        return [$metaStats, $dynamicKeys];
     }
+
     
-    private function buildColumnsForStats(array $stats): array
+    private function buildColumnsForStats(array $metaStats, array $dynamicKeys): array
     {
         $columns = [];
     
-        // Immer sichtbar: Basis-Spalten
+        // Basis-Spalten immer sichtbar
         $columns[] = [
             'caption' => 'Markiert',
             'name'    => 'selected',
@@ -666,14 +720,14 @@ class RoomsCatalogConfigurator extends IPSModule
             'visible' => true
         ];
     
-        // Optional: Entity
+        // Metafelder nur, wenn in den sichtbaren Zeilen belegt
         $columns[] = [
             'caption' => 'EntityId',
             'name'    => 'entityId',
             'width'   => '180px',
             'add'     => '',
             'edit'    => ['type' => 'ValidationTextBox'],
-            'visible' => $stats['hasEntityId']
+            'visible' => $metaStats['hasEntityId']
         ];
         $columns[] = [
             'caption' => 'Entity-Name',
@@ -681,17 +735,15 @@ class RoomsCatalogConfigurator extends IPSModule
             'width'   => '180px',
             'add'     => '',
             'edit'    => ['type' => 'ValidationTextBox'],
-            'visible' => $stats['hasEntityName']
+            'visible' => $metaStats['hasEntityName']
         ];
-    
-        // Optional: Steuer-/Status-/Tilt-IDs
         $columns[] = [
             'caption' => 'ControlId',
             'name'    => 'controlId',
             'width'   => '90px',
             'add'     => 0,
             'edit'    => ['type' => 'NumberSpinner'],
-            'visible' => $stats['hasControlId']
+            'visible' => $metaStats['hasControlId']
         ];
         $columns[] = [
             'caption' => 'StatusId',
@@ -699,7 +751,7 @@ class RoomsCatalogConfigurator extends IPSModule
             'width'   => '90px',
             'add'     => 0,
             'edit'    => ['type' => 'NumberSpinner'],
-            'visible' => $stats['hasStatusId']
+            'visible' => $metaStats['hasStatusId']
         ];
         $columns[] = [
             'caption' => 'TiltId',
@@ -707,51 +759,67 @@ class RoomsCatalogConfigurator extends IPSModule
             'width'   => '90px',
             'add'     => 0,
             'edit'    => ['type' => 'NumberSpinner'],
-            'visible' => $stats['hasTiltId']
+            'visible' => $metaStats['hasTiltId']
         ];
-    
-        // Optional: SpeechKey
         $columns[] = [
             'caption' => 'Sprach-Key',
             'name'    => 'speechKey',
             'width'   => '140px',
             'add'     => '',
             'edit'    => ['type' => 'ValidationTextBox'],
-            'visible' => $stats['hasSpeechKey']
+            'visible' => $metaStats['hasSpeechKey']
         ];
-    
-        // Optional: Icon
         $columns[] = [
             'caption' => 'Icon',
             'name'    => 'icon',
             'width'   => '120px',
             'add'     => '',
             'edit'    => ['type' => 'ValidationTextBox'],
-            'visible' => $stats['hasIcon']
+            'visible' => $metaStats['hasIcon']
         ];
-    
-        // Optional: Order
         $columns[] = [
             'caption' => 'Order',
             'name'    => 'order',
             'width'   => '70px',
             'add'     => 0,
             'edit'    => ['type' => 'NumberSpinner'],
-            'visible' => $stats['hasOrder']
+            'visible' => $metaStats['hasOrder']
         ];
-    
-        // Optional: Farbe
         $columns[] = [
             'caption' => 'Farbe',
             'name'    => 'rowColor',
             'width'   => '80px',
             'add'     => '',
             'edit'    => ['type' => 'ValidationTextBox'],
-            'visible' => $stats['hasRowColor']
+            'visible' => $metaStats['hasRowColor']
         ];
+    
+        // Dynamische Spalten: alle Keys, die direkt aus dem RoomsCatalog kommen
+        foreach ($dynamicKeys as $key => $type) {
+            $col = [
+                'caption' => $key,
+                'name'    => $key,
+                'width'   => '110px',
+                'visible' => true
+            ];
+    
+            if ($type === 'number') {
+                $col['add']  = 0;
+                $col['edit'] = ['type' => 'NumberSpinner'];
+            } elseif ($type === 'bool') {
+                $col['add']  = false;
+                $col['edit'] = ['type' => 'CheckBox'];
+            } else {
+                $col['add']  = '';
+                $col['edit'] = ['type' => 'ValidationTextBox'];
+            }
+    
+            $columns[] = $col;
+        }
     
         return $columns;
     }
+
 
     private function buildFilterOptionsFromEntries(array $entries): array
     {
