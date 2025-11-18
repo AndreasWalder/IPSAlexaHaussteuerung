@@ -304,55 +304,56 @@ class RoomsCatalogConfigurator extends IPSModule
     private function reloadAllFromCatalog(): void
     {
         $this->logDebug('reloadAllFromCatalog: START');
-
+    
         $scriptId = $this->ReadPropertyInteger('RoomsCatalogScriptID');
         if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) {
             $this->logDebug('reloadAllFromCatalog: kein gültiges ScriptID gesetzt');
             $this->WriteAttributeString('RuntimeEntries', '[]');
             return;
         }
-
-        $catalog = $this->loadRoomsCatalogFromScript($scriptId);
-
+    
+        // NEU: über loadRoomsCatalog() + resolveScriptPath()
+        $catalog = $this->loadRoomsCatalog($scriptId, 'PROD');
+    
         if ($catalog === []) {
             $this->logDebug('reloadAllFromCatalog: Katalog leer oder ungültig');
             $this->WriteAttributeString('RuntimeEntries', '[]');
             return;
         }
-
+    
         $rooms = $this->extractRoomsFromCatalog($catalog);
-
         $this->logDebug('reloadAllFromCatalog: Räume im geladenen Katalog=' . count($rooms));
-
+    
         $entries = $this->buildFlatEntriesFromRooms($rooms);
-
         $this->logDebug('reloadAllFromCatalog: erzeugte Einträge=' . count($entries));
-
+    
         $this->WriteAttributeString('RuntimeEntries', json_encode($entries));
     }
+
 
     private function loadRoomsCatalog(int $scriptId, string $mode): array
     {
         $path = $this->resolveScriptPath($scriptId);
     
         if ($path === null) {
-            $this->debug(
+            $this->logDebug(
                 'loadRoomsCatalog(' . $mode . '): ScriptFile nicht gefunden für ScriptID=' . $scriptId
             );
             return [];
         }
     
-        $this->debug('loadRoomsCatalog(' . $mode . '): lade ' . $path);
+        $this->logDebug('loadRoomsCatalog(' . $mode . '): lade ' . $path);
     
         $data = require $path;
     
         if (!is_array($data)) {
-            $this->debug('loadRoomsCatalog(' . $mode . '): Rückgabewert ist kein Array');
+            $this->logDebug('loadRoomsCatalog(' . $mode . '): Rückgabewert ist kein Array');
             return [];
         }
     
         return $data;
     }
+
 
     /**
      * Akzeptiert sowohl:
@@ -591,9 +592,10 @@ class RoomsCatalogConfigurator extends IPSModule
         $path = IPS_GetKernelDir() . 'scripts' . DIRECTORY_SEPARATOR . $file;
     
         if (!is_file($path)) {
-            $this->debug('resolveScriptPath: Datei nicht gefunden: ' . $path);
+            $this->logDebug('resolveScriptPath: Datei nicht gefunden: ' . $path);
             return null;
         }
+
     
         return $path;
     }
