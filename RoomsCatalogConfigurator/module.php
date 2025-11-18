@@ -393,11 +393,15 @@ class RoomsCatalogConfigurator extends IPSModule
         return $result;
     }
 
-    private function buildFlatEntriesFromRooms(array $rooms): array
+     private function buildFlatEntriesFromRooms(array $rooms): array
     {
         $rows = [];
     
         foreach ($rooms as $roomKey => $roomCfg) {
+            if (!is_array($roomCfg)) {
+                continue;
+            }
+    
             $roomLabel = (string)($roomCfg['display'] ?? (string)$roomKey);
             $domains   = $roomCfg['domains'] ?? [];
     
@@ -405,16 +409,54 @@ class RoomsCatalogConfigurator extends IPSModule
                 if (!is_array($domainCfg)) {
                     continue;
                 }
+    
+                // Heizung: eine Zeile pro Heizkreis (buero, kueche, …)
+                if ($domainKey === 'heizung') {
+                    foreach ($domainCfg as $hkKey => $hkCfg) {
+                        if (!is_array($hkCfg)) {
+                            continue;
+                        }
+    
+                        $rows[] = $this->buildEntryRow(
+                            (string)$roomKey,
+                            $roomLabel,
+                            (string)$domainKey,   // domain = heizung
+                            (string)$domainKey,   // group  = heizung
+                            (string)$hkKey,       // key    = buero, kueche, …
+                            $hkCfg                // enthält ist/stellung/eingestellt/soll/…
+                        );
+                    }
+                    continue;
+                }
+    
+                // Jalousie: eine Zeile pro Objekt (fenster, tuer, ostlinks, …)
+                if ($domainKey === 'jalousie') {
+                    foreach ($domainCfg as $entryKey => $entryCfg) {
+                        if (!is_array($entryCfg)) {
+                            continue;
+                        }
+    
+                        $rows[] = $this->buildEntryRow(
+                            (string)$roomKey,
+                            $roomLabel,
+                            (string)$domainKey,   // domain = jalousie
+                            (string)$domainKey,   // group  = jalousie
+                            (string)$entryKey,    // key    = fenster, tuer, …
+                            $entryCfg             // enthält title/wert/order
+                        );
+                    }
+                    continue;
+                }
+    
+                // Standard-Fall: licht, lueftung, devices, sprinkler, been, …
                 foreach ($domainCfg as $groupKey => $groupCfg) {
                     if (!is_array($groupCfg)) {
                         continue;
                     }
-                    foreach ($groupCfg as $entryKey => $cfg) {
     
-                        // NEU: Skalare in ein kleines Array einpacken,
-                        // damit wir den Wert später noch kennen.
+                    foreach ($groupCfg as $entryKey => $cfg) {
                         if (!is_array($cfg)) {
-                            $cfg = ['_scalar' => $cfg];
+                            continue;
                         }
     
                         $rows[] = $this->buildEntryRow(
@@ -432,6 +474,7 @@ class RoomsCatalogConfigurator extends IPSModule
     
         return $rows;
     }
+
 
 
     private function buildEntryRow(
@@ -502,15 +545,10 @@ class RoomsCatalogConfigurator extends IPSModule
     
         switch ($domain) {
             case 'jalousie':
-                // Jalousie: 'wert' ist die Stell-Variable
-                if ($controlId === 0) {
-                    if ($entryKey === 'wert' && $scalar !== null) {
-                        $controlId = (int)$scalar;
-                    } elseif (isset($cfg['wert'])) {
-                        $controlId = (int)$cfg['wert'];
-                    }
-                }
-                break;
+            if ($controlId === 0 && isset($cfg['wert'])) {
+                $controlId = (int)$cfg['wert'];
+            }
+            break;
     
             case 'licht':
                 if ($group === 'switches') {
@@ -535,48 +573,35 @@ class RoomsCatalogConfigurator extends IPSModule
                 break;
     
             case 'heizung':
-                // Heizung: 'ist' → StatusId, 'soll' → ControlId
-                if ($statusId === 0) {
-                    if ($entryKey === 'ist' && $scalar !== null) {
-                        $statusId = (int)$scalar;
-                    } elseif (isset($cfg['ist'])) {
-                        $statusId = (int)$cfg['ist'];
-                    }
-                }
-                if ($controlId === 0) {
-                    if ($entryKey === 'soll' && $scalar !== null) {
-                        $controlId = (int)$scalar;
-                    } elseif (isset($cfg['soll'])) {
-                        $controlId = (int)$cfg['soll'];
-                    }
-                }
-                break;
+            if ($statusId === 0 && isset($cfg['ist'])) {
+                $statusId = (int)$cfg['ist'];
+            }
+            if ($controlId === 0 && isset($cfg['soll'])) {
+                $controlId = (int)$cfg['soll'];
+            }
+            break;
     
-            case 'lueftung':
-                if ($group === 'fans') {
-                    if ($statusId === 0 && isset($cfg['state'])) {
-                        $statusId = (int)$cfg['state'];
-                    }
-                    if ($controlId === 0 && isset($cfg['toggle'])) {
-                        $controlId = (int)$cfg['toggle'];
-                    }
+           case 'lueftung':
+            if ($group === 'fans') {
+                if ($statusId === 0 && isset($cfg['state'])) {
+                    $statusId = (int)$cfg['state'];
                 }
-                break;
+                if ($controlId === 0 && isset($cfg['toggle'])) {
+                    $controlId = (int)$cfg['toggle'];
+                }
+            }
+            break;
     
             case 'devices':
             case 'sprinkler':
             case 'been':
                 if ($group === 'tabs') {
-                    if ($controlId === 0) {
-                        if ($scalar !== null) {
-                            $controlId = (int)$scalar;
-                        } elseif (isset($cfg['id'])) {
-                            $controlId = (int)$cfg['id'];
-                        }
+                    if ($controlId === 0 && isset($cfg['id'])) {
+                        $controlId = (int)$cfg['id'];
                     }
                 }
                 break;
-        }
+            }
     }
 
 
