@@ -396,11 +396,11 @@ class RoomsCatalogConfigurator extends IPSModule
     private function buildFlatEntriesFromRooms(array $rooms): array
     {
         $rows = [];
-
+    
         foreach ($rooms as $roomKey => $roomCfg) {
             $roomLabel = (string)($roomCfg['display'] ?? (string)$roomKey);
             $domains   = $roomCfg['domains'] ?? [];
-
+    
             foreach ($domains as $domainKey => $domainCfg) {
                 if (!is_array($domainCfg)) {
                     continue;
@@ -410,9 +410,13 @@ class RoomsCatalogConfigurator extends IPSModule
                         continue;
                     }
                     foreach ($groupCfg as $entryKey => $cfg) {
+    
+                        // NEU: Skalare in ein kleines Array einpacken,
+                        // damit wir den Wert später noch kennen.
                         if (!is_array($cfg)) {
-                            $cfg = [];
+                            $cfg = ['_scalar' => $cfg];
                         }
+    
                         $rows[] = $this->buildEntryRow(
                             (string)$roomKey,
                             $roomLabel,
@@ -425,9 +429,10 @@ class RoomsCatalogConfigurator extends IPSModule
                 }
             }
         }
-
+    
         return $rows;
     }
+
 
     private function buildEntryRow(
         string $roomKey,
@@ -456,7 +461,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $tiltId    = (int)($cfg['tiltId'] ?? 0);
 
         // Alte Felder (state/toggle/value/set/ist/soll/wert/id/...) → neue IDs
-        $this->deriveLegacyIds($domainKey, $groupKey, $cfg, $controlId, $statusId, $tiltId);
+        $this->deriveLegacyIds($domainKey, $groupKey, $entryKey, $cfg, $controlId, $statusId, $tiltId);
 
         $row = [
             'selected'   => false,
@@ -487,19 +492,26 @@ class RoomsCatalogConfigurator extends IPSModule
     private function deriveLegacyIds(
         string $domain,
         string $group,
+        string $entryKey,
         array $cfg,
         int &$controlId,
         int &$statusId,
         int &$tiltId
     ): void {
+        $scalar = $cfg['_scalar'] ?? null;
+    
         switch ($domain) {
             case 'jalousie':
-                // 'wert' ist die eigentliche Steuer-Variable
-                if ($controlId === 0 && isset($cfg['wert'])) {
-                    $controlId = (int)$cfg['wert'];
+                // Jalousie: 'wert' ist die Stell-Variable
+                if ($controlId === 0) {
+                    if ($entryKey === 'wert' && $scalar !== null) {
+                        $controlId = (int)$scalar;
+                    } elseif (isset($cfg['wert'])) {
+                        $controlId = (int)$cfg['wert'];
+                    }
                 }
                 break;
-
+    
             case 'licht':
                 if ($group === 'switches') {
                     if ($statusId === 0 && isset($cfg['state'])) {
@@ -521,16 +533,25 @@ class RoomsCatalogConfigurator extends IPSModule
                     }
                 }
                 break;
-
+    
             case 'heizung':
-                if ($statusId === 0 && isset($cfg['ist'])) {
-                    $statusId = (int)$cfg['ist'];
+                // Heizung: 'ist' → StatusId, 'soll' → ControlId
+                if ($statusId === 0) {
+                    if ($entryKey === 'ist' && $scalar !== null) {
+                        $statusId = (int)$scalar;
+                    } elseif (isset($cfg['ist'])) {
+                        $statusId = (int)$cfg['ist'];
+                    }
                 }
-                if ($controlId === 0 && isset($cfg['soll'])) {
-                    $controlId = (int)$cfg['soll'];
+                if ($controlId === 0) {
+                    if ($entryKey === 'soll' && $scalar !== null) {
+                        $controlId = (int)$scalar;
+                    } elseif (isset($cfg['soll'])) {
+                        $controlId = (int)$cfg['soll'];
+                    }
                 }
                 break;
-
+    
             case 'lueftung':
                 if ($group === 'fans') {
                     if ($statusId === 0 && isset($cfg['state'])) {
@@ -541,18 +562,23 @@ class RoomsCatalogConfigurator extends IPSModule
                     }
                 }
                 break;
-
+    
             case 'devices':
             case 'sprinkler':
             case 'been':
                 if ($group === 'tabs') {
-                    if ($controlId === 0 && isset($cfg['id'])) {
-                        $controlId = (int)$cfg['id'];
+                    if ($controlId === 0) {
+                        if ($scalar !== null) {
+                            $controlId = (int)$scalar;
+                        } elseif (isset($cfg['id'])) {
+                            $controlId = (int)$cfg['id'];
+                        }
                     }
                 }
                 break;
         }
     }
+
 
     private function deriveRowColor(string $domain, array $row): string
     {
