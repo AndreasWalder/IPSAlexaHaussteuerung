@@ -331,22 +331,27 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->WriteAttributeString('RuntimeEntries', json_encode($entries));
     }
 
-    private function loadRoomsCatalogFromScript(int $scriptId): array
+    private function loadRoomsCatalog(int $scriptId, string $mode): array
     {
-        $file = IPS_GetScriptFile($scriptId);
-        if ($file === '' || !file_exists($file)) {
-            $this->logDebug('loadRoomsCatalog: ScriptFile nicht gefunden: ' . $scriptId . '.ips.php');
+        $path = $this->resolveScriptPath($scriptId);
+    
+        if ($path === null) {
+            $this->debug(
+                'loadRoomsCatalog(' . $mode . '): ScriptFile nicht gefunden für ScriptID=' . $scriptId
+            );
             return [];
         }
-
-        $catalog = @require $file;
-
-        if (!is_array($catalog)) {
-            $this->logDebug('loadRoomsCatalog: require() ergab kein Array');
+    
+        $this->debug('loadRoomsCatalog(' . $mode . '): lade ' . $path);
+    
+        $data = require $path;
+    
+        if (!is_array($data)) {
+            $this->debug('loadRoomsCatalog(' . $mode . '): Rückgabewert ist kein Array');
             return [];
         }
-
-        return $catalog;
+    
+        return $data;
     }
 
     /**
@@ -571,6 +576,28 @@ class RoomsCatalogConfigurator extends IPSModule
 
         return '';
     }
+
+    private function resolveScriptPath(int $scriptId): ?string
+    {
+        if ($scriptId <= 0) {
+            return null;
+        }
+    
+        $file = @IPS_GetScriptFile($scriptId);
+        if ($file === '' || $file === false) {
+            return null;
+        }
+    
+        $path = IPS_GetKernelDir() . 'scripts' . DIRECTORY_SEPARATOR . $file;
+    
+        if (!is_file($path)) {
+            $this->debug('resolveScriptPath: Datei nicht gefunden: ' . $path);
+            return null;
+        }
+    
+        return $path;
+    }
+
 
     private function getRuntimeEntries(): array
     {
