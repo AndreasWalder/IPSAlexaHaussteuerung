@@ -102,17 +102,18 @@ class RoomsCatalogConfigurator extends IPSModule
 
     /**
      * Speichert die (gefilterten) Einträge zurück in das RoomsCatalogEdit-Script.
-     * Wird über den Formular-Button mit RCC_SaveToEdit($id, $Entries) aufgerufen.
+     * Wird über den Formular-Button mit RCC_SaveToEdit($id, json_encode($Entries)) aufgerufen.
      */
-    public function SaveToEdit($entries)
+    public function SaveToEdit(string $entriesJson)
     {
+        $entries = json_decode($entriesJson, true);
         if (!is_array($entries)) {
-            $this->logDebug('SaveToEdit: entries ist kein Array');
+            $this->logDebug('SaveToEdit: entries ist kein Array nach json_decode');
             return;
         }
-
+    
         $this->logDebug('SaveToEdit: START, rows=' . count($entries));
-
+    
         $editScriptId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
         if ($editScriptId <= 0 || !IPS_ScriptExists($editScriptId)) {
             $this->logDebug('SaveToEdit: RoomsCatalogEditScriptID ungültig');
@@ -275,7 +276,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 [
                     'type'    => 'Button',
                     'caption' => 'SPEICHERN NACH ROOMS CATALOG EDIT',
-                    'onClick' => 'RCC_SaveToEdit($id, $Entries);'
+                    'onClick' => 'RCC_SaveToEdit($id, json_encode($Entries));'
                 ]
             ]
         ];
