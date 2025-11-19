@@ -106,9 +106,16 @@ class RoomsCatalogConfigurator extends IPSModule
      */
     public function SaveToEdit(string $entriesJson)
     {
-        $entries = json_decode($entriesJson, true);
+        if ($entriesJson === '') {
+            // manueller Button: ganze Runtime-Liste speichern
+            $entries = $this->getRuntimeEntries();
+        } else {
+            // List.onChange: JSON aus dem Formular
+            $entries = json_decode($entriesJson, true);
+        }
+    
         if (!is_array($entries)) {
-            $this->logDebug('SaveToEdit: entries ist kein Array nach json_decode');
+            $this->logDebug('SaveToEdit: entries ist kein Array');
             return;
         }
     
@@ -282,7 +289,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 [
                     'type'    => 'Button',
                     'caption' => 'SPEICHERN NACH ROOMS CATALOG EDIT',
-                    'onClick' => 'RCC_SaveToEdit($id, json_encode($Entries));'
+                    'onClick' => 'RCC_SaveToEdit($id, "");'
                 ]
             ]
         ];
