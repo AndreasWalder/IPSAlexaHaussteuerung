@@ -808,7 +808,7 @@ class RoomsCatalogConfigurator extends IPSModule
         return $room . '|' . $domain . '|' . $group . '|' . $key;
     }
 
-    /**
+       /**
      * Baut aus der flachen Liste wieder einen RoomsCatalog (rooms[...]...),
      * vorhandene Top-Level-Keys wie "global" aus $existingCatalog bleiben erhalten.
      */
@@ -850,31 +850,35 @@ class RoomsCatalogConfigurator extends IPSModule
                 $cfg[$k] = $v;
             }
 
-           if ($domain === 'heizung' || $domain === 'jalousie') {
-             $rooms[$roomKey]['domains'][$domain][$key] = $cfg;
-         } else {
-             if (!isset($rooms[$roomKey]['domains'][$domain][$group])) {
-                 $rooms[$roomKey]['domains'][$domain][$group] = [];
-             }
-             $rooms[$roomKey]['domains'][$domain][$group][$key] = $cfg;
-         }
-     }
+            if ($domain === 'heizung' || $domain === 'jalousie') {
+                // flache Struktur: domain[key] = cfg
+                $rooms[$roomKey]['domains'][$domain][$key] = $cfg;
+            } else {
+                // Standardstruktur: domain[group][key] = cfg
+                if (!isset($rooms[$roomKey]['domains'][$domain][$group])) {
+                    $rooms[$roomKey]['domains'][$domain][$group] = [];
+                }
+                $rooms[$roomKey]['domains'][$domain][$group][$key] = $cfg;
+            }
+        }
 
-     $newCatalog = [];
+        // bestehenden Katalog-Basisteil übernehmen (global, floors, …)
+        $newCatalog = [];
 
-     foreach ($existingCatalog as $k => $v) {
-         if ($k === 'rooms') {
-             continue;
-         }
-         $newCatalog[$k] = $v;
-     }
+        foreach ($existingCatalog as $k => $v) {
+            if ($k === 'rooms') {
+                continue;
+            }
+            $newCatalog[$k] = $v;
+        }
 
-     $newCatalog['rooms'] = $rooms;
+        $newCatalog['rooms'] = $rooms;
 
-     return $newCatalog;
- }
+        return $newCatalog;
+    }
 
- private function logDebug(string $message): void
- {
-     IPS_LogMessage('Alexa', 'RCC-DEBUG: ' . $message);
- }
+    private function logDebug(string $message): void
+    {
+        IPS_LogMessage('Alexa', 'RCC-DEBUG: ' . $message);
+    }
+}
