@@ -178,7 +178,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $filterRoom   = $this->ReadAttributeString('FilterRoom');
         $filterDomain = $this->ReadAttributeString('FilterDomain');
         $filterGroup  = $this->ReadAttributeString('FilterGroup');
-
+    
         $this->logDebug(sprintf(
             'GetConfigurationForm: RuntimeEntries total=%d, FilterRoom="%s", FilterDomain="%s", FilterGroup="%s"',
             count($entries),
@@ -186,16 +186,21 @@ class RoomsCatalogConfigurator extends IPSModule
             $filterDomain,
             $filterGroup
         ));
-
+    
+        // Filter-Optionen aus den vorhandenen Einträgen aufbauen
         [$roomOptions, $domainOptions, $groupOptions] = $this->buildFilterOptionsFromEntries($entries);
-
+    
+        // Sichtbare Einträge nach Filter
         $visibleEntries = $this->applyFilters($entries, $filterRoom, $filterDomain, $filterGroup);
-
+    
         $this->logDebug('GetConfigurationForm: sichtbare Einträge=' . count($visibleEntries));
-
+    
+        // Analyse, welche dynamischen Spalten in den sichtbaren Einträgen vorkommen
         $dynamicKeys = $this->analyzeEntriesForDynamicColumns($visibleEntries);
-        $columns     = $this->buildColumns($dynamicKeys);
-
+    
+        // Dynamische Spaltenliste
+        $columns = $this->buildColumns($dynamicKeys);
+    
         $form = [
             'elements' => [
                 [
@@ -259,11 +264,12 @@ class RoomsCatalogConfigurator extends IPSModule
                             'name'     => 'Entries',
                             'caption'  => 'Einträge',
                             'rowCount' => 25,
-                            'add'      => false,
+                            'add'      => true,
                             'delete'   => false,
                             'sort'     => true,
                             'columns'  => $columns,
-                            'values'   => $visibleEntries
+                            'values'   => $visibleEntries,
+                            'onChange' => 'RCC_SaveToEdit($id, json_encode($Entries));'
                         ]
                     ]
                 ]
@@ -271,7 +277,7 @@ class RoomsCatalogConfigurator extends IPSModule
             'actions' => [
                 [
                     'type'    => 'Label',
-                    'caption' => 'Hinweis: Änderungen werden durch Klick auf "SPEICHERN" in den RoomsCatalogEdit übernommen.'
+                    'caption' => 'Hinweis: Änderungen (inkl. Hinzufügen) werden beim Ändern der Liste automatisch in den RoomsCatalogEdit übernommen.'
                 ],
                 [
                     'type'    => 'Button',
@@ -280,9 +286,10 @@ class RoomsCatalogConfigurator extends IPSModule
                 ]
             ]
         ];
-
+    
         return json_encode($form);
     }
+
 
     // =====================================================================
     // Interne Logik
