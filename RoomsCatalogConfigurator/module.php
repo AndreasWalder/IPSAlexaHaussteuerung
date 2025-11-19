@@ -34,15 +34,16 @@ class RoomsCatalogConfigurator extends IPSModule
     public function Create()
     {
         parent::Create();
-
+    
         // Grundkonfiguration (Scripts)
         $this->RegisterPropertyInteger('RoomsCatalogScriptID', 0);
         $this->RegisterPropertyInteger('RoomsCatalogEditScriptID', 0);
-
+    
         // Laufzeit-Daten
         $this->RegisterAttributeString('RuntimeEntries', '[]');
         $this->RegisterAttributeString('FilterRoom', '');
         $this->RegisterAttributeString('FilterDomain', '');
+        $this->RegisterAttributeString('FilterGroup', '');   // NEU
     }
 
     public function ApplyChanges()
@@ -83,6 +84,13 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->ReloadForm();
     }
 
+    public function SetGroupFilter(string $groupKey)
+    {
+        $this->WriteAttributeString('FilterGroup', $groupKey);
+        $this->logDebug('SetGroupFilter: groupKey="' . $groupKey . '"');
+        $this->ReloadForm();
+    }
+
     // =====================================================================
     // Konfigurationsformular
     // =====================================================================
@@ -92,24 +100,28 @@ class RoomsCatalogConfigurator extends IPSModule
         $entries      = $this->getRuntimeEntries();
         $filterRoom   = $this->ReadAttributeString('FilterRoom');
         $filterDomain = $this->ReadAttributeString('FilterDomain');
+        $filterGroup  = $this->ReadAttributeString('FilterGroup');
     
         $this->logDebug(sprintf(
-            'GetConfigurationForm: RuntimeEntries total=%d, FilterRoom="%s", FilterDomain="%s"',
+            'GetConfigurationForm: RuntimeEntries total=%d, FilterRoom="%s", FilterDomain="%s", FilterGroup="%s"',
             count($entries),
             $filterRoom,
-            $filterDomain
+            $filterDomain,
+            $filterGroup
         ));
     
-        [$roomOptions, $domainOptions] = $this->buildFilterOptionsFromEntries($entries);
+        // Filter-Optionen aus den vorhandenen Einträgen aufbauen
+        [$roomOptions, $domainOptions, $groupOptions] = $this->buildFilterOptionsFromEntries($entries);
     
-        $visibleEntries = $this->applyFilters($entries, $filterRoom, $filterDomain);
+        // Sichtbare Einträge nach Filter
+        $visibleEntries = $this->applyFilters($entries, $filterRoom, $filterDomain, $filterGroup);
     
         $this->logDebug('GetConfigurationForm: sichtbare Einträge=' . count($visibleEntries));
     
-        // Analyse: Metadaten + dynamische Keys aus dem RoomsCatalog
+        // Analyse, welche Spalten in den sichtbaren Einträgen vorkommen
         [$metaStats, $dynamicKeys] = $this->analyzeEntriesForColumns($visibleEntries);
     
-        // Spalten dynamisch bauen
+        // Dynamische Spaltenliste
         $columns = $this->buildColumnsForStats($metaStats, $dynamicKeys);
     
         $form = [
@@ -156,6 +168,14 @@ class RoomsCatalogConfigurator extends IPSModule
                                     'onChange' => 'RCC_SetDomainFilter($id, $FilterDomain);'
                                 ],
                                 [
+                                    'type'     => 'Select',
+                                    'name'     => 'FilterGroup',
+                                    'caption'  => 'Gruppen-Filter',
+                                    'options'  => $groupOptions,
+                                    'value'    => $filterGroup,
+                                    'onChange' => 'RCC_SetGroupFilter($id, $FilterGroup);'
+                                ],
+                                [
                                     'type'    => 'Button',
                                     'caption' => 'ROOMSCATALOG NEU LADEN',
                                     'onClick' => 'RCC_ReloadCatalog($id);'
@@ -187,6 +207,7 @@ class RoomsCatalogConfigurator extends IPSModule
     
         return json_encode($form);
     }
+
 
     // =====================================================================
     // Interne Logik
@@ -571,13 +592,11 @@ class RoomsCatalogConfigurator extends IPSModule
         return $entries;
     }
 
-    private function analyzeEntriesForColumns(array $entries): array
+   private function analyzeEntriesForColumns(array $entries): array
     {
         $metaStats = [
             'hasEntityId'   => false,
             'hasEntityName' => false,
-            'hasControlId'  => false,
-            'hasStatusId'   => false,
             'hasTiltId'     => false,
             'hasSpeechKey'  => false,
             'hasIcon'       => false,
@@ -597,8 +616,8 @@ class RoomsCatalogConfigurator extends IPSModule
             'label',
             'entityId',
             'entityName',
-            'controlId',
-            'statusId',
+            'controlId',   // intern vorhanden, aber kein eigener Header
+            'statusId',    // dto.
             'tiltId',
             'speechKey',
             'icon',
@@ -610,12 +629,6 @@ class RoomsCatalogConfigurator extends IPSModule
             if (!empty($row['entityId'] ?? '')) {
                 $metaStats['hasEntityId']   = true;
                 $metaStats['hasEntityName'] = true;
-            }
-            if ((int)($row['controlId'] ?? 0) !== 0) {
-                $metaStats['hasControlId'] = true;
-            }
-            if ((int)($row['statusId'] ?? 0) !== 0) {
-                $metaStats['hasStatusId'] = true;
             }
             if ((int)($row['tiltId'] ?? 0) !== 0) {
                 $metaStats['hasTiltId'] = true;
@@ -657,8 +670,7 @@ class RoomsCatalogConfigurator extends IPSModule
         return [$metaStats, $dynamicKeys];
     }
 
-    
-    private function buildColumnsForStats(array $metaStats, array $dynamicKeys): array
+     private function buildColumnsForStats(array $metaStats, array $dynamicKeys): array
     {
         $columns = [];
     
@@ -720,7 +732,7 @@ class RoomsCatalogConfigurator extends IPSModule
             'visible' => true
         ];
     
-        // Metafelder nur, wenn in den sichtbaren Zeilen belegt
+        // Optionale Meta-Spalten
         $columns[] = [
             'caption' => 'EntityId',
             'name'    => 'entityId',
@@ -736,22 +748,6 @@ class RoomsCatalogConfigurator extends IPSModule
             'add'     => '',
             'edit'    => ['type' => 'ValidationTextBox'],
             'visible' => $metaStats['hasEntityName']
-        ];
-        $columns[] = [
-            'caption' => 'ControlId',
-            'name'    => 'controlId',
-            'width'   => '90px',
-            'add'     => 0,
-            'edit'    => ['type' => 'NumberSpinner'],
-            'visible' => $metaStats['hasControlId']
-        ];
-        $columns[] = [
-            'caption' => 'StatusId',
-            'name'    => 'statusId',
-            'width'   => '90px',
-            'add'     => 0,
-            'edit'    => ['type' => 'NumberSpinner'],
-            'visible' => $metaStats['hasStatusId']
         ];
         $columns[] = [
             'caption' => 'TiltId',
@@ -794,7 +790,7 @@ class RoomsCatalogConfigurator extends IPSModule
             'visible' => $metaStats['hasRowColor']
         ];
     
-        // Dynamische Spalten: alle Keys, die direkt aus dem RoomsCatalog kommen
+        // Dynamische Spalten: alle echten RoomsCatalog-Felder
         foreach ($dynamicKeys as $key => $type) {
             $col = [
                 'caption' => $key,
@@ -821,32 +817,36 @@ class RoomsCatalogConfigurator extends IPSModule
     }
 
 
+
     private function buildFilterOptionsFromEntries(array $entries): array
     {
         $rooms   = [];
         $domains = [];
-
+        $groups  = [];
+    
         foreach ($entries as $row) {
             $roomKey   = (string)($row['roomKey'] ?? '');
             $roomLabel = (string)($row['roomLabel'] ?? $roomKey);
             $domain    = (string)($row['domain'] ?? '');
-
+            $group     = (string)($row['group'] ?? '');
+    
             if ($roomKey !== '') {
                 $rooms[$roomKey] = $roomLabel;
             }
             if ($domain !== '') {
                 $domains[$domain] = true;
             }
+            if ($group !== '') {
+                $groups[$group] = true;
+            }
         }
-
+    
         ksort($rooms);
         ksort($domains);
-
+        ksort($groups);
+    
         $roomOptions = [
-            [
-                'caption' => 'Alle',
-                'value'   => ''
-            ]
+            ['caption' => 'Alle', 'value' => '']
         ];
         foreach ($rooms as $key => $label) {
             $roomOptions[] = [
@@ -854,12 +854,9 @@ class RoomsCatalogConfigurator extends IPSModule
                 'value'   => $key
             ];
         }
-
+    
         $domainOptions = [
-            [
-                'caption' => 'Alle',
-                'value'   => ''
-            ]
+            ['caption' => 'Alle', 'value' => '']
         ];
         foreach (array_keys($domains) as $domainKey) {
             $domainOptions[] = [
@@ -867,38 +864,53 @@ class RoomsCatalogConfigurator extends IPSModule
                 'value'   => $domainKey
             ];
         }
-
+    
+        $groupOptions = [
+            ['caption' => 'Alle', 'value' => '']
+        ];
+        foreach (array_keys($groups) as $groupKey) {
+            $groupOptions[] = [
+                'caption' => $groupKey,
+                'value'   => $groupKey
+            ];
+        }
+    
         $this->logDebug(sprintf(
-            'buildFilterOptionsFromEntries: rooms=%d, domains=%d',
+            'buildFilterOptionsFromEntries: rooms=%d, domains=%d, groups=%d',
             count($roomOptions) - 1,
-            count($domainOptions) - 1
+            count($domainOptions) - 1,
+            count($groupOptions) - 1
         ));
-
-        return [$roomOptions, $domainOptions];
+    
+        return [$roomOptions, $domainOptions, $groupOptions];
     }
 
-    private function applyFilters(array $entries, string $roomFilter, string $domainFilter): array
+    private function applyFilters(array $entries, string $roomFilter, string $domainFilter, string $groupFilter): array
     {
-        if ($roomFilter === '' && $domainFilter === '') {
+        if ($roomFilter === '' && $domainFilter === '' && $groupFilter === '') {
             return $entries;
         }
-
+    
         $filtered = [];
-
+    
         foreach ($entries as $row) {
             $room   = (string)($row['roomKey'] ?? '');
             $domain = (string)($row['domain'] ?? '');
-
+            $group  = (string)($row['group'] ?? '');
+    
             if ($roomFilter !== '' && $room !== $roomFilter) {
                 continue;
             }
             if ($domainFilter !== '' && $domain !== $domainFilter) {
                 continue;
             }
-
+            if ($groupFilter !== '' && $group !== $groupFilter) {
+                continue;
+            }
+    
             $filtered[] = $row;
         }
-
+    
         return $filtered;
     }
 
