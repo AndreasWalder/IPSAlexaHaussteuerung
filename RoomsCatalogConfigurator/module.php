@@ -33,6 +33,11 @@ declare(strict_types=1);
  * - Keine festen Feldnamen mehr außer: selected, roomKey, roomLabel, domain, group, key
  * - Keine Domain-spezifischen Sonderlogiken (heizung/jalousie/…)
  * - Spalten entstehen dynamisch aus den sichtbaren Einträgen
+ *
+ * 2025-11-19: V2.1 — IPS-IDs & Speichern nach RoomsCatalogEdit
+ * - Zahlenspalten mit überwiegend 5-stelligen Werten werden als SelectObject editierbar
+ * - Speichern-Button: aktualisiert/legt Einträge im RoomsCatalogEdit-Script an
+ *   (Struktur: rooms[roomKey].display/domains[domain][group][key] = cfg)
  */
 
 class RoomsCatalogConfigurator extends IPSModule
@@ -58,14 +63,13 @@ class RoomsCatalogConfigurator extends IPSModule
 
         $this->logDebug('ApplyChanges START');
 
-        // Beim ersten Aufruf oder nach Konfig-Änderung: komplett neu laden
         $this->reloadAllFromCatalog();
 
         $this->logDebug('ApplyChanges ENDE');
     }
 
     // =====================================================================
-    // Public API (für Formular-Buttons / -Events)
+    // Public API (Buttons / Events)
     // =====================================================================
 
     public function ReloadCatalog()
@@ -96,6 +100,73 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->ReloadForm();
     }
 
+    /**
+     * Speichert die (gefilterten) Einträge zurück in das RoomsCatalogEdit-Script.
+     * Wird über den Formular-Button mit RCC_SaveToEdit($id, $Entries) aufgerufen.
+     */
+    public function SaveToEdit($entries)
+    {
+        if (!is_array($entries)) {
+            $this->logDebug('SaveToEdit: entries ist kein Array');
+            return;
+        }
+
+        $this->logDebug('SaveToEdit: START, rows=' . count($entries));
+
+        $editScriptId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        if ($editScriptId <= 0 || !IPS_ScriptExists($editScriptId)) {
+            $this->logDebug('SaveToEdit: RoomsCatalogEditScriptID ungültig');
+            return;
+        }
+
+        // Vollständige Runtime-Liste laden
+        $all = $this->getRuntimeEntries();
+
+        // Index nach room|domain|group|key aufbauen
+        $index = [];
+        foreach ($all as $i => $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $rk = $this->buildCompositeKey($row);
+            if ($rk === null) {
+                continue;
+            }
+            $index[$rk] = $i;
+        }
+
+        // Geänderte/neu angelegte Einträge in Runtime mergen
+        foreach ($entries as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $rk = $this->buildCompositeKey($row);
+            if ($rk === null) {
+                continue;
+            }
+            if (isset($index[$rk])) {
+                $all[$index[$rk]] = $row; // Update
+            } else {
+                $all[]        = $row;     // Neu
+                $index[$rk]   = count($all) - 1;
+            }
+        }
+
+        // RuntimeEntries updaten (für nächstes Öffnen)
+        $this->WriteAttributeString('RuntimeEntries', json_encode($all));
+
+        // Bestehenden Edit-Katalog laden (um z.B. "global" zu erhalten)
+        $existingEdit = $this->loadRoomsCatalog($editScriptId, 'EDIT');
+        $newCatalog   = $this->rebuildRoomsCatalogFromEntries($all, $existingEdit);
+
+        // PHP-Content generieren & in Script schreiben
+        $php = "<?php\nreturn " . var_export($newCatalog, true) . ";\n";
+        IPS_SetScriptContent($editScriptId, $php);
+
+        $roomCount = (isset($newCatalog['rooms']) && is_array($newCatalog['rooms'])) ? count($newCatalog['rooms']) : 0;
+        $this->logDebug('SaveToEdit: ENDE, rooms=' . $roomCount);
+    }
+
     // =====================================================================
     // Konfigurationsformular
     // =====================================================================
@@ -115,19 +186,14 @@ class RoomsCatalogConfigurator extends IPSModule
             $filterGroup
         ));
 
-        // Filter-Optionen aus den vorhandenen Einträgen aufbauen
         [$roomOptions, $domainOptions, $groupOptions] = $this->buildFilterOptionsFromEntries($entries);
 
-        // Sichtbare Einträge nach Filter
         $visibleEntries = $this->applyFilters($entries, $filterRoom, $filterDomain, $filterGroup);
 
         $this->logDebug('GetConfigurationForm: sichtbare Einträge=' . count($visibleEntries));
 
-        // Analyse, welche dynamischen Spalten in den sichtbaren Einträgen vorkommen
         $dynamicKeys = $this->analyzeEntriesForDynamicColumns($visibleEntries);
-
-        // Dynamische Spaltenliste
-        $columns = $this->buildColumns($dynamicKeys);
+        $columns     = $this->buildColumns($dynamicKeys);
 
         $form = [
             'elements' => [
@@ -204,8 +270,12 @@ class RoomsCatalogConfigurator extends IPSModule
             'actions' => [
                 [
                     'type'    => 'Label',
-                    'caption' => 'Hinweis: Aktuell ist der Konfigurator read-only. ' .
-                                 'Änderungen in der Liste werden noch nicht ins RoomsCatalogEdit-Script zurückgeschrieben.'
+                    'caption' => 'Hinweis: Änderungen werden durch Klick auf "SPEICHERN" in den RoomsCatalogEdit übernommen.'
+                ],
+                [
+                    'type'    => 'Button',
+                    'caption' => 'SPEICHERN NACH ROOMS CATALOG EDIT',
+                    'onClick' => 'RCC_SaveToEdit($id, $Entries);'
                 ]
             ]
         ];
@@ -250,9 +320,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $path = $this->resolveScriptPath($scriptId);
 
         if ($path === null) {
-            $this->logDebug(
-                'loadRoomsCatalog(' . $mode . '): ScriptFile nicht gefunden für ScriptID=' . $scriptId
-            );
+            $this->logDebug('loadRoomsCatalog(' . $mode . '): ScriptFile nicht gefunden für ScriptID=' . $scriptId);
             return [];
         }
 
@@ -290,7 +358,6 @@ class RoomsCatalogConfigurator extends IPSModule
                 continue;
             }
             if (!isset($roomCfg['domains']) || !is_array($roomCfg['domains'])) {
-                // "global" etc. überspringen
                 continue;
             }
             $display = (string)($roomCfg['display'] ?? (string)$roomKey);
@@ -323,7 +390,7 @@ class RoomsCatalogConfigurator extends IPSModule
                     continue;
                 }
 
-                // Heizung: eine Zeile pro Heizkreis (buero, kueche, …)
+                // Heizung: domain[hkKey] = cfg
                 if ($domainKey === 'heizung') {
                     foreach ($domainCfg as $hkKey => $hkCfg) {
                         if (!is_array($hkCfg)) {
@@ -333,16 +400,16 @@ class RoomsCatalogConfigurator extends IPSModule
                         $rows[] = $this->buildEntryRow(
                             (string)$roomKey,
                             $roomLabel,
-                            (string)$domainKey,   // domain = heizung
-                            (string)$domainKey,   // group  = heizung
-                            (string)$hkKey,       // key    = buero, kueche, …
+                            (string)$domainKey,
+                            (string)$domainKey,
+                            (string)$hkKey,
                             $hkCfg
                         );
                     }
                     continue;
                 }
 
-                // Jalousie: eine Zeile pro Objekt (fenster, tuer, ostlinks, …)
+                // Jalousie: domain[entryKey] = cfg
                 if ($domainKey === 'jalousie') {
                     foreach ($domainCfg as $entryKey => $entryCfg) {
                         if (!is_array($entryCfg)) {
@@ -352,16 +419,16 @@ class RoomsCatalogConfigurator extends IPSModule
                         $rows[] = $this->buildEntryRow(
                             (string)$roomKey,
                             $roomLabel,
-                            (string)$domainKey,   // domain = jalousie
-                            (string)$domainKey,   // group  = jalousie
-                            (string)$entryKey,    // key    = fenster, tuer, …
+                            (string)$domainKey,
+                            (string)$domainKey,
+                            (string)$entryKey,
                             $entryCfg
                         );
                     }
                     continue;
                 }
 
-                // Standard-Fall: licht, lueftung, devices, sprinkler, been, …
+                // Standard: domain[group][entryKey] = cfg
                 foreach ($domainCfg as $groupKey => $groupCfg) {
                     if (!is_array($groupCfg)) {
                         continue;
@@ -396,7 +463,6 @@ class RoomsCatalogConfigurator extends IPSModule
         string $entryKey,
         array $cfg
     ): array {
-        // Basis-Metadaten
         $row = [
             'selected'   => false,
             'roomKey'    => $roomKey,
@@ -406,7 +472,6 @@ class RoomsCatalogConfigurator extends IPSModule
             'key'        => $entryKey
         ];
 
-        // Alle Original-Keys aus dem RoomsCatalog als zusätzliche Felder übernehmen
         foreach ($cfg as $k => $v) {
             if (array_key_exists($k, $row)) {
                 continue;
@@ -432,12 +497,12 @@ class RoomsCatalogConfigurator extends IPSModule
             return [];
         }
         $entries = json_decode($json, true);
-        if (!is_array($entries)) {
-            return [];
-        }
-        return $entries;
+        return is_array($entries) ? $entries : [];
     }
 
+    /**
+     * Ermittelt dynamische Spalten; erkennt auch Spalten, die wie IPS-IDs aussehen.
+     */
     private function analyzeEntriesForDynamicColumns(array $entries): array
     {
         $dynamicKeys = [];
@@ -461,19 +526,49 @@ class RoomsCatalogConfigurator extends IPSModule
                     continue;
                 }
 
-                // Nur Felder berücksichtigen, die irgendwo einen sinnvollen Wert haben
                 if ($v === null || $v === '' || (is_int($v) && $v === 0) || (is_float($v) && $v == 0.0)) {
                     continue;
                 }
 
                 if (!isset($dynamicKeys[$k])) {
                     if (is_bool($v)) {
-                        $dynamicKeys[$k] = 'bool';
+                        $dynamicKeys[$k] = [
+                            'type' => 'bool',
+                            'isId' => false
+                        ];
                     } elseif (is_int($v) || is_float($v)) {
-                        $dynamicKeys[$k] = 'number';
+                        $dynamicKeys[$k] = [
+                            'type' => 'number',
+                            'isId' => $this->looksLikeIpsId($v)
+                        ];
                     } else {
-                        $dynamicKeys[$k] = 'string';
+                        $dynamicKeys[$k] = [
+                            'type' => 'string',
+                            'isId' => false
+                        ];
                     }
+                } else {
+                    $meta = $dynamicKeys[$k];
+
+                    if ($meta['type'] === 'number') {
+                        if (!(is_int($v) || is_float($v))) {
+                            $meta['type'] = 'string';
+                            $meta['isId'] = false;
+                        } else {
+                            if ($meta['isId'] && !$this->looksLikeIpsId($v)) {
+                                $meta['isId'] = false;
+                            }
+                        }
+                    } elseif ($meta['type'] === 'bool') {
+                        if (!is_bool($v)) {
+                            $meta['type'] = 'string';
+                            $meta['isId'] = false;
+                        }
+                    } else {
+                        $meta['isId'] = false;
+                    }
+
+                    $dynamicKeys[$k] = $meta;
                 }
             }
         }
@@ -489,7 +584,7 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         $columns = [];
 
-        // Basis-Spalten immer sichtbar
+        // Basis-Spalten
         $columns[] = [
             'caption' => 'Markiert',
             'name'    => 'selected',
@@ -539,8 +634,11 @@ class RoomsCatalogConfigurator extends IPSModule
             'visible' => true
         ];
 
-        // Dynamische Spalten: alle echten RoomsCatalog-Felder (title, icon, order, entityId, …)
-        foreach ($dynamicKeys as $key => $type) {
+        // Dynamische Spalten
+        foreach ($dynamicKeys as $key => $meta) {
+            $type = $meta['type'];
+            $isId = !empty($meta['isId']);
+
             $col = [
                 'caption' => $key,
                 'name'    => $key,
@@ -549,8 +647,12 @@ class RoomsCatalogConfigurator extends IPSModule
             ];
 
             if ($type === 'number') {
-                $col['add']  = 0;
-                $col['edit'] = ['type' => 'NumberSpinner'];
+                $col['add'] = 0;
+                if ($isId) {
+                    $col['edit'] = ['type' => 'SelectObject'];
+                } else {
+                    $col['edit'] = ['type' => 'NumberSpinner'];
+                }
             } elseif ($type === 'bool') {
                 $col['add']  = false;
                 $col['edit'] = ['type' => 'CheckBox'];
@@ -596,9 +698,7 @@ class RoomsCatalogConfigurator extends IPSModule
         ksort($domains);
         ksort($groups);
 
-        $roomOptions = [
-            ['caption' => 'Alle', 'value' => '']
-        ];
+        $roomOptions = [['caption' => 'Alle', 'value' => '']];
         foreach ($rooms as $key => $label) {
             $roomOptions[] = [
                 'caption' => $label . ' [' . $key . ']',
@@ -606,9 +706,7 @@ class RoomsCatalogConfigurator extends IPSModule
             ];
         }
 
-        $domainOptions = [
-            ['caption' => 'Alle', 'value' => '']
-        ];
+        $domainOptions = [['caption' => 'Alle', 'value' => '']];
         foreach (array_keys($domains) as $domainKey) {
             $domainOptions[] = [
                 'caption' => $domainKey,
@@ -616,9 +714,7 @@ class RoomsCatalogConfigurator extends IPSModule
             ];
         }
 
-        $groupOptions = [
-            ['caption' => 'Alle', 'value' => '']
-        ];
+        $groupOptions = [['caption' => 'Alle', 'value' => '']];
         foreach (array_keys($groups) as $groupKey) {
             $groupOptions[] = [
                 'caption' => $groupKey,
@@ -690,8 +786,95 @@ class RoomsCatalogConfigurator extends IPSModule
         return $path;
     }
 
-    private function logDebug(string $message): void
+    private function looksLikeIpsId($v): bool
     {
-        IPS_LogMessage('Alexa', 'RCC-DEBUG: ' . $message);
+        if (!is_int($v)) {
+            return false;
+        }
+        return ($v >= 10000 && $v <= 99999);
     }
-}
+
+    private function buildCompositeKey(array $row): ?string
+    {
+        $room   = isset($row['roomKey']) ? (string)$row['roomKey'] : '';
+        $domain = isset($row['domain']) ? (string)$row['domain'] : '';
+        $group  = isset($row['group']) ? (string)$row['group'] : '';
+        $key    = isset($row['key']) ? (string)$row['key'] : '';
+
+        if ($room === '' || $domain === '' || $group === '' || $key === '') {
+            return null;
+        }
+
+        return $room . '|' . $domain . '|' . $group . '|' . $key;
+    }
+
+    /**
+     * Baut aus der flachen Liste wieder einen RoomsCatalog (rooms[...]...),
+     * vorhandene Top-Level-Keys wie "global" aus $existingCatalog bleiben erhalten.
+     */
+    private function rebuildRoomsCatalogFromEntries(array $entries, array $existingCatalog): array
+    {
+        $rooms = [];
+
+        foreach ($entries as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $roomKey   = isset($row['roomKey']) ? (string)$row['roomKey'] : '';
+            $roomLabel = isset($row['roomLabel']) ? (string)$row['roomLabel'] : $roomKey;
+            $domain    = isset($row['domain']) ? (string)$row['domain'] : '';
+            $group     = isset($row['group']) ? (string)$row['group'] : '';
+            $key       = isset($row['key']) ? (string)$row['key'] : '';
+
+            if ($roomKey === '' || $domain === '' || $group === '' || $key === '') {
+                continue;
+            }
+
+            if (!isset($rooms[$roomKey])) {
+                $rooms[$roomKey] = [
+                    'display' => $roomLabel !== '' ? $roomLabel : $roomKey,
+                    'domains' => []
+                ];
+            }
+
+            if (!isset($rooms[$roomKey]['domains'][$domain])) {
+                $rooms[$roomKey]['domains'][$domain] = [];
+            }
+
+            $cfg = [];
+            foreach ($row as $k => $v) {
+                if (in_array($k, ['selected', 'roomKey', 'roomLabel', 'domain', 'group', 'key'], true)) {
+                    continue;
+                }
+                $cfg[$k] = $v;
+            }
+
+           if ($domain === 'heizung' || $domain === 'jalousie') {
+             $rooms[$roomKey]['domains'][$domain][$key] = $cfg;
+         } else {
+             if (!isset($rooms[$roomKey]['domains'][$domain][$group])) {
+                 $rooms[$roomKey]['domains'][$domain][$group] = [];
+             }
+             $rooms[$roomKey]['domains'][$domain][$group][$key] = $cfg;
+         }
+     }
+
+     $newCatalog = [];
+
+     foreach ($existingCatalog as $k => $v) {
+         if ($k === 'rooms') {
+             continue;
+         }
+         $newCatalog[$k] = $v;
+     }
+
+     $newCatalog['rooms'] = $rooms;
+
+     return $newCatalog;
+ }
+
+ private function logDebug(string $message): void
+ {
+     IPS_LogMessage('Alexa', 'RCC-DEBUG: ' . $message);
+ }
