@@ -100,93 +100,133 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->ReloadForm();
     }
 
-    /**
-     * Speichert die (gefilterten) Einträge zurück in das RoomsCatalogEdit-Script.
-     * Wird über den Formular-Button mit RCC_($id, json_encode($Entries)) aufgerufen.
-     */
-    public function SaveToEdit(string $entriesJson)
-    {
-        $this->logDebug('SaveToEdit: aufgerufen, entriesJson.len=' . strlen($entriesJson));
+        /**
+         * Speichert die (gefilterten) Einträge zurück in das RoomsCatalogEdit-Script.
+         * Wird über den Formular-Button mit RCC_($id, json_encode($Entries)) aufgerufen.
+         */
+        public function SaveToEdit(string $entriesJson)
+        {
+            $this->logDebug('SaveToEdit: aufgerufen, entriesJson.len=' . strlen($entriesJson));
+        
+            if ($entriesJson === '') {
+                // Vollspeicherung (Button unten): komplette Runtime-Liste
+                $entries = $this->getRuntimeEntries();
+            } else {
+                $decoded = json_decode($entriesJson, true);
+                if (!is_array($decoded)) {
+                    $this->logDebug('SaveToEdit: json_decode fehlgeschlagen');
+                    return;
+                }
+        
+                // onEdit/onAdd liefern eine EINZELNE Zeile, nicht die ganze Liste
+                if (isset($decoded['roomKey']) || isset($decoded['domain']) || isset($decoded['key'])) {
+                    $entries = [$decoded];
+                } else {
+                    // Fallback: bereits eine Liste von Zeilen
+                    $entries = $decoded;
+                }
+            }
     
-        if ($entriesJson === '') {
-            // Vollspeicherung (Button unten): komplette Runtime-Liste
-            $entries = $this->getRuntimeEntries();
-        } else {
-            $decoded = json_decode($entriesJson, true);
-            if (!is_array($decoded)) {
-                $this->logDebug('SaveToEdit: json_decode fehlgeschlagen');
+            if (!is_array($entries)) {
+                $this->logDebug('SaveToEdit: entries ist kein Array');
+                return;
+            }
+        
+            $this->logDebug('SaveToEdit: START, rows=' . count($entries));
+        
+            $editScriptId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+            if ($editScriptId <= 0 || !IPS_ScriptExists($editScriptId)) {
+                $this->logDebug('SaveToEdit: RoomsCatalogEditScriptID ungültig: ' . $editScriptId);
                 return;
             }
     
-            // onEdit/onAdd liefern eine EINZELNE Zeile, nicht die ganze Liste
-            if (isset($decoded['roomKey']) || isset($decoded['domain']) || isset($decoded['key'])) {
-                $entries = [$decoded];
-            } else {
-                // Fallback: bereits eine Liste von Zeilen
-                $entries = $decoded;
+            // Vollständige Runtime-Liste laden
+            $all = $this->getRuntimeEntries();
+    
+            // Index nach room|domain|group|key aufbauen
+            $index = [];
+            foreach ($all as $i => $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $rk = $this->buildCompositeKey($row);
+                if ($rk === null) {
+                    continue;
+                }
+                $index[$rk] = $i;
             }
-        }
-
-        if (!is_array($entries)) {
-            $this->logDebug('SaveToEdit: entries ist kein Array');
-            return;
+    
+            // Geänderte/neu angelegte Einträge in Runtime mergen
+            foreach ($entries as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $rk = $this->buildCompositeKey($row);
+                if ($rk === null) {
+                    continue;
+                }
+                if (isset($index[$rk])) {
+                    $all[$index[$rk]] = $row; // Update
+                } else {
+                    $all[]        = $row;     // Neu
+                    $index[$rk]   = count($all) - 1;
+                }
+            }
+    
+            // RuntimeEntries updaten (für nächstes Öffnen)
+            $this->WriteAttributeString('RuntimeEntries', json_encode($all));
+    
+            // Bestehenden Edit-Katalog laden (um z.B. "global" zu erhalten)
+            $existingEdit = $this->loadRoomsCatalog($editScriptId, 'EDIT');
+            $newCatalog   = $this->rebuildRoomsCatalogFromEntries($all, $existingEdit);
+    
+            // PHP-Content generieren & in Script schreiben
+            $php = "<?php\nreturn " . var_export($newCatalog, true) . ";\n";
+            IPS_SetScriptContent($editScriptId, $php);
+    
+            $roomCount = (isset($newCatalog['rooms']) && is_array($newCatalog['rooms'])) ? count($newCatalog['rooms']) : 0;
+            $this->logDebug('SaveToEdit: ENDE, rooms=' . $roomCount);
         }
     
-        $this->logDebug('SaveToEdit: START, rows=' . count($entries));
     
-        $editScriptId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
-        if ($editScriptId <= 0 || !IPS_ScriptExists($editScriptId)) {
-            $this->logDebug('SaveToEdit: RoomsCatalogEditScriptID ungültig: ' . $editScriptId);
-            return;
+        /**
+         * Speichert die SaveEditToProd
+         */
+        public function SaveEditToProd(): void
+        {
+            $prodId = $this->ReadPropertyInteger('RoomsCatalogScriptID');
+            $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        
+            if ($prodId <= 0 || !IPS_ScriptExists($prodId)) {
+                $this->logDebug('SaveEditToProd: RoomsCatalogScriptID ungültig: ' . $prodId);
+                return;
+            }
+        
+            if ($editId <= 0 || !IPS_ScriptExists($editId)) {
+                $this->logDebug('SaveEditToProd: RoomsCatalogEditScriptID ungültig: ' . $editId);
+                return;
+            }
+        
+            $editCatalog = $this->loadRoomsCatalog($editId, 'EDIT');
+            if ($editCatalog === []) {
+                $this->logDebug('SaveEditToProd: Edit-Katalog leer oder ungültig');
+                return;
+            }
+        
+            $php = "<?php\nreturn " . var_export($editCatalog, true) . ";\n";
+            IPS_SetScriptContent($prodId, $php);
+        
+            $roomCount = 0;
+            if (isset($editCatalog['rooms']) && is_array($editCatalog['rooms'])) {
+                $roomCount = count($editCatalog['rooms']);
+            }
+        
+            $this->logDebug('SaveEditToProd: Edit → Prod übernommen, rooms=' . $roomCount);
+        
+            // Prod neu einlesen und Formular updaten
+            $this->reloadAllFromCatalog();
+            $this->ReloadForm();
         }
-
-        // Vollständige Runtime-Liste laden
-        $all = $this->getRuntimeEntries();
-
-        // Index nach room|domain|group|key aufbauen
-        $index = [];
-        foreach ($all as $i => $row) {
-            if (!is_array($row)) {
-                continue;
-            }
-            $rk = $this->buildCompositeKey($row);
-            if ($rk === null) {
-                continue;
-            }
-            $index[$rk] = $i;
-        }
-
-        // Geänderte/neu angelegte Einträge in Runtime mergen
-        foreach ($entries as $row) {
-            if (!is_array($row)) {
-                continue;
-            }
-            $rk = $this->buildCompositeKey($row);
-            if ($rk === null) {
-                continue;
-            }
-            if (isset($index[$rk])) {
-                $all[$index[$rk]] = $row; // Update
-            } else {
-                $all[]        = $row;     // Neu
-                $index[$rk]   = count($all) - 1;
-            }
-        }
-
-        // RuntimeEntries updaten (für nächstes Öffnen)
-        $this->WriteAttributeString('RuntimeEntries', json_encode($all));
-
-        // Bestehenden Edit-Katalog laden (um z.B. "global" zu erhalten)
-        $existingEdit = $this->loadRoomsCatalog($editScriptId, 'EDIT');
-        $newCatalog   = $this->rebuildRoomsCatalogFromEntries($all, $existingEdit);
-
-        // PHP-Content generieren & in Script schreiben
-        $php = "<?php\nreturn " . var_export($newCatalog, true) . ";\n";
-        IPS_SetScriptContent($editScriptId, $php);
-
-        $roomCount = (isset($newCatalog['rooms']) && is_array($newCatalog['rooms'])) ? count($newCatalog['rooms']) : 0;
-        $this->logDebug('SaveToEdit: ENDE, rooms=' . $roomCount);
-    }
 
     // =====================================================================
     // Konfigurationsformular
@@ -194,32 +234,46 @@ class RoomsCatalogConfigurator extends IPSModule
 
     public function GetConfigurationForm()
     {
-        $entries      = $this->getRuntimeEntries();
+        // --- Basisdaten / Filter ---
+        $entriesProd = $this->getRuntimeEntries(); // Prod-Liste aus Attribut
         $filterRoom   = $this->ReadAttributeString('FilterRoom');
         $filterDomain = $this->ReadAttributeString('FilterDomain');
         $filterGroup  = $this->ReadAttributeString('FilterGroup');
     
         $this->logDebug(sprintf(
             'GetConfigurationForm: RuntimeEntries total=%d, FilterRoom="%s", FilterDomain="%s", FilterGroup="%s"',
-            count($entries),
+            count($entriesProd),
             $filterRoom,
             $filterDomain,
             $filterGroup
         ));
     
-        // Filter-Optionen aus den vorhandenen Einträgen aufbauen
-        [$roomOptions, $domainOptions, $groupOptions] = $this->buildFilterOptionsFromEntries($entries);
+        // --- Edit-Katalog flach laden ---
+        $editScriptId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        $entriesEditFlat = [];
+        if ($editScriptId > 0 && IPS_ScriptExists($editScriptId)) {
+            $editCatalog = $this->loadRoomsCatalog($editScriptId, 'EDIT');
+            $editRooms   = $this->extractRoomsFromCatalog($editCatalog);
+            $entriesEditFlat = $this->buildFlatEntriesFromRooms($editRooms);
+            $this->logDebug('GetConfigurationForm: EditEntries total=' . count($entriesEditFlat));
+        }
     
-        // Sichtbare Einträge nach Filter
-        $visibleEntries = $this->applyFilters($entries, $filterRoom, $filterDomain, $filterGroup);
+        // --- Spalten aus UNION Prod+Edit bestimmen ---
+        $allForColumns = array_merge($entriesProd, $entriesEditFlat);
+        $dynamicKeys   = $this->analyzeEntriesForDynamicColumns($allForColumns);
+        $columns       = $this->buildColumns($dynamicKeys);
     
-        $this->logDebug('GetConfigurationForm: sichtbare Einträge=' . count($visibleEntries));
+        // --- Filteroptionen aus PROD (reicht für beide Listen) ---
+        [$roomOptions, $domainOptions, $groupOptions] = $this->buildFilterOptionsFromEntries($entriesProd);
     
-        // Analyse, welche dynamischen Spalten in den sichtbaren Einträgen vorkommen
-        $dynamicKeys = $this->analyzeEntriesForDynamicColumns($visibleEntries);
+        // --- Sichtbare PROD-Einträge (oben) ---
+        $visibleProd = $this->applyFilters($entriesProd, $filterRoom, $filterDomain, $filterGroup);
+        $this->logDebug('GetConfigurationForm: sichtbare PROD-Einträge=' . count($visibleProd));
     
-        // Dynamische Spaltenliste
-        $columns = $this->buildColumns($dynamicKeys);
+        // --- Diff-Einträge (Edit vs. Prod) für unten ---
+        $diffEntriesAll = $this->buildDiffEntries($entriesProd, $entriesEditFlat);
+        $visibleDiff    = $this->applyFilters($diffEntriesAll, $filterRoom, $filterDomain, $filterGroup);
+        $this->logDebug('GetConfigurationForm: sichtbare DIFF-Einträge=' . count($visibleDiff));
     
         $form = [
             'elements' => [
@@ -236,14 +290,14 @@ class RoomsCatalogConfigurator extends IPSModule
                         [
                             'type'    => 'SelectScript',
                             'name'    => 'RoomsCatalogEditScriptID',
-                            'caption' => 'RoomsCatalog Edit-Script (optional)',
-                            'value'   => $this->ReadPropertyInteger('RoomsCatalogEditScriptID')
+                            'caption' => 'RoomsCatalog Edit-Script',
+                            'value'   => $editScriptId
                         ]
                     ]
                 ],
                 [
                     'type'    => 'ExpansionPanel',
-                    'caption' => 'Einträge (alle Räume / Domains)',
+                    'caption' => 'Einträge (RoomsCatalog PROD)',
                     'items'   => [
                         [
                             'type'  => 'RowLayout',
@@ -280,18 +334,35 @@ class RoomsCatalogConfigurator extends IPSModule
                             ]
                         ],
                         [
-                           'type'     => 'List',
+                            'type'     => 'List',
                             'name'     => 'Entries',
-                            'caption'  => 'Einträge',
+                            'caption'  => 'Einträge PROD',
                             'rowCount' => 25,
                             'add'      => true,
                             'delete'   => false,
                             'sort'     => true,
                             'columns'  => $columns,
-                            'values'   => $visibleEntries,
-                            // WICHTIG: onEdit/onAdd statt onChange
+                            'values'   => $visibleProd,
                             'onEdit'   => 'RCC_SaveToEdit($id, json_encode($Entries));',
                             'onAdd'    => 'RCC_SaveToEdit($id, json_encode($Entries));'
+                        ]
+                    ]
+                ],
+                [
+                    'type'    => 'ExpansionPanel',
+                    'caption' => 'RoomsCatalogEdit / Diff zu PROD',
+                    'items'   => [
+                        [
+                            'type'     => 'List',
+                            'name'     => 'EntriesEdit',
+                            'caption'  => 'Einträge EDIT (Diff)',
+                            'rowCount' => 25,
+                            'add'      => false,
+                            'delete'   => false,
+                            'sort'     => true,
+                            'columns'  => $columns,
+                            'values'   => $visibleDiff,
+                            'rowColor' => 'rowColor'
                         ]
                     ]
                 ]
@@ -299,18 +370,24 @@ class RoomsCatalogConfigurator extends IPSModule
             'actions' => [
                 [
                     'type'    => 'Label',
-                    'caption' => 'Hinweis: Änderungen (inkl. Hinzufügen) werden beim Ändern der Liste automatisch in den RoomsCatalogEdit übernommen.'
+                    'caption' => 'Hinweis: Änderungen in der oberen Liste werden automatisch in den RoomsCatalogEdit geschrieben.'
                 ],
                 [
                     'type'    => 'Button',
                     'caption' => 'SPEICHERN NACH ROOMS CATALOG EDIT',
                     'onClick' => 'RCC_SaveToEdit($id, "");'
+                ],
+                [
+                    'type'    => 'Button',
+                    'caption' => 'SPEICHERN NACH ROOMS CATALOG',
+                    'onClick' => 'RCC_SaveEditToProd($id);'
                 ]
             ]
         ];
     
         return json_encode($form);
     }
+
 
 
     // =====================================================================
@@ -485,7 +562,7 @@ class RoomsCatalogConfigurator extends IPSModule
         return $rows;
     }
 
-       private function buildEntryRow(
+      private function buildEntryRow(
             string $roomKey,
             string $roomLabel,
             string $domainKey,
@@ -502,7 +579,6 @@ class RoomsCatalogConfigurator extends IPSModule
                 'key'        => $entryKey
             ];
         
-            // Schlüssel, die wir als IPS-ID auffassen wollen
             $forceIdKeys = ['id', 'controlId', 'statusId', 'tiltId', 'set', 'state', 'ist', 'soll'];
         
             foreach ($cfg as $k => $v) {
@@ -511,13 +587,11 @@ class RoomsCatalogConfigurator extends IPSModule
                 }
         
                 if (in_array($k, $forceIdKeys, true)) {
-                    // Platzhalter "." oder leer -> gar nicht übernehmen (leere Zelle)
                     if (is_string($v)) {
                         $trim = trim($v);
                         if ($trim === '' || $trim === '.') {
                             continue;
                         }
-                        // Numerische Strings zu int casten
                         if (ctype_digit($trim)) {
                             $v = (int)$trim;
                         }
@@ -536,6 +610,7 @@ class RoomsCatalogConfigurator extends IPSModule
         
             return $row;
         }
+
 
 
     private function getRuntimeEntries(): array
@@ -738,6 +813,83 @@ class RoomsCatalogConfigurator extends IPSModule
         }
 
         return $columns;
+    }
+
+        /**
+     * Baut eine Diff-Liste aus PROD- und EDIT-Einträgen.
+     * - new:    nur in EDIT vorhanden        → grün
+     * - removed:nur in PROD vorhanden        → rot
+     * - changed:in beiden vorhanden, aber cfg anders → gelb
+     */
+    private function buildDiffEntries(array $prodEntries, array $editEntries): array
+    {
+        $prodIndex = [];
+        foreach ($prodEntries as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $key = $this->buildCompositeKey($row);
+            if ($key === null) {
+                continue;
+            }
+            $prodIndex[$key] = $row;
+        }
+
+        $editIndex = [];
+        foreach ($editEntries as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $key = $this->buildCompositeKey($row);
+            if ($key === null) {
+                continue;
+            }
+            $editIndex[$key] = $row;
+        }
+
+        $allKeys   = array_unique(array_merge(array_keys($prodIndex), array_keys($editIndex)));
+        $diffRows  = [];
+
+        foreach ($allKeys as $k) {
+            $inProd = array_key_exists($k, $prodIndex);
+            $inEdit = array_key_exists($k, $editIndex);
+
+            if ($inProd && !$inEdit) {
+                // entfernt → rot
+                $row              = $prodIndex[$k];
+                $row['rowColor']  = '#ffcccc';
+                $diffRows[]       = $row;
+                continue;
+            }
+
+            if (!$inProd && $inEdit) {
+                // neu → grün
+                $row              = $editIndex[$k];
+                $row['rowColor']  = '#ccffcc';
+                $diffRows[]       = $row;
+                continue;
+            }
+
+            // in beiden vorhanden → Änderungen prüfen
+            if ($inProd && $inEdit) {
+                $p = $prodIndex[$k];
+                $e = $editIndex[$k];
+
+                // Meta-Felder ausklammern
+                foreach (['selected','rowColor'] as $meta) {
+                    unset($p[$meta], $e[$meta]);
+                }
+
+                if ($p != $e) {
+                    // geändert → gelb, zeige EDIT-Variante
+                    $row             = $editIndex[$k];
+                    $row['rowColor'] = '#fff5cc';
+                    $diffRows[]      = $row;
+                }
+            }
+        }
+
+        return $diffRows;
     }
 
     private function buildFilterOptionsFromEntries(array $entries): array
