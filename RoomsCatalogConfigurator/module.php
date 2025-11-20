@@ -109,11 +109,24 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->logDebug('SaveToEdit: aufgerufen, entriesJson.len=' . strlen($entriesJson));
     
         if ($entriesJson === '') {
+            // Vollspeicherung (Button unten): komplette Runtime-Liste
             $entries = $this->getRuntimeEntries();
         } else {
-            $entries = json_decode($entriesJson, true);
-        }
+            $decoded = json_decode($entriesJson, true);
+            if (!is_array($decoded)) {
+                $this->logDebug('SaveToEdit: json_decode fehlgeschlagen');
+                return;
+            }
     
+            // onEdit/onAdd liefern eine EINZELNE Zeile, nicht die ganze Liste
+            if (isset($decoded['roomKey']) || isset($decoded['domain']) || isset($decoded['key'])) {
+                $entries = [$decoded];
+            } else {
+                // Fallback: bereits eine Liste von Zeilen
+                $entries = $decoded;
+            }
+        }
+
         if (!is_array($entries)) {
             $this->logDebug('SaveToEdit: entries ist kein Array');
             return;
@@ -267,7 +280,7 @@ class RoomsCatalogConfigurator extends IPSModule
                             ]
                         ],
                         [
-                            'type'     => 'List',
+                           'type'     => 'List',
                             'name'     => 'Entries',
                             'caption'  => 'Einträge',
                             'rowCount' => 25,
@@ -276,7 +289,9 @@ class RoomsCatalogConfigurator extends IPSModule
                             'sort'     => true,
                             'columns'  => $columns,
                             'values'   => $visibleEntries,
-                            'onChange' => 'RCC_SaveToEdit($id, json_encode($Entries));'
+                            // WICHTIG: onEdit/onAdd statt onChange
+                            'onEdit'   => 'RCC_SaveToEdit($id, json_encode($Entries));',
+                            'onAdd'    => 'RCC_SaveToEdit($id, json_encode($Entries));'
                         ]
                     ]
                 ]
@@ -487,10 +502,38 @@ class RoomsCatalogConfigurator extends IPSModule
             'key'        => $entryKey
         ];
 
-         foreach ($cfg as $k => $v) {
+        foreach ($cfg as $k => $v) {
             if (array_key_exists($k, $row)) {
                 continue;
             }
+        
+            // Schlüssel, die wir als IPS-ID auffassen wollen
+            $forceIdKeys = ['id', 'controlId', 'statusId', 'tiltId', 'set', 'state', 'ist', 'soll'];
+        
+            if (in_array($k, $forceIdKeys, true)) {
+                // Platzhalter "." oder leer -> gar nicht übernehmen (leere Zelle)
+                if (is_string($v)) {
+                    $trim = trim($v);
+                    if ($trim === '' || $trim === '.') {
+                        continue;
+                    }
+                    // Numerische Strings zu int casten
+                    if (ctype_digit($trim)) {
+                        $v = (int)$trim;
+                    }
+                }
+            }
+        
+            if (is_array($v)) {
+                if ($v === []) {
+                    continue;
+                }
+                $row[$k] = implode(', ', array_map('strval', $v));
+            } elseif (is_bool($v) || is_int($v) || is_float($v) || is_string($v)) {
+                $row[$k] = $v;
+            }
+        }
+
         
             if (is_array($v)) {
                 if ($v === []) {
@@ -541,11 +584,33 @@ class RoomsCatalogConfigurator extends IPSModule
                 if (in_array($k, $baseMeta, true)) {
                     continue;
                 }
-
-                if ($v === null || $v === '' || (is_int($v) && $v === 0) || (is_float($v) && $v == 0.0)) {
+            
+                $forcedId = in_array($k, $forceIdKeys, true);
+            
+                // Falls noch kein Meta und es ein erzwungener ID-Key ist:
+                if (!isset($dynamicKeys[$k]) && $forcedId) {
+                    $dynamicKeys[$k] = [
+                        'type' => 'number',
+                        'isId' => true
+                    ];
+                    // Wert selbst für die Typbestimmung ignorieren (kann "." oder Text sein)
                     continue;
                 }
-
+            
+                // Platzhalter "." und leere Werte generell ignorieren
+                if ($v === null || $v === '' || (is_string($v) && trim($v) === '.') ||
+                    (is_int($v) && $v === 0) || (is_float($v) && $v == 0.0)) {
+                    continue;
+                }
+            
+                // Numerische Strings wie "12345" für die Typanalyse in int wandeln
+                if (is_string($v)) {
+                    $trim = trim($v);
+                    if (ctype_digit($trim)) {
+                        $v = (int)$trim;
+                    }
+                }
+            
                 if (!isset($dynamicKeys[$k])) {
                     if (is_bool($v)) {
                         $dynamicKeys[$k] = [
@@ -565,7 +630,7 @@ class RoomsCatalogConfigurator extends IPSModule
                     }
                 } else {
                     $meta = $dynamicKeys[$k];
-
+            
                     if ($meta['type'] === 'number') {
                         if (!(is_int($v) || is_float($v))) {
                             $meta['type'] = 'string';
@@ -583,7 +648,7 @@ class RoomsCatalogConfigurator extends IPSModule
                     } else {
                         $meta['isId'] = false;
                     }
-
+            
                     $dynamicKeys[$k] = $meta;
                 }
             }
