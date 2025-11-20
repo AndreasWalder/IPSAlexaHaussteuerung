@@ -228,6 +228,143 @@ class RoomsCatalogConfigurator extends IPSModule
             $this->ReloadForm();
         }
 
+        /**
+     * Klont die erste markierte Zeile (selected=true) in RuntimeEntries
+     * und schreibt den neuen Stand nach RoomsCatalogEdit.
+     */
+    public function CloneSelectedEntry(): void
+    {
+        $editScriptId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        if ($editScriptId <= 0 || !IPS_ScriptExists($editScriptId)) {
+            $this->logDebug('CloneSelectedEntry: RoomsCatalogEditScriptID ungültig: ' . $editScriptId);
+            return;
+        }
+
+        $entries = $this->getRuntimeEntries();
+        if ($entries === []) {
+            $this->logDebug('CloneSelectedEntry: keine Entries vorhanden');
+            return;
+        }
+
+        $cloneIndex = null;
+        foreach ($entries as $i => $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            if (!empty($row['selected'])) {
+                $cloneIndex = $i;
+                break;
+            }
+        }
+
+        if ($cloneIndex === null) {
+            $this->logDebug('CloneSelectedEntry: keine markierte Zeile gefunden');
+            return;
+        }
+
+        $source = $entries[$cloneIndex];
+        if (!is_array($source)) {
+            $this->logDebug('CloneSelectedEntry: markierte Zeile ist kein Array');
+            return;
+        }
+
+        $clone = $source;
+        $clone['selected'] = false;
+
+        // neuen Key erzeugen, damit room|domain|group|key eindeutig bleibt
+        $origKey = (string)($clone['key'] ?? '');
+        if ($origKey !== '') {
+            $room   = (string)($clone['roomKey'] ?? '');
+            $domain = (string)($clone['domain'] ?? '');
+            $group  = (string)($clone['group'] ?? '');
+
+            $suffix   = 1;
+            $newKey   = $origKey . '_copy';
+            $usedKeys = [];
+
+            foreach ($entries as $r) {
+                if (!is_array($r)) {
+                    continue;
+                }
+                if ((string)($r['roomKey'] ?? '') === $room
+                    && (string)($r['domain'] ?? '') === $domain
+                    && (string)($r['group'] ?? '') === $group) {
+                    $usedKeys[] = (string)($r['key'] ?? '');
+                }
+            }
+
+            while (in_array($newKey, $usedKeys, true)) {
+                $suffix++;
+                $newKey = $origKey . '_copy' . $suffix;
+            }
+
+            $clone['key'] = $newKey;
+        }
+
+        // Clone direkt nach der Quelle einfügen
+        array_splice($entries, $cloneIndex + 1, 0, [$clone]);
+
+        // RuntimeEntries aktualisieren
+        $this->WriteAttributeString('RuntimeEntries', json_encode($entries));
+
+        // RoomsCatalogEdit neu aufbauen
+        $existingEdit = $this->loadRoomsCatalog($editScriptId, 'EDIT');
+        $newCatalog   = $this->rebuildRoomsCatalogFromEntries($entries, $existingEdit);
+        $php          = "<?php\nreturn " . var_export($newCatalog, true) . ";\n";
+        IPS_SetScriptContent($editScriptId, $php);
+
+        $this->logDebug('CloneSelectedEntry: Eintrag geklont');
+        $this->ReloadForm();
+    }
+
+    /**
+     * Löscht alle markierten Zeilen (selected=true) aus RuntimeEntries
+     * und schreibt den neuen Stand nach RoomsCatalogEdit.
+     */
+    public function DeleteSelectedEntries(): void
+    {
+        $editScriptId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        if ($editScriptId <= 0 || !IPS_ScriptExists($editScriptId)) {
+            $this->logDebug('DeleteSelectedEntries: RoomsCatalogEditScriptID ungültig: ' . $editScriptId);
+            return;
+        }
+
+        $entries = $this->getRuntimeEntries();
+        if ($entries === []) {
+            $this->logDebug('DeleteSelectedEntries: keine Entries vorhanden');
+            return;
+        }
+
+        $remaining = [];
+        $deleted   = 0;
+
+        foreach ($entries as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            if (!empty($row['selected'])) {
+                $deleted++;
+                continue;
+            }
+            $remaining[] = $row;
+        }
+
+        if ($deleted === 0) {
+            $this->logDebug('DeleteSelectedEntries: keine markierten Zeilen gefunden');
+            return;
+        }
+
+        $this->WriteAttributeString('RuntimeEntries', json_encode($remaining));
+
+        $existingEdit = $this->loadRoomsCatalog($editScriptId, 'EDIT');
+        $newCatalog   = $this->rebuildRoomsCatalogFromEntries($remaining, $existingEdit);
+        $php          = "<?php\nreturn " . var_export($newCatalog, true) . ";\n";
+        IPS_SetScriptContent($editScriptId, $php);
+
+        $this->logDebug('DeleteSelectedEntries: gelöschte Zeilen=' . $deleted);
+        $this->ReloadForm();
+    }
+
     // =====================================================================
     // Konfigurationsformular
     // =====================================================================
@@ -375,6 +512,16 @@ class RoomsCatalogConfigurator extends IPSModule
                 ],
                 [
                     'type'    => 'Button',
+                    'caption' => 'MARKIERTE CLONEN',
+                    'onClick' => 'RCC_CloneSelectedEntry($id);'
+                ],
+                [
+                    'type'    => 'Button',
+                    'caption' => 'MARKIERTE LÖSCHEN',
+                    'onClick' => 'RCC_DeleteSelectedEntries($id);'
+                ],
+                [
+                    'type'    => 'Button',
                     'caption' => 'SPEICHERN NACH ROOMS CATALOG EDIT',
                     'onClick' => 'RCC_SaveToEdit($id, "");'
                 ],
@@ -384,6 +531,7 @@ class RoomsCatalogConfigurator extends IPSModule
                     'onClick' => 'RCC_SaveEditToProd($id);'
                 ]
             ]
+
         ];
     
         return json_encode($form);
