@@ -232,37 +232,38 @@ class RoomsCatalogConfigurator extends IPSModule
     // Konfigurationsformular
     // =====================================================================
 
-    public function GetConfigurationForm()
-    {
+      public function GetConfigurationForm()
+      {
         // --- Basisdaten / Filter ---
-        $entriesProd = $this->getRuntimeEntries(); // Prod-Liste aus Attribut
+        $entriesProd  = $this->getRuntimeEntries(); // Prod-Liste aus Attribut
         $filterRoom   = $this->ReadAttributeString('FilterRoom');
         $filterDomain = $this->ReadAttributeString('FilterDomain');
         $filterGroup  = $this->ReadAttributeString('FilterGroup');
-    
-        $this->logDebug(sprintf(
-            'GetConfigurationForm: RuntimeEntries total=%d, FilterRoom="%s", FilterDomain="%s", FilterGroup="%s"',
-            count($entriesProd),
-            $filterRoom,
-            $filterDomain,
-            $filterGroup
-        ));
-    
+
         // --- Edit-Katalog flach laden ---
-        $editScriptId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        $editScriptId    = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
         $entriesEditFlat = [];
         if ($editScriptId > 0 && IPS_ScriptExists($editScriptId)) {
-            $editCatalog = $this->loadRoomsCatalog($editScriptId, 'EDIT');
-            $editRooms   = $this->extractRoomsFromCatalog($editCatalog);
+            $editCatalog     = $this->loadRoomsCatalog($editScriptId, 'EDIT');
+            $editRooms       = $this->extractRoomsFromCatalog($editCatalog);
             $entriesEditFlat = $this->buildFlatEntriesFromRooms($editRooms);
-            $this->logDebug('GetConfigurationForm: EditEntries total=' . count($entriesEditFlat));
         }
-    
-        // --- Spalten aus UNION Prod+Edit bestimmen ---
-        $allForColumns = array_merge($entriesProd, $entriesEditFlat);
+
+        // --- Filteroptionen aus PROD (reicht für beide Listen) ---
+        [$roomOptions, $domainOptions, $groupOptions] = $this->buildFilterOptionsFromEntries($entriesProd);
+
+        // --- Sichtbare PROD-Einträge (oben) ---
+        $visibleProd = $this->applyFilters($entriesProd, $filterRoom, $filterDomain, $filterGroup);
+
+        // --- Diff-Einträge (Edit vs. Prod) für unten ---
+        $diffEntriesAll = $this->buildDiffEntries($entriesProd, $entriesEditFlat);
+        $visibleDiff    = $this->applyFilters($diffEntriesAll, $filterRoom, $filterDomain, $filterGroup);
+
+        // --- Spalten NUR aus den sichtbaren Zeilen bauen (Prod + Diff) ---
+        $allForColumns = array_merge($visibleProd, $visibleDiff);
         $dynamicKeys   = $this->analyzeEntriesForDynamicColumns($allForColumns);
         $columns       = $this->buildColumns($dynamicKeys);
-    
+        
         // --- Filteroptionen aus PROD (reicht für beide Listen) ---
         [$roomOptions, $domainOptions, $groupOptions] = $this->buildFilterOptionsFromEntries($entriesProd);
     
@@ -847,8 +848,8 @@ class RoomsCatalogConfigurator extends IPSModule
             $editIndex[$key] = $row;
         }
 
-        $allKeys   = array_unique(array_merge(array_keys($prodIndex), array_keys($editIndex)));
-        $diffRows  = [];
+        $allKeys  = array_unique(array_merge(array_keys($prodIndex), array_keys($editIndex)));
+        $diffRows = [];
 
         foreach ($allKeys as $k) {
             $inProd = array_key_exists($k, $prodIndex);
@@ -856,34 +857,46 @@ class RoomsCatalogConfigurator extends IPSModule
 
             if ($inProd && !$inEdit) {
                 // entfernt → rot
-                $row              = $prodIndex[$k];
-                $row['rowColor']  = '#ffcccc';
-                $diffRows[]       = $row;
+                $row             = $prodIndex[$k];
+                $row['rowColor'] = '#ffcccc';
+                $row['diffKeys'] = 'removed';
+                $diffRows[]      = $row;
                 continue;
             }
 
             if (!$inProd && $inEdit) {
                 // neu → grün
-                $row              = $editIndex[$k];
-                $row['rowColor']  = '#ccffcc';
-                $diffRows[]       = $row;
+                $row             = $editIndex[$k];
+                $row['rowColor'] = '#ccffcc';
+                $row['diffKeys'] = 'new';
+                $diffRows[]      = $row;
                 continue;
             }
 
-            // in beiden vorhanden → Änderungen prüfen
             if ($inProd && $inEdit) {
                 $p = $prodIndex[$k];
                 $e = $editIndex[$k];
 
-                // Meta-Felder ausklammern
-                foreach (['selected','rowColor'] as $meta) {
+                foreach (['selected', 'rowColor', 'diffKeys'] as $meta) {
                     unset($p[$meta], $e[$meta]);
                 }
 
                 if ($p != $e) {
-                    // geändert → gelb, zeige EDIT-Variante
-                    $row             = $editIndex[$k];
-                    $row['rowColor'] = '#fff5cc';
+                    // geänderte Felder ermitteln
+                    $changed = [];
+                    foreach ($e as $ck => $cv) {
+                        if (in_array($ck, ['selected','roomKey','roomLabel','domain','group','key'], true)) {
+                            continue;
+                        }
+                        $pv = $p[$ck] ?? null;
+                        if ($pv != $cv) {
+                            $changed[] = $ck;
+                        }
+                    }
+
+                    $row             = $editIndex[$k]; // EDIT als Basis
+                    $row['rowColor'] = '#fff5cc';      // gelb
+                    $row['diffKeys'] = implode(', ', $changed);
                     $diffRows[]      = $row;
                 }
             }
