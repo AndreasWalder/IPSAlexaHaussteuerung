@@ -485,69 +485,58 @@ class RoomsCatalogConfigurator extends IPSModule
         return $rows;
     }
 
-    private function buildEntryRow(
-        string $roomKey,
-        string $roomLabel,
-        string $domainKey,
-        string $groupKey,
-        string $entryKey,
-        array $cfg
-    ): array {
-        $row = [
-            'selected'   => false,
-            'roomKey'    => $roomKey,
-            'roomLabel'  => $roomLabel,
-            'domain'     => $domainKey,
-            'group'      => $groupKey,
-            'key'        => $entryKey
-        ];
-
-        foreach ($cfg as $k => $v) {
-            if (array_key_exists($k, $row)) {
-                continue;
-            }
+       private function buildEntryRow(
+            string $roomKey,
+            string $roomLabel,
+            string $domainKey,
+            string $groupKey,
+            string $entryKey,
+            array $cfg
+        ): array {
+            $row = [
+                'selected'   => false,
+                'roomKey'    => $roomKey,
+                'roomLabel'  => $roomLabel,
+                'domain'     => $domainKey,
+                'group'      => $groupKey,
+                'key'        => $entryKey
+            ];
         
             // Schlüssel, die wir als IPS-ID auffassen wollen
             $forceIdKeys = ['id', 'controlId', 'statusId', 'tiltId', 'set', 'state', 'ist', 'soll'];
         
-            if (in_array($k, $forceIdKeys, true)) {
-                // Platzhalter "." oder leer -> gar nicht übernehmen (leere Zelle)
-                if (is_string($v)) {
-                    $trim = trim($v);
-                    if ($trim === '' || $trim === '.') {
+            foreach ($cfg as $k => $v) {
+                if (array_key_exists($k, $row)) {
+                    continue;
+                }
+        
+                if (in_array($k, $forceIdKeys, true)) {
+                    // Platzhalter "." oder leer -> gar nicht übernehmen (leere Zelle)
+                    if (is_string($v)) {
+                        $trim = trim($v);
+                        if ($trim === '' || $trim === '.') {
+                            continue;
+                        }
+                        // Numerische Strings zu int casten
+                        if (ctype_digit($trim)) {
+                            $v = (int)$trim;
+                        }
+                    }
+                }
+        
+                if (is_array($v)) {
+                    if ($v === []) {
                         continue;
                     }
-                    // Numerische Strings zu int casten
-                    if (ctype_digit($trim)) {
-                        $v = (int)$trim;
-                    }
+                    $row[$k] = implode(', ', array_map('strval', $v));
+                } elseif (is_bool($v) || is_int($v) || is_float($v) || is_string($v)) {
+                    $row[$k] = $v;
                 }
             }
         
-            if (is_array($v)) {
-                if ($v === []) {
-                    continue;
-                }
-                $row[$k] = implode(', ', array_map('strval', $v));
-            } elseif (is_bool($v) || is_int($v) || is_float($v) || is_string($v)) {
-                $row[$k] = $v;
-            }
+            return $row;
         }
 
-        
-            if (is_array($v)) {
-                if ($v === []) {
-                    continue;
-                }
-                $row[$k] = implode(', ', array_map('strval', $v));
-            } elseif (is_bool($v) || is_int($v) || is_float($v) || is_string($v)) {
-                $row[$k] = $v;
-            }
-        }
-
-
-        return $row;
-    }
 
     private function getRuntimeEntries(): array
     {
@@ -563,103 +552,106 @@ class RoomsCatalogConfigurator extends IPSModule
      * Ermittelt dynamische Spalten; erkennt auch Spalten, die wie IPS-IDs aussehen.
      */
     private function analyzeEntriesForDynamicColumns(array $entries): array
-    {
-        $dynamicKeys = [];
-
-        $baseMeta = [
-            'selected',
-            'roomKey',
-            'roomLabel',
-            'domain',
-            'group',
-            'key'
-        ];
-
-        foreach ($entries as $row) {
-            if (!is_array($row)) {
-                continue;
-            }
-
-            foreach ($row as $k => $v) {
-                if (in_array($k, $baseMeta, true)) {
+        {
+            $dynamicKeys = [];
+        
+            $baseMeta = [
+                'selected',
+                'roomKey',
+                'roomLabel',
+                'domain',
+                'group',
+                'key'
+            ];
+        
+            // Keys, die wir grundsätzlich als ID-Spalten behandeln wollen
+            $forceIdKeys = ['id', 'controlId', 'statusId', 'tiltId', 'set', 'state', 'ist', 'soll'];
+        
+            foreach ($entries as $row) {
+                if (!is_array($row)) {
                     continue;
                 }
-            
-                $forcedId = in_array($k, $forceIdKeys, true);
-            
-                // Falls noch kein Meta und es ein erzwungener ID-Key ist:
-                if (!isset($dynamicKeys[$k]) && $forcedId) {
-                    $dynamicKeys[$k] = [
-                        'type' => 'number',
-                        'isId' => true
-                    ];
-                    // Wert selbst für die Typbestimmung ignorieren (kann "." oder Text sein)
-                    continue;
-                }
-            
-                // Platzhalter "." und leere Werte generell ignorieren
-                if ($v === null || $v === '' || (is_string($v) && trim($v) === '.') ||
-                    (is_int($v) && $v === 0) || (is_float($v) && $v == 0.0)) {
-                    continue;
-                }
-            
-                // Numerische Strings wie "12345" für die Typanalyse in int wandeln
-                if (is_string($v)) {
-                    $trim = trim($v);
-                    if (ctype_digit($trim)) {
-                        $v = (int)$trim;
+        
+                foreach ($row as $k => $v) {
+                    if (in_array($k, $baseMeta, true)) {
+                        continue;
                     }
-                }
-            
-                if (!isset($dynamicKeys[$k])) {
-                    if (is_bool($v)) {
-                        $dynamicKeys[$k] = [
-                            'type' => 'bool',
-                            'isId' => false
-                        ];
-                    } elseif (is_int($v) || is_float($v)) {
+        
+                    $forcedId = in_array($k, $forceIdKeys, true);
+        
+                    // Falls noch kein Meta und es ein erzwungener ID-Key ist:
+                    if (!isset($dynamicKeys[$k]) && $forcedId) {
                         $dynamicKeys[$k] = [
                             'type' => 'number',
-                            'isId' => $this->looksLikeIpsId($v)
+                            'isId' => true
                         ];
-                    } else {
-                        $dynamicKeys[$k] = [
-                            'type' => 'string',
-                            'isId' => false
-                        ];
+                        // wir fallen danach weiter durch, damit Wert ggf. für number/string mitgenutzt wird
                     }
-                } else {
-                    $meta = $dynamicKeys[$k];
-            
-                    if ($meta['type'] === 'number') {
-                        if (!(is_int($v) || is_float($v))) {
-                            $meta['type'] = 'string';
-                            $meta['isId'] = false;
+        
+                    // Platzhalter "." und leere Werte generell ignorieren
+                    if ($v === null || $v === '' || (is_string($v) && trim($v) === '.') ||
+                        (is_int($v) && $v === 0) || (is_float($v) && $v == 0.0)) {
+                        continue;
+                    }
+        
+                    // Numerische Strings wie "12345" für die Typanalyse in int wandeln
+                    if (is_string($v)) {
+                        $trim = trim($v);
+                        if (ctype_digit($trim)) {
+                            $v = (int)$trim;
+                        }
+                    }
+        
+                    if (!isset($dynamicKeys[$k])) {
+                        if (is_bool($v)) {
+                            $dynamicKeys[$k] = [
+                                'type' => 'bool',
+                                'isId' => false
+                            ];
+                        } elseif (is_int($v) || is_float($v)) {
+                            $dynamicKeys[$k] = [
+                                'type' => 'number',
+                                'isId' => $this->looksLikeIpsId($v)
+                            ];
                         } else {
-                            if ($meta['isId'] && !$this->looksLikeIpsId($v)) {
+                            $dynamicKeys[$k] = [
+                                'type' => 'string',
+                                'isId' => false
+                            ];
+                        }
+                    } else {
+                        $meta = $dynamicKeys[$k];
+        
+                        if ($meta['type'] === 'number') {
+                            if (!(is_int($v) || is_float($v))) {
+                                $meta['type'] = 'string';
+                                $meta['isId'] = false;
+                            } else {
+                                if ($meta['isId'] && !$this->looksLikeIpsId($v)) {
+                                    $meta['isId'] = false;
+                                }
+                            }
+                        } elseif ($meta['type'] === 'bool') {
+                            if (!is_bool($v)) {
+                                $meta['type'] = 'string';
                                 $meta['isId'] = false;
                             }
-                        }
-                    } elseif ($meta['type'] === 'bool') {
-                        if (!is_bool($v)) {
-                            $meta['type'] = 'string';
+                        } else {
                             $meta['isId'] = false;
                         }
-                    } else {
-                        $meta['isId'] = false;
+        
+                        $dynamicKeys[$k] = $meta;
                     }
-            
-                    $dynamicKeys[$k] = $meta;
                 }
             }
+        
+            ksort($dynamicKeys);
+        
+            $this->logDebug('analyzeEntriesForDynamicColumns: dynamische Keys=' . implode(',', array_keys($dynamicKeys)));
+        
+            return $dynamicKeys;
         }
 
-        ksort($dynamicKeys);
-
-        $this->logDebug('analyzeEntriesForDynamicColumns: dynamische Keys=' . implode(',', array_keys($dynamicKeys)));
-
-        return $dynamicKeys;
-    }
 
     private function buildColumns(array $dynamicKeys): array
     {
