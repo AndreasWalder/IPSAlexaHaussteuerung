@@ -173,7 +173,7 @@ class RoomsCatalogConfigurator extends IPSModule
             }
         }
 
-        // RuntimeEntries updaten (für nächstes Öffnen)
+        // RuntimeEntries updaten (für Folgeverarbeitung)
         $this->WriteAttributeString('RuntimeEntries', json_encode($all));
 
         // Bestehenden Edit-Katalog laden (um z.B. "global" zu erhalten)
@@ -186,6 +186,9 @@ class RoomsCatalogConfigurator extends IPSModule
 
         $roomCount = (isset($newCatalog['rooms']) && is_array($newCatalog['rooms'])) ? count($newCatalog['rooms']) : 0;
         $this->logDebug('SaveToEdit: ENDE, rooms=' . $roomCount);
+
+        // Danach wie "ROOMSCATALOG NEU LADEN" → Diffs sofort sichtbar
+        $this->ReloadCatalog();
     }
 
     /**
@@ -222,9 +225,8 @@ class RoomsCatalogConfigurator extends IPSModule
 
         $this->logDebug('SaveEditToProd: Edit → Prod übernommen, rooms=' . $roomCount);
 
-        // Prod neu einlesen und Formular updaten
-        $this->reloadAllFromCatalog();
-        $this->ReloadForm();
+        // Prod neu einlesen und Formular inkl. Diffs aktualisieren
+        $this->ReloadCatalog();
     }
 
     /**
@@ -313,7 +315,9 @@ class RoomsCatalogConfigurator extends IPSModule
         IPS_SetScriptContent($editScriptId, $php);
 
         $this->logDebug('CloneSelectedEntry: Eintrag geklont');
-        $this->ReloadForm();
+
+        // Formular inkl. Diffs neu laden
+        $this->ReloadCatalog();
     }
 
     /**
@@ -361,7 +365,9 @@ class RoomsCatalogConfigurator extends IPSModule
         IPS_SetScriptContent($editScriptId, $php);
 
         $this->logDebug('DeleteSelectedEntries: gelöschte Zeilen=' . $deleted);
-        $this->ReloadForm();
+
+        // Formular inkl. Diffs neu laden
+        $this->ReloadCatalog();
     }
 
     // =====================================================================
@@ -371,7 +377,7 @@ class RoomsCatalogConfigurator extends IPSModule
     public function GetConfigurationForm()
     {
         // --- Basisdaten / Filter ---
-        $entriesProd  = $this->getRuntimeEntries(); // Prod-Liste aus Attribut
+        $entriesProd  = $this->getRuntimeEntries(); // Prod-Liste aus Attribut (bzw. zuletzt geladener Stand)
         $filterRoom   = $this->ReadAttributeString('FilterRoom');
         $filterDomain = $this->ReadAttributeString('FilterDomain');
         $filterGroup  = $this->ReadAttributeString('FilterGroup');
@@ -393,7 +399,7 @@ class RoomsCatalogConfigurator extends IPSModule
 
         // --- Diff-Einträge (Edit vs. Prod) für unten ---
         $diffEntriesAll = $this->buildDiffEntries($entriesProd, $entriesEditFlat);
-        $visibleDiff    = $this->applyFilters($diffEntriesAll, $filterRoom, $filterDomain, $groupFilter = $filterGroup);
+        $visibleDiff    = $this->applyFilters($diffEntriesAll, $filterRoom, $filterDomain, $filterGroup);
 
         $this->logDebug('GetConfigurationForm: sichtbare PROD-Einträge=' . count($visibleProd));
         $this->logDebug('GetConfigurationForm: sichtbare DIFF-Einträge=' . count($visibleDiff));
@@ -411,6 +417,8 @@ class RoomsCatalogConfigurator extends IPSModule
             }
             $columnsEdit[] = $col;
         }
+
+        $diffExpanded = count($visibleDiff) > 0;
 
         $form = [
             'elements' => [
@@ -505,9 +513,10 @@ class RoomsCatalogConfigurator extends IPSModule
                     ]
                 ],
                 [
-                    'type'    => 'ExpansionPanel',
-                    'caption' => 'RoomsCatalogEdit / Diff zu PROD',
-                    'items'   => [
+                    'type'     => 'ExpansionPanel',
+                    'caption'  => 'RoomsCatalogEdit / Diff zu PROD',
+                    'expanded' => $diffExpanded,
+                    'items'    => [
                         [
                             'type'     => 'List',
                             'name'     => 'EntriesEdit',
