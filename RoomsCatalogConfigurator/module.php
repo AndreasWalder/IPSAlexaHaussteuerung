@@ -107,7 +107,7 @@ class RoomsCatalogConfigurator extends IPSModule
     public function SaveToEdit(string $entriesJson)
     {
         $this->logDebug('SaveToEdit: aufgerufen, entriesJson.len=' . strlen($entriesJson));
-
+    
         if ($entriesJson === '') {
             // Vollspeicherung (Button unten): komplette Runtime-Liste
             $entries = $this->getRuntimeEntries();
@@ -117,7 +117,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 $this->logDebug('SaveToEdit: json_decode fehlgeschlagen');
                 return;
             }
-
+    
             // onEdit/onAdd liefern eine EINZELNE Zeile, nicht die ganze Liste
             if (isset($decoded['roomKey']) || isset($decoded['domain']) || isset($decoded['key'])) {
                 $entries = [$decoded];
@@ -126,23 +126,83 @@ class RoomsCatalogConfigurator extends IPSModule
                 $entries = $decoded;
             }
         }
-
+    
         if (!is_array($entries)) {
             $this->logDebug('SaveToEdit: entries ist kein Array');
             return;
         }
-
+    
         $this->logDebug('SaveToEdit: START, rows=' . count($entries));
-
+    
         $editScriptId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
         if ($editScriptId <= 0 || !IPS_ScriptExists($editScriptId)) {
             $this->logDebug('SaveToEdit: RoomsCatalogEditScriptID ungültig: ' . $editScriptId);
             return;
         }
-
-        // Vollständige Runtime-Liste laden
+    
+        // Aktuelle Runtime-Liste laden (Prod-Stand + evtl. Markierungen)
         $all = $this->getRuntimeEntries();
-
+    
+        // Sonderfall: es wurde nur "Markiert" geändert → keine Speicherung nach Edit
+        if (count($entries) === 1) {
+            $row = $entries[0];
+    
+            $rk = $this->buildCompositeKey($row);
+            if ($rk !== null) {
+                foreach ($all as $i => $orig) {
+                    if (!is_array($orig)) {
+                        continue;
+                    }
+                    if ($this->buildCompositeKey($orig) !== $rk) {
+                        continue;
+                    }
+    
+                    // Prüfen, ob sich außer "selected" etwas geändert hat
+                    $changedNonSelection = false;
+    
+                    // Vergleich: Werte in neuer Zeile gegen alte
+                    foreach ($row as $k => $v) {
+                        if ($k === 'selected') {
+                            continue;
+                        }
+                        $ov = $orig[$k] ?? null;
+                        if ($ov != $v) {
+                            $changedNonSelection = true;
+                            break;
+                        }
+                    }
+    
+                    // Vergleich: Felder, die in alt existieren, aber in neu fehlen
+                    if (!$changedNonSelection) {
+                        foreach ($orig as $k => $ov) {
+                            if ($k === 'selected') {
+                                continue;
+                            }
+                            if (!array_key_exists($k, $row)) {
+                                if ($ov !== null && $ov !== '' && $ov !== 0 && $ov !== 0.0) {
+                                    $changedNonSelection = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+    
+                    if (!$changedNonSelection) {
+                        // Nur Markierung geändert → nur RuntimeEntries aktualisieren
+                        $all[$i]['selected'] = !empty($row['selected']);
+                        $this->WriteAttributeString('RuntimeEntries', json_encode($all));
+                        $this->logDebug('SaveToEdit: nur Markierung geändert, kein Write nach RoomsCatalogEdit');
+                        $this->ReloadForm();
+                        return;
+                    }
+    
+                    break;
+                }
+            }
+        }
+    
+        // Ab hier: echte inhaltliche Änderung → RoomsCatalogEdit aktualisieren
+    
         // Index nach room|domain|group|key aufbauen
         $index = [];
         foreach ($all as $i => $row) {
@@ -155,7 +215,7 @@ class RoomsCatalogConfigurator extends IPSModule
             }
             $index[$rk] = $i;
         }
-
+    
         // Geänderte/neu angelegte Einträge in Runtime mergen
         foreach ($entries as $row) {
             if (!is_array($row)) {
@@ -172,24 +232,25 @@ class RoomsCatalogConfigurator extends IPSModule
                 $index[$rk] = count($all) - 1;
             }
         }
-
+    
         // RuntimeEntries updaten (für Folgeverarbeitung)
         $this->WriteAttributeString('RuntimeEntries', json_encode($all));
-
+    
         // Bestehenden Edit-Katalog laden (um z.B. "global" zu erhalten)
         $existingEdit = $this->loadRoomsCatalog($editScriptId, 'EDIT');
         $newCatalog   = $this->rebuildRoomsCatalogFromEntries($all, $existingEdit);
-
+    
         // PHP-Content generieren & in Script schreiben
         $php = "<?php\nreturn " . var_export($newCatalog, true) . ";\n";
         IPS_SetScriptContent($editScriptId, $php);
-
+    
         $roomCount = (isset($newCatalog['rooms']) && is_array($newCatalog['rooms'])) ? count($newCatalog['rooms']) : 0;
         $this->logDebug('SaveToEdit: ENDE, rooms=' . $roomCount);
-
+    
         // Danach wie "ROOMSCATALOG NEU LADEN" → Diffs sofort sichtbar
         $this->ReloadCatalog();
     }
+
 
     /**
      * Speichert den Edit-Katalog 1:1 nach PROD.
