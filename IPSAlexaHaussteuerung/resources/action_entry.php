@@ -1345,13 +1345,13 @@ function Execute($request = null)
         };
         $loggerForFallback = static function(string $lvl, string $msg, $ctx=null) use ($log) { $log($lvl,$msg,$ctx); };
 
+        // Globaler Bewässerung-Tab-Fallback zuerst, damit Sicherheit/Save-Tabs nicht zu Geräte gemappt werden
+        if ($domain === null && !$navForce) {
+            $fallbackTabCH($domain, $device, 'bewaesserung', $action, $device, $object, $alles, $findTabIdWithCache, $loggerForFallback);
+        }
         // Globaler Geräte-Tab-Fallback
         if ($domain === null && !$navForce) {
             $fallbackTabCH($domain, $device, 'geraete', $action, $device, $object, $alles, $findTabIdWithCache, $loggerForFallback);
-        }
-        // Globaler Bewässerung-Tab-Fallback
-        if ($domain === null && !$navForce) {
-            $fallbackTabCH($domain, $device, 'bewaesserung', $action, $device, $object, $alles, $findTabIdWithCache, $loggerForFallback);
         }
 
         // --- Fallback: DOMAIN_FLAG als Präferenz
