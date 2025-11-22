@@ -995,18 +995,6 @@ class IPSAlexaHaussteuerung extends IPSModule
         foreach ($dynamicRoutes as $route => $entry) {
             $roomDomain = strtolower((string)($entry['roomDomain'] ?? $route));
             if (isset($claimedDomains[$roomDomain])) {
-                foreach ($map as $existingRoute => $existing) {
-                    $existingDomain = strtolower((string)($existing['roomDomain'] ?? ($existing['route'] ?? '')));
-                    if ($existingDomain !== $roomDomain || isset($map[$route])) {
-                        continue;
-                    }
-
-                    $map[$route] = array_merge($existing, $entry, [
-                        'route'      => $route,
-                        'roomDomain' => $roomDomain !== '' ? $roomDomain : $existingDomain,
-                    ]);
-                    break;
-                }
                 continue;
             }
             if (!isset($map[$route])) {
@@ -1082,20 +1070,18 @@ class IPSAlexaHaussteuerung extends IPSModule
                     // nur Domains mit tabs
                     continue;
                 }
-
-                $baseDomain = strtolower(trim((string)$domainKey));
-                $roomDomain = strtolower(trim((string)($definition['roomDomain'] ?? $baseDomain)));
-                $routeKey   = $baseDomain !== '' ? $baseDomain : $roomDomain;
-                $route      = $this->normalizeRoomsCatalogDomainRoute($routeKey, $tabs);
+    
+                $baseDomain = strtolower((string)$domainKey);
+                $route      = $this->normalizeRoomsCatalogDomainRoute($baseDomain, $tabs);
                 if ($route === '' || isset($routes[$route])) {
                     continue;
                 }
-
+    
                 $title = $this->inferRoomsCatalogDomainTitle($tabs, $route);
-
+    
                 $routes[$route] = [
                     'route'      => $route,
-                    'roomDomain' => $roomDomain !== '' ? $roomDomain : $route,
+                    'roomDomain' => $baseDomain !== '' ? $baseDomain : $route,
                     'title'      => $title,
                     'logName'    => $title,
                 ];
@@ -1108,12 +1094,12 @@ class IPSAlexaHaussteuerung extends IPSModule
     private function normalizeRoomsCatalogDomainRoute(string $domainKey, array $tabs): string
     {
         $domainKey = strtolower($domainKey);
-        $domainSlug = $this->slugifyRoute($domainKey);
-        if ($domainSlug !== '') {
-            return $domainSlug;
+        $titleSlug = $this->slugifyRoute($this->inferRoomsCatalogDomainTitle($tabs, $domainKey));
+        if ($titleSlug !== '') {
+            return $titleSlug;
         }
 
-        return $this->slugifyRoute($this->inferRoomsCatalogDomainTitle($tabs, $domainKey));
+        return $this->slugifyRoute($domainKey);
     }
 
     private function slugifyRoute(string $raw): string

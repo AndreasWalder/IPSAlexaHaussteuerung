@@ -957,21 +957,6 @@ function Execute($request = null)
             }
             $rendererRoomDomainKeys[$routeKey] = $roomDomain;
         }
-        $rendererDomainSynonyms = [];
-        foreach ($rendererDomainMap as $routeKey => $entry) {
-            foreach ([
-                $routeKey,
-                strtolower((string)($entry['roomDomain'] ?? '')),
-                strtolower((string)($entry['logName'] ?? '')),
-                strtolower((string)($entry['title'] ?? '')),
-            ] as $syn) {
-                $syn = trim((string) $syn);
-                if ($syn === '' || in_array($syn, ['devices', 'sprinkler'], true)) {
-                    continue;
-                }
-                $rendererDomainSynonyms[$syn] = $routeKey;
-            }
-        }
         $claimedRoomDomains = [];
         foreach ($rendererRoomDomainKeys as $roomDomain) {
             if ($roomDomain === '') {
@@ -1023,7 +1008,6 @@ function Execute($request = null)
         $buildTabsCache = $CORE['buildTabsCache'];
         $findTabIdCH    = $CORE['findTabId'];
         $fallbackTabCH  = $CORE['fallbackTabDomain'];
-        $tabDomainById  = $CORE['tabDomainById'];
         $extractNumber  = $CORE['extractNumberOnly'];
         $mergeDecimal   = $CORE['maybeMergeDecimalFromPercent'];
 
@@ -1328,62 +1312,6 @@ function Execute($request = null)
             else if ($lc((string)$APL['a1']) !== 'zurück') { $action = $lc((string)$APL['a1']) ?: $action; }
         }
 
-        // Prüfe Tab-Domain anhand der APL-Args (z. B. geraete.tab + tabId), um missklassifizierte Sicherheit/Save-Tabs zu erkennen
-        $aplTabRoute = null;
-        $aplTabId    = null;
-        foreach ((array)($APL['args'] ?? []) as $aplArg) {
-            if (is_string($aplArg) && preg_match('/([a-z0-9_-]+)\.tab$/i', $aplArg, $m)) {
-                $aplTabRoute = strtolower($m[1]);
-            }
-            if (is_string($aplArg) && ctype_digit($aplArg)) {
-                $aplTabId = $aplArg;
-            }
-        }
-        if ($aplTabId !== null) {
-            $tabDomain = $tabDomainById($aplTabId, $ROOMS);
-            if ($tabDomain !== null) {
-                $mappedDomain = $tabDomain;
-
-                // Versuche, anhand der bekannten Renderer-Domains einen passenden Routen-Key zu finden (z. B. save → sicherheit)
-                foreach ($rendererRoomDomainKeys as $routeKey => $roomDomainKey) {
-                    if ($roomDomainKey === $tabDomain) {
-                        $mappedDomain = $routeKey;
-                        break;
-                    }
-                }
-                if ($mappedDomain === $tabDomain && isset($rendererDomainMap[$tabDomain])) {
-                    $mappedDomain = $tabDomain;
-                }
-                if ($mappedDomain === $tabDomain && isset($rendererDomainSynonyms[$tabDomain])) {
-                    $mappedDomain = $rendererDomainSynonyms[$tabDomain];
-                }
-
-                // Sicherheits-/Save-Tabs auf die explizite Sicherheit-Route legen, falls keine Mapping-Regel gegriffen hat
-                if ($mappedDomain === $tabDomain && in_array($tabDomain, ['sprinkler', 'save', 'sicherheit'], true)) {
-                    if (isset($rendererDomainMap['sicherheit'])) {
-                        $mappedDomain = 'sicherheit';
-                    } elseif (isset($rendererDomainSynonyms['sicherheit'])) {
-                        $mappedDomain = $rendererDomainSynonyms['sicherheit'];
-                    }
-                }
-
-                $priorDomain = $domain;
-                $domain = $mappedDomain;
-                if (!$navForce && $device === '') {
-                    $device = $mappedDomain;
-                }
-                $log('debug', 'APL_TAB_DOMAIN', [
-                    'tabId'        => $aplTabId,
-                    'tabDomain'    => $tabDomain,
-                    'mappedDomain' => $mappedDomain,
-                    'aplRoute'     => $aplTabRoute,
-                    'prevDomain'   => $priorDomain,
-                ]);
-            } else {
-                $log('debug', 'APL_TAB_DOMAIN_MISS', ['tabId' => $aplTabId, 'aplRoute' => $aplTabRoute]);
-            }
-        }
-
         // --- Domain aus APL-Args ableiten ---
         if ($domain === null) {
             $d = $domainFromAPL($APL, $lc);
@@ -1402,13 +1330,13 @@ function Execute($request = null)
         };
         $loggerForFallback = static function(string $lvl, string $msg, $ctx=null) use ($log) { $log($lvl,$msg,$ctx); };
 
-        // Globaler Bewässerung-Tab-Fallback zuerst, damit Sicherheit/Save-Tabs nicht zu Geräte gemappt werden
-        if ($domain === null && !$navForce) {
-            $fallbackTabCH($domain, $device, 'bewaesserung', $action, $device, $object, $alles, $findTabIdWithCache, $loggerForFallback);
-        }
         // Globaler Geräte-Tab-Fallback
         if ($domain === null && !$navForce) {
             $fallbackTabCH($domain, $device, 'geraete', $action, $device, $object, $alles, $findTabIdWithCache, $loggerForFallback);
+        }
+        // Globaler Bewässerung-Tab-Fallback
+        if ($domain === null && !$navForce) {
+            $fallbackTabCH($domain, $device, 'bewaesserung', $action, $device, $object, $alles, $findTabIdWithCache, $loggerForFallback);
         }
 
         // --- Fallback: DOMAIN_FLAG als Präferenz
@@ -1454,20 +1382,6 @@ function Execute($request = null)
                 }
                 if (isset($tabDomainSynonyms[$slotKey])) {
                     $domain = $tabDomainSynonyms[$slotKey];
-                    break;
-                }
-            }
-        }
-
-        if ($domain === null && !$navForce && !empty($rendererDomainSynonyms)) {
-            $slotValues = [$action, $device, $room, $object, $alles, $szene];
-            foreach ($slotValues as $slotValue) {
-                $slotKey = $lc(trim((string) $slotValue));
-                if ($slotKey === '') {
-                    continue;
-                }
-                if (isset($rendererDomainSynonyms[$slotKey])) {
-                    $domain = $rendererDomainSynonyms[$slotKey];
                     break;
                 }
             }
