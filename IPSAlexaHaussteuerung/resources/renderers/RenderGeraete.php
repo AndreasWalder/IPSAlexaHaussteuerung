@@ -97,18 +97,24 @@ if (is_array(($CFG['actions_vars'] ?? null))) {
 
 // Profile optional vorladen (Cache)
 $PRELOAD_PROFILES = isset($CFG['flags']['preload_profiles']) ? (bool)$CFG['flags']['preload_profiles'] : true;
-if ($PRELOAD_PROFILES) {gr_get_profile_associations(''); }
+if ($PRELOAD_PROFILES) { gr_get_profile_associations(''); }
 
 $readBool = static function($varId, bool $default=false): bool {
     if (!is_int($varId) || $varId <= 0) return $default;
     return (bool)@GetValue($varId);
 };
 
-$ACTIONS_ENABLED = [
-    $rendererRouteKey => [
-        'toggle' => $readBool((int)($VAR[$rendererToggleVarKey] ?? 0), false)
-    ],
-];
+// ACTIONS_ENABLED bevorzugt aus Payload übernehmen, sonst aus Konfiguration ableiten
+$ACTIONS_ENABLED_IN = is_array($in['ACTIONS_ENABLED'] ?? null) ? $in['ACTIONS_ENABLED'] : [];
+if ($ACTIONS_ENABLED_IN) {
+    $ACTIONS_ENABLED = $ACTIONS_ENABLED_IN;
+} else {
+    $ACTIONS_ENABLED = [
+        $rendererRouteKey => [
+            'toggle' => $readBool((int)($VAR[$rendererToggleVarKey] ?? 0), false)
+        ],
+    ];
+}
 
 $CAN_TOGGLE  = (bool)($ACTIONS_ENABLED[$rendererRouteKey]['toggle'] ?? false);
 
@@ -154,6 +160,11 @@ $roomKeyFilter = gr_resolveRoomKey($roomSpoken, $roomMap, $ROOMS);
    Tabs & aktive Kategorie
    ========================= */
 $tabs = gr_collectRoomDeviceTabs($ROOMS, $roomKeyFilter, $rendererRoomDomain);
+
+$logV("[$RID][{$rendererLogName}] roomSummary=" . json_encode(gr_rooms_domain_summary($ROOMS, $roomKeyFilter), GR_JF));
+if (!$tabs) {
+    gr_log_room_domain_trace($ROOMS, $roomKeyFilter, $rendererRoomDomain, $logV);
+}
 
 // Fallback: Wenn keine Tabs gefunden wurden, versuche die Domäne über den
 // RoomsCatalog (Tab-Titel → slug) herzuleiten und neu zu sammeln. Dadurch
@@ -437,27 +448,20 @@ function gr_collectRoomDeviceTabs(array $ROOMS, ?string $onlyRoomKey = null, str
     $domainKey = $domainKey !== '' ? $domainKey : 'devices';
 
     foreach ($ROOMS as $roomKey => $room) {
-        if ($onlyRoomKey !== null && (string)$roomKey !== (string)$onlyRoomKey) {
-            continue;
-        }
-        if (!is_array($room)) {
-            continue;
+        if ($onlyRoomKey !== null && (string)$roomKey !== (string)$onlyRoomKey) continue;
+
+        $dev = $room['domains'][$domainKey]['tabs'] ?? null;
+        if (is_array($dev)) {
+            foreach ($dev as $title => $def) { if ($t = gr_normalize_tab_def((string)$title, $def)) $tabs[] = $t; }
         }
 
-        $domains = is_array($room['domains'] ?? null) ? $room['domains'] : [];
-        $domain  = $domains[$domainKey] ?? null;
-        if (!is_array($domain)) {
-            continue;
-        }
-
-        $devTabs = $domain['tabs'] ?? null;
-        if (!is_array($devTabs)) {
-            continue;
-        }
-
-        foreach ($devTabs as $title => $def) {
-            if ($t = gr_normalize_tab_def((string)$title, $def)) {
-                $tabs[] = $t;
+        $domains = $room['domains'] ?? [];
+        if (is_array($domains)) {
+            foreach ($domains as $domVal) {
+                if (!is_array($domVal)) continue;
+                $nested = $domVal[$domainKey]['tabs'] ?? null;
+                if (!is_array($nested)) continue;
+                foreach ($nested as $title => $def) { if ($t = gr_normalize_tab_def((string)$title, $def)) $tabs[] = $t; }
             }
         }
     }
@@ -469,6 +473,47 @@ function gr_collectRoomDeviceTabs(array $ROOMS, ?string $onlyRoomKey = null, str
     });
 
     return $tabs;
+}
+
+function gr_rooms_domain_summary(array $ROOMS, ?string $onlyRoomKey = null): array
+{
+    $summary = [];
+
+    foreach ($ROOMS as $roomKey => $roomDef) {
+        if ($roomKey === 'global') {
+            continue;
+        }
+        if ($onlyRoomKey !== null && (string)$roomKey !== (string)$onlyRoomKey) {
+            continue;
+        }
+
+        $domains = is_array($roomDef['domains'] ?? null) ? $roomDef['domains'] : [];
+        $domainSummary = [];
+        foreach ($domains as $domainKey => $domainDef) {
+            if (!is_array($domainDef)) {
+                continue;
+            }
+            $tabs = $domainDef['tabs'] ?? null;
+            $domainSummary[(string)$domainKey] = [
+                'hasTabs'   => is_array($tabs),
+                'tabCount'  => is_array($tabs) ? count($tabs) : 0,
+                'tabTitles' => is_array($tabs) ? array_keys($tabs) : [],
+            ];
+        }
+
+        $summary[] = [
+            'roomKey'  => (string)$roomKey,
+            'display'  => (string)($roomDef['display'] ?? $roomKey),
+            'domains'  => $domainSummary,
+        ];
+    }
+
+    return $summary;
+}
+
+function gr_log_room_domain_trace(array $ROOMS, ?string $onlyRoomKey, string $domainKey, callable $logger): void
+{
+    // Trace-Logging bewusst deaktiviert, damit das Log schlank bleibt.
 }
 
 function gr_normalize_tab_def(string $title, $def): ?array
