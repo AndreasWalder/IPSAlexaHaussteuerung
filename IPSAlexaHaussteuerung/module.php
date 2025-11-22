@@ -995,6 +995,18 @@ class IPSAlexaHaussteuerung extends IPSModule
         foreach ($dynamicRoutes as $route => $entry) {
             $roomDomain = strtolower((string)($entry['roomDomain'] ?? $route));
             if (isset($claimedDomains[$roomDomain])) {
+                foreach ($map as $existingRoute => $existing) {
+                    $existingDomain = strtolower((string)($existing['roomDomain'] ?? ($existing['route'] ?? '')));
+                    if ($existingDomain !== $roomDomain || isset($map[$route])) {
+                        continue;
+                    }
+
+                    $map[$route] = array_merge($existing, $entry, [
+                        'route'      => $route,
+                        'roomDomain' => $roomDomain !== '' ? $roomDomain : $existingDomain,
+                    ]);
+                    break;
+                }
                 continue;
             }
             if (!isset($map[$route])) {
