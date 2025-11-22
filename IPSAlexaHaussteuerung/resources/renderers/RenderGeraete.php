@@ -444,33 +444,54 @@ function gr_collectRoomDeviceTabs(array $ROOMS, ?string $onlyRoomKey = null, str
     $tabs = [];
     $domainKey = $domainKey !== '' ? $domainKey : 'devices';
 
-    foreach ($ROOMS as $roomKey => $room) {
-        if ($onlyRoomKey !== null && (string)$roomKey !== (string)$onlyRoomKey) continue;
+    $ignoreRoomFilter = in_array($domainKey, ['been', 'save'], true);
 
-        $dev = $room['domains'][$domainKey]['tabs'] ?? null;
-        if (is_array($dev)) {
-            foreach ($dev as $title => $def) { if ($t = gr_normalize_tab_def((string)$title, $def)) $tabs[] = $t; }
+    foreach ($ROOMS as $roomKey => $room) {
+        if (!is_array($room)) {
+            continue;
         }
 
-        $domains = $room['domains'] ?? [];
-        if (is_array($domains)) {
-            foreach ($domains as $domVal) {
-                if (!is_array($domVal)) continue;
-                $nested = $domVal[$domainKey]['tabs'] ?? null;
-                if (!is_array($nested)) continue;
-                foreach ($nested as $title => $def) { if ($t = gr_normalize_tab_def((string)$title, $def)) $tabs[] = $t; }
+        if ($roomKey !== 'global' && !$ignoreRoomFilter && $onlyRoomKey !== null && (string)$roomKey !== (string)$onlyRoomKey) {
+            continue;
+        }
+
+        $domains = is_array($room['domains'] ?? null) ? $room['domains'] : [];
+
+        if (isset($domains[$domainKey]['tabs']) && is_array($domains[$domainKey]['tabs'])) {
+            foreach ($domains[$domainKey]['tabs'] as $title => $def) {
+                if ($t = gr_normalize_tab_def((string)$title, $def)) {
+                    $tabs[] = $t;
+                }
+            }
+        }
+
+        foreach ($domains as $domVal) {
+            if (!is_array($domVal)) {
+                continue;
+            }
+            if (!isset($domVal[$domainKey]['tabs']) || !is_array($domVal[$domainKey]['tabs'])) {
+                continue;
+            }
+            foreach ($domVal[$domainKey]['tabs'] as $title => $def) {
+                if ($t = gr_normalize_tab_def((string)$title, $def)) {
+                    $tabs[] = $t;
+                }
             }
         }
     }
 
     usort($tabs, static function ($a, $b) {
-        $oa = (int)($a['order'] ?? 9999); $ob = (int)($b['order'] ?? 9999);
-        if ($oa !== $ob) return $oa <=> $ob;
+        $oa = (int)($a['order'] ?? 9999);
+        $ob = (int)($b['order'] ?? 9999);
+        if ($oa !== $ob) {
+            return $oa <=> $ob;
+        }
         return strcasecmp((string)$a['title'], (string)$b['title']);
     });
 
     return $tabs;
 }
+
 
 function gr_rooms_domain_summary(array $ROOMS, ?string $onlyRoomKey = null): array
 {
