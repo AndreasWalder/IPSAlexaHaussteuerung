@@ -156,6 +156,9 @@ $roomKeyFilter = gr_resolveRoomKey($roomSpoken, $roomMap, $ROOMS);
 $tabs = gr_collectRoomDeviceTabs($ROOMS, $roomKeyFilter, $rendererRoomDomain);
 
 $logV("[$RID][{$rendererLogName}] roomSummary=" . json_encode(gr_rooms_domain_summary($ROOMS, $roomKeyFilter), GR_JF));
+if (!$tabs) {
+    gr_log_room_domain_trace($ROOMS, $roomKeyFilter, $rendererRoomDomain, $logV);
+}
 
 // Fallback: Wenn keine Tabs gefunden wurden, versuche die Domäne über den
 // RoomsCatalog (Tab-Titel → slug) herzuleiten und neu zu sammeln. Dadurch
@@ -501,6 +504,41 @@ function gr_rooms_domain_summary(array $ROOMS, ?string $onlyRoomKey = null): arr
     }
 
     return $summary;
+}
+
+function gr_log_room_domain_trace(array $ROOMS, ?string $onlyRoomKey, string $domainKey, callable $logger): void
+{
+    $logger('[TRACE] RoomsCatalog domain trace start');
+
+    foreach ($ROOMS as $roomKey => $roomDef) {
+        if ($roomKey === 'global') {
+            continue;
+        }
+        if ($onlyRoomKey !== null && (string)$roomKey !== (string)$onlyRoomKey) {
+            continue;
+        }
+
+        $domains = is_array($roomDef['domains'] ?? null) ? $roomDef['domains'] : [];
+        $domainKeys = array_keys($domains);
+        $direct = $domains[$domainKey] ?? null;
+        $directTabs = is_array($direct['tabs'] ?? null) ? $direct['tabs'] : null;
+        $directTabCount = is_array($directTabs) ? count($directTabs) : 0;
+
+        $nestedTabHits = [];
+        foreach ($domains as $k => $def) {
+            if (!is_array($def)) {
+                continue;
+            }
+            $tabs = $def['tabs'] ?? null;
+            if (is_array($tabs)) {
+                $nestedTabHits[(string)$k] = ['tabCount' => count($tabs), 'tabTitles' => array_keys($tabs)];
+            }
+        }
+
+        $logger('[TRACE] room=' . $roomKey . ' domains=' . json_encode($domainKeys, GR_JF) . ' directTabs=' . $directTabCount . ' nestedTabs=' . json_encode($nestedTabHits, GR_JF));
+    }
+
+    $logger('[TRACE] RoomsCatalog domain trace end');
 }
 
 function gr_normalize_tab_def(string $title, $def): ?array
