@@ -1094,12 +1094,12 @@ class IPSAlexaHaussteuerung extends IPSModule
     private function normalizeRoomsCatalogDomainRoute(string $domainKey, array $tabs): string
     {
         $domainKey = strtolower($domainKey);
-        $titleSlug = $this->slugifyRoute($this->inferRoomsCatalogDomainTitle($tabs, $domainKey));
-        if ($titleSlug !== '') {
-            return $titleSlug;
+        $domainSlug = $this->slugifyRoute($domainKey);
+        if ($domainSlug !== '') {
+            return $domainSlug;
         }
 
-        return $this->slugifyRoute($domainKey);
+        return $this->slugifyRoute($this->inferRoomsCatalogDomainTitle($tabs, $domainKey));
     }
 
     private function slugifyRoute(string $raw): string
