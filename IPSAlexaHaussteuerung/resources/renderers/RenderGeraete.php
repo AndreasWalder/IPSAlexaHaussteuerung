@@ -154,7 +154,21 @@ $roomKeyFilter = gr_resolveRoomKey($roomSpoken, $roomMap, $ROOMS);
    Tabs & aktive Kategorie
    ========================= */
 $tabs = gr_collectRoomDeviceTabs($ROOMS, $roomKeyFilter, $rendererRoomDomain);
-$logV("[$RID][{$rendererLogName}] tabs=".count($tabs));
+
+// Fallback: Wenn keine Tabs gefunden wurden, versuche die Domäne über den
+// RoomsCatalog (Tab-Titel → slug) herzuleiten und neu zu sammeln. Dadurch
+// greifen dynamische Domains wie "Bienen" (been) oder "Sicherheit" (save)
+// auch dann, wenn die Renderer-Konfiguration keine oder eine andere Domäne
+// liefert.
+if (!$tabs) {
+    $guessedDomain = gr_infer_room_domain_from_rooms($rendererRouteKey, $ROOMS);
+    if ($guessedDomain !== '' && $guessedDomain !== $rendererRoomDomain) {
+        $rendererRoomDomain = $guessedDomain;
+        $tabs = gr_collectRoomDeviceTabs($ROOMS, $roomKeyFilter, $rendererRoomDomain);
+    }
+}
+
+$logV("[$RID][{$rendererLogName}] tabs=".count($tabs)." domain={$rendererRoomDomain}");
 
 if (!$tabs) {
     echo json_encode([
@@ -1028,6 +1042,8 @@ function gr_info_allowed_list(array $obj): string {
 }
 
 function gr_renderer_config(string $routeKey, array $CFG): array {
+    global $ROOMS;
+
     $list = [];
     if (isset($CFG['rendererDomains']) && is_array($CFG['rendererDomains'])) {
         $list = $CFG['rendererDomains'];
@@ -1059,6 +1075,13 @@ function gr_renderer_config(string $routeKey, array $CFG): array {
         }
 
         return array_merge($defaults, $normalized);
+    }
+
+    if ($defaults['roomDomain'] === 'devices') {
+        $guessedDomain = gr_infer_room_domain_from_rooms($routeKey, is_array($ROOMS) ? $ROOMS : []);
+        if ($guessedDomain !== '') {
+            $defaults['roomDomain'] = $guessedDomain;
+        }
     }
 
     return $defaults;
@@ -1113,4 +1136,54 @@ function gr_renderer_default_entry(string $routeKey): array {
     }
 
     return $base;
+}
+
+function gr_infer_room_domain_from_rooms(string $routeKey, array $ROOMS): string {
+    $slugKey = gr_slugify($routeKey);
+    if ($slugKey === '') {
+        return '';
+    }
+
+    foreach ($ROOMS as $room) {
+        if (!is_array($room)) {
+            continue;
+        }
+        $domains = (array)($room['domains'] ?? []);
+        foreach ($domains as $domainKey => $definition) {
+            $normalizedDomainKey = gr_slugify((string)$domainKey);
+            $tabs = (array)($definition['tabs'] ?? []);
+
+            // 1) Direkter Treffer auf den Domänenschlüssel (z. B. route "been" → domain "been")
+            if ($normalizedDomainKey !== '' && $normalizedDomainKey === $slugKey && $tabs) {
+                return (string)$domainKey;
+            }
+
+            // 2) Fallback über Tab-Titel (z. B. route "bienen" → Tab "Bienen")
+            if (!$tabs) {
+                continue;
+            }
+            foreach ($tabs as $tabKey => $tabDef) {
+                $title = '';
+                if (is_array($tabDef)) {
+                    $title = trim((string)($tabDef['title'] ?? ''));
+                }
+                if ($title === '') {
+                    $title = trim((string)$tabKey);
+                }
+                if ($title !== '' && gr_slugify($title) === $slugKey) {
+                    return (string)$domainKey;
+                }
+            }
+        }
+    }
+
+    return '';
+}
+
+function gr_slugify(string $raw): string {
+    $slug = strtolower(trim($raw));
+    $slug = strtr($slug, ['ä' => 'ae', 'ö' => 'oe', 'ü' => 'ue', 'ß' => 'ss']);
+    $slug = preg_replace('/[^a-z0-9]+/i', '-', $slug);
+
+    return trim((string)$slug, '-');
 }
