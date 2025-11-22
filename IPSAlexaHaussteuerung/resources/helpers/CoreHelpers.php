@@ -169,17 +169,11 @@ $buildTabsCache = static function(array $ROOMS): array {
     if ($DEVICE_TABS_CACHE !== null) return $DEVICE_TABS_CACHE;
     $DEVICE_TABS_CACHE = [];
 
-    $addTabs = static function($set, ?string $domainKey = null) use (&$DEVICE_TABS_CACHE) {
+    $addTabs = static function($set) use (&$DEVICE_TABS_CACHE) {
         if (!is_array($set)) return;
         foreach ($set as $title => $def) {
             if (is_int($def) || is_string($def)) {
-                $DEVICE_TABS_CACHE[] = [
-                    'id'     => (string)$def,
-                    'title'  => (string)$title,
-                    'order'  => 9999,
-                    'syn'    => [],
-                    'domain' => $domainKey ?? '',
-                ];
+                $DEVICE_TABS_CACHE[] = ['id'=>(string)$def, 'title'=>(string)$title, 'order'=>9999, 'syn'=>[]];
                 continue;
             }
             if (is_array($def)) {
@@ -189,8 +183,7 @@ $buildTabsCache = static function(array $ROOMS): array {
                         'id'    => (string)$id,
                         'title' => (string)$title,
                         'order' => (int)($def['order'] ?? 9999),
-                        'syn'   => array_values((array)($def['synonyms'] ?? [])),
-                        'domain'=> $domainKey ?? '',
+                        'syn'   => array_values((array)($def['synonyms'] ?? []))
                     ];
                 }
             }
@@ -198,31 +191,25 @@ $buildTabsCache = static function(array $ROOMS): array {
     };
 
     $globalSets = [
-        ['devices', $ROOMS['global']['devices']['tabs'] ?? null],
-        ['geraete', $ROOMS['global']['geraete']['tabs'] ?? null],
-        ['sprinkler', $ROOMS['global']['sprinkler']['tabs'] ?? null],
-        ['bewaesserung', $ROOMS['global']['bewaesserung']['tabs'] ?? null],
-        ['devices', $ROOMS['global']['devices_tabs'] ?? null],
-        ['geraete', $ROOMS['global']['geraete_tabs'] ?? null],
-        ['sprinkler', $ROOMS['global']['sprinkler_tabs'] ?? null],
-        ['bewaesserung', $ROOMS['global']['bewaesserung_tabs'] ?? null],
+        $ROOMS['global']['devices']['tabs'] ?? null,
+        $ROOMS['global']['geraete']['tabs'] ?? null,
+        $ROOMS['global']['sprinkler']['tabs'] ?? null,
+        $ROOMS['global']['bewaesserung']['tabs'] ?? null,
+        $ROOMS['global']['devices_tabs'] ?? null,
+        $ROOMS['global']['geraete_tabs'] ?? null,
+        $ROOMS['global']['sprinkler_tabs'] ?? null,
+        $ROOMS['global']['bewaesserung_tabs'] ?? null,
     ];
-    foreach ($globalSets as [$domainKey, $set]) $addTabs($set, (string)$domainKey);
-    if (isset($ROOMS['global']['domains']) && is_array($ROOMS['global']['domains'])) {
-        foreach ($ROOMS['global']['domains'] as $domKey => $domVal) {
-            if (!is_array($domVal)) continue;
-            $addTabs($domVal['tabs'] ?? null, (string)$domKey);
-        }
-    }
+    foreach ($globalSets as $set) $addTabs($set);
 
     foreach ($ROOMS as $roomKey => $roomDef) {
         if ($roomKey === 'global') continue;
+        $addTabs($roomDef['domains']['devices']['tabs'] ?? null);
         $domains = $roomDef['domains'] ?? [];
         if (is_array($domains)) {
-            foreach ($domains as $domKey => $domVal) {
+            foreach ($domains as $domVal) {
                 if (!is_array($domVal)) continue;
-                $addTabs($domVal['tabs'] ?? null, (string)$domKey);
-                $addTabs($domVal['sprinkler']['tabs'] ?? null, 'sprinkler');
+                $addTabs($domVal['sprinkler']['tabs'] ?? null);
             }
         }
     }
@@ -248,18 +235,6 @@ $findTabId = static function(string $spoken, array $cache, callable $token_norm)
             if ($sn === $norm || ($sn!=='' && (str_contains($sn,$norm)||str_contains($norm,$sn)))) return (string)$t['id'];
         }
     }
-    return null;
-};
-
-$tabDomainById = static function(string $tabId, array $ROOMS) use ($buildTabsCache): ?string {
-    $cache = $buildTabsCache($ROOMS);
-    foreach ($cache as $t) {
-        if ((string)($t['id'] ?? '') === (string)$tabId) {
-            $dom = (string)($t['domain'] ?? '');
-            return $dom !== '' ? $dom : null;
-        }
-    }
-
     return null;
 };
 
@@ -342,7 +317,6 @@ return [
     'buildTabsCache'              => $buildTabsCache,
     'findTabId'                   => $findTabId,
     'fallbackTabDomain'           => $fallbackTabDomain,
-    'tabDomainById'               => $tabDomainById,
 
     'extractNumberOnly'           => $extractNumberOnly,
     'maybeMergeDecimalFromPercent'=> $maybeMergeDecimalFromPercent,
