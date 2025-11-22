@@ -1063,21 +1063,22 @@ class IPSAlexaHaussteuerung extends IPSModule
             }
             $domains = (array)($room['domains'] ?? []);
             foreach ($domains as $domainKey => $definition) {
-                $route = strtolower((string)$domainKey);
+                $tabs = (array)($definition['tabs'] ?? []);
+                $baseDomain = strtolower((string)$domainKey);
+                $route = $this->normalizeRoomsCatalogDomainRoute($baseDomain, $tabs);
                 if ($route === '' || isset($routes[$route])) {
                     continue;
                 }
                 if (in_array($route, ['devices', 'sprinkler'], true)) {
                     continue;
                 }
-                $tabs = (array)($definition['tabs'] ?? []);
                 if ($tabs === []) {
                     continue;
                 }
                 $title = $this->inferRoomsCatalogDomainTitle($tabs, $route);
                 $routes[$route] = [
                     'route'      => $route,
-                    'roomDomain' => $route,
+                    'roomDomain' => $baseDomain !== '' ? $baseDomain : $route,
                     'title'      => $title,
                     'logName'    => $title,
                 ];
@@ -1085,6 +1086,27 @@ class IPSAlexaHaussteuerung extends IPSModule
         }
 
         return $routes;
+    }
+
+    private function normalizeRoomsCatalogDomainRoute(string $domainKey, array $tabs): string
+    {
+        $domainKey = strtolower($domainKey);
+        $titleSlug = $this->slugifyRoute($this->inferRoomsCatalogDomainTitle($tabs, $domainKey));
+        if ($titleSlug !== '') {
+            return $titleSlug;
+        }
+
+        return $this->slugifyRoute($domainKey);
+    }
+
+    private function slugifyRoute(string $raw): string
+    {
+        $slug = strtolower(trim($raw));
+        $slug = strtr($slug, ['ä' => 'ae', 'ö' => 'oe', 'ü' => 'ue', 'ß' => 'ss']);
+        $slug = preg_replace('/[^a-z0-9]+/i', '-', $slug);
+        $slug = trim((string)$slug, '-');
+
+        return $slug;
     }
 
     private function inferRoomsCatalogDomainTitle(array $tabs, string $route): string
