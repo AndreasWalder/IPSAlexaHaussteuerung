@@ -65,12 +65,15 @@ $voice_object = (string)($in['object'] ?? '');
 /* =========================
    CFG / ACTION FLAGS / LOGGING
    ========================= */
+
 $CFG = is_array($in['CFG'] ?? null) ? $in['CFG'] : [];
 $routeKey = strtolower((string)($in['route'] ?? ''));
 if ($routeKey === '') { $routeKey = 'geraete'; }
 $rendererCfg = gr_renderer_config($routeKey, $CFG);
 $rendererRouteKey = (string)($rendererCfg['route'] ?? 'geraete');
 if ($rendererRouteKey === '') { $rendererRouteKey = 'geraete'; }
+// Room-Scope: nur klassische Geräte/Bewässerung sind raumbezogen
+$respectRoomFilter = in_array($rendererRouteKey, ['geraete', 'bewaesserung'], true);
 $rendererToggleVarKey = (string)($rendererCfg['toggleVarKey'] ?? ($rendererRouteKey . '_toggle'));
 if ($rendererToggleVarKey === '') { $rendererToggleVarKey = $rendererRouteKey . '_toggle'; }
 $rendererRoomDomain = (string)($rendererCfg['roomDomain'] ?? 'devices');
@@ -155,20 +158,35 @@ $logV("[$RID][{$rendererLogName}] NORMALIZED ".json_encode($ev, GR_JF));
    Room-Resolve (optional)
    ========================= */
 $roomKeyFilter = gr_resolveRoomKey($roomSpoken, $roomMap, $ROOMS);
-
+$logV("[$RID][{$rendererLogName}] domainMap.beforeCollect=" . json_encode(
+    gr_debug_domain_map($ROOMS, $rendererRoomDomain),
+    GR_JF
+));
 /* =========================
    Tabs & aktive Kategorie
    ========================= */
-$tabs = gr_collectRoomDeviceTabs($ROOMS, $roomKeyFilter, $rendererRoomDomain);
+// Für Spezial-Domains (bienen, sicherheit, …) wird der Room-Filter ignoriert
+$tabs = gr_collectRoomDeviceTabs($ROOMS, $roomKeyFilter, $rendererRoomDomain, $respectRoomFilter);
 
 $logV("[$RID][{$rendererLogName}] roomSummary=" . json_encode(gr_rooms_domain_summary($ROOMS, $roomKeyFilter), GR_JF));
+
 
 // Fallback: Wenn keine Tabs gefunden wurden, versuche die Domäne über den
 // RoomsCatalog (Tab-Titel → slug) herzuleiten und neu zu sammeln. Dadurch
 // greifen dynamische Domains wie "Bienen" (been) oder "Sicherheit" (save)
 // auch dann, wenn die Renderer-Konfiguration keine oder eine andere Domäne
 // liefert.
+// Fallback: Wenn keine Tabs gefunden wurden, versuche die Domäne über den
+// RoomsCatalog (Tab-Titel → slug) herzuleiten und neu zu sammeln. Dadurch
+// greifen dynamische Domains wie "Bienen" (been) oder "Sicherheit" (save)
+// auch dann, wenn die Renderer-Konfiguration keine oder eine andere Domäne
+// liefert.
 if (!$tabs) {
+    $logV("[$RID][{$rendererLogName}] domainMap.noTabs=" . json_encode(
+        gr_debug_domain_map($ROOMS, $rendererRoomDomain),
+        GR_JF
+    ));
+
     $logV("[$RID][{$rendererLogName}] noTabs domain={$rendererRoomDomain} routeKey={$rendererRouteKey} tryingInference");
     $guessedDomain = gr_infer_room_domain_from_rooms($rendererRouteKey, $ROOMS);
     if ($guessedDomain !== '' && $guessedDomain !== $rendererRoomDomain) {
@@ -179,6 +197,7 @@ if (!$tabs) {
         $logV("[$RID][{$rendererLogName}] inferenceUnchanged domain={$rendererRoomDomain} tabsAfterInference=0");
     }
 }
+
 
 $logV("[$RID][{$rendererLogName}] tabs=".count($tabs)." domain={$rendererRoomDomain}");
 
@@ -439,50 +458,94 @@ function gr_resolveRoomKey(string $spoken, array $roomMap, array $ROOMS): ?strin
     return null;
 }
 
-function gr_collectRoomDeviceTabs(array $ROOMS, ?string $onlyRoomKey = null, string $domainKey = 'devices'): array
+function gr_collectRoomDeviceTabs(
+    array $ROOMS,
+    ?string $onlyRoomKey = null,
+    string $domainKey = 'devices',
+    bool $respectRoomFilter = true
+): array
 {
     $tabs = [];
     $domainKey = $domainKey !== '' ? $domainKey : 'devices';
 
-    $ignoreRoomFilter = in_array($domainKey, ['been', 'save'], true);
+    $addTab = static function(array &$tabs, ?array $t): void {
+        if (!$t) {
+            return;
+        }
+        $key = (string)($t['id'] ?? '') . '|' . (string)($t['title'] ?? '');
+        static $seen = [];
+        if (isset($seen[$key])) {
+            return;
+        }
+        $seen[$key] = true;
+        $tabs[] = $t;
+    };
 
-    foreach ($ROOMS as $roomKey => $room) {
-        if (!is_array($room)) {
-            continue;
+    // 1) Optional: global-Bereich immer mitnehmen (z.B. globale Bienen / Sicherheit)
+    if (isset($ROOMS['global']) && is_array($ROOMS['global'])) {
+        $global = $ROOMS['global'];
+
+        $dev = $global['domains'][$domainKey]['tabs'] ?? null;
+        if (is_array($dev)) {
+            foreach ($dev as $title => $def) {
+                $addTab($tabs, gr_normalize_tab_def((string)$title, $def));
+            }
         }
 
-        if ($roomKey !== 'global' && !$ignoreRoomFilter && $onlyRoomKey !== null && (string)$roomKey !== (string)$onlyRoomKey) {
-            continue;
-        }
-
-        $domains = is_array($room['domains'] ?? null) ? $room['domains'] : [];
-
-        if (isset($domains[$domainKey]['tabs']) && is_array($domains[$domainKey]['tabs'])) {
-            foreach ($domains[$domainKey]['tabs'] as $title => $def) {
-                if ($t = gr_normalize_tab_def((string)$title, $def)) {
-                    $tabs[] = $t;
+        $domains = $global['domains'] ?? [];
+        if (is_array($domains)) {
+            foreach ($domains as $domVal) {
+                if (!is_array($domVal)) {
+                    continue;
+                }
+                $nested = $domVal[$domainKey]['tabs'] ?? null;
+                if (!is_array($nested)) {
+                    continue;
+                }
+                foreach ($nested as $title => $def) {
+                    $addTab($tabs, gr_normalize_tab_def((string)$title, $def));
                 }
             }
         }
+    }
 
-        foreach ($domains as $domVal) {
-            if (!is_array($domVal)) {
-                continue;
+    // 2) Alle Rooms durchsuchen
+    foreach ($ROOMS as $roomKey => $room) {
+        if ($roomKey === 'global') {
+            continue;
+        }
+
+        // Klassische Geräte/Bewässerung: Room-Filter beachten
+        if ($respectRoomFilter && $onlyRoomKey !== null && (string)$roomKey !== (string)$onlyRoomKey) {
+            continue;
+        }
+
+        $dev = $room['domains'][$domainKey]['tabs'] ?? null;
+        if (is_array($dev)) {
+            foreach ($dev as $title => $def) {
+                $addTab($tabs, gr_normalize_tab_def((string)$title, $def));
             }
-            if (!isset($domVal[$domainKey]['tabs']) || !is_array($domVal[$domainKey]['tabs'])) {
-                continue;
-            }
-            foreach ($domVal[$domainKey]['tabs'] as $title => $def) {
-                if ($t = gr_normalize_tab_def((string)$title, $def)) {
-                    $tabs[] = $t;
+        }
+
+        $domains = $room['domains'] ?? [];
+        if (is_array($domains)) {
+            foreach ($domains as $domVal) {
+                if (!is_array($domVal)) {
+                    continue;
+                }
+                $nested = $domVal[$domainKey]['tabs'] ?? null;
+                if (!is_array($nested)) {
+                    continue;
+                }
+                foreach ($nested as $title => $def) {
+                    $addTab($tabs, gr_normalize_tab_def((string)$title, $def));
                 }
             }
         }
     }
 
     usort($tabs, static function ($a, $b) {
-        $oa = (int)($a['order'] ?? 9999);
-        $ob = (int)($b['order'] ?? 9999);
+        $oa = (int)($a['order'] ?? 9999); $ob = (int)($b['order'] ?? 9999);
         if ($oa !== $ob) {
             return $oa <=> $ob;
         }
@@ -491,6 +554,8 @@ function gr_collectRoomDeviceTabs(array $ROOMS, ?string $onlyRoomKey = null, str
 
     return $tabs;
 }
+
+
 
 
 function gr_rooms_domain_summary(array $ROOMS, ?string $onlyRoomKey = null): array
@@ -1109,6 +1174,29 @@ function gr_info_allowed_list(array $obj): string {
     elseif (!empty($info['enum']) && is_array($info['enum'])) { foreach ($info['enum'] as $lab) { $lab = (string)$lab; if ($lab !== '') $labels[] = $lab; } }
     elseif (!empty($info['enumProfile']) && is_string($info['enumProfile'])) { $assoc = gr_get_profile_associations($info['enumProfile']); if (!empty($assoc['byValue'])) $labels = array_values($assoc['byValue']); }
     return $labels ? implode(', ', $labels) : '';
+}
+
+function gr_debug_domain_map(array $ROOMS, string $domainKey): array
+{
+    $out = [];
+
+    foreach ($ROOMS as $roomKey => $roomDef) {
+        $domains = is_array($roomDef['domains'] ?? null) ? $roomDef['domains'] : [];
+
+        $entry = [
+            'hasDomain'   => array_key_exists($domainKey, $domains),
+            'domainKeys'  => array_keys($domains),
+            'tabTitles'   => [],
+        ];
+
+        if (isset($domains[$domainKey]['tabs']) && is_array($domains[$domainKey]['tabs'])) {
+            $entry['tabTitles'] = array_keys($domains[$domainKey]['tabs']);
+        }
+
+        $out[(string)$roomKey] = $entry;
+    }
+
+    return $out;
 }
 
 function gr_renderer_config(string $routeKey, array $CFG): array {
