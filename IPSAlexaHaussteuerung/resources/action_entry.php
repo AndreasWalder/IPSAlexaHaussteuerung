@@ -102,6 +102,42 @@ function iah_get_instance_properties(int $instanceId): array
     return is_array($props) ? $props : [];
 }
 
+/**
+ * Ergänzt alle Räume automatisch mit Domains aus dem global-Block des RoomsCatalog.
+ * So lassen sich global gepflegte Tabs (z. B. Sicherheit/Bienen) ohne Duplikate
+ * in jedem Raum nutzen.
+ */
+function iah_merge_global_room_domains(array $rooms): array
+{
+    $globalDomains = isset($rooms['global']['domains']) && is_array($rooms['global']['domains'])
+        ? $rooms['global']['domains']
+        : [];
+
+    if ($globalDomains === []) {
+        return $rooms;
+    }
+
+    foreach ($rooms as $roomKey => $roomCfg) {
+        if ($roomKey === 'global' || !is_array($roomCfg)) {
+            continue;
+        }
+
+        $domains = isset($roomCfg['domains']) && is_array($roomCfg['domains'])
+            ? $roomCfg['domains']
+            : [];
+
+        foreach ($globalDomains as $domainKey => $domainCfg) {
+            if (!isset($domains[$domainKey])) {
+                $domains[$domainKey] = $domainCfg;
+            }
+        }
+
+        $rooms[$roomKey]['domains'] = $domains;
+    }
+
+    return $rooms;
+}
+
 function iah_renderer_domain_defaults_map(): array
 {
     return [
@@ -1022,7 +1058,7 @@ function Execute($request = null)
         $log('debug','AE(main)', $ACTIONS_ENABLED);
 
         // --------- RoomsCatalog ---------
-        $ROOMS = require IPS_GetScriptFile($S['ROOMS_CATALOG']);
+        $ROOMS = iah_merge_global_room_domains((array) require IPS_GetScriptFile($S['ROOMS_CATALOG']));
         $externalPages = iah_build_external_page_catalog($ROOMS, $pageMappings, $launchCatalog);
         if (!is_array($ROOMS) || $ROOMS === []) {
             return TellResponse::CreatePlainText('Fehler: RoomsCatalog leer oder ungültig.');
