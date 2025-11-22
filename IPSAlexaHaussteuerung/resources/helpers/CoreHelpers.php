@@ -201,14 +201,20 @@ $buildTabsCache = static function(array $ROOMS): array {
         $ROOMS['global']['bewaesserung_tabs'] ?? null,
     ];
     foreach ($globalSets as $set) $addTabs($set);
+    if (isset($ROOMS['global']['domains']) && is_array($ROOMS['global']['domains'])) {
+        foreach ($ROOMS['global']['domains'] as $domVal) {
+            if (!is_array($domVal)) continue;
+            $addTabs($domVal['tabs'] ?? null);
+        }
+    }
 
     foreach ($ROOMS as $roomKey => $roomDef) {
         if ($roomKey === 'global') continue;
-        $addTabs($roomDef['domains']['devices']['tabs'] ?? null);
         $domains = $roomDef['domains'] ?? [];
         if (is_array($domains)) {
             foreach ($domains as $domVal) {
                 if (!is_array($domVal)) continue;
+                $addTabs($domVal['tabs'] ?? null);
                 $addTabs($domVal['sprinkler']['tabs'] ?? null);
             }
         }
