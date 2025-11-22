@@ -1057,25 +1057,28 @@ class IPSAlexaHaussteuerung extends IPSModule
     private function extractRoomsCatalogTabDomains(array $rooms): array
     {
         $routes = [];
+    
         foreach ($rooms as $room) {
             if (!is_array($room)) {
                 continue;
             }
+    
             $domains = (array)($room['domains'] ?? []);
             foreach ($domains as $domainKey => $definition) {
                 $tabs = (array)($definition['tabs'] ?? []);
+                if ($tabs === []) {
+                    // nur Domains mit tabs
+                    continue;
+                }
+    
                 $baseDomain = strtolower((string)$domainKey);
-                $route = $this->normalizeRoomsCatalogDomainRoute($baseDomain, $tabs);
+                $route      = $this->normalizeRoomsCatalogDomainRoute($baseDomain, $tabs);
                 if ($route === '' || isset($routes[$route])) {
                     continue;
                 }
-                if (in_array($route, ['devices', 'sprinkler'], true)) {
-                    continue;
-                }
-                if ($tabs === []) {
-                    continue;
-                }
+    
                 $title = $this->inferRoomsCatalogDomainTitle($tabs, $route);
+    
                 $routes[$route] = [
                     'route'      => $route,
                     'roomDomain' => $baseDomain !== '' ? $baseDomain : $route,
@@ -1084,7 +1087,7 @@ class IPSAlexaHaussteuerung extends IPSModule
                 ];
             }
         }
-
+    
         return $routes;
     }
 
