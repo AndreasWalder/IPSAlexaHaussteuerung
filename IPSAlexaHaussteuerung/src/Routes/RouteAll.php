@@ -14,6 +14,11 @@ use IPSAlexaHaussteuerung\Renderers\RenderExternal;
 final class RouteAll{
     public function handle(array $payload,array $cfg):array{
         $route=(string)($payload['route']??'main_launch');
+        $routeKey=strtolower($route);
+        $domainEntry=$this->rendererDomainMap($cfg)[$routeKey]??null;
+        if($domainEntry!==null&&$this->isBewaesserungDomainEntry($domainEntry)){
+            return $this->handleBewaesserung($payload,$cfg);
+        }
         switch($route){
             case 'heizung':return $this->handleHeizung($payload,$cfg);
             case 'jalousie':return $this->handleJalousie($payload,$cfg);
@@ -39,7 +44,8 @@ final class RouteAll{
     private function handleSettings(array $payload,array $cfg):array{$payload=$this->withRendererCfg($payload,$cfg);$custom=(new RenderSettings())->process($payload,$cfg);if(is_array($custom))return $custom;return $this->baseResponse($payload,$cfg,'hv-settings','Settings','settings');}
     private function handleExternal(array $payload,array $cfg):array{$payload=$this->withRendererCfg($payload,$cfg);$custom=(new RenderExternal())->process($payload,$cfg);if(is_array($custom))return $custom;$res=$this->baseResponse($payload,$cfg,'hv-external','External','external');if(!empty($payload['externalDirective'])&&is_array($payload['externalDirective'])){$res['data']['directives'][]=$payload['externalDirective'];}return $res;}
     private function handleRendererDomainRoute(string $route,array $payload,array $cfg):?array{$routeKey=strtolower($route);if($routeKey==='')return null;$map=$this->rendererDomainMap($cfg);if(!isset($map[$routeKey]))return null;$payload=$this->withRendererCfg($payload,$cfg);$renderer=$this->resolveRendererForDomain($map[$routeKey]);if($renderer===null)return null;$custom=$renderer->process($payload,$cfg);if(is_array($custom))return $custom;return $this->baseResponse($payload,$cfg,'hv-main','Main','main');}
-    private function resolveRendererForDomain(array $domain){$roomDomain=strtolower((string)($domain['roomDomain']??''));$route=strtolower((string)($domain['route']??''));$aplDoc=strtolower((string)($domain['aplDoc']??''));$isBewaesserungDomain=$roomDomain==='sprinkler'||$roomDomain==='save'||strpos($aplDoc,'bewaesserung')!==false||$route==='sicherheit';if($isBewaesserungDomain)return new RenderBewaesserung();return new RenderGeraete();}
+    private function resolveRendererForDomain(array $domain){return $this->isBewaesserungDomainEntry($domain)?new RenderBewaesserung():new RenderGeraete();}
+    private function isBewaesserungDomainEntry(array $domain):bool{$roomDomain=strtolower((string)($domain['roomDomain']??''));$route=strtolower((string)($domain['route']??''));$aplDoc=strtolower((string)($domain['aplDoc']??''));return $roomDomain==='sprinkler'||$roomDomain==='save'||strpos($aplDoc,'bewaesserung')!==false||$route==='sicherheit';}
     private function rendererDomainMap(array $cfg):array{$entries=(array)($cfg['rendererDomains']??[]);$map=[];foreach($entries as $entry){if(!is_array($entry))continue;$route=strtolower((string)($entry['route']??''));if($route==='')continue;$map[$route]=$entry;}return $map;}
     private function withRendererCfg(array $payload,array $cfg):array{if(isset($payload['CFG'])&&is_array($payload['CFG']))return $payload;$payload['CFG']=$this->buildRendererCfg($cfg);return $payload;}
     private function buildRendererCfg(array $cfg):array{$var=is_array($cfg['V']??null)?$cfg['V']:[];$scripts=is_array($cfg['S']??null)?$cfg['S']:[];$domains=is_array($cfg['rendererDomains']??null)?$cfg['rendererDomains']:[];$launch=is_array($cfg['launchCatalog']??null)?$cfg['launchCatalog']:[];$actions=is_array($var['ActionsEnabled']??null)?$var['ActionsEnabled']:[];$flags=['log_basic'=>true,'log_verbose'=>((string)($cfg['LOG_LEVEL']??'')==='debug'),'log_apl_ds'=>true];return ['var'=>$var,'script'=>$scripts,'rendererDomains'=>$domains,'renderer_domains'=>$domains,'launchCatalog'=>$launch,'actions_vars'=>$actions,'baseUrl'=>(string)($var['BaseUrl']??''),'token'=>(string)($var['Token']??''),'source'=>(string)($var['Source']??''),'flags'=>$flags];}
