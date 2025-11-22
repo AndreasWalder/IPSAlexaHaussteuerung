@@ -162,9 +162,6 @@ $roomKeyFilter = gr_resolveRoomKey($roomSpoken, $roomMap, $ROOMS);
 $tabs = gr_collectRoomDeviceTabs($ROOMS, $roomKeyFilter, $rendererRoomDomain);
 
 $logV("[$RID][{$rendererLogName}] roomSummary=" . json_encode(gr_rooms_domain_summary($ROOMS, $roomKeyFilter), GR_JF));
-if (!$tabs) {
-    gr_log_room_domain_trace($ROOMS, $roomKeyFilter, $rendererRoomDomain, $logV);
-}
 
 // Fallback: Wenn keine Tabs gefunden wurden, versuche die Domäne über den
 // RoomsCatalog (Tab-Titel → slug) herzuleiten und neu zu sammeln. Dadurch
@@ -511,10 +508,7 @@ function gr_rooms_domain_summary(array $ROOMS, ?string $onlyRoomKey = null): arr
     return $summary;
 }
 
-function gr_log_room_domain_trace(array $ROOMS, ?string $onlyRoomKey, string $domainKey, callable $logger): void
-{
-    // Trace-Logging bewusst deaktiviert, damit das Log schlank bleibt.
-}
+
 
 function gr_normalize_tab_def(string $title, $def): ?array
 {
