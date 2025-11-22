@@ -187,6 +187,36 @@ function iah_build_launch_catalog(array $props): array
         $tiles = (array)($defaults['tiles'] ?? []);
     }
 
+    // Fehlende Kacheln für konfigurierte PageMappings automatisch ergänzen
+    $tileIds = [];
+    foreach ($tiles as $tileEntry) {
+        if (!is_array($tileEntry)) {
+            continue;
+        }
+        $id = strtolower((string) ($tileEntry['id'] ?? ''));
+        if ($id === '') {
+            continue;
+        }
+        $tileIds[$id] = true;
+    }
+
+    foreach (iah_build_page_mappings($props) as $entry) {
+        if (!is_array($entry)) {
+            continue;
+        }
+        $key = strtolower((string) ($entry['key'] ?? ''));
+        if ($key === '' || isset($tileIds[$key])) {
+            continue;
+        }
+
+        $label = trim((string) ($entry['label'] ?? ''));
+        $tiles[] = [
+            'id'    => $key,
+            'title' => $label !== '' ? $label : ucfirst($key),
+        ];
+        $tileIds[$key] = true;
+    }
+
     $read = static function (string $key, string $fallback) use ($props): string {
         $val = trim((string) ($props[$key] ?? ''));
         return $val !== '' ? $val : $fallback;
