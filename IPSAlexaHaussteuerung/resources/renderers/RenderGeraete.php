@@ -155,16 +155,22 @@ $roomKeyFilter = gr_resolveRoomKey($roomSpoken, $roomMap, $ROOMS);
    ========================= */
 $tabs = gr_collectRoomDeviceTabs($ROOMS, $roomKeyFilter, $rendererRoomDomain);
 
+$logV("[$RID][{$rendererLogName}] roomSummary=" . json_encode(gr_rooms_domain_summary($ROOMS, $roomKeyFilter), GR_JF));
+
 // Fallback: Wenn keine Tabs gefunden wurden, versuche die Domäne über den
 // RoomsCatalog (Tab-Titel → slug) herzuleiten und neu zu sammeln. Dadurch
 // greifen dynamische Domains wie "Bienen" (been) oder "Sicherheit" (save)
 // auch dann, wenn die Renderer-Konfiguration keine oder eine andere Domäne
 // liefert.
 if (!$tabs) {
+    $logV("[$RID][{$rendererLogName}] noTabs domain={$rendererRoomDomain} routeKey={$rendererRouteKey} tryingInference");
     $guessedDomain = gr_infer_room_domain_from_rooms($rendererRouteKey, $ROOMS);
     if ($guessedDomain !== '' && $guessedDomain !== $rendererRoomDomain) {
         $rendererRoomDomain = $guessedDomain;
         $tabs = gr_collectRoomDeviceTabs($ROOMS, $roomKeyFilter, $rendererRoomDomain);
+        $logV("[$RID][{$rendererLogName}] inferredDomain={$rendererRoomDomain} tabsAfterInference=".count($tabs));
+    } else {
+        $logV("[$RID][{$rendererLogName}] inferenceUnchanged domain={$rendererRoomDomain} tabsAfterInference=0");
     }
 }
 
@@ -459,6 +465,42 @@ function gr_collectRoomDeviceTabs(array $ROOMS, ?string $onlyRoomKey = null, str
     });
 
     return $tabs;
+}
+
+function gr_rooms_domain_summary(array $ROOMS, ?string $onlyRoomKey = null): array
+{
+    $summary = [];
+
+    foreach ($ROOMS as $roomKey => $roomDef) {
+        if ($roomKey === 'global') {
+            continue;
+        }
+        if ($onlyRoomKey !== null && (string)$roomKey !== (string)$onlyRoomKey) {
+            continue;
+        }
+
+        $domains = is_array($roomDef['domains'] ?? null) ? $roomDef['domains'] : [];
+        $domainSummary = [];
+        foreach ($domains as $domainKey => $domainDef) {
+            if (!is_array($domainDef)) {
+                continue;
+            }
+            $tabs = $domainDef['tabs'] ?? null;
+            $domainSummary[(string)$domainKey] = [
+                'hasTabs'   => is_array($tabs),
+                'tabCount'  => is_array($tabs) ? count($tabs) : 0,
+                'tabTitles' => is_array($tabs) ? array_keys($tabs) : [],
+            ];
+        }
+
+        $summary[] = [
+            'roomKey'  => (string)$roomKey,
+            'display'  => (string)($roomDef['display'] ?? $roomKey),
+            'domains'  => $domainSummary,
+        ];
+    }
+
+    return $summary;
 }
 
 function gr_normalize_tab_def(string $title, $def): ?array
