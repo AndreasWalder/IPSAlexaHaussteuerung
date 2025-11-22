@@ -1028,6 +1028,8 @@ function gr_info_allowed_list(array $obj): string {
 }
 
 function gr_renderer_config(string $routeKey, array $CFG): array {
+    global $ROOMS;
+
     $list = [];
     if (isset($CFG['rendererDomains']) && is_array($CFG['rendererDomains'])) {
         $list = $CFG['rendererDomains'];
@@ -1059,6 +1061,13 @@ function gr_renderer_config(string $routeKey, array $CFG): array {
         }
 
         return array_merge($defaults, $normalized);
+    }
+
+    if ($defaults['roomDomain'] === 'devices') {
+        $guessedDomain = gr_infer_room_domain_from_rooms($routeKey, is_array($ROOMS) ? $ROOMS : []);
+        if ($guessedDomain !== '') {
+            $defaults['roomDomain'] = $guessedDomain;
+        }
     }
 
     return $defaults;
@@ -1113,4 +1122,43 @@ function gr_renderer_default_entry(string $routeKey): array {
     }
 
     return $base;
+}
+
+function gr_infer_room_domain_from_rooms(string $routeKey, array $ROOMS): string {
+    $slugKey = gr_slugify($routeKey);
+    if ($slugKey === '') {
+        return '';
+    }
+
+    foreach ($ROOMS as $room) {
+        if (!is_array($room)) {
+            continue;
+        }
+        $domains = (array)($room['domains'] ?? []);
+        foreach ($domains as $domainKey => $definition) {
+            $tabs = (array)($definition['tabs'] ?? []);
+            foreach ($tabs as $tabKey => $tabDef) {
+                $title = '';
+                if (is_array($tabDef)) {
+                    $title = trim((string)($tabDef['title'] ?? ''));
+                }
+                if ($title === '') {
+                    $title = trim((string)$tabKey);
+                }
+                if ($title !== '' && gr_slugify($title) === $slugKey) {
+                    return (string)$domainKey;
+                }
+            }
+        }
+    }
+
+    return '';
+}
+
+function gr_slugify(string $raw): string {
+    $slug = strtolower(trim($raw));
+    $slug = strtr($slug, ['ä' => 'ae', 'ö' => 'oe', 'ü' => 'ue', 'ß' => 'ss']);
+    $slug = preg_replace('/[^a-z0-9]+/i', '-', $slug);
+
+    return trim((string)$slug, '-');
 }
