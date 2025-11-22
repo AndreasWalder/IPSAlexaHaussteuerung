@@ -154,7 +154,30 @@ $roomKeyFilter = gr_resolveRoomKey($roomSpoken, $roomMap, $ROOMS);
    Tabs & aktive Kategorie
    ========================= */
 $tabs = gr_collectRoomDeviceTabs($ROOMS, $roomKeyFilter, $rendererRoomDomain);
-$logV("[$RID][{$rendererLogName}] tabs=".count($tabs));
+
+$logV("[$RID][{$rendererLogName}] roomSummary=" . json_encode(gr_rooms_domain_summary($ROOMS, $roomKeyFilter), GR_JF));
+if (!$tabs) {
+    gr_log_room_domain_trace($ROOMS, $roomKeyFilter, $rendererRoomDomain, $logV);
+}
+
+// Fallback: Wenn keine Tabs gefunden wurden, versuche die Domäne über den
+// RoomsCatalog (Tab-Titel → slug) herzuleiten und neu zu sammeln. Dadurch
+// greifen dynamische Domains wie "Bienen" (been) oder "Sicherheit" (save)
+// auch dann, wenn die Renderer-Konfiguration keine oder eine andere Domäne
+// liefert.
+if (!$tabs) {
+    $logV("[$RID][{$rendererLogName}] noTabs domain={$rendererRoomDomain} routeKey={$rendererRouteKey} tryingInference");
+    $guessedDomain = gr_infer_room_domain_from_rooms($rendererRouteKey, $ROOMS);
+    if ($guessedDomain !== '' && $guessedDomain !== $rendererRoomDomain) {
+        $rendererRoomDomain = $guessedDomain;
+        $tabs = gr_collectRoomDeviceTabs($ROOMS, $roomKeyFilter, $rendererRoomDomain);
+        $logV("[$RID][{$rendererLogName}] inferredDomain={$rendererRoomDomain} tabsAfterInference=".count($tabs));
+    } else {
+        $logV("[$RID][{$rendererLogName}] inferenceUnchanged domain={$rendererRoomDomain} tabsAfterInference=0");
+    }
+}
+
+$logV("[$RID][{$rendererLogName}] tabs=".count($tabs)." domain={$rendererRoomDomain}");
 
 if (!$tabs) {
     echo json_encode([
@@ -445,6 +468,77 @@ function gr_collectRoomDeviceTabs(array $ROOMS, ?string $onlyRoomKey = null, str
     });
 
     return $tabs;
+}
+
+function gr_rooms_domain_summary(array $ROOMS, ?string $onlyRoomKey = null): array
+{
+    $summary = [];
+
+    foreach ($ROOMS as $roomKey => $roomDef) {
+        if ($roomKey === 'global') {
+            continue;
+        }
+        if ($onlyRoomKey !== null && (string)$roomKey !== (string)$onlyRoomKey) {
+            continue;
+        }
+
+        $domains = is_array($roomDef['domains'] ?? null) ? $roomDef['domains'] : [];
+        $domainSummary = [];
+        foreach ($domains as $domainKey => $domainDef) {
+            if (!is_array($domainDef)) {
+                continue;
+            }
+            $tabs = $domainDef['tabs'] ?? null;
+            $domainSummary[(string)$domainKey] = [
+                'hasTabs'   => is_array($tabs),
+                'tabCount'  => is_array($tabs) ? count($tabs) : 0,
+                'tabTitles' => is_array($tabs) ? array_keys($tabs) : [],
+            ];
+        }
+
+        $summary[] = [
+            'roomKey'  => (string)$roomKey,
+            'display'  => (string)($roomDef['display'] ?? $roomKey),
+            'domains'  => $domainSummary,
+        ];
+    }
+
+    return $summary;
+}
+
+function gr_log_room_domain_trace(array $ROOMS, ?string $onlyRoomKey, string $domainKey, callable $logger): void
+{
+    $logger('[TRACE] RoomsCatalog domain trace start');
+
+    foreach ($ROOMS as $roomKey => $roomDef) {
+        if ($roomKey === 'global') {
+            continue;
+        }
+        if ($onlyRoomKey !== null && (string)$roomKey !== (string)$onlyRoomKey) {
+            continue;
+        }
+
+        $domains = is_array($roomDef['domains'] ?? null) ? $roomDef['domains'] : [];
+        $domainKeys = array_keys($domains);
+        $direct = $domains[$domainKey] ?? null;
+        $directTabs = is_array($direct['tabs'] ?? null) ? $direct['tabs'] : null;
+        $directTabCount = is_array($directTabs) ? count($directTabs) : 0;
+
+        $nestedTabHits = [];
+        foreach ($domains as $k => $def) {
+            if (!is_array($def)) {
+                continue;
+            }
+            $tabs = $def['tabs'] ?? null;
+            if (is_array($tabs)) {
+                $nestedTabHits[(string)$k] = ['tabCount' => count($tabs), 'tabTitles' => array_keys($tabs)];
+            }
+        }
+
+        $logger('[TRACE] room=' . $roomKey . ' domains=' . json_encode($domainKeys, GR_JF) . ' directTabs=' . $directTabCount . ' nestedTabs=' . json_encode($nestedTabHits, GR_JF));
+    }
+
+    $logger('[TRACE] RoomsCatalog domain trace end');
 }
 
 function gr_normalize_tab_def(string $title, $def): ?array
@@ -1028,6 +1122,8 @@ function gr_info_allowed_list(array $obj): string {
 }
 
 function gr_renderer_config(string $routeKey, array $CFG): array {
+    global $ROOMS;
+
     $list = [];
     if (isset($CFG['rendererDomains']) && is_array($CFG['rendererDomains'])) {
         $list = $CFG['rendererDomains'];
@@ -1059,6 +1155,13 @@ function gr_renderer_config(string $routeKey, array $CFG): array {
         }
 
         return array_merge($defaults, $normalized);
+    }
+
+    if ($defaults['roomDomain'] === 'devices') {
+        $guessedDomain = gr_infer_room_domain_from_rooms($routeKey, is_array($ROOMS) ? $ROOMS : []);
+        if ($guessedDomain !== '') {
+            $defaults['roomDomain'] = $guessedDomain;
+        }
     }
 
     return $defaults;
@@ -1113,4 +1216,54 @@ function gr_renderer_default_entry(string $routeKey): array {
     }
 
     return $base;
+}
+
+function gr_infer_room_domain_from_rooms(string $routeKey, array $ROOMS): string {
+    $slugKey = gr_slugify($routeKey);
+    if ($slugKey === '') {
+        return '';
+    }
+
+    foreach ($ROOMS as $room) {
+        if (!is_array($room)) {
+            continue;
+        }
+        $domains = (array)($room['domains'] ?? []);
+        foreach ($domains as $domainKey => $definition) {
+            $normalizedDomainKey = gr_slugify((string)$domainKey);
+            $tabs = (array)($definition['tabs'] ?? []);
+
+            // 1) Direkter Treffer auf den Domänenschlüssel (z. B. route "been" → domain "been")
+            if ($normalizedDomainKey !== '' && $normalizedDomainKey === $slugKey && $tabs) {
+                return (string)$domainKey;
+            }
+
+            // 2) Fallback über Tab-Titel (z. B. route "bienen" → Tab "Bienen")
+            if (!$tabs) {
+                continue;
+            }
+            foreach ($tabs as $tabKey => $tabDef) {
+                $title = '';
+                if (is_array($tabDef)) {
+                    $title = trim((string)($tabDef['title'] ?? ''));
+                }
+                if ($title === '') {
+                    $title = trim((string)$tabKey);
+                }
+                if ($title !== '' && gr_slugify($title) === $slugKey) {
+                    return (string)$domainKey;
+                }
+            }
+        }
+    }
+
+    return '';
+}
+
+function gr_slugify(string $raw): string {
+    $slug = strtolower(trim($raw));
+    $slug = strtr($slug, ['ä' => 'ae', 'ö' => 'oe', 'ü' => 'ue', 'ß' => 'ss']);
+    $slug = preg_replace('/[^a-z0-9]+/i', '-', $slug);
+
+    return trim((string)$slug, '-');
 }
