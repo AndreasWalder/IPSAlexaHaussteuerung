@@ -1150,7 +1150,18 @@ function gr_infer_room_domain_from_rooms(string $routeKey, array $ROOMS): string
         }
         $domains = (array)($room['domains'] ?? []);
         foreach ($domains as $domainKey => $definition) {
+            $normalizedDomainKey = gr_slugify((string)$domainKey);
             $tabs = (array)($definition['tabs'] ?? []);
+
+            // 1) Direkter Treffer auf den Domänenschlüssel (z. B. route "been" → domain "been")
+            if ($normalizedDomainKey !== '' && $normalizedDomainKey === $slugKey && $tabs) {
+                return (string)$domainKey;
+            }
+
+            // 2) Fallback über Tab-Titel (z. B. route "bienen" → Tab "Bienen")
+            if (!$tabs) {
+                continue;
+            }
             foreach ($tabs as $tabKey => $tabDef) {
                 $title = '';
                 if (is_array($tabDef)) {
