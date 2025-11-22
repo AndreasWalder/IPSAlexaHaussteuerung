@@ -154,7 +154,21 @@ $roomKeyFilter = gr_resolveRoomKey($roomSpoken, $roomMap, $ROOMS);
    Tabs & aktive Kategorie
    ========================= */
 $tabs = gr_collectRoomDeviceTabs($ROOMS, $roomKeyFilter, $rendererRoomDomain);
-$logV("[$RID][{$rendererLogName}] tabs=".count($tabs));
+
+// Fallback: Wenn keine Tabs gefunden wurden, versuche die Domäne über den
+// RoomsCatalog (Tab-Titel → slug) herzuleiten und neu zu sammeln. Dadurch
+// greifen dynamische Domains wie "Bienen" (been) oder "Sicherheit" (save)
+// auch dann, wenn die Renderer-Konfiguration keine oder eine andere Domäne
+// liefert.
+if (!$tabs) {
+    $guessedDomain = gr_infer_room_domain_from_rooms($rendererRouteKey, $ROOMS);
+    if ($guessedDomain !== '' && $guessedDomain !== $rendererRoomDomain) {
+        $rendererRoomDomain = $guessedDomain;
+        $tabs = gr_collectRoomDeviceTabs($ROOMS, $roomKeyFilter, $rendererRoomDomain);
+    }
+}
+
+$logV("[$RID][{$rendererLogName}] tabs=".count($tabs)." domain={$rendererRoomDomain}");
 
 if (!$tabs) {
     echo json_encode([
