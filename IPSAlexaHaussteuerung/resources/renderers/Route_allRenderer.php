@@ -53,6 +53,44 @@ if (!function_exists('iah_external_page_list')) {
     }
 }
 
+if (!function_exists('iah_merge_global_room_domains')) {
+    /**
+     * Ergänzt alle Räume automatisch mit Domains aus dem global-Block des RoomsCatalog.
+     * Dadurch lassen sich globale Tabs (z. B. Sicherheit) einmalig pflegen und
+     * trotzdem in jedem Raum nutzen, ohne Kopien anlegen zu müssen.
+     */
+    function iah_merge_global_room_domains(array $rooms): array
+    {
+        $globalDomains = isset($rooms['global']['domains']) && is_array($rooms['global']['domains'])
+            ? $rooms['global']['domains']
+            : [];
+
+        if ($globalDomains === []) {
+            return $rooms;
+        }
+
+        foreach ($rooms as $roomKey => $roomCfg) {
+            if ($roomKey === 'global' || !is_array($roomCfg)) {
+                continue;
+            }
+
+            $domains = isset($roomCfg['domains']) && is_array($roomCfg['domains'])
+                ? $roomCfg['domains']
+                : [];
+
+            foreach ($globalDomains as $domainKey => $domainCfg) {
+                if (!isset($domains[$domainKey])) {
+                    $domains[$domainKey] = $domainCfg;
+                }
+            }
+
+            $rooms[$roomKey]['domains'] = $domains;
+        }
+
+        return $rooms;
+    }
+}
+
 if (!function_exists('iah_build_external_page_catalog')) {
     function iah_build_external_page_catalog(array $rooms, array $pageMappings, array $launchCatalog): array
     {
@@ -169,8 +207,8 @@ try {
         if (is_string($v)) { $d = json_decode($v, true); return is_array($d) ? $d : []; }
         return is_array($v) ? $v : [];
     };
-    $rooms           = $norm($payload['rooms'] ?? []);
-    $ROOMS           = $norm($payload['ROOMS'] ?? []);
+    $rooms           = iah_merge_global_room_domains($norm($payload['rooms'] ?? []));
+    $ROOMS           = iah_merge_global_room_domains($norm($payload['ROOMS'] ?? []));
     $ACTIONS_ENABLED = $norm($payload['ACTIONS_ENABLED'] ?? []);
     $aplArgs         = $norm($payload['aplArgs'] ?? []);
     $roomMap         = (static function (array $ROOMS): array {
