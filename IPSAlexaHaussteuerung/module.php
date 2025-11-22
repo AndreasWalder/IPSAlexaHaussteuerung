@@ -1082,18 +1082,20 @@ class IPSAlexaHaussteuerung extends IPSModule
                     // nur Domains mit tabs
                     continue;
                 }
-    
-                $baseDomain = strtolower((string)$domainKey);
-                $route      = $this->normalizeRoomsCatalogDomainRoute($baseDomain, $tabs);
+
+                $baseDomain = strtolower(trim((string)$domainKey));
+                $roomDomain = strtolower(trim((string)($definition['roomDomain'] ?? $baseDomain)));
+                $routeKey   = $baseDomain !== '' ? $baseDomain : $roomDomain;
+                $route      = $this->normalizeRoomsCatalogDomainRoute($routeKey, $tabs);
                 if ($route === '' || isset($routes[$route])) {
                     continue;
                 }
-    
+
                 $title = $this->inferRoomsCatalogDomainTitle($tabs, $route);
-    
+
                 $routes[$route] = [
                     'route'      => $route,
-                    'roomDomain' => $baseDomain !== '' ? $baseDomain : $route,
+                    'roomDomain' => $roomDomain !== '' ? $roomDomain : $route,
                     'title'      => $title,
                     'logName'    => $title,
                 ];
