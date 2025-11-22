@@ -1342,7 +1342,31 @@ function Execute($request = null)
         if ($aplTabId !== null) {
             $tabDomain = $tabDomainById($aplTabId, $ROOMS);
             if ($tabDomain !== null && ($domain === null || $domain === 'geraete')) {
-                $mappedDomain = in_array($tabDomain, ['sprinkler', 'save', 'sicherheit'], true) ? 'bewaesserung' : $tabDomain;
+                $mappedDomain = $tabDomain;
+
+                // Versuche, anhand der bekannten Renderer-Domains einen passenden Routen-Key zu finden (z. B. save → sicherheit)
+                foreach ($rendererRoomDomainKeys as $routeKey => $roomDomainKey) {
+                    if ($roomDomainKey === $tabDomain) {
+                        $mappedDomain = $routeKey;
+                        break;
+                    }
+                }
+                if ($mappedDomain === $tabDomain && isset($rendererDomainMap[$tabDomain])) {
+                    $mappedDomain = $tabDomain;
+                }
+                if ($mappedDomain === $tabDomain && isset($rendererDomainSynonyms[$tabDomain])) {
+                    $mappedDomain = $rendererDomainSynonyms[$tabDomain];
+                }
+
+                // Sicherheits-/Save-Tabs auf die explizite Sicherheit-Route legen, falls keine Mapping-Regel gegriffen hat
+                if ($mappedDomain === $tabDomain && in_array($tabDomain, ['sprinkler', 'save', 'sicherheit'], true)) {
+                    if (isset($rendererDomainMap['sicherheit'])) {
+                        $mappedDomain = 'sicherheit';
+                    } elseif (isset($rendererDomainSynonyms['sicherheit'])) {
+                        $mappedDomain = $rendererDomainSynonyms['sicherheit'];
+                    }
+                }
+
                 $log('debug', 'APL_TAB_DOMAIN', [
                     'tabId'        => $aplTabId,
                     'tabDomain'    => $tabDomain,
