@@ -9,11 +9,11 @@
  *             • Komplettes Datasource-JSON ins Log (PRETTY + kompakt)
  *             • Optionaler Dump in String-Variable (CFG.flags.dump_ds_var)
  *             • Rubriken/Sorting/Link-Namen wie v13 beibehalten
- * 2025-11-05: v13 — Positions-Sortierung + Dummy‑Rubriken
+ * 2025-11-05: v13 — Positions-Sortierung + Dummy-Rubriken
  *             • Sortierung pro Ebene: zuerst ObjectPosition, dann alphabetisch
  *             • „Dummy Modul“-Instanzen werden als Rubrik-Zeilen ausgegeben
  *               (isSection=true) und innerhalb der Rubrik neu sortiert
- *             • Link-Namen werden als Anzeigename verwendet, Wert von Ziel‑Variable
+ *             • Link-Namen werden als Anzeigename verwendet, Wert von Ziel-Variable
  * 2025-11-04: v12 — String-Enums auch über Variablenprofile
  *             • Wenn ObjectInfo (enum/enumOpts/enumMap/enumProfile) fehlt,
  *               werden bei String-Variablen die Associations des
@@ -154,11 +154,6 @@ $roomKeyFilter = gr_resolveRoomKey($roomSpoken, $roomMap, $ROOMS);
    Tabs & aktive Kategorie
    ========================= */
 $tabs = gr_collectRoomDeviceTabs($ROOMS, $roomKeyFilter, $rendererRoomDomain);
-
-$logV("[$RID][{$rendererLogName}] roomSummary=" . json_encode(gr_rooms_domain_summary($ROOMS, $roomKeyFilter), GR_JF));
-if (!$tabs) {
-    gr_log_room_domain_trace($ROOMS, $roomKeyFilter, $rendererRoomDomain, $logV);
-}
 
 // Fallback: Wenn keine Tabs gefunden wurden, versuche die Domäne über den
 // RoomsCatalog (Tab-Titel → slug) herzuleiten und neu zu sammeln. Dadurch
@@ -442,21 +437,27 @@ function gr_collectRoomDeviceTabs(array $ROOMS, ?string $onlyRoomKey = null, str
     $domainKey = $domainKey !== '' ? $domainKey : 'devices';
 
     foreach ($ROOMS as $roomKey => $room) {
-        if ($roomKey === 'global') continue;
-        if ($onlyRoomKey !== null && (string)$roomKey !== (string)$onlyRoomKey) continue;
-
-        $dev = $room['domains'][$domainKey]['tabs'] ?? null;
-        if (is_array($dev)) {
-            foreach ($dev as $title => $def) { if ($t = gr_normalize_tab_def((string)$title, $def)) $tabs[] = $t; }
+        if ($onlyRoomKey !== null && (string)$roomKey !== (string)$onlyRoomKey) {
+            continue;
+        }
+        if (!is_array($room)) {
+            continue;
         }
 
-        $domains = $room['domains'] ?? [];
-        if (is_array($domains)) {
-            foreach ($domains as $domVal) {
-                if (!is_array($domVal)) continue;
-                $nested = $domVal[$domainKey]['tabs'] ?? null;
-                if (!is_array($nested)) continue;
-                foreach ($nested as $title => $def) { if ($t = gr_normalize_tab_def((string)$title, $def)) $tabs[] = $t; }
+        $domains = is_array($room['domains'] ?? null) ? $room['domains'] : [];
+        $domain  = $domains[$domainKey] ?? null;
+        if (!is_array($domain)) {
+            continue;
+        }
+
+        $devTabs = $domain['tabs'] ?? null;
+        if (!is_array($devTabs)) {
+            continue;
+        }
+
+        foreach ($devTabs as $title => $def) {
+            if ($t = gr_normalize_tab_def((string)$title, $def)) {
+                $tabs[] = $t;
             }
         }
     }
@@ -468,77 +469,6 @@ function gr_collectRoomDeviceTabs(array $ROOMS, ?string $onlyRoomKey = null, str
     });
 
     return $tabs;
-}
-
-function gr_rooms_domain_summary(array $ROOMS, ?string $onlyRoomKey = null): array
-{
-    $summary = [];
-
-    foreach ($ROOMS as $roomKey => $roomDef) {
-        if ($roomKey === 'global') {
-            continue;
-        }
-        if ($onlyRoomKey !== null && (string)$roomKey !== (string)$onlyRoomKey) {
-            continue;
-        }
-
-        $domains = is_array($roomDef['domains'] ?? null) ? $roomDef['domains'] : [];
-        $domainSummary = [];
-        foreach ($domains as $domainKey => $domainDef) {
-            if (!is_array($domainDef)) {
-                continue;
-            }
-            $tabs = $domainDef['tabs'] ?? null;
-            $domainSummary[(string)$domainKey] = [
-                'hasTabs'   => is_array($tabs),
-                'tabCount'  => is_array($tabs) ? count($tabs) : 0,
-                'tabTitles' => is_array($tabs) ? array_keys($tabs) : [],
-            ];
-        }
-
-        $summary[] = [
-            'roomKey'  => (string)$roomKey,
-            'display'  => (string)($roomDef['display'] ?? $roomKey),
-            'domains'  => $domainSummary,
-        ];
-    }
-
-    return $summary;
-}
-
-function gr_log_room_domain_trace(array $ROOMS, ?string $onlyRoomKey, string $domainKey, callable $logger): void
-{
-    $logger('[TRACE] RoomsCatalog domain trace start');
-
-    foreach ($ROOMS as $roomKey => $roomDef) {
-        if ($roomKey === 'global') {
-            continue;
-        }
-        if ($onlyRoomKey !== null && (string)$roomKey !== (string)$onlyRoomKey) {
-            continue;
-        }
-
-        $domains = is_array($roomDef['domains'] ?? null) ? $roomDef['domains'] : [];
-        $domainKeys = array_keys($domains);
-        $direct = $domains[$domainKey] ?? null;
-        $directTabs = is_array($direct['tabs'] ?? null) ? $direct['tabs'] : null;
-        $directTabCount = is_array($directTabs) ? count($directTabs) : 0;
-
-        $nestedTabHits = [];
-        foreach ($domains as $k => $def) {
-            if (!is_array($def)) {
-                continue;
-            }
-            $tabs = $def['tabs'] ?? null;
-            if (is_array($tabs)) {
-                $nestedTabHits[(string)$k] = ['tabCount' => count($tabs), 'tabTitles' => array_keys($tabs)];
-            }
-        }
-
-        $logger('[TRACE] room=' . $roomKey . ' domains=' . json_encode($domainKeys, GR_JF) . ' directTabs=' . $directTabCount . ' nestedTabs=' . json_encode($nestedTabHits, GR_JF));
-    }
-
-    $logger('[TRACE] RoomsCatalog domain trace end');
 }
 
 function gr_normalize_tab_def(string $title, $def): ?array
@@ -564,7 +494,7 @@ function gr_normalize_tab_def(string $title, $def): ?array
 /* =============================
  *  Neue, gruppierte Row-Generierung
  *  — Sortierung: Position, dann Alphabet
- *  — Dummy‑Module als Rubriken
+ *  — Dummy-Module als Rubriken
  * ============================= */
 function gr_buildRowsFromNode(int $rootId, bool $aeToggle): array
 {
