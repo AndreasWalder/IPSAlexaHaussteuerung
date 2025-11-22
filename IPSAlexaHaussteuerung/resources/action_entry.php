@@ -1341,7 +1341,7 @@ function Execute($request = null)
         }
         if ($aplTabId !== null) {
             $tabDomain = $tabDomainById($aplTabId, $ROOMS);
-            if ($tabDomain !== null && ($domain === null || $domain === 'geraete')) {
+            if ($tabDomain !== null) {
                 $mappedDomain = $tabDomain;
 
                 // Versuche, anhand der bekannten Renderer-Domains einen passenden Routen-Key zu finden (z. B. save → sicherheit)
@@ -1367,17 +1367,19 @@ function Execute($request = null)
                     }
                 }
 
+                $priorDomain = $domain;
+                $domain = $mappedDomain;
+                if (!$navForce && $device === '') {
+                    $device = $mappedDomain;
+                }
                 $log('debug', 'APL_TAB_DOMAIN', [
                     'tabId'        => $aplTabId,
                     'tabDomain'    => $tabDomain,
                     'mappedDomain' => $mappedDomain,
                     'aplRoute'     => $aplTabRoute,
+                    'prevDomain'   => $priorDomain,
                 ]);
-                $domain = $mappedDomain;
-                if (!$navForce && $device === '') {
-                    $device = $mappedDomain;
-                }
-            } elseif ($tabDomain === null) {
+            } else {
                 $log('debug', 'APL_TAB_DOMAIN_MISS', ['tabId' => $aplTabId, 'aplRoute' => $aplTabRoute]);
             }
         }
