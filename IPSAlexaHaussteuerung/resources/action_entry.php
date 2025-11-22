@@ -1023,6 +1023,7 @@ function Execute($request = null)
         $buildTabsCache = $CORE['buildTabsCache'];
         $findTabIdCH    = $CORE['findTabId'];
         $fallbackTabCH  = $CORE['fallbackTabDomain'];
+        $tabDomainById  = $CORE['tabDomainById'];
         $extractNumber  = $CORE['extractNumberOnly'];
         $mergeDecimal   = $CORE['maybeMergeDecimalFromPercent'];
 
@@ -1325,6 +1326,36 @@ function Execute($request = null)
             IPS_LogMessage('Alexa', "APL entity args1 parsed → " . $APL['a1']);
             if (is_numeric($APL['a1']))       { $number = $APL['a1']; }
             else if ($lc((string)$APL['a1']) !== 'zurück') { $action = $lc((string)$APL['a1']) ?: $action; }
+        }
+
+        // Prüfe Tab-Domain anhand der APL-Args (z. B. geraete.tab + tabId), um missklassifizierte Sicherheit/Save-Tabs zu erkennen
+        $aplTabRoute = null;
+        $aplTabId    = null;
+        foreach ((array)($APL['args'] ?? []) as $aplArg) {
+            if (is_string($aplArg) && preg_match('/([a-z0-9_-]+)\.tab$/i', $aplArg, $m)) {
+                $aplTabRoute = strtolower($m[1]);
+            }
+            if (is_string($aplArg) && ctype_digit($aplArg)) {
+                $aplTabId = $aplArg;
+            }
+        }
+        if ($aplTabId !== null) {
+            $tabDomain = $tabDomainById($aplTabId, $ROOMS);
+            if ($tabDomain !== null && ($domain === null || $domain === 'geraete')) {
+                $mappedDomain = in_array($tabDomain, ['sprinkler', 'save', 'sicherheit'], true) ? 'bewaesserung' : $tabDomain;
+                $log('debug', 'APL_TAB_DOMAIN', [
+                    'tabId'        => $aplTabId,
+                    'tabDomain'    => $tabDomain,
+                    'mappedDomain' => $mappedDomain,
+                    'aplRoute'     => $aplTabRoute,
+                ]);
+                $domain = $mappedDomain;
+                if (!$navForce && $device === '') {
+                    $device = $mappedDomain;
+                }
+            } elseif ($tabDomain === null) {
+                $log('debug', 'APL_TAB_DOMAIN_MISS', ['tabId' => $aplTabId, 'aplRoute' => $aplTabRoute]);
+            }
         }
 
         // --- Domain aus APL-Args ableiten ---
