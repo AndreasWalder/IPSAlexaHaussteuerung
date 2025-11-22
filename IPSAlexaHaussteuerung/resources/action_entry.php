@@ -957,6 +957,21 @@ function Execute($request = null)
             }
             $rendererRoomDomainKeys[$routeKey] = $roomDomain;
         }
+        $rendererDomainSynonyms = [];
+        foreach ($rendererDomainMap as $routeKey => $entry) {
+            foreach ([
+                $routeKey,
+                strtolower((string)($entry['roomDomain'] ?? '')),
+                strtolower((string)($entry['logName'] ?? '')),
+                strtolower((string)($entry['title'] ?? '')),
+            ] as $syn) {
+                $syn = trim((string) $syn);
+                if ($syn === '' || in_array($syn, ['devices', 'sprinkler'], true)) {
+                    continue;
+                }
+                $rendererDomainSynonyms[$syn] = $routeKey;
+            }
+        }
         $claimedRoomDomains = [];
         foreach ($rendererRoomDomainKeys as $roomDomain) {
             if ($roomDomain === '') {
@@ -1382,6 +1397,20 @@ function Execute($request = null)
                 }
                 if (isset($tabDomainSynonyms[$slotKey])) {
                     $domain = $tabDomainSynonyms[$slotKey];
+                    break;
+                }
+            }
+        }
+
+        if ($domain === null && !$navForce && !empty($rendererDomainSynonyms)) {
+            $slotValues = [$action, $device, $room, $object, $alles, $szene];
+            foreach ($slotValues as $slotValue) {
+                $slotKey = $lc(trim((string) $slotValue));
+                if ($slotKey === '') {
+                    continue;
+                }
+                if (isset($rendererDomainSynonyms[$slotKey])) {
+                    $domain = $rendererDomainSynonyms[$slotKey];
                     break;
                 }
             }
