@@ -58,12 +58,6 @@ class RoomsCatalogConfigurator extends IPSModule
     public function ApplyChanges()
     {
         parent::ApplyChanges();
-    
-        $current = json_decode($this->ReadPropertyString('RendererDomains'), true);
-        if (!is_array($current) || $current === []) {
-            $auto = $this->buildRendererDomainsFromRoomsCatalog();
-            $this->UpdateProperty('RendererDomains', json_encode($auto));
-        }
 
         $this->logDebug('ApplyChanges START');
 
@@ -236,53 +230,6 @@ class RoomsCatalogConfigurator extends IPSModule
 
         $this->reloadAllFromCatalog();
         $this->ReloadForm();
-    }
-
-    private function buildRendererDomainsFromRoomsCatalog(): array
-    {
-        $scriptId = $this->ReadPropertyInteger('RoomsCatalogScriptID');
-        if ($scriptId <= 0) {
-            return [];
-        }
-    
-        $roomsCatalog = @require IPS_GetScriptFile($scriptId);
-        if (!is_array($roomsCatalog)) {
-            return [];
-        }
-    
-        $tabDomains = [];
-    
-        foreach ($roomsCatalog as $roomCfg) {
-            if (!isset($roomCfg['domains']) || !is_array($roomCfg['domains'])) {
-                continue;
-            }
-    
-            foreach ($roomCfg['domains'] as $domainKey => $domCfg) {
-                if (!isset($domCfg['tabs']) || !is_array($domCfg['tabs']) || $domCfg['tabs'] === []) {
-                    continue;
-                }
-                $tabDomains[$domainKey] = true;
-            }
-        }
-    
-        $rows = [];
-        foreach (array_keys($tabDomains) as $domainKey) {
-            $label = ucfirst($domainKey);
-    
-            $rows[] = [
-                'route'              => $domainKey,
-                'log_label'          => $label,
-                'roomsCatalogDomain' => $domainKey,
-                'fallback_title'     => $label,
-                'subtitle'           => '',
-                'error_message'      => '',
-                'apl_document'       => '',
-                'apl_token'          => 'hv-' . $domainKey,
-                'toggle_var'         => $domainKey . '_toggle',
-            ];
-        }
-    
-        return $rows;
     }
 
     /**
