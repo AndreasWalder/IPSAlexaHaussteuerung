@@ -5,6 +5,9 @@
  * ============================================================
  *
  * Änderungsverlauf (Changelog)
+ * 2025-11-23: v14 — RouteKey in DS + dynamische Event-Normalisierung
+ *             • deviceTableData enthält jetzt zusätzlich 'route' (z. B. "geraete", "sicherheit", "bewaesserung")
+ *             • gr_normalize_event akzeptiert jetzt generisch "<domain>.tab", "<domain>.(t|toggle).<id>", "<domain>.set*.<id>"
  * 2025-11-05: v13.2 — Vollständiges APL-DS Logging + optionaler Dump
  *             • Komplettes Datasource-JSON ins Log (PRETTY + kompakt)
  *             • Optionaler Dump in String-Variable (CFG.flags.dump_ds_var)
@@ -322,7 +325,8 @@ $ds  = [
         'tabs'      => $tabs,
         'activeTab' => (string)$activeId,
         'headers'   => ['name'=>'Name','value'=>'Wert','updated'=>'Aktualisiert'],
-        'rows'      => $rows
+        'rows'      => $rows,
+        'route'     => $rendererRouteKey
     ]
 ];
 
@@ -400,26 +404,31 @@ function gr_normalize_event(string $a1, string $a2, $numRaw): array {
     $a1l = mb_strtolower($a1, 'UTF-8');
     $out = ['action'=>'', 'varId'=>0, 'tabId'=>'', 'value'=>null, 'toggleTo'=>null, 'rawText'=>''];
 
-    if ($a1l === 'geraete.tab') {
-        $out['action'] = 'tab';
-        $out['tabId']  = (string)$a2;
-        $out['rawText']= (string)$a2;
-        return $out;
-    }
-
-    if (preg_match('/^geraete\.(?:t|toggle)\.(\d+)$/i', $a1, $m)) {
-        $out['action']   = 'toggle';
-        $out['varId']    = (int)$m[1];
-        $arg2 = mb_strtolower(trim((string)$a2), 'UTF-8');
-        if ($arg2 === 'on' || $arg2 === 'off') $out['toggleTo'] = $arg2;
+    // "<domain>.tab"
+    if (preg_match('/^[^.]+\.tab$/i', $a1l)) {
+        $out['action']  = 'tab';
+        $out['tabId']   = (string)$a2;
         $out['rawText'] = (string)$a2;
         return $out;
     }
 
-    if (preg_match('/^geraete\.(?:set(?:number|enum)?)\.(\d+)$/i', $a1, $m)) {
-        $out['action'] = 'set';
+    // "<domain>.(t|toggle).<id>"
+    if (preg_match('/^[^.]+\.(?:t|toggle)\.(\d+)$/i', $a1, $m)) {
+        $out['action'] = 'toggle';
         $out['varId']  = (int)$m[1];
-        $out['rawText']= (string)$a2;
+        $arg2 = mb_strtolower(trim((string)$a2), 'UTF-8');
+        if ($arg2 === 'on' || $arg2 === 'off') {
+            $out['toggleTo'] = $arg2;
+        }
+        $out['rawText'] = (string)$a2;
+        return $out;
+    }
+
+    // "<domain>.set<number|enum>.<id>"
+    if (preg_match('/^[^.]+\.set(?:number|enum)?\.(\d+)$/i', $a1, $m)) {
+        $out['action']  = 'set';
+        $out['varId']   = (int)$m[1];
+        $out['rawText'] = (string)$a2;
         if ($numRaw !== null && $numRaw !== '') {
             $out['value'] = is_numeric($numRaw) ? (float)$numRaw : null;
         } elseif ($a2 !== '' && is_numeric($a2)) {
@@ -427,11 +436,13 @@ function gr_normalize_event(string $a1, string $a2, $numRaw): array {
         }
         return $out;
     }
-    if ($a1l === 'geraete.set' || $a1l === 'geraete.setenum') {
+
+    // "<domain>.set" oder "<domain>.setenum" mit varId in args2
+    if (preg_match('/^[^.]+\.set(?:enum)?$/i', $a1l)) {
         if (ctype_digit($a2)) {
             $out['action'] = 'set';
             $out['varId']  = (int)$a2;
-            $out['value']  = is_numeric($numRaw) ? (float)$numRaw : null;
+            $out['value']  = ($numRaw !== null && $numRaw !== '') ? (float)$numRaw : null;
             $out['rawText']= (string)$numRaw;
             return $out;
         }
