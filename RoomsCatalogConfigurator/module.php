@@ -37,7 +37,7 @@ declare(strict_types=1);
  * 2025-11-19: V2.1 — IPS-IDs & Speichern nach RoomsCatalogEdit
  * - Zahlenspalten mit überwiegend 5-stelligen Werten werden als SelectObject editierbar
  * - Speichern-Button: aktualisiert/legt Einträge im RoomsCatalogEdit-Script an
- *   (Struktur: rooms[roomKey].display/domains[domain][group][key] = cfg)
+ *   (Struktur: [roomKey].display/domains[domain][group][key] = cfg)
  */
 
 class RoomsCatalogConfigurator extends IPSModule
@@ -87,7 +87,7 @@ class RoomsCatalogConfigurator extends IPSModule
     public function SetDomainFilter(string $domainKey)
     {
         $this->WriteAttributeString('FilterDomain', $domainKey);
-        $this->logDebug('SetDomainFilter: domainKey="' . $domainKey . '"');
+               $this->logDebug('SetDomainFilter: domainKey="' . $domainKey . '"');
         $this->ReloadForm();
     }
 
@@ -225,7 +225,8 @@ class RoomsCatalogConfigurator extends IPSModule
         $php = "<?php\nreturn " . var_export($newCatalog, true) . ";\n";
         IPS_SetScriptContent($editScriptId, $php);
 
-        $roomCount = (isset($newCatalog['rooms']) && is_array($newCatalog['rooms'])) ? count($newCatalog['rooms']) : 0;
+        $roomsArray = $this->extractRoomsFromCatalog($newCatalog);
+        $roomCount  = count($roomsArray);
         $this->logDebug('SaveToEdit: ENDE, rooms=' . $roomCount);
 
         $this->reloadAllFromCatalog();
@@ -259,10 +260,8 @@ class RoomsCatalogConfigurator extends IPSModule
         $php = "<?php\nreturn " . var_export($editCatalog, true) . ";\n";
         IPS_SetScriptContent($prodId, $php);
 
-        $roomCount = 0;
-        if (isset($editCatalog['rooms']) && is_array($editCatalog['rooms'])) {
-            $roomCount = count($editCatalog['rooms']);
-        }
+        $roomsArray = $this->extractRoomsFromCatalog($editCatalog);
+        $roomCount  = count($roomsArray);
 
         $this->logDebug('SaveEditToProd: Edit → Prod übernommen, rooms=' . $roomCount);
 
@@ -296,10 +295,8 @@ class RoomsCatalogConfigurator extends IPSModule
         $php = "<?php\nreturn " . var_export($prodCatalog, true) . ";\n";
         IPS_SetScriptContent($editId, $php);
 
-        $roomCount = 0;
-        if (isset($prodCatalog['rooms']) && is_array($prodCatalog['rooms'])) {
-            $roomCount = count($prodCatalog['rooms']);
-        }
+        $roomsArray = $this->extractRoomsFromCatalog($prodCatalog);
+        $roomCount  = count($roomsArray);
 
         $this->logDebug('DiscardEditChanges: Prod → Edit übernommen, rooms=' . $roomCount);
 
@@ -460,7 +457,7 @@ class RoomsCatalogConfigurator extends IPSModule
 
         [$roomOptions, $domainOptions, $groupOptions] = $this->buildFilterOptionsFromEntries($entriesProd);
 
-        $visibleProd = $this->applyFilters($entriesProd, $filterRoom, $filterDomain, $filterGroup);
+        $visibleProd    = $this->applyFilters($entriesProd, $filterRoom, $filterDomain, $filterGroup);
         $diffEntriesAll = $this->buildDiffEntries($entriesProd, $entriesEditFlat);
         $visibleDiff    = $this->applyFilters($diffEntriesAll, $filterRoom, $filterDomain, $filterGroup);
 
@@ -1238,6 +1235,10 @@ class RoomsCatalogConfigurator extends IPSModule
         return $room . '|' . $domain . '|' . $group . '|' . $key;
     }
 
+    /**
+     * Wichtig: schreibt KEIN 'rooms'-Key mehr.
+     * Räume werden als Top-Level-Keys im Katalog angelegt.
+     */
     private function rebuildRoomsCatalogFromEntries(array $entries, array $existingCatalog): array
     {
         $rooms = [];
@@ -1286,16 +1287,22 @@ class RoomsCatalogConfigurator extends IPSModule
             }
         }
 
+        $roomKeys  = array_keys($rooms);
         $newCatalog = [];
 
         foreach ($existingCatalog as $k => $v) {
             if ($k === 'rooms') {
                 continue;
             }
+            if (in_array((string)$k, $roomKeys, true)) {
+                continue;
+            }
             $newCatalog[$k] = $v;
         }
 
-        $newCatalog['rooms'] = $rooms;
+        foreach ($rooms as $roomKey => $roomCfg) {
+            $newCatalog[$roomKey] = $roomCfg;
+        }
 
         return $newCatalog;
     }
