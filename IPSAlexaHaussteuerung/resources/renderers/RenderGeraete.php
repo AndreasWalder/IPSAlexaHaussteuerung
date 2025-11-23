@@ -8,6 +8,7 @@
  * 2025-11-23: v14 — RouteKey in DS + dynamische Event-Normalisierung
  *             • deviceTableData enthält jetzt zusätzlich 'route' (z. B. "geraete", "sicherheit", "bewaesserung")
  *             • gr_normalize_event akzeptiert jetzt generisch "<domain>.tab", "<domain>.(t|toggle).<id>", "<domain>.set*.<id>"
+ *             • Datum und Zeitspalten Filter über alle Zeilen dynamisch ergänzt
  * 2025-11-05: v13.2 — Vollständiges APL-DS Logging + optionaler Dump
  *             • Komplettes Datasource-JSON ins Log (PRETTY + kompakt)
  *             • Optionaler Dump in String-Variable (CFG.flags.dump_ds_var)
@@ -305,6 +306,8 @@ elseif ($action === 'set' && $varId > 0) {
 if ($didAction) IPS_Sleep(GR_DELAY_MS);
 
 $rows = gr_buildRowsFromNode((int)$activeId, $CAN_TOGGLE);
+$rows = gr_maybe_sort_rows_uniform_type($rows);
+
 $logV("[$RID][{$rendererLogName}] rows=".count($rows));
 $enumDebug = array_values(array_filter($rows, static function($r){
     $n = gr_norm((string)($r['name'] ?? ''));
@@ -662,12 +665,71 @@ function gr_buildRowsFromNode(int $rootId, bool $aeToggle): array
     return $rows;
 }
 
+/**
+ * Wenn alle nicht-Section-Zeilen denselben typeName haben und einen updatedTs besitzen,
+ * sortiere nach updatedTs absteigend (neueste zuerst). Sonst Reihenfolge unverändert.
+ */
+function gr_maybe_sort_rows_uniform_type(array $rows): array
+{
+    if (count($rows) <= 1) {
+        return $rows;
+    }
+
+    $types = [];
+    $allHaveTs = true;
+
+    foreach ($rows as $r) {
+        if (!empty($r['isSection'])) {
+            continue;
+        }
+        $t = (string)($r['typeName'] ?? '');
+        $types[$t] = true;
+
+        if (!isset($r['updatedTs']) || !is_int($r['updatedTs'])) {
+            $allHaveTs = false;
+            break;
+        }
+    }
+
+    // Nur sortieren, wenn genau ein Typ + überall Timestamp
+    if (!$allHaveTs || count($types) !== 1) {
+        return $rows;
+    }
+
+    usort($rows, static function ($a, $b) {
+        $aSection = !empty($a['isSection']);
+        $bSection = !empty($b['isSection']);
+
+        // Sections bleiben oben in Original-Reihenfolge
+        if ($aSection && $bSection) return 0;
+        if ($aSection) return -1;
+        if ($bSection) return 1;
+
+        $ta = (int)($a['updatedTs'] ?? 0);
+        $tb = (int)($b['updatedTs'] ?? 0);
+
+        if ($ta === $tb) {
+            return 0;
+        }
+        // neueste zuerst
+        return $tb <=> $ta;
+    });
+
+    return $rows;
+}
+
 function gr_rows_for_child(int $childId, bool $aeToggle): array
 {
     $obj = @IPS_GetObject($childId); if (!is_array($obj)) return [];
     $otype = (int)($obj['ObjectType'] ?? -1);
 
     if ($otype === 2) { // Variable
+        // NEU: HTML-Tabellen (Fingerprint-Logs) als eigene Liste ausgeben
+        $special = gr_rows_for_html_table_var($childId, $aeToggle, null);
+        if ($special !== null) {
+            return $special;
+        }
+
         $row = gr_make_row_for_var($childId, $aeToggle, null);
         return $row ? [$row] : [];
     }
@@ -689,12 +751,18 @@ function gr_rows_for_child(int $childId, bool $aeToggle): array
                 if ($name === '') { $name = gr_fallback_name_from_hierarchy($tgt); }
             }
             if ($name === '') { $name = null; } // leeres Override als null behandeln
+
+            // NEU: auch bei Links zuerst prüfen, ob HTML-Tabelle vorliegt
+            $special = gr_rows_for_html_table_var($tgt, $aeToggle, $name);
+            if ($special !== null) {
+                return $special;
+            }
+
             $row = gr_make_row_for_var($tgt, $aeToggle, $name);
             return $row ? [$row] : [];
         }
         return [];
     }
-
 
     // category/instance → recurse (sorted)
     $rows = [];
@@ -734,6 +802,110 @@ function gr_is_dummy_module_instance(int $instanceId): bool
     $guid = (string)($inst['ModuleInfo']['ModuleID'] ?? '');
     if ($name === 'Dummy Module') return true;
     return (strtoupper($guid) === '{485D0419-B567-4B4E-8F61-CEE4D2A3EAB8}');
+}
+
+/**
+ * HTML-Tabellen (z.B. Ekey-Logs) in normale Geräte-Renderer-Zeilen umwandeln.
+ * Erwartet einfache Struktur mit <tr><td>...</td>...</tr>.
+ * Gibt bei Nicht-Tabelle null zurück, sonst eine fertige Row-Liste.
+ */
+function gr_rows_for_html_table_var(int $varId, bool $aeToggle, ?string $nameOverride): ?array
+{
+    if (!IPS_ObjectExists($varId)) return null;
+
+    $obj = @IPS_GetObject($varId);
+    $var = @IPS_GetVariable($varId);
+    if (!is_array($obj) || !is_array($var)) return null;
+
+    if ((int)($var['VariableType'] ?? 3) !== 3) {
+        return null; // nur String-Variablen
+    }
+
+    $raw = @GetValue($varId);
+    if (!is_string($raw)) {
+        return null;
+    }
+
+    $lower = mb_strtolower($raw, 'UTF-8');
+    if (strpos($lower, '<table') === false || strpos($lower, '<tr') === false || strpos($lower, '<td') === false) {
+        return null; // keine Tabelle
+    }
+
+    if (!preg_match_all('/<tr[^>]*>(.*?)<\/tr>/is', $raw, $m)) {
+        return null;
+    }
+
+    $rowsOut = [];
+
+    $defaultName = $nameOverride !== null && trim($nameOverride) !== ''
+        ? $nameOverride
+        : gr_display_name((string)($obj['ObjectName'] ?? ''));
+
+    foreach ($m[1] as $rowHtml) {
+        // Header-Zeile mit <th> überspringen
+        if (stripos($rowHtml, '<th') !== false) {
+            continue;
+        }
+
+        if (!preg_match_all('/<td[^>]*>(.*?)<\/td>/is', $rowHtml, $cellsMatch) || empty($cellsMatch[1])) {
+            continue;
+        }
+
+        $cells = [];
+        foreach ($cellsMatch[1] as $cellHtml) {
+            $text = strip_tags($cellHtml);
+            $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $text = trim($text);
+            if ($text !== '') {
+                $cells[] = $text;
+            }
+        }
+
+        if (!$cells) {
+            continue;
+        }
+
+        // 1. Spalte = Name, letzte = Datum/Zeit, dazwischen = Aktion
+        $first  = $cells[0] ?? '';
+        $last   = $cells[count($cells) - 1] ?? '';
+        $middle = '';
+        if (count($cells) > 2) {
+            $midArr = array_slice($cells, 1, -1);
+            $middle = implode(' · ', $midArr);
+        } elseif (isset($cells[1])) {
+            $middle = $cells[1];
+        }
+
+        $rowName = $first !== '' ? $first : $defaultName;
+
+        $updated = $last;
+        $ts = strtotime($last);
+        if ($ts !== false) {
+            $updated = gr_formatUpdated($ts);   // → 23.11. 10:44
+        } else {
+            $ts = 0;
+        }
+
+        $rowsOut[] = [
+            'name'        => $rowName,
+            'value'       => $middle,
+            'typeName'    => 'Log',
+            'updated'     => $updated,
+            'updatedTs'   => $ts,
+            'rowBg'       => null,
+            'valueColor'  => null,
+            'isBool'      => false,
+            'boolOn'      => false,
+            'canToggle'   => false,
+            'isNumber'    => false,
+            'canSetNumber'=> false,
+            'targetId'    => '',
+            'hasEnum'     => false,
+            'enumOpts'    => [],
+        ];
+    }
+
+    return $rowsOut ?: null;
 }
 
 // --- REPLACE this function ---
@@ -796,6 +968,7 @@ function gr_make_row_for_var(int $varId, bool $aeToggle, ?string $nameOverride):
         'value'      => $value,
         'typeName'   => $typeName,
         'updated'    => $updated,
+        'updatedTs'  => $updatedTs,
         'rowBg'      => null,
         'valueColor' => $valueColor
     ];
@@ -1145,7 +1318,24 @@ function gr_asBool($v): bool {
     return false;
 }
 
-function gr_formatUpdated(int $ts): string { $now = time(); return (($now - $ts) > 36 * 3600) ? date('d.m.Y', $ts) : date('H:i:s', $ts); }
+function gr_formatUpdated(int $ts): string {
+    return date('d.m. H:i', $ts);
+}
+
+function gr_compact_datetime_label(string $s): string
+{
+    $s = trim($s);
+    if ($s === '') {
+        return $s;
+    }
+
+    // Erwartet z.B. "23.11.2025 10:44:31" → "23.11. 10:44"
+    if (preg_match('/^(\d{1,2}\.\d{1,2})\.\d{2,4}\s+(\d{1,2}:\d{2})(?::\d{2})?$/', $s, $m)) {
+        return $m[1] . '. ' . $m[2];
+    }
+
+    return $s;
+}
 
 function gr_norm(string $s): string { $s = mb_strtolower(trim($s), 'UTF-8'); $s = str_replace(['ae','oe','ue','ss'], ['ä','ö','ü','ß'], $s); return $s; }
 
