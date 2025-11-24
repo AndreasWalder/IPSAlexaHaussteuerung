@@ -56,6 +56,11 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyString('LaunchHomeIcon', (string) ($launchDefaults['homeIcon'] ?? 'HomeIcon.png'));
         $this->RegisterPropertyString('LaunchHeaderIcon', (string) ($launchDefaults['headerIcon'] ?? 'Icon.png'));
         $this->RegisterPropertyInteger('SystemConfigScriptId', 0);
+        $this->RegisterPropertyBoolean('KIIntentEnabled', true);
+        $this->RegisterPropertyString('KIIntentApiKey', '');
+        $this->RegisterPropertyString('KIIntentModel', 'gpt-4.1-mini');
+        $this->RegisterPropertyString('KIIntentLogChannel', 'Alexa');
+        $this->RegisterPropertyInteger('KIIntentRateLimit', 60);
         $this->RegisterAttributeString('DelayedPageSwitchPayload', '');
         $this->RegisterTimer('DelayedPageSwitch', 0, 'IAH_HandleDelayedPageSwitch($_IPS["TARGET"]);');
 
@@ -462,6 +467,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             'KameraPageId'  => $kameraLegacy,
             'pageMappings'  => $pageMappings,
             'InstanceID'    => $this->InstanceID,
+            'KIIntentParser' => $this->buildKiIntentParserConfig(),
             // IDs der erzeugten/verknüpften Variablen
             'vars'          => [
                 'settings_cat'       => (int) $settings,
@@ -495,7 +501,19 @@ class IPSAlexaHaussteuerung extends IPSModule
             ],
             'scripts'       => [
                 'rooms_catalog' => $this->getObjectIDByIdentOrName((int) $settings, 'roomsCatalog', 'RoomsCatalog'),
+                'ki_intent_parser' => $this->getObjectIDByIdentOrName((int) $helper, 'kiIntentParserScript', 'KI_IntentParser'),
             ],
+        ];
+    }
+
+    private function buildKiIntentParserConfig(): array
+    {
+        return [
+            'enabled'       => $this->ReadPropertyBoolean('KIIntentEnabled'),
+            'api_key'        => $this->ReadPropertyString('KIIntentApiKey'),
+            'model'          => $this->ReadPropertyString('KIIntentModel'),
+            'log_channel'    => $this->ReadPropertyString('KIIntentLogChannel'),
+            'rate_limit_sec' => $this->ReadPropertyInteger('KIIntentRateLimit'),
         ];
     }
 
@@ -574,6 +592,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             ['name' => 'DeviceMapWizard', 'ident' => 'deviceMapWizardScript', 'file' => __DIR__ . '/resources/helpers/DeviceMapWizard.php'],
             ['name' => 'Lexikon', 'ident' => 'lexikonScript', 'file' => __DIR__ . '/resources/helpers/Lexikon.php'],
             ['name' => 'Normalizer', 'ident' => 'normalizerScript', 'file' => __DIR__ . '/resources/helpers/Normalizer.php'],
+            ['name' => 'KI_IntentParser', 'ident' => 'kiIntentParserScript', 'file' => __DIR__ . '/resources/helpers/KIIntentParser.php'],
         ];
 
         foreach ($map as $def) {
@@ -779,6 +798,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             'EnergiePageId' => $energieLegacy,
             'KameraPageId'  => $kameraLegacy,
             'pageMappings'  => $pageMappings,
+            'KIIntentParser' => $this->buildKiIntentParserConfig(),
             'ActionsEnabled' => [
                 'heizung_stellen'     => $getVar($settingsCat, 'heizungStellen', 'heizung_stellen'),
                 'jalousie_steuern'    => $getVar($settingsCat, 'jalousieSteuern', 'jalousie_steuern'),
@@ -817,6 +837,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             'RoomBuilderHelpers' => $getVar($helperCat, 'roomBuilderHelpersScript', 'RoomBuilderHelpers'),
             'DeviceMapWizard'    => $getVar($helperCat, 'deviceMapWizardScript', 'DeviceMapWizard'),
             'Lexikon'            => $getVar($helperCat, 'lexikonScript', 'Lexikon'),
+            'KIIntentParserScript' => $getVar($helperCat, 'kiIntentParserScript', 'KI_IntentParser'),
         ];
 
         $scripts = [

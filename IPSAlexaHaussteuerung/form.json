@@ -52,6 +52,45 @@
       "value": "debug"
     },
     {
+      "type": "ExpansionPanel",
+      "caption": "KI Intent Parser",
+      "expanded": false,
+      "items": [
+        {
+          "name": "KIIntentEnabled",
+          "type": "CheckBox",
+          "caption": "KI Intent Parser aktiv",
+          "value": true
+        },
+        {
+          "name": "KIIntentApiKey",
+          "type": "PasswordTextBox",
+          "caption": "API Key",
+          "value": ""
+        },
+        {
+          "name": "KIIntentModel",
+          "type": "ValidationTextBox",
+          "caption": "Modell",
+          "value": "gpt-4.1-mini"
+        },
+        {
+          "name": "KIIntentLogChannel",
+          "type": "ValidationTextBox",
+          "caption": "Log-Kanal",
+          "value": "Alexa"
+        },
+        {
+          "name": "KIIntentRateLimit",
+          "type": "NumberSpinner",
+          "caption": "Rate-Limit (Sekunden)",
+          "suffix": "s",
+          "minimum": 0,
+          "value": 60
+        }
+      ]
+    },
+    {
       "name": "StartPage",
       "type": "ValidationTextBox",
       "caption": "StartPage (leer = #<WFC-ID>)",
