@@ -780,8 +780,8 @@ function iah_detect_missing_entries(array $var, array $scripts): array
 function iah_build_ki_intent_parser_cfg(array $props): array
 {
     return [
+        'enabled'       => (bool) ($props['KIIntentEnabled'] ?? true),
         'api_key'        => (string) ($props['KIIntentApiKey'] ?? ''),
-        'api_key_var'    => (int) ($props['KIIntentApiKeyVar'] ?? 0),
         'model'          => (string) ($props['KIIntentModel'] ?? 'gpt-4.1-mini'),
         'log_channel'    => (string) ($props['KIIntentLogChannel'] ?? 'Alexa'),
         'rate_limit_sec' => (int) ($props['KIIntentRateLimit'] ?? 60),
@@ -968,6 +968,8 @@ function iah_build_system_configuration(int $instanceId): array
             }
             if (!isset($var['KIIntentParser']) || !is_array($var['KIIntentParser'])) {
                 $var['KIIntentParser'] = iah_build_ki_intent_parser_cfg($props);
+            } elseif (!array_key_exists('enabled', $var['KIIntentParser'])) {
+                $var['KIIntentParser']['enabled'] = (bool)($props['KIIntentEnabled'] ?? true);
             }
             if (empty($var['KIIntentParserScript'])) {
                 $var['KIIntentParserScript'] = iah_get_child_object($helper ?? 0, 'kiIntentParserScript', 'KI_IntentParser');
@@ -1208,7 +1210,9 @@ function Execute($request = null)
             ($number1 === null || $number1 === '' || $number1 === '?') && ($prozent1 === null || $prozent1 === '' || $prozent1 === '?')
         );
 
-        if ($slotsEmpty && $kiParserScriptId > 0 && $rawUserText !== '' && function_exists('IPS_RunScriptWaitEx')) {
+        $kiParserEnabled = (bool)($kiParserConfig['enabled'] ?? true);
+
+        if ($slotsEmpty && $kiParserEnabled && $kiParserScriptId > 0 && $rawUserText !== '' && function_exists('IPS_RunScriptWaitEx')) {
             $log('debug', 'KIIntentParser.trigger', ['text' => $rawUserText]);
             $kiResponseRaw = IPS_RunScriptWaitEx($kiParserScriptId, ['text' => $rawUserText, 'cfg' => $kiParserConfig]);
             $kiParsed = json_decode((string) $kiResponseRaw, true);

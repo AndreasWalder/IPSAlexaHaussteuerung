@@ -56,8 +56,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyString('LaunchHomeIcon', (string) ($launchDefaults['homeIcon'] ?? 'HomeIcon.png'));
         $this->RegisterPropertyString('LaunchHeaderIcon', (string) ($launchDefaults['headerIcon'] ?? 'Icon.png'));
         $this->RegisterPropertyInteger('SystemConfigScriptId', 0);
+        $this->RegisterPropertyBoolean('KIIntentEnabled', true);
         $this->RegisterPropertyString('KIIntentApiKey', '');
-        $this->RegisterPropertyInteger('KIIntentApiKeyVar', 0);
         $this->RegisterPropertyString('KIIntentModel', 'gpt-4.1-mini');
         $this->RegisterPropertyString('KIIntentLogChannel', 'Alexa');
         $this->RegisterPropertyInteger('KIIntentRateLimit', 60);
@@ -509,8 +509,8 @@ class IPSAlexaHaussteuerung extends IPSModule
     private function buildKiIntentParserConfig(): array
     {
         return [
+            'enabled'       => $this->ReadPropertyBoolean('KIIntentEnabled'),
             'api_key'        => $this->ReadPropertyString('KIIntentApiKey'),
-            'api_key_var'    => $this->ReadPropertyInteger('KIIntentApiKeyVar'),
             'model'          => $this->ReadPropertyString('KIIntentModel'),
             'log_channel'    => $this->ReadPropertyString('KIIntentLogChannel'),
             'rate_limit_sec' => $this->ReadPropertyInteger('KIIntentRateLimit'),

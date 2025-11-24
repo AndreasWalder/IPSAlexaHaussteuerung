@@ -16,8 +16,8 @@ declare(strict_types=1);
  */
 
 $CFG = [
+    'enabled'       => true,
     'api_key'        => '',
-    'api_key_var'    => 0,
     'model'          => 'gpt-4.1-mini',
     'log_channel'    => 'Alexa',
     'rate_limit_sec' => 60,
@@ -55,23 +55,7 @@ function ki_get_api_key(array $cfg): string
         return $key;
     }
 
-    if (!empty($cfg['api_key_var']) && function_exists('IPS_VariableExists') && function_exists('GetValueString')) {
-        $varId = (int)$cfg['api_key_var'];
-        ki_log('Versuche API-Key aus Variable ' . $varId . ' zu lesen.');
-
-        if ($varId > 0 && IPS_VariableExists($varId)) {
-            $val = trim(GetValueString($varId));
-            ki_log('API-Key aus Variable ' . $varId . ' gelesen, Länge=' . strlen($val));
-            if ($val !== '') {
-                return $val;
-            }
-            ki_log('API-Key-Variable ' . $varId . ' ist leer.');
-        } else {
-            ki_log('API-Key-Variable ' . $varId . ' existiert nicht.');
-        }
-    }
-
-    ki_log('Kein OpenAI API-Key konfiguriert (api_key/api_key_var leer).');
+    ki_log('Kein OpenAI API-Key konfiguriert (api_key leer).');
     return '';
 }
 
@@ -214,6 +198,18 @@ function ki_chat_request(array $body, array $cfg): array
  */
 function ki_parse_intent(string $rawText, array $cfg): array
 {
+    if (isset($cfg['enabled']) && $cfg['enabled'] === false) {
+        ki_log('KI Intent Parser ist deaktiviert, Anfrage wird ignoriert.');
+        return [
+            'action'       => null,
+            'device'       => null,
+            'room'         => null,
+            'number'       => null,
+            'raw'          => $rawText,
+            'rate_limited' => false,
+        ];
+    }
+
     if (ki_rate_limiter_exceeded($cfg)) {
         return [
             'action'       => null,

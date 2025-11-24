@@ -46,8 +46,8 @@ return [
         'externalKey'        => '',
         'pageMappings'       => [],
         'KIIntentParser'     => [
+            'enabled'       => true,
             'api_key'        => '',
-            'api_key_var'    => 0,
             'model'          => 'gpt-4.1-mini',
             'log_channel'    => 'Alexa',
             'rate_limit_sec' => 60,
