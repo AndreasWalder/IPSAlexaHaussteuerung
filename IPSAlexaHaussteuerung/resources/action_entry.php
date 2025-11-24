@@ -1199,7 +1199,70 @@ function Execute($request = null)
         $prozent1 = $getSlotCH($request,'Prozent')     ?? null;
         $alles1   = $lc($getSlotCH($request,'Alles')   ?? '');
 
-        $log('debug','RawSlots', ["a"=>$action1,"s"=>$szene1,"d"=>$device1,"r"=>$room1,"o"=>$object1,"n"=>$number1,"p"=>$prozent1,"al"=>$alles1]);
+        $rawSlots = ["a"=>$action1,"s"=>$szene1,"d"=>$device1,"r"=>$room1,"o"=>$object1,"n"=>$number1,"p"=>$prozent1,"al"=>$alles1];
+        $log('debug','RawSlots', $rawSlots);
+
+        $kiParserOverride = null;
+        $kiParserConfig = is_array($V['KIIntentParser'] ?? null) ? $V['KIIntentParser'] : [];
+        $kiParserScriptId = (int)($V['KIIntentParserScript'] ?? 0);
+        $rawUserText = iah_extract_raw_user_text($request);
+        $slotsEmpty = (
+            $action1 === '' && $device1 === '' && $room1 === '' && $object1 === '' && $alles1 === '' && $szene1 === '' &&
+            ($number1 === null || $number1 === '' || $number1 === '?') && ($prozent1 === null || $prozent1 === '' || $prozent1 === '?')
+        );
+
+        $kiParserEnabled = (bool)($kiParserConfig['enabled'] ?? true);
+        $shouldCallKiParser = $kiParserEnabled && $kiParserScriptId > 0 && function_exists('IPS_RunScriptWaitEx');
+
+        $invokeKiParser = static function (string $text, string $reason) use (&$kiParserOverride, $kiParserScriptId, $kiParserConfig, $log, $lc) {
+            if ($text === '') {
+                return;
+            }
+
+            $log('debug', 'KIIntentParser.trigger.' . $reason, ['text' => $text]);
+            $kiResponseRaw = IPS_RunScriptWaitEx($kiParserScriptId, ['text' => $text, 'cfg' => $kiParserConfig]);
+            $kiParsed = json_decode((string) $kiResponseRaw, true);
+            if (is_array($kiParsed) && !empty($kiParsed['rate_limited'])) {
+                $log('warn', 'KIIntentParser.rate_limited', []);
+                return;
+            }
+            if (is_array($kiParsed)) {
+                $kiParserOverride = [
+                    'action' => $lc((string) ($kiParsed['action'] ?? '')),
+                    'device' => $lc((string) ($kiParsed['device'] ?? '')),
+                    'room'   => $lc((string) ($kiParsed['room'] ?? '')),
+                    'number' => $kiParsed['number'] ?? null,
+                ];
+                $log('debug', 'KIIntentParser.ok', $kiParserOverride);
+                return;
+            }
+
+            $log('warn', 'KIIntentParser.parse_failed', ['raw' => $kiResponseRaw]);
+        };
+
+        if ($slotsEmpty && $shouldCallKiParser && $rawUserText !== '') {
+            $invokeKiParser($rawUserText, 'slots_empty');
+        }
+
+        if ($kiParserOverride === null && $shouldCallKiParser && empty($APL['args'])) {
+            $slotSummary = json_encode($rawSlots, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $kiInputText = trim((string) $rawUserText);
+            if ($slotSummary !== false && $slotSummary !== 'null') {
+                $kiInputText = trim($kiInputText . ' Slots: ' . $slotSummary);
+            }
+
+            if ($kiInputText !== '') {
+                $log('info', 'KIIntentParser.apl_args_empty', ['text' => $kiInputText]);
+                $invokeKiParser($kiInputText, 'apl_args_empty');
+            }
+        }
+
+        if ($kiParserOverride !== null) {
+            if ($action1 === '') { $action1 = (string) ($kiParserOverride['action'] ?? ''); }
+            if ($device1 === '') { $device1 = (string) ($kiParserOverride['device'] ?? ''); }
+            if ($room1 === '')   { $room1   = (string) ($kiParserOverride['room'] ?? ''); }
+            if ($number1 === null && isset($kiParserOverride['number'])) { $number1 = $kiParserOverride['number']; }
+        }
 
         $kiParserOverride = null;
         $kiParserConfig = is_array($V['KIIntentParser'] ?? null) ? $V['KIIntentParser'] : [];
