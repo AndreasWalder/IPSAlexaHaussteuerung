@@ -45,12 +45,21 @@ return [
         'ALEXA_VAR'          => 0,
         'externalKey'        => '',
         'pageMappings'       => [],
+        'KIIntentParser'     => [
+            'enabled'       => true,
+            'api_key'        => '',
+            'model'          => 'gpt-4.1-mini',
+            'log_channel'    => 'Alexa',
+            'rate_limit_sec' => 60,
+        ],
+        'KIIntentParserScript' => 0,
         // Helper scripts (these point to scripts located below the instance)
         'CoreHelpers'        => 0,
         'DeviceMap'          => 0,
         'RoomBuilderHelpers' => 0,
         'DeviceMapWizard'    => 0,
         'Lexikon'            => 0,
+        'KINLUContextScript' => 0,
     ],
     'script' => [
         'ROUTE_ALL'           => 0,

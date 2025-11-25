@@ -777,6 +777,74 @@ function iah_detect_missing_entries(array $var, array $scripts): array
     return $missing;
 }
 
+function iah_build_ki_intent_parser_cfg(array $props): array
+{
+    return [
+        'enabled'       => (bool) ($props['KIIntentEnabled'] ?? true),
+        'api_key'        => (string) ($props['KIIntentApiKey'] ?? ''),
+        'model'          => (string) ($props['KIIntentModel'] ?? 'gpt-4.1-mini'),
+        'log_channel'    => (string) ($props['KIIntentLogChannel'] ?? 'Alexa'),
+        'rate_limit_sec' => (int) ($props['KIIntentRateLimit'] ?? 60),
+    ];
+}
+
+function iah_extract_raw_user_text($request): string
+{
+    $pick = static function ($obj, string $prop): ?string {
+        if (!is_object($obj)) {
+            return null;
+        }
+        if (isset($obj->$prop) && is_string($obj->$prop)) {
+            $val = trim($obj->$prop);
+            return $val === '' ? null : $val;
+        }
+        return null;
+    };
+
+    $candidates = [];
+    foreach (['text', 'Text', 'rawText', 'RawText', 'utterance', 'Utterance', 'inputTranscript', 'InputTranscript'] as $prop) {
+        $val = $pick($request, $prop);
+        if ($val !== null) {
+            $candidates[] = $val;
+        }
+    }
+
+    if (is_object($request) && isset($request->request) && is_object($request->request)) {
+        foreach (['text', 'Text', 'rawText', 'RawText', 'utterance', 'Utterance', 'inputTranscript', 'InputTranscript'] as $prop) {
+            $val = $pick($request->request, $prop);
+            if ($val !== null) {
+                $candidates[] = $val;
+            }
+        }
+        if (isset($request->request->intent) && is_object($request->request->intent) && isset($request->request->intent->slots) && is_object($request->request->intent->slots)) {
+            foreach (['raw', 'Raw', 'text', 'Text', 'utterance', 'Utterance'] as $slotKey) {
+                if (isset($request->request->intent->slots->$slotKey) && is_object($request->request->intent->slots->$slotKey)) {
+                    $slot = $request->request->intent->slots->$slotKey;
+                    $val = null;
+                    if (isset($slot->value) && is_string($slot->value)) {
+                        $val = trim($slot->value);
+                    }
+                    if ($val === null && isset($slot->resolutions) && is_object($slot->resolutions)) {
+                        $val = $pick($slot, 'resolutions');
+                    }
+                    if ($val !== null && $val !== '') {
+                        $candidates[] = $val;
+                    }
+                }
+            }
+        }
+    }
+
+    foreach ($candidates as $candidate) {
+        $val = trim((string) $candidate);
+        if ($val !== '') {
+            return $val;
+        }
+    }
+
+    return '';
+}
+
 function iah_build_system_configuration_internal(int $instanceId, array $props, callable $logCfg): array
 {
     $settings = iah_get_child_object($instanceId, 'iahSettings', 'Einstellungen');
@@ -808,6 +876,7 @@ function iah_build_system_configuration_internal(int $instanceId, array $props, 
         'EnergiePageId' => $energieLegacy,
         'KameraPageId'  => $kameraLegacy,
         'pageMappings'  => $pageMappings,
+        'KIIntentParser' => iah_build_ki_intent_parser_cfg($props),
         'ActionsEnabled' => [
             'heizung_stellen'   => iah_get_child_object($settings, 'heizungStellen', 'heizung_stellen'),
             'jalousie_steuern'  => iah_get_child_object($settings, 'jalousieSteuern', 'jalousie_steuern'),
@@ -834,6 +903,7 @@ function iah_build_system_configuration_internal(int $instanceId, array $props, 
         'RoomBuilderHelpers' => iah_get_child_object($helper, 'roomBuilderHelpersScript', 'RoomBuilderHelpers'),
         'DeviceMapWizard'    => iah_get_child_object($helper, 'deviceMapWizardScript', 'DeviceMapWizard'),
         'Lexikon'            => iah_get_child_object($helper, 'lexikonScript', 'Lexikon'),
+        'KINLUContextScript' => iah_get_child_object($helper, 'kiNluContextScript', 'KI_NLU_Context'),
         'ACTION_VAR'         => iah_get_child_object($diag, 'action', 'action'),
         'DEVICE_VAR'         => iah_get_child_object($diag, 'device', 'device'),
         'ROOM_VAR'           => iah_get_child_object($diag, 'room', 'room'),
@@ -843,6 +913,7 @@ function iah_build_system_configuration_internal(int $instanceId, array $props, 
         'PROZENT_VAR'        => iah_get_child_object($diag, 'prozent', 'prozent'),
         'ALLES_VAR'          => iah_get_child_object($diag, 'alles', 'alles'),
         'ALEXA_VAR'          => iah_get_child_object($diag, 'alexa', 'alexa'),
+        'KIIntentParserScript' => iah_get_child_object($helper, 'kiIntentParserScript', 'KI_IntentParser'),
     ];
 
     $scripts = [
@@ -877,6 +948,7 @@ function iah_build_system_configuration(int $instanceId): array
     $props = iah_get_instance_properties($instanceId);
     $logCfg = iah_build_logger($props);
     $scriptId = iah_get_config_script_id($props, $instanceId);
+    $helper = iah_get_child_object($instanceId, 'iahHelper', 'Alexa new devices helper');
 
     if ($scriptId > 0) {
         $path = IPS_GetScriptFile($scriptId);
@@ -894,6 +966,17 @@ function iah_build_system_configuration(int $instanceId): array
                 : iah_build_launch_catalog($props);
             if (!isset($var['pageMappings']) || !is_array($var['pageMappings'])) {
                 $var['pageMappings'] = iah_build_page_mappings($props);
+            }
+            if (!isset($var['KIIntentParser']) || !is_array($var['KIIntentParser'])) {
+                $var['KIIntentParser'] = iah_build_ki_intent_parser_cfg($props);
+            } elseif (!array_key_exists('enabled', $var['KIIntentParser'])) {
+                $var['KIIntentParser']['enabled'] = (bool)($props['KIIntentEnabled'] ?? true);
+            }
+            if (empty($var['KIIntentParserScript'])) {
+                $var['KIIntentParserScript'] = iah_get_child_object($helper ?? 0, 'kiIntentParserScript', 'KI_IntentParser');
+            }
+            if (empty($var['KINLUContextScript'])) {
+                $var['KINLUContextScript'] = iah_get_child_object($helper ?? 0, 'kiNluContextScript', 'KI_NLU_Context');
             }
             return [
                 'var' => $var,
@@ -1120,7 +1203,101 @@ function Execute($request = null)
         $prozent1 = $getSlotCH($request,'Prozent')     ?? null;
         $alles1   = $lc($getSlotCH($request,'Alles')   ?? '');
 
-        $log('debug','RawSlots', ["a"=>$action1,"s"=>$szene1,"d"=>$device1,"r"=>$room1,"o"=>$object1,"n"=>$number1,"p"=>$prozent1,"al"=>$alles1]);
+        $rawSlots = ["a"=>$action1,"s"=>$szene1,"d"=>$device1,"r"=>$room1,"o"=>$object1,"n"=>$number1,"p"=>$prozent1,"al"=>$alles1];
+        $log('debug','RawSlots', $rawSlots);
+
+        $rawSlotsToText = static function (array $slots): string {
+            $orderedKeys = ['a', 's', 'd', 'r', 'o', 'al'];
+            $parts = [];
+
+            $maybeAddString = static function ($value) use (&$parts): void {
+                if (!is_string($value)) {
+                    return;
+                }
+                $value = trim($value);
+                if ($value === '' || $value === '?') {
+                    return;
+                }
+                $parts[] = $value;
+            };
+
+            foreach ($orderedKeys as $key) {
+                if (array_key_exists($key, $slots)) {
+                    $maybeAddString($slots[$key]);
+                }
+            }
+
+            if (array_key_exists('n', $slots) && $slots['n'] !== null && $slots['n'] !== '' && $slots['n'] !== '?') {
+                $parts[] = trim((string) $slots['n']);
+            }
+
+            if (array_key_exists('p', $slots) && $slots['p'] !== null && $slots['p'] !== '' && $slots['p'] !== '?') {
+                $parts[] = trim((string) $slots['p']) . '%';
+            }
+
+            return trim(implode(' ', $parts));
+        };
+
+        $kiParserOverride = null;
+        $kiParserConfig = is_array($V['KIIntentParser'] ?? null) ? $V['KIIntentParser'] : [];
+        $kiParserScriptId = (int)($V['KIIntentParserScript'] ?? 0);
+        $rawUserText = iah_extract_raw_user_text($request);
+        $slotsEmpty = (
+            $action1 === '' && $device1 === '' && $room1 === '' && $object1 === '' && $alles1 === '' && $szene1 === '' &&
+            ($number1 === null || $number1 === '' || $number1 === '?') && ($prozent1 === null || $prozent1 === '' || $prozent1 === '?')
+        );
+
+        $kiParserEnabled = (bool)($kiParserConfig['enabled'] ?? true);
+        $shouldCallKiParser = $kiParserEnabled && $kiParserScriptId > 0 && function_exists('IPS_RunScriptWaitEx');
+
+        $invokeKiParser = static function (string $text, string $reason) use (&$kiParserOverride, $kiParserScriptId, $kiParserConfig, $log, $lc) {
+            if ($text === '') {
+                return;
+            }
+
+            $log('debug', 'KIIntentParser.trigger.' . $reason, ['text' => $text]);
+            $kiResponseRaw = IPS_RunScriptWaitEx($kiParserScriptId, ['text' => $text, 'cfg' => $kiParserConfig]);
+            $kiParsed = json_decode((string) $kiResponseRaw, true);
+            if (is_array($kiParsed) && !empty($kiParsed['rate_limited'])) {
+                $log('warn', 'KIIntentParser.rate_limited', []);
+                return;
+            }
+            if (is_array($kiParsed)) {
+                $kiParserOverride = [
+                    'action' => $lc((string) ($kiParsed['action'] ?? '')),
+                    'device' => $lc((string) ($kiParsed['device'] ?? '')),
+                    'room'   => $lc((string) ($kiParsed['room'] ?? '')),
+                    'number' => $kiParsed['number'] ?? null,
+                ];
+                $log('debug', 'KIIntentParser.ok', $kiParserOverride);
+                return;
+            }
+
+            $log('warn', 'KIIntentParser.parse_failed', ['raw' => $kiResponseRaw]);
+        };
+
+        if ($slotsEmpty && $shouldCallKiParser && $rawUserText !== '') {
+            $invokeKiParser($rawUserText, 'slots_empty');
+        }
+
+        if ($kiParserOverride === null && $shouldCallKiParser && empty($APL['args'])) {
+            $kiInputText = trim((string) $rawUserText);
+            if ($kiInputText === '') {
+                $kiInputText = $rawSlotsToText($rawSlots);
+            }
+
+            if ($kiInputText !== '') {
+                $log('info', 'KIIntentParser.apl_args_empty', ['text' => $kiInputText]);
+                $invokeKiParser($kiInputText, 'apl_args_empty');
+            }
+        }
+
+        if ($kiParserOverride !== null) {
+            if ($action1 === '') { $action1 = (string) ($kiParserOverride['action'] ?? ''); }
+            if ($device1 === '') { $device1 = (string) ($kiParserOverride['device'] ?? ''); }
+            if ($room1 === '')   { $room1   = (string) ($kiParserOverride['room'] ?? ''); }
+            if ($number1 === null && isset($kiParserOverride['number'])) { $number1 = $kiParserOverride['number']; }
+        }
 
         // ---------- Exit ----------
         $wantsExit = in_array($action1, ['ende','fertig','exit'], true) ||
@@ -1241,6 +1418,13 @@ function Execute($request = null)
         $number  = $getSlotCH($request,'Number') ?? null;
         $prozent = $getSlotCH($request,'Prozent') ?? null;
         $alles   = $lc($getSlotCH($request,'Alles')  ?? '');
+
+        if (isset($kiParserOverride)) {
+            if ($action === '') { $action = (string) ($kiParserOverride['action'] ?? ''); }
+            if ($device === '') { $device = (string) ($kiParserOverride['device'] ?? ''); }
+            if ($room === '')   { $room   = (string) ($kiParserOverride['room'] ?? ''); }
+            if ($number === null && isset($kiParserOverride['number'])) { $number = $kiParserOverride['number']; }
+        }
 
         // PENDING_STAGE lesen (Wizard nur bei aktivem Stage)
         $stage = '';
