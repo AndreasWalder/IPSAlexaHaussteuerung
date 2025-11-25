@@ -59,6 +59,7 @@ return [
         'RoomBuilderHelpers' => 0,
         'DeviceMapWizard'    => 0,
         'Lexikon'            => 0,
+        'KINLUContextScript' => 0,
     ],
     'script' => [
         'ROUTE_ALL'           => 0,
