@@ -118,8 +118,17 @@ $parseAplArgs = static function($request): array {
     if (!$isLaunch && empty($args) && isset($request->attributes) && method_exists($request->attributes, 'Get')) {
         $args = $request->attributes->Get('APL_ARGS') ?: [];
     }
+    if (!is_array($args)) {
+        if ($args instanceof Traversable) {
+            $args = iterator_to_array($args);
+        } elseif (is_object($args)) {
+            $args = get_object_vars($args);
+        } else {
+            $args = [];
+        }
+    }
     return [
-        'args' => is_array($args) ? $args : [],
+        'args' => $args,
         'a1'   => $args[1] ?? null,
         'a2'   => $args[2] ?? null,
         'a3'   => $args[3] ?? null,
