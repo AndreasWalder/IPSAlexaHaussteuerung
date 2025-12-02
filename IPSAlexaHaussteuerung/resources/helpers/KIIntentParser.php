@@ -127,6 +127,194 @@ function ki_load_cfg_from_system_configuration(): array
     return $sc['var']['KIIntentParser'];
 }
 
+/**
+ * Lädt den produktiven RoomsCatalog aus dem Helper-Verzeichnis.
+ *
+ * Erlaubt optional einen Override über $cfg['rooms_catalog_path'].
+ */
+function ki_load_rooms_catalog(array $cfg): array
+{
+    static $cachedCatalog = null;
+
+    if ($cachedCatalog !== null) {
+        return $cachedCatalog;
+    }
+
+    $path = (string)($cfg['rooms_catalog_path'] ?? (__DIR__ . '/RoomsCatalog.php'));
+
+    if (!is_file($path)) {
+        ki_log('RoomsCatalog wurde nicht gefunden unter ' . $path);
+        $cachedCatalog = [];
+        return $cachedCatalog;
+    }
+
+    $roomsCatalog = @include $path;
+    if (!is_array($roomsCatalog)) {
+        ki_log('RoomsCatalog hat ein unerwartetes Format.');
+        $cachedCatalog = [];
+        return $cachedCatalog;
+    }
+
+    ki_log('RoomsCatalog erfolgreich geladen (' . count($roomsCatalog) . ' Räume inklusive global).');
+    $cachedCatalog = $roomsCatalog;
+    return $roomsCatalog;
+}
+
+/**
+ * Baue einen kompakten NLU-Context aus dem produktiven RoomsCatalog.
+ *
+ * Ziel: möglichst wenig Tokens für die KI verbrauchen, aber trotzdem
+ *       dynamisch alle aktuell bekannten Räume / Geräte / Szenen abbilden.
+ *
+ * @param array $roomsCatalog Voller produktiver RoomsCatalog
+ * @param array $opts         Optionale Einstellungen:
+ *                            - 'limitRooms'   => string[]|null  (nur diese Room-Keys berücksichtigen)
+ *                            - 'devices'      => string[]|null  (Device-Liste explizit setzen)
+ *                            - 'includeScenes'=> bool           (default: true)
+ *
+ * @return array{
+ *   rooms: string[],
+ *   devices: string[],
+ *   scenes: string[]
+ * }
+ */
+function ki_build_nlu_context(array $roomsCatalog, array $opts = []): array
+{
+    $rooms = [];
+
+    foreach ($roomsCatalog as $roomKey => $roomDef) {
+        if (!is_array($roomDef)) {
+            continue;
+        }
+
+        if ($roomKey === 'global') {
+            continue;
+        }
+
+        if (isset($opts['limitRooms']) && is_array($opts['limitRooms']) && !in_array($roomKey, $opts['limitRooms'], true)) {
+            continue;
+        }
+
+        $label = $roomDef['display'] ?? $roomKey;
+        if (!is_string($label) || $label === '') {
+            $label = (string)$roomKey;
+        }
+
+        $rooms[] = $label;
+    }
+
+    $rooms = array_values(array_unique($rooms, SORT_STRING));
+    sort($rooms, SORT_NATURAL | SORT_FLAG_CASE);
+
+    if (isset($opts['devices']) && is_array($opts['devices']) && $opts['devices'] !== []) {
+        $devices = array_values(array_unique(array_map('strval', $opts['devices']), SORT_STRING));
+    } else {
+        $deviceSet = [];
+
+        if (isset($roomsCatalog['global']) && is_array($roomsCatalog['global'])) {
+            foreach ($roomsCatalog['global'] as $domainKey => $domainDef) {
+                if (!is_string($domainKey) || $domainKey === '') {
+                    continue;
+                }
+                $deviceSet[$domainKey] = true;
+            }
+        }
+
+        foreach ($roomsCatalog as $roomKey => $roomDef) {
+            if (!is_array($roomDef)) {
+                continue;
+            }
+            if (!isset($roomDef['domains']) || !is_array($roomDef['domains'])) {
+                continue;
+            }
+
+            foreach ($roomDef['domains'] as $domainKey => $_domainDef) {
+                if (!is_string($domainKey) || $domainKey === '') {
+                    continue;
+                }
+                $deviceSet[$domainKey] = true;
+            }
+        }
+
+        $devices = array_keys($deviceSet);
+    }
+
+    sort($devices, SORT_NATURAL | SORT_FLAG_CASE);
+
+    $includeScenes = array_key_exists('includeScenes', $opts) ? (bool)$opts['includeScenes'] : true;
+    $sceneSet = [];
+
+    if ($includeScenes) {
+        $collectScenes = static function ($sceneDef) use (&$sceneSet, &$collectScenes): void {
+            if (is_array($sceneDef)) {
+                if (isset($sceneDef['title']) && is_string($sceneDef['title']) && $sceneDef['title'] !== '') {
+                    $sceneSet[$sceneDef['title']] = true;
+                }
+                foreach ($sceneDef as $value) {
+                    if (is_array($value) || is_string($value)) {
+                        $collectScenes($value);
+                    }
+                }
+                return;
+            }
+
+            if (is_string($sceneDef) && $sceneDef !== '') {
+                $sceneSet[$sceneDef] = true;
+            }
+        };
+
+        if (isset($roomsCatalog['global']) && is_array($roomsCatalog['global'])) {
+            foreach ($roomsCatalog['global'] as $domainDef) {
+                if (!is_array($domainDef) || !isset($domainDef['scenes'])) {
+                    continue;
+                }
+                $collectScenes($domainDef['scenes']);
+            }
+        }
+
+        foreach ($roomsCatalog as $roomDef) {
+            if (!is_array($roomDef) || !isset($roomDef['domains']) || !is_array($roomDef['domains'])) {
+                continue;
+            }
+            foreach ($roomDef['domains'] as $domainDef) {
+                if (!is_array($domainDef) || !isset($domainDef['scenes'])) {
+                    continue;
+                }
+                $collectScenes($domainDef['scenes']);
+            }
+        }
+    }
+
+    $scenes = array_keys($sceneSet);
+    sort($scenes, SORT_NATURAL | SORT_FLAG_CASE);
+
+    return [
+        'rooms'   => $rooms,
+        'devices' => $devices,
+        'scenes'  => $scenes,
+    ];
+}
+
+/**
+ * Erzeugt einen NLU-Kontext aus dem RoomsCatalog, falls verfügbar.
+ */
+function ki_build_rooms_context(array $cfg): array
+{
+    $roomsCatalog = ki_load_rooms_catalog($cfg);
+
+    if ($roomsCatalog === []) {
+        return [];
+    }
+
+    $context = ki_build_nlu_context($roomsCatalog, [
+        'includeScenes' => true,
+    ]);
+
+    ki_log('NLU-Context erstellt: ' . count($context['rooms']) . ' Räume, ' . count($context['devices']) . ' Geräte-Typen, ' . count($context['scenes']) . ' Szenen.');
+
+    return $context;
+}
+
 // Basis-Konfiguration aus SystemConfiguration laden.
 $CFG = ki_load_cfg_from_system_configuration();
 
@@ -312,6 +500,20 @@ function ki_parse_intent(string $rawText, array $cfg): array
         ];
     }
 
+    $nluContext = ki_build_rooms_context($cfg);
+
+    $contextDescription = '';
+    if ($nluContext !== []) {
+        $contextRooms   = $nluContext['rooms'];
+        $contextDevices = $nluContext['devices'];
+        $contextScenes  = $nluContext['scenes'];
+
+        $contextDescription = '\n\nKontext aus RoomsCatalog (immer bevorzugt verwenden):\n' .
+            '- Räume: ' . ($contextRooms === [] ? 'keine' : implode(', ', $contextRooms)) . "\n" .
+            '- Geräte-Typen: ' . ($contextDevices === [] ? 'keine' : implode(', ', $contextDevices)) . "\n" .
+            '- Szenen: ' . ($contextScenes === [] ? 'keine' : implode(', ', $contextScenes));
+    }
+
     $systemPrompt = <<<PROMPT
 Du bist ein Intent-Parser für eine Haussteuerung.
 
@@ -332,6 +534,7 @@ Antwort-Format:
 Wichtige Regeln:
 - Wenn etwas nicht eindeutig ermittelbar ist, setze das Feld auf null.
 - Antworte ausschließlich mit einem einzigen JSON-Objekt im oben beschriebenen Format.
+$contextDescription
 PROMPT;
 
     $body = [
@@ -400,8 +603,12 @@ if (isset($_IPS) && is_array($_IPS) && array_key_exists('text', $_IPS)) {
     return;
 }
 
-// Testmodus bei Direkt-Ausführung im Editor.
-$testText   = 'mach bitte das licht im wohnzimmer auf 50 prozent an';
+// Testmodus bei Direkt-Ausführung im Editor oder via CLI.
+$testText = 'wie warm ist es draußen';
+if (PHP_SAPI === 'cli' && isset($argv) && count($argv) > 1) {
+    $testText = (string)$argv[1];
+}
+
 $testResult = ki_parse_intent($testText, $CFG);
 
 echo "Testeingabe:\n";
