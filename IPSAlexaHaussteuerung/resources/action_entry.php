@@ -1592,6 +1592,13 @@ function Execute($request = null)
             }
         }
 
+        if ($kiParserOverride !== null) {
+            if ($action === '') { $action = (string) ($kiParserOverride['action'] ?? ''); }
+            if ($device === '') { $device = (string) ($kiParserOverride['device'] ?? ''); }
+            if ($room === '')   { $room   = (string) ($kiParserOverride['room'] ?? ''); }
+            if ($number === null && isset($kiParserOverride['number'])) { $number = $kiParserOverride['number']; }
+        }
+
         if ($domain === null && !$navForce && !empty($tabDomainSynonyms)) {
             $slotValues = [$action, $device, $room, $object, $alles, $szene];
             foreach ($slotValues as $slotValue) {
