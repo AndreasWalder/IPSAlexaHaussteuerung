@@ -1577,6 +1577,21 @@ function Execute($request = null)
             RequestAction((int)$APL['a2'], (int)$APL['a3']);
         }
 
+        if ($domain === null && !$navForce && $shouldCallKiParser && $kiParserOverride === null) {
+            $kiInputText = $rawUserText !== '' ? trim((string)$rawUserText) : $rawSlotsToText($rawSlots);
+            $kiInputText = trim(preg_replace('/\s+/', ' ', (string)$kiInputText));
+
+            if ($kiInputText !== '') {
+                $invokeKiParser($kiInputText, 'domain_missing');
+                if ($kiParserOverride !== null) {
+                    if ($action === '') { $action = (string) ($kiParserOverride['action'] ?? ''); }
+                    if ($device === '') { $device = (string) ($kiParserOverride['device'] ?? ''); }
+                    if ($room === '')   { $room   = (string) ($kiParserOverride['room'] ?? ''); }
+                    if ($number === null && isset($kiParserOverride['number'])) { $number = $kiParserOverride['number']; }
+                }
+            }
+        }
+
         if ($domain === null && !$navForce && !empty($tabDomainSynonyms)) {
             $slotValues = [$action, $device, $room, $object, $alles, $szene];
             foreach ($slotValues as $slotValue) {
