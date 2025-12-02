@@ -7,6 +7,8 @@ declare(strict_types=1);
  * ============================================================
  *
  * Änderungsverlauf
+ * 2025-12-02: v1.9 — SystemConfiguration rekursiv unterhalb des Projekt-Roots suchen
+ * 2025-12-02: v1.8 — Konfiguration ausschließlich über SystemConfiguration, Logging fix auf Kanal "Alexa"
  * 2025-12-02: v1.7 — SystemConfiguration-ID automatisch über Parent-/Child-Hierarchie ermitteln (Fallback: Konstante)
  * 2025-12-02: v1.6 — Konfiguration aus SystemConfiguration (var.KIIntentParser) laden
  * 2025-11-24: v1.5 — Stabiler Rate-Limit / Loop-Schutz über Hilfs-Variable (funktioniert auch bei "Ausführen")
@@ -18,27 +20,47 @@ declare(strict_types=1);
  */
 
 /**
- * Optionale Script-ID der zentralen SystemConfiguration.
- * Wenn 0, wird SystemConfiguration automatisch über die Parent-/Child-Hierarchie gesucht.
+ * Hilfs-Logging, läuft in IP-Symcon über IPS_LogMessage (Kanal "Alexa"), sonst error_log.
  */
-const KI_SYSTEM_CONFIGURATION_SCRIPT_ID = 0;
+function ki_log(string $message): void
+{
+    if (function_exists('IPS_LogMessage')) {
+        IPS_LogMessage('Alexa', $message);
+    } else {
+        error_log('[Alexa] ' . $message);
+    }
+}
+
+/**
+ * Rekursive Suche nach einem Objekt mit bestimmtem Namen unterhalb einer Wurzel-ID.
+ */
+function ki_find_child_recursive(int $rootId, string $name): int
+{
+    $children = IPS_GetChildrenIDs($rootId);
+    foreach ($children as $childId) {
+        if (IPS_GetName($childId) === $name) {
+            return $childId;
+        }
+        $found = ki_find_child_recursive($childId, $name);
+        if ($found > 0) {
+            return $found;
+        }
+    }
+    return 0;
+}
 
 /**
  * Versucht, die SystemConfiguration-Script-ID automatisch zu finden.
  * Strategie:
  * - Start bei diesem Skript (SELF)
- * - Nach oben laufen (Parent)
- * - In jedem Parent die direkten Children nach einem Script mit Namen "SystemConfiguration" durchsuchen
+ * - Nach oben laufen (Parent), bis zum Projekt-Root
+ * - Für jeden Parent: rekursiv nach einem Kind mit Namen "SystemConfiguration" suchen
  * - Beim ersten Treffer ID zurückgeben
  */
 function ki_find_system_configuration_script_id(): int
 {
     if (!function_exists('IPS_GetChildrenIDs')) {
         return 0;
-    }
-
-    if (KI_SYSTEM_CONFIGURATION_SCRIPT_ID > 0) {
-        return KI_SYSTEM_CONFIGURATION_SCRIPT_ID;
     }
 
     global $_IPS;
@@ -53,63 +75,56 @@ function ki_find_system_configuration_script_id(): int
 
     $parentId = IPS_GetParent($currentId);
     while ($parentId > 0) {
-        $children = IPS_GetChildrenIDs($parentId);
-        foreach ($children as $childId) {
-            $name = IPS_GetName($childId);
-            if ($name === 'SystemConfiguration') {
-                return $childId;
-            }
+        $found = ki_find_child_recursive($parentId, 'SystemConfiguration');
+        if ($found > 0) {
+            ki_log('SystemConfiguration gefunden (ID=' . $found . ').');
+            return $found;
         }
         $parentId = IPS_GetParent($parentId);
     }
 
+    ki_log('SystemConfiguration wurde in der Parent-Hierarchie nicht gefunden.');
     return 0;
 }
 
 /**
  * Lädt das KIIntentParser-Config-Array aus der SystemConfiguration (var.KIIntentParser).
- * Fällt auf lokale Defaults zurück, wenn SystemConfiguration nicht verfügbar ist.
+ * Wenn SystemConfiguration oder der Eintrag fehlt, wird der Parser deaktiviert (enabled=false).
  */
 function ki_load_cfg_from_system_configuration(): array
 {
-    $defaults = [
-        'enabled'        => true,
-        'api_key'        => '',
-        'model'          => 'gpt-4.1-mini',
-        'log_channel'    => 'Alexa',
-        'rate_limit_sec' => 60,
-    ];
-
     if (!function_exists('IPS_GetKernelDir')) {
-        return $defaults;
+        ki_log('IP-Symcon-Umgebung nicht verfügbar, KIIntentParser wird deaktiviert.');
+        return ['enabled' => false];
     }
 
     $systemConfigId = ki_find_system_configuration_script_id();
     if ($systemConfigId <= 0) {
-        error_log('[KIIntentParser] Konnte SystemConfiguration-Script nicht finden, verwende Default-Konfiguration.');
-        return $defaults;
+        ki_log('Konnte SystemConfiguration-Script nicht finden, KIIntentParser wird deaktiviert.');
+        return ['enabled' => false];
     }
 
     $file = @IPS_GetScriptFile($systemConfigId);
     if ($file === false || $file === '') {
-        error_log('[KIIntentParser] Konnte SystemConfiguration-Script-Datei nicht ermitteln, verwende Default-Konfiguration.');
-        return $defaults;
+        ki_log('Konnte SystemConfiguration-Script-Datei nicht ermitteln, KIIntentParser wird deaktiviert.');
+        return ['enabled' => false];
     }
 
     $path = IPS_GetKernelDir() . 'scripts/' . $file;
     $sc   = @include $path;
 
     if (!is_array($sc) || !isset($sc['var']) || !is_array($sc['var'])) {
-        error_log('[KIIntentParser] SystemConfiguration hat unerwartetes Format, verwende Default-Konfiguration.');
-        return $defaults;
+        ki_log('SystemConfiguration hat unerwartetes Format, KIIntentParser wird deaktiviert.');
+        return ['enabled' => false];
     }
 
     if (!isset($sc['var']['KIIntentParser']) || !is_array($sc['var']['KIIntentParser'])) {
-        error_log('[KIIntentParser] SystemConfiguration[var]["KIIntentParser"] fehlt, verwende Default-Konfiguration.');
-        return $defaults;
+        ki_log('SystemConfiguration[var]["KIIntentParser"] fehlt, KIIntentParser wird deaktiviert.');
+        return ['enabled' => false];
     }
 
-    return array_merge($defaults, $sc['var']['KIIntentParser']);
+    ki_log('KIIntentParser-Konfiguration erfolgreich aus SystemConfiguration geladen.');
+    return $sc['var']['KIIntentParser'];
 }
 
 // Basis-Konfiguration aus SystemConfiguration laden.
@@ -118,22 +133,6 @@ $CFG = ki_load_cfg_from_system_configuration();
 // Allow overrides via IPS_RunScriptWaitEx(['cfg' => [...]]).
 if (isset($_IPS) && is_array($_IPS) && array_key_exists('cfg', $_IPS) && is_array($_IPS['cfg'])) {
     $CFG = array_merge($CFG, $_IPS['cfg']);
-}
-
-/**
- * Hilfs-Logging, läuft in IP-Symcon über IPS_LogMessage, sonst error_log.
- */
-function ki_log(string $message): void
-{
-    global $CFG;
-
-    $prefix = isset($CFG['log_channel']) && $CFG['log_channel'] !== '' ? $CFG['log_channel'] : 'KIIntentParser';
-
-    if (function_exists('IPS_LogMessage')) {
-        IPS_LogMessage($prefix, $message);
-    } else {
-        error_log('[' . $prefix . '] ' . $message);
-    }
 }
 
 /**
