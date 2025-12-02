@@ -1252,7 +1252,10 @@ function Execute($request = null)
             }
 
             $log('debug', 'KIIntentParser.trigger.' . $reason, ['text' => $text]);
-            $kiResponseRaw = IPS_RunScriptWaitEx($kiParserScriptId, ['text' => $text, 'cfg' => $kiParserConfig]);
+            $kiResponseRaw = IPS_RunScriptWaitEx(
+    $kiParserScriptId,
+    ['text' => $text, 'cfg' => $kiParserConfig]  // <- Problem
+);
             $kiParsed = json_decode((string) $kiResponseRaw, true);
             if (is_array($kiParsed) && !empty($kiParsed['rate_limited'])) {
                 $log('warn', 'KIIntentParser.rate_limited', []);
