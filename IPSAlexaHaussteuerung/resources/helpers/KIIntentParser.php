@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/KINLUContext.php';
+
 /**
  * ============================================================
  * KI INTENT PARSER — OpenAI-basierte Anfrage-Analyse
@@ -125,6 +127,59 @@ function ki_load_cfg_from_system_configuration(): array
 
     ki_log('KIIntentParser-Konfiguration erfolgreich aus SystemConfiguration geladen.');
     return $sc['var']['KIIntentParser'];
+}
+
+/**
+ * Lädt den produktiven RoomsCatalog aus dem Helper-Verzeichnis.
+ *
+ * Erlaubt optional einen Override über $cfg['rooms_catalog_path'].
+ */
+function ki_load_rooms_catalog(array $cfg): array
+{
+    static $cachedCatalog = null;
+
+    if ($cachedCatalog !== null) {
+        return $cachedCatalog;
+    }
+
+    $path = (string)($cfg['rooms_catalog_path'] ?? (__DIR__ . '/RoomsCatalog.php'));
+
+    if (!is_file($path)) {
+        ki_log('RoomsCatalog wurde nicht gefunden unter ' . $path);
+        $cachedCatalog = [];
+        return $cachedCatalog;
+    }
+
+    $roomsCatalog = @include $path;
+    if (!is_array($roomsCatalog)) {
+        ki_log('RoomsCatalog hat ein unerwartetes Format.');
+        $cachedCatalog = [];
+        return $cachedCatalog;
+    }
+
+    ki_log('RoomsCatalog erfolgreich geladen (' . count($roomsCatalog) . ' Räume inklusive global).');
+    $cachedCatalog = $roomsCatalog;
+    return $roomsCatalog;
+}
+
+/**
+ * Erzeugt einen NLU-Kontext aus dem RoomsCatalog, falls verfügbar.
+ */
+function ki_build_rooms_context(array $cfg): array
+{
+    $roomsCatalog = ki_load_rooms_catalog($cfg);
+
+    if ($roomsCatalog === []) {
+        return [];
+    }
+
+    $context = ki_build_nlu_context($roomsCatalog, [
+        'includeScenes' => true,
+    ]);
+
+    ki_log('NLU-Context erstellt: ' . count($context['rooms']) . ' Räume, ' . count($context['devices']) . ' Geräte-Typen, ' . count($context['scenes']) . ' Szenen.');
+
+    return $context;
 }
 
 // Basis-Konfiguration aus SystemConfiguration laden.
@@ -312,6 +367,20 @@ function ki_parse_intent(string $rawText, array $cfg): array
         ];
     }
 
+    $nluContext = ki_build_rooms_context($cfg);
+
+    $contextDescription = '';
+    if ($nluContext !== []) {
+        $contextRooms   = $nluContext['rooms'];
+        $contextDevices = $nluContext['devices'];
+        $contextScenes  = $nluContext['scenes'];
+
+        $contextDescription = '\n\nKontext aus RoomsCatalog (immer bevorzugt verwenden):\n' .
+            '- Räume: ' . ($contextRooms === [] ? 'keine' : implode(', ', $contextRooms)) . "\n" .
+            '- Geräte-Typen: ' . ($contextDevices === [] ? 'keine' : implode(', ', $contextDevices)) . "\n" .
+            '- Szenen: ' . ($contextScenes === [] ? 'keine' : implode(', ', $contextScenes));
+    }
+
     $systemPrompt = <<<PROMPT
 Du bist ein Intent-Parser für eine Haussteuerung.
 
@@ -332,6 +401,7 @@ Antwort-Format:
 Wichtige Regeln:
 - Wenn etwas nicht eindeutig ermittelbar ist, setze das Feld auf null.
 - Antworte ausschließlich mit einem einzigen JSON-Objekt im oben beschriebenen Format.
+$contextDescription
 PROMPT;
 
     $body = [
@@ -400,8 +470,12 @@ if (isset($_IPS) && is_array($_IPS) && array_key_exists('text', $_IPS)) {
     return;
 }
 
-// Testmodus bei Direkt-Ausführung im Editor.
-$testText   = 'mach bitte das licht im wohnzimmer auf 50 prozent an';
+// Testmodus bei Direkt-Ausführung im Editor oder via CLI.
+$testText = 'wie warm ist es draußen';
+if (PHP_SAPI === 'cli' && isset($argv) && count($argv) > 1) {
+    $testText = (string)$argv[1];
+}
+
 $testResult = ki_parse_intent($testText, $CFG);
 
 echo "Testeingabe:\n";
