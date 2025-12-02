@@ -1276,28 +1276,6 @@ function Execute($request = null)
             $invokeKiParser($rawUserText, 'slots_empty');
         }
 
-        if ($kiParserOverride === null && $shouldCallKiParser && empty($APL['args'])) {
-            $kiInputText = trim((string) $rawUserText);
-            if (stripos($kiInputText, 'slots:') === 0) {
-                $decodedSlots = json_decode(trim((string) substr($kiInputText, strlen('slots:'))), true);
-                if (is_array($decodedSlots)) {
-                    $kiInputText = $rawSlotsToText($decodedSlots);
-                }
-            }
-
-            if ($kiInputText === '') {
-                $kiInputText = $rawSlotsToText($rawSlots);
-            }
-
-
-            $kiInputText = trim(preg_replace('/\s+/', ' ', $kiInputText));
-
-            if ($kiInputText !== '') {
-                $log('info', 'KIIntentParser.apl_args_empty', ['text' => $kiInputText]);
-                $invokeKiParser($kiInputText, 'apl_args_empty');
-            }
-        }
-
         if ($kiParserOverride !== null) {
             if ($action1 === '') { $action1 = (string) ($kiParserOverride['action'] ?? ''); }
             if ($device1 === '') { $device1 = (string) ($kiParserOverride['device'] ?? ''); }
@@ -1585,13 +1563,16 @@ function Execute($request = null)
             if ($kiInputText !== '') {
                 $invokeKiParser($kiInputText, 'domain_missing');
                 if ($kiParserOverride !== null) {
-                    if ($action === '') { $action = (string) ($kiParserOverride['action'] ?? ''); }
-                    if ($device === '') { $device = (string) ($kiParserOverride['device'] ?? ''); }
-                    if ($room === '')   { $room   = (string) ($kiParserOverride['room'] ?? ''); }
-                    if ($number === null && isset($kiParserOverride['number'])) { $number = $kiParserOverride['number']; }
+                    $action = (string) ($kiParserOverride['action'] ?? $action);
+                    $device = (string) ($kiParserOverride['device'] ?? $device);
+                    $room   = (string) ($kiParserOverride['room']   ?? $room);
+                    if ($number === null && isset($kiParserOverride['number'])) {
+                        $number = $kiParserOverride['number'];
+                    }
                 }
             }
         }
+
 
         if ($kiParserOverride !== null) {
             if ($action === '') { $action = (string) ($kiParserOverride['action'] ?? ''); }
@@ -1643,10 +1624,23 @@ function Execute($request = null)
         $writeRuntimeString($V['PROZENT_VAR'] ?? 0, $prozent === null ? '' : (string) $prozent);
         $writeRuntimeString($V['ALLES_VAR'] ?? 0, (string) $alles);
 
-        // --------- Außentemperatur-Shortcut ---------
+         // --------- Außentemperatur-Shortcut ---------
         $AUSSEN_ALIASES = ['außentemperatur','aussentemperatur'];
-        if (in_array($action,$AUSSEN_ALIASES,true) || in_array($device,$AUSSEN_ALIASES,true) ||
-            in_array($object,$AUSSEN_ALIASES,true) || in_array($alles,$AUSSEN_ALIASES,true)) {
+        $AUSSEN_ROOMS   = ['draußen','draussen','außen','aussen'];
+
+        $isAussenByRoom = (
+            $device === 'heizung'
+            && in_array($room, $AUSSEN_ROOMS, true)
+            && ($action === '' || $action === 'status')
+        );
+
+        if (
+            in_array($action,$AUSSEN_ALIASES,true)
+            || in_array($device,$AUSSEN_ALIASES,true)
+            || in_array($object,$AUSSEN_ALIASES,true)
+            || in_array($alles,$AUSSEN_ALIASES,true)
+            || $isAussenByRoom
+        ) {
             $text = 'Die Außentemperatur beträgt ' . GetValueFormatted($V['AUSSEN_TEMP']);
             $img  = 'https://media.istockphoto.com/id/1323823418/de/foto/niedrigwinkelansicht-thermometer-am-blauen-himmel-mit-sonnenschein.jpg?s=612x612&w=0&k=20&c=iFJaAAxJ_chcBz5Bnjy20HSlULU7AWIW16d_bwlB0Ss=';
             $resetState($V);
