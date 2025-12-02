@@ -603,6 +603,7 @@ if (isset($_IPS) && is_array($_IPS) && array_key_exists('text', $_IPS)) {
     return;
 }
 
+
 // Testmodus bei Direkt-Ausführung im Editor oder via CLI.
 $testText = 'wie warm ist es draußen';
 if (PHP_SAPI === 'cli' && isset($argv) && count($argv) > 1) {
