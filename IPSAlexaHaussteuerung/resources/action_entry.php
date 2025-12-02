@@ -1282,9 +1282,18 @@ function Execute($request = null)
 
         if ($kiParserOverride === null && $shouldCallKiParser && empty($APL['args'])) {
             $kiInputText = trim((string) $rawUserText);
+            if (stripos($kiInputText, 'slots:') === 0) {
+                $decodedSlots = json_decode(trim((string) substr($kiInputText, strlen('slots:'))), true);
+                if (is_array($decodedSlots)) {
+                    $kiInputText = $rawSlotsToText($decodedSlots);
+                }
+            }
+
             if ($kiInputText === '') {
                 $kiInputText = $rawSlotsToText($rawSlots);
             }
+
+            $kiInputText = trim(preg_replace('/\s+/', ' ', $kiInputText));
 
             if ($kiInputText !== '') {
                 $log('info', 'KIIntentParser.apl_args_empty', ['text' => $kiInputText]);
