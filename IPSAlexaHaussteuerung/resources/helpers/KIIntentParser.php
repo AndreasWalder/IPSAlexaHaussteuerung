@@ -7,6 +7,7 @@ declare(strict_types=1);
  * ============================================================
  *
  * Änderungsverlauf
+ * 2025-12-02: v1.7 — SystemConfiguration-ID automatisch über Parent-/Child-Hierarchie ermitteln (Fallback: Konstante)
  * 2025-12-02: v1.6 — Konfiguration aus SystemConfiguration (var.KIIntentParser) laden
  * 2025-11-24: v1.5 — Stabiler Rate-Limit / Loop-Schutz über Hilfs-Variable (funktioniert auch bei "Ausführen")
  * 2025-11-24: v1.4 — Rate-Limit zentral in ki_parse_intent (gilt auch bei Testmodus)
@@ -17,10 +18,53 @@ declare(strict_types=1);
  */
 
 /**
- * Script-ID der zentralen SystemConfiguration.
- * HINWEIS: Bitte hier die echte Script-ID deiner SystemConfiguration eintragen.
+ * Optionale Script-ID der zentralen SystemConfiguration.
+ * Wenn 0, wird SystemConfiguration automatisch über die Parent-/Child-Hierarchie gesucht.
  */
-const KI_SYSTEM_CONFIGURATION_SCRIPT_ID = 36265;
+const KI_SYSTEM_CONFIGURATION_SCRIPT_ID = 0;
+
+/**
+ * Versucht, die SystemConfiguration-Script-ID automatisch zu finden.
+ * Strategie:
+ * - Start bei diesem Skript (SELF)
+ * - Nach oben laufen (Parent)
+ * - In jedem Parent die direkten Children nach einem Script mit Namen "SystemConfiguration" durchsuchen
+ * - Beim ersten Treffer ID zurückgeben
+ */
+function ki_find_system_configuration_script_id(): int
+{
+    if (!function_exists('IPS_GetChildrenIDs')) {
+        return 0;
+    }
+
+    if (KI_SYSTEM_CONFIGURATION_SCRIPT_ID > 0) {
+        return KI_SYSTEM_CONFIGURATION_SCRIPT_ID;
+    }
+
+    global $_IPS;
+    if (!isset($_IPS['SELF'])) {
+        return 0;
+    }
+
+    $currentId = (int)$_IPS['SELF'];
+    if ($currentId <= 0) {
+        return 0;
+    }
+
+    $parentId = IPS_GetParent($currentId);
+    while ($parentId > 0) {
+        $children = IPS_GetChildrenIDs($parentId);
+        foreach ($children as $childId) {
+            $name = IPS_GetName($childId);
+            if ($name === 'SystemConfiguration') {
+                return $childId;
+            }
+        }
+        $parentId = IPS_GetParent($parentId);
+    }
+
+    return 0;
+}
 
 /**
  * Lädt das KIIntentParser-Config-Array aus der SystemConfiguration (var.KIIntentParser).
@@ -36,18 +80,17 @@ function ki_load_cfg_from_system_configuration(): array
         'rate_limit_sec' => 60,
     ];
 
-    // Außerhalb von IP-Symcon (z. B. CLI-Test): einfach Defaults verwenden.
     if (!function_exists('IPS_GetKernelDir')) {
         return $defaults;
     }
 
-    // SystemConfiguration-Script-ID muss gesetzt werden.
-    if (KI_SYSTEM_CONFIGURATION_SCRIPT_ID <= 0) {
-        error_log('[KIIntentParser] KI_SYSTEM_CONFIGURATION_SCRIPT_ID ist 0, verwende Default-Konfiguration.');
+    $systemConfigId = ki_find_system_configuration_script_id();
+    if ($systemConfigId <= 0) {
+        error_log('[KIIntentParser] Konnte SystemConfiguration-Script nicht finden, verwende Default-Konfiguration.');
         return $defaults;
     }
 
-    $file = @IPS_GetScriptFile(KI_SYSTEM_CONFIGURATION_SCRIPT_ID);
+    $file = @IPS_GetScriptFile($systemConfigId);
     if ($file === false || $file === '') {
         error_log('[KIIntentParser] Konnte SystemConfiguration-Script-Datei nicht ermitteln, verwende Default-Konfiguration.');
         return $defaults;
@@ -94,7 +137,7 @@ function ki_log(string $message): void
 }
 
 /**
- * API-Key aus Konfiguration oder IPS-Variable holen.
+ * API-Key aus Konfiguration holen.
  */
 function ki_get_api_key(array $cfg): string
 {
