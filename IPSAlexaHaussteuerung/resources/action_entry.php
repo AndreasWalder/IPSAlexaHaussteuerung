@@ -903,7 +903,6 @@ function iah_build_system_configuration_internal(int $instanceId, array $props, 
         'RoomBuilderHelpers' => iah_get_child_object($helper, 'roomBuilderHelpersScript', 'RoomBuilderHelpers'),
         'DeviceMapWizard'    => iah_get_child_object($helper, 'deviceMapWizardScript', 'DeviceMapWizard'),
         'Lexikon'            => iah_get_child_object($helper, 'lexikonScript', 'Lexikon'),
-        'KINLUContextScript' => iah_get_child_object($helper, 'kiNluContextScript', 'KI_NLU_Context'),
         'ACTION_VAR'         => iah_get_child_object($diag, 'action', 'action'),
         'DEVICE_VAR'         => iah_get_child_object($diag, 'device', 'device'),
         'ROOM_VAR'           => iah_get_child_object($diag, 'room', 'room'),
@@ -974,9 +973,6 @@ function iah_build_system_configuration(int $instanceId): array
             }
             if (empty($var['KIIntentParserScript'])) {
                 $var['KIIntentParserScript'] = iah_get_child_object($helper ?? 0, 'kiIntentParserScript', 'KI_IntentParser');
-            }
-            if (empty($var['KINLUContextScript'])) {
-                $var['KINLUContextScript'] = iah_get_child_object($helper ?? 0, 'kiNluContextScript', 'KI_NLU_Context');
             }
             return [
                 'var' => $var,

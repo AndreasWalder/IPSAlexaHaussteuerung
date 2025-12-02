@@ -592,7 +592,6 @@ class IPSAlexaHaussteuerung extends IPSModule
             ['name' => 'DeviceMapWizard', 'ident' => 'deviceMapWizardScript', 'file' => __DIR__ . '/resources/helpers/DeviceMapWizard.php'],
             ['name' => 'Lexikon', 'ident' => 'lexikonScript', 'file' => __DIR__ . '/resources/helpers/Lexikon.php'],
             ['name' => 'Normalizer', 'ident' => 'normalizerScript', 'file' => __DIR__ . '/resources/helpers/Normalizer.php'],
-            ['name' => 'KI_NLU_Context', 'ident' => 'kiNluContextScript', 'file' => __DIR__ . '/resources/helpers/KINLUContext.php'],
             ['name' => 'KI_IntentParser', 'ident' => 'kiIntentParserScript', 'file' => __DIR__ . '/resources/helpers/KIIntentParser.php'],
         ];
 
