@@ -1272,17 +1272,6 @@ function Execute($request = null)
             $log('warn', 'KIIntentParser.parse_failed', ['raw' => $kiResponseRaw]);
         };
 
-         if ($slotsEmpty && $shouldCallKiParser && $rawUserText !== '') {
-            $invokeKiParser($rawUserText, 'slots_empty');
-        }
-
-        if ($kiParserOverride !== null) {
-            if ($action1 === '') { $action1 = (string) ($kiParserOverride['action'] ?? ''); }
-            if ($device1 === '') { $device1 = (string) ($kiParserOverride['device'] ?? ''); }
-            if ($room1 === '')   { $room1   = (string) ($kiParserOverride['room'] ?? ''); }
-            if ($number1 === null && isset($kiParserOverride['number'])) { $number1 = $kiParserOverride['number']; }
-        }
-
         // ---------- Exit ----------
         $wantsExit = in_array($action1, ['ende','fertig','exit'], true) ||
             ($action1 === 'ende' && $device1 === '' && $room1 === '' && $object1 === '' && $szene1 === '' && $alles1 === '' &&
@@ -1554,31 +1543,6 @@ function Execute($request = null)
         }
         if (($APL['a1'] ?? null) === 'bewaesserung.setEnum' && is_numeric($APL['a2'] ?? null) && is_numeric($APL['a3'] ?? null)) {
             RequestAction((int)$APL['a2'], (int)$APL['a3']);
-        }
-
-        if ($domain === null && !$navForce && $shouldCallKiParser && $kiParserOverride === null) {
-            $kiInputText = $rawUserText !== '' ? trim((string)$rawUserText) : $rawSlotsToText($rawSlots);
-            $kiInputText = trim(preg_replace('/\s+/', ' ', (string)$kiInputText));
-
-            if ($kiInputText !== '') {
-                $invokeKiParser($kiInputText, 'domain_missing');
-                if ($kiParserOverride !== null) {
-                    $action = (string) ($kiParserOverride['action'] ?? $action);
-                    $device = (string) ($kiParserOverride['device'] ?? $device);
-                    $room   = (string) ($kiParserOverride['room']   ?? $room);
-                    if ($number === null && isset($kiParserOverride['number'])) {
-                        $number = $kiParserOverride['number'];
-                    }
-                }
-            }
-        }
-
-
-        if ($kiParserOverride !== null) {
-            if ($action === '') { $action = (string) ($kiParserOverride['action'] ?? ''); }
-            if ($device === '') { $device = (string) ($kiParserOverride['device'] ?? ''); }
-            if ($room === '')   { $room   = (string) ($kiParserOverride['room'] ?? ''); }
-            if ($number === null && isset($kiParserOverride['number'])) { $number = $kiParserOverride['number']; }
         }
 
         if ($domain === null && !$navForce && !empty($tabDomainSynonyms)) {
@@ -1861,6 +1825,167 @@ function Execute($request = null)
                 }
             }
             return $r;
+        }
+
+
+                // --------- Finaler KIIntentParser-Fallback, bevor wir "Wie bitte?" sagen ---------
+        if ($__route === null && $shouldCallKiParser && $kiParserOverride === null) {
+            $kiInputText = $rawUserText !== '' ? trim((string)$rawUserText) : $rawSlotsToText($rawSlots);
+            $kiInputText = trim(preg_replace('/\s+/', ' ', (string)$kiInputText));
+
+            if ($kiInputText !== '') {
+                $invokeKiParser($kiInputText, 'final_fallback');
+                if ($kiParserOverride !== null) {
+                    $action = (string) ($kiParserOverride['action'] ?? $action);
+                    $device = (string) ($kiParserOverride['device'] ?? $device);
+                    $room   = (string) ($kiParserOverride['room']   ?? $room);
+                    if ($number === null && isset($kiParserOverride['number'])) {
+                        $number = $kiParserOverride['number'];
+                    }
+
+                    // Außentemperatur über KI (z. B. "wie warm ist es draußen")
+                    $AUSSEN_ROOMS_FALLBACK = ['draußen','draussen','außen','aussen'];
+                    if ($device === 'heizung'
+                        && in_array($room, $AUSSEN_ROOMS_FALLBACK, true)
+                        && ($action === '' || $action === 'status')
+                        && !empty($V['AUSSEN_TEMP'])) {
+
+                        $text = 'Die Außentemperatur beträgt ' . GetValueFormatted($V['AUSSEN_TEMP']);
+                        $img  = 'https://media.istockphoto.com/id/1323823418/de/foto/niedrigwinkelansicht-thermometer-am-blauen-himmel-mit-sonnenschein.jpg?s=612x612&w=0&k=20&c=iFJaAAxJ_chcBz5Bnjy20HSlULU7AWIW16d_bwlB0Ss=';
+                        $resetState($V);
+                        return AskResponse::CreatePlainText($text)
+                            ->SetStandardCard($text, $text, $img, $img)
+                            ->SetRepromptPlainText('möchtest du zu Heizung oder zurück? - oder soll ich noch eine Temperatur ansagen?');
+                    }
+
+                    // Route grob aus Device ableiten (Standard-Domains)
+                    $routeKi = null;
+                    if (in_array($device, ['heizung','temperatur'], true)) {
+                        $routeKi = 'heizung';
+                    } elseif ($device === 'jalousie') {
+                        $routeKi = 'jalousie';
+                    } elseif ($device === 'licht') {
+                        $routeKi = 'licht';
+                    } elseif (in_array($device, ['lueftung','lüftung'], true)) {
+                        $routeKi = 'lueftung';
+                    } elseif (in_array($device, ['geraete','geräte'], true)) {
+                        $routeKi = 'geraete';
+                    } elseif (in_array($device, ['bewaesserung','bewässerung'], true)) {
+                        $routeKi = 'bewaesserung';
+                    }
+
+                    if ($routeKi !== null) {
+                        // Debug-Variablen aktualisieren
+                        $writeRuntimeString($V['ACTION_VAR'] ?? 0, (string)$action);
+                        $writeRuntimeString($V['DEVICE_VAR'] ?? 0, (string)$device);
+                        $writeRuntimeString($V['ROOM_VAR'] ?? 0, (string)$room);
+                        $writeRuntimeString($V['NUMBER_VAR'] ?? 0, $number === null ? '' : (string)$number);
+
+                        // rooms nur für den zweiten Versuch bauen
+                        $needsRoomsKi = in_array($routeKi, ['main_launch','heizung','jalousie','licht','lueftung','geraete','bewaesserung'], true);
+                        $roomsKi = [];
+                        if ($needsRoomsKi) {
+                            if (isset($RBUILDER['build_rooms_status']) && is_callable($RBUILDER['build_rooms_status'])) {
+                                $roomsKi = $RBUILDER['build_rooms_status']($ROOMS);
+                            }
+                        }
+
+                        $aplArgsKi = is_array($APL['args']) ? array_values($APL['args']) : [];
+                        if (isset($GLOBALS['_APL_OVERRIDE'])) {
+                            $aplArgsKi[1] = $GLOBALS['_APL_OVERRIDE'][0] ?? ($aplArgsKi[1] ?? null);
+                            $aplArgsKi[2] = $GLOBALS['_APL_OVERRIDE'][1] ?? ($aplArgsKi[2] ?? null);
+                        }
+
+                        $payloadKi = [
+                            'route'           => $routeKi,
+                            'S'               => [
+                                'RENDER_MAIN'         => $S['RENDER_MAIN'],
+                                'RENDER_HEIZUNG'      => $S['RENDER_HEIZUNG'],
+                                'RENDER_JALOUSIE'     => $S['RENDER_JALOUSIE'],
+                                'RENDER_LICHT'        => $S['RENDER_LICHT'],
+                                'RENDER_LUEFTUNG'     => $S['RENDER_LUEFTUNG'],
+                                'RENDER_GERAETE'      => $S['RENDER_GERAETE'],
+                                'RENDER_BEWAESSERUNG' => $S['RENDER_BEWAESSERUNG'],
+                                'RENDER_SETTINGS'     => $S['RENDER_SETTINGS'],
+                            ],
+                            'V'               => [
+                                'AUSSEN_TEMP'   => $V['AUSSEN_TEMP'],
+                                'INFORMATION'   => $V['INFORMATION'],
+                                'MELDUNGEN'     => $V['MELDUNGEN'],
+                                'DOMAIN_FLAG'   => $V['DOMAIN_FLAG'],
+                                'SKILL_ACTIVE'  => $V['SKILL_ACTIVE'],
+                                'Passwort'      => $V['Passwort'],
+                                'StartPage'     => $V['StartPage'],
+                                'WfcId'         => $V['WfcId'],
+                                'EnergiePageId' => $V['EnergiePageId'],
+                                'KameraPageId'  => $V['KameraPageId'],
+                                'pageMappings'  => $pageMappings,
+                                'InstanceID'    => $instanceId,
+                                'externalKey'   => $selected ?? null,
+                            ],
+                            'rooms'           => $roomsKi,
+                            'ROOMS'           => $ROOMS,
+                            'ACTIONS_ENABLED' => $ACTIONS_ENABLED,
+                            'args1v'          => $APL['a1'],
+                            'args2v'          => $APL['a2'],
+                            'args3v'          => $APL['a3'],
+                            'aplSupported'    => (bool)($aplSupported ?? false),
+                            'action'          => (string)($action ?? ''),
+                            'device'          => (string)($device ?? ''),
+                            'room'            => (string)($room ?? ''),
+                            'object'          => (string)($object ?? ''),
+                            'alles'           => (string)($alles ?? ''),
+                            'number'          => $number,
+                            'prozent'         => $prozent,
+                            'power'           => $power,
+                            'aplArgs'         => $aplArgsKi,
+                            'skillActive'     => (bool)GetValueBoolean($V['SKILL_ACTIVE']),
+                            'alexaKey'        => (string)$alexaKey,
+                            'alexa'           => (string)$alexa,
+                            'baseUrl'         => (string)$baseUrl,
+                            'source'          => (string)$source,
+                            'token'           => (string)$token,
+                            'room_raw'        => (string)$room_raw,
+                            'szene'           => (string)$szene,
+                            'CFG'             => $CFG,
+                            'rendererDomains' => array_values($rendererDomainMap),
+                            'externalPages'   => $externalPages,
+                        ];
+
+                        $resKi = json_decode(IPS_RunScriptWaitEx($S['ROUTE_ALL'], ['payload'=>json_encode($payloadKi, $JSON)]), true);
+                        if (is_array($resKi) && !empty($resKi['ok'])) {
+                            if (array_key_exists('setDomainFlag', (array)($resKi['flags'] ?? []))) {
+                                $val = $resKi['flags']['setDomainFlag'];
+                                if ($val === '') { SetValueString($V['DOMAIN_FLAG'], ""); }
+                                elseif (is_string($val)) { SetValueString($V['DOMAIN_FLAG'], $val); }
+                            }
+                            if (array_key_exists('setSkillActive', (array)($resKi['flags'] ?? []))) {
+                                $s = $resKi['flags']['setSkillActive'];
+                                if ($s === true)  { SetValueBoolean($V['SKILL_ACTIVE'], true); }
+                                if ($s === false) { SetValueBoolean($V['SKILL_ACTIVE'], false); }
+                            }
+
+                            $dataKi       = (array)$resKi['data'];
+                            $tokenAplKi   = (string)($resKi['aplToken'] ?? 'hv-main');
+                            $endSessionKi = !empty($dataKi['endSession']);
+                            $speechKi     = (string)($dataKi['speech'] ?? '');
+                            $repromptKi   = (string)($dataKi['reprompt'] ?? '');
+                            $rKi = $endSessionKi
+                                ? TellResponse::CreatePlainText($speechKi)
+                                : AskResponse::CreatePlainText($speechKi)->SetRepromptPlainText($repromptKi);
+                            $makeCard($rKi, $dataKi['card'] ?? []);
+                            $applyApl($rKi, $dataKi['apl'] ?? [], $tokenAplKi);
+
+                            if (!empty($dataKi['directives']) && is_array($dataKi['directives'])) {
+                                foreach ($dataKi['directives'] as $d) {
+                                    $rKi->AddDirective($d);
+                                }
+                            }
+                            return $rKi;
+                        }
+                    }
+                }
+            }
         }
 
         // --------- Fallback ---------
