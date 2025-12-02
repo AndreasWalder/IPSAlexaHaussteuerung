@@ -7,21 +7,70 @@ declare(strict_types=1);
  * ============================================================
  *
  * Änderungsverlauf
+ * 2025-12-02: v1.6 — Konfiguration aus SystemConfiguration (var.KIIntentParser) laden
  * 2025-11-24: v1.5 — Stabiler Rate-Limit / Loop-Schutz über Hilfs-Variable (funktioniert auch bei "Ausführen")
- * 2025-11-24: v1.4 — Rate-Limit zentral in ki_parse_intent (gilt auch für Testmodus)
+ * 2025-11-24: v1.4 — Rate-Limit zentral in ki_parse_intent (gilt auch bei Testmodus)
  * 2025-11-24: v1.3 — Rate-Limit nur über LastExecute des Skripts (keine Zusatzvariable)
  * 2025-11-24: v1.2 — Rate-Limit / Loop-Schutz (max. 1 Ausführung pro X Sekunden)
  * 2025-11-24: v1.1 — Testmodus bei Direkt-Ausführung im Editor
  * 2025-11-24: v1   — Erste Version (OpenAI-Chat + JSON-Intent-Parser)
  */
 
-$CFG = [
-    'enabled'       => true,
-    'api_key'        => '',
-    'model'          => 'gpt-4.1-mini',
-    'log_channel'    => 'Alexa',
-    'rate_limit_sec' => 60,
-];
+/**
+ * Script-ID der zentralen SystemConfiguration.
+ * HINWEIS: Bitte hier die echte Script-ID deiner SystemConfiguration eintragen.
+ */
+const KI_SYSTEM_CONFIGURATION_SCRIPT_ID = 36265;
+
+/**
+ * Lädt das KIIntentParser-Config-Array aus der SystemConfiguration (var.KIIntentParser).
+ * Fällt auf lokale Defaults zurück, wenn SystemConfiguration nicht verfügbar ist.
+ */
+function ki_load_cfg_from_system_configuration(): array
+{
+    $defaults = [
+        'enabled'        => true,
+        'api_key'        => '',
+        'model'          => 'gpt-4.1-mini',
+        'log_channel'    => 'Alexa',
+        'rate_limit_sec' => 60,
+    ];
+
+    // Außerhalb von IP-Symcon (z. B. CLI-Test): einfach Defaults verwenden.
+    if (!function_exists('IPS_GetKernelDir')) {
+        return $defaults;
+    }
+
+    // SystemConfiguration-Script-ID muss gesetzt werden.
+    if (KI_SYSTEM_CONFIGURATION_SCRIPT_ID <= 0) {
+        error_log('[KIIntentParser] KI_SYSTEM_CONFIGURATION_SCRIPT_ID ist 0, verwende Default-Konfiguration.');
+        return $defaults;
+    }
+
+    $file = @IPS_GetScriptFile(KI_SYSTEM_CONFIGURATION_SCRIPT_ID);
+    if ($file === false || $file === '') {
+        error_log('[KIIntentParser] Konnte SystemConfiguration-Script-Datei nicht ermitteln, verwende Default-Konfiguration.');
+        return $defaults;
+    }
+
+    $path = IPS_GetKernelDir() . 'scripts/' . $file;
+    $sc   = @include $path;
+
+    if (!is_array($sc) || !isset($sc['var']) || !is_array($sc['var'])) {
+        error_log('[KIIntentParser] SystemConfiguration hat unerwartetes Format, verwende Default-Konfiguration.');
+        return $defaults;
+    }
+
+    if (!isset($sc['var']['KIIntentParser']) || !is_array($sc['var']['KIIntentParser'])) {
+        error_log('[KIIntentParser] SystemConfiguration[var]["KIIntentParser"] fehlt, verwende Default-Konfiguration.');
+        return $defaults;
+    }
+
+    return array_merge($defaults, $sc['var']['KIIntentParser']);
+}
+
+// Basis-Konfiguration aus SystemConfiguration laden.
+$CFG = ki_load_cfg_from_system_configuration();
 
 // Allow overrides via IPS_RunScriptWaitEx(['cfg' => [...]]).
 if (isset($_IPS) && is_array($_IPS) && array_key_exists('cfg', $_IPS) && is_array($_IPS['cfg'])) {
@@ -35,7 +84,7 @@ function ki_log(string $message): void
 {
     global $CFG;
 
-    $prefix = $CFG['log_channel'] ?? 'KIIntentParser';
+    $prefix = isset($CFG['log_channel']) && $CFG['log_channel'] !== '' ? $CFG['log_channel'] : 'KIIntentParser';
 
     if (function_exists('IPS_LogMessage')) {
         IPS_LogMessage($prefix, $message);
@@ -309,6 +358,7 @@ if (isset($_IPS) && is_array($_IPS) && array_key_exists('text', $_IPS)) {
     return;
 }
 
+// Testmodus bei Direkt-Ausführung im Editor.
 $testText   = 'mach bitte das licht im wohnzimmer auf 50 prozent an';
 $testResult = ki_parse_intent($testText, $CFG);
 
