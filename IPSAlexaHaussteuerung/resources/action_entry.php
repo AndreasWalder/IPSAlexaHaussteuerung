@@ -1272,7 +1272,7 @@ function Execute($request = null)
             $log('warn', 'KIIntentParser.parse_failed', ['raw' => $kiResponseRaw]);
         };
 
-        if ($slotsEmpty && $shouldCallKiParser && $rawUserText !== '') {
+         if ($slotsEmpty && $shouldCallKiParser && $rawUserText !== '') {
             $invokeKiParser($rawUserText, 'slots_empty');
         }
 
@@ -1288,6 +1288,7 @@ function Execute($request = null)
             if ($kiInputText === '') {
                 $kiInputText = $rawSlotsToText($rawSlots);
             }
+
 
             $kiInputText = trim(preg_replace('/\s+/', ' ', $kiInputText));
 
