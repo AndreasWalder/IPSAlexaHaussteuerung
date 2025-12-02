@@ -1,8 +1,6 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/KINLUContext.php';
-
 /**
  * ============================================================
  * KI INTENT PARSER — OpenAI-basierte Anfrage-Analyse
