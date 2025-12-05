@@ -1651,7 +1651,12 @@ function Execute($request = null)
         }
 
         if ($action === 'wer bist du') {
-            return AskResponse::CreatePlainText('Ich bin die Alexa für ' . $alexa)->SetRepromptPlainText('wie kann ich helfen?');
+            return AskResponse::CreatePlainText('Ich bin die Alexa ' . $alexa)->SetRepromptPlainText('wie kann ich helfen?');
+        }
+
+        if ($action === 'frage' && $device === '') {
+            $device = 'temperatur';
+            $domain = $domain ?? 'heizung';
         }
 
         $isPlainGetHaus = (
