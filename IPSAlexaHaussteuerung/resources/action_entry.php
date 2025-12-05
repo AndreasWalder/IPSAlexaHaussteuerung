@@ -993,6 +993,7 @@ function iah_build_system_configuration(int $instanceId): array
 
 function Execute($request = null)
 {
+    IPS_LogMessage('Alexa', 'Start');
     // --- Konstanten für Wizard-Status ---
     $STAGE_AWAIT_NAME = 'await_name';
     $STAGE_AWAIT_APL  = 'await_apl';
@@ -1653,7 +1654,7 @@ function Execute($request = null)
             return AskResponse::CreatePlainText('Ich bin die Alexa für ' . $alexa)->SetRepromptPlainText('wie kann ich helfen?');
         }
 
-         $isPlainGetHaus = (
+        $isPlainGetHaus = (
             $intentName === 'GetHaus'
             && $action === ''
             && $device === ''
@@ -1662,7 +1663,9 @@ function Execute($request = null)
             && $szene === ''
             && $alles === ''
             && (($APL['a1'] ?? null) === null)
+            && trim((string)$rawUserText) === ''
         );
+
 
         // ===== Tabellen-Router =====
         $ROUTES = [
