@@ -65,6 +65,8 @@ function gr_match_who_are_your_creator(string $rawAction, string $rawText): bool
         'wer hat dich erfunden',
         'wer hat dich programmiert',
         'wer hat dich erschaffen',
+        'wer ist Andreas',
+        'kennst du Andreas',
     ];
     return $text !== '' && in_array($text, $phrases, true);
 }
