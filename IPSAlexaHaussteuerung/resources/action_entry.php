@@ -38,6 +38,36 @@
 
 const IAH_MODULE_GUID = '{F528D4D0-5729-4315-AE88-9BBABDBD0392}';
 
+function gr_match_who_are_you(string $rawAction, string $rawText): bool
+{
+    $text = mb_strtolower(trim($rawAction !== '' ? $rawAction : $rawText));
+    $phrases = [
+        'wer bist du',
+        'was bist du',
+        'wer seid ihr',
+        'wer genau bist du',
+        'wer bist du eigentlich',
+        'wie heißt du',
+        'wie heisst du',
+        'sage mir deinen namen',
+        'mit wem spreche ich',
+        'in welchem raum bin ich',
+    ];
+    return $text !== '' && in_array($text, $phrases, true);
+}
+
+function gr_match_who_are_your_creator(string $rawAction, string $rawText): bool
+{
+    $text = mb_strtolower(trim($rawAction !== '' ? $rawAction : $rawText));
+    $phrases = [
+        'wer ist dein erfinder',
+        'wer ist dein programmierer',
+        'wer hat dich erfunden',
+        'wer hat dich programmiert',
+    ];
+    return $text !== '' && in_array($text, $phrases, true);
+}
+
 function iah_get_instance_id(): int
 {
     $self = (int) ($_IPS['SELF'] ?? 0);
@@ -1650,8 +1680,14 @@ function Execute($request = null)
             $alexaKey = $fallback;
         }
 
-        if ($action === 'wer bist du') {
-            return AskResponse::CreatePlainText('Ich bin die Alexa ' . $alexa)->SetRepromptPlainText('wie kann ich helfen?');
+        if (gr_match_who_are_you($rawSlots['a'] ?? '', $rawText ?? '')) {
+            return AskResponse::CreatePlainText('Ich bin die Alexa ' . $alexa)
+                ->SetRepromptPlainText('wie kann ich helfen?');
+        }
+
+        if (gr_match_who_are_your_creator($rawSlots['a'] ?? '', $rawText ?? '')) {
+            return AskResponse::CreatePlainText('Andreas, der geniale Programmierer, hat mich erschaffen um im Smart Home zu unterstützen.')
+                ->SetRepromptPlainText('wie kann ich helfen?');
         }
 
         if ($action === 'frage' && $device === '') {
