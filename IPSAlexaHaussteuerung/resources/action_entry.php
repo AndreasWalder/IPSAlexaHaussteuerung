@@ -741,7 +741,7 @@ function iah_build_renderer_domain_list(array $props): array
 
 function iah_build_logger(array $props): callable
 {
-    $rank = ['error' => 0, 'warn' => 1, 'info' => 2, 'debug' => 3];
+    $rank = ['off' => 0, 'warn' => 1, 'info' => 2, 'debug' => 3];
     $level = strtolower((string) ($props['LOG_LEVEL'] ?? 'info'));
 
     return static function (string $lvl, string $msg, array $ctx = []) use ($rank, $level): void {
@@ -1056,8 +1056,25 @@ function iah_build_system_configuration(int $instanceId): array
 
 function Execute($request = null)
 {
-    IPS_LogMessage('Alexa', 'Start');
-    
+    // LOG_LEVEL früh auslesen, damit die Top-Level-Logs gesteuert werden können
+    $instanceIdEarly = iah_get_instance_id();
+    $propsEarly = iah_get_instance_properties($instanceIdEarly);
+    $LOG_LEVEL_EARLY = strtolower((string) ($propsEarly['LOG_LEVEL'] ?? 'info'));
+    $GLOBALS['__ALEXA_LOG_LEVEL'] = $LOG_LEVEL_EARLY;
+    $rankEarly = ['off' => 0, 'warn' => 1, 'info' => 2, 'debug' => 3];
+
+    $logEarly = static function (string $lvl, string $msg) use ($LOG_LEVEL_EARLY, $rankEarly): void {
+        $target = $rankEarly[$LOG_LEVEL_EARLY] ?? 2;
+        $current = $rankEarly[$lvl] ?? 2;
+        if ($current > $target) {
+            return;
+        }
+        IPS_LogMessage('Alexa', $msg);
+    };
+
+    // "Start" nur bei LOG_LEVEL=debug
+    $logEarly('debug', 'Start');
+
     try {
         $rawData = null;
 
@@ -1070,12 +1087,18 @@ function Execute($request = null)
             }
         }
 
-        IPS_LogMessage(
-            'Alexa',
-            'REQUEST_RAW ' . json_encode($rawData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
-        );
+        // REQUEST_RAW immer loggen bei LOG_LEVEL info + debug
+        if (in_array($LOG_LEVEL_EARLY, ['info', 'debug'], true)) {
+            IPS_LogMessage(
+                'Alexa',
+                'REQUEST_RAW ' . json_encode($rawData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+            );
+        }
     } catch (Throwable $e) {
-        IPS_LogMessage('Alexa', 'REQUEST_RAW error: ' . $e->getMessage());
+        // Fehler im REQUEST_RAW-Block nur bei LOG_LEVEL debug loggen
+        if ($LOG_LEVEL_EARLY === 'debug') {
+            IPS_LogMessage('Alexa', 'REQUEST_RAW error: ' . $e->getMessage());
+        }
     }
 
     // --- Konstanten für Wizard-Status ---
@@ -1086,12 +1109,14 @@ function Execute($request = null)
         $JSON = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
 
         if ($request === null) {
-            IPS_LogMessage('Alexa', 'Script manuell ausgeführt – kein Request vorhanden. Beende ohne Fehler.');
+            if ($LOG_LEVEL_EARLY === 'debug') {
+                $logEarly('debug', 'Script manuell ausgeführt – kein Request vorhanden. Beende ohne Fehler.');
+            }
             return;
         }
 
         // --------- Config laden ---------
-        $instanceId = iah_get_instance_id();
+        $instanceId = $instanceIdEarly > 0 ? $instanceIdEarly : iah_get_instance_id();
         $CFG = iah_build_system_configuration($instanceId);
         if (!empty($CFG['missing'])) {
             return TellResponse::CreatePlainText('Fehler: Folgende IDs fehlen oder konnten nicht erzeugt werden: ' . implode(', ', $CFG['missing']));
@@ -1172,27 +1197,26 @@ function Execute($request = null)
         }
 
         $CORE = require IPS_GetScriptFile((int)$V['CoreHelpers']);
-            $applyApl       = $CORE['applyApl'];
-            $makeCard       = $CORE['makeCard'];
-            $maskToken      = $CORE['maskToken'];
-            $matchDomain    = $CORE['matchDomain'];
-            $resetState     = $CORE['resetState'];
-            $getDomainPref  = $CORE['getDomainPref'];
-            $mkCid          = $CORE['mkCid'];
-            $logExt         = $CORE['logExt'];
-            $getSlotCH      = $CORE['getSlot'];
-            $parseAplArgs   = $CORE['parseAplArgs'];
-            $roomSpokenCH   = $CORE['room_key_by_spoken'];
-            $domainFromAPL  = $CORE['domainFromAplArgs'];
-            $buildTabsCache = $CORE['buildTabsCache'];
-            $findTabIdCH    = $CORE['findTabId'];
-            $fallbackTabCH  = $CORE['fallbackTabDomain'];
-            $extractNumber  = $CORE['extractNumberOnly'];
-            $mergeDecimal   = $CORE['maybeMergeDecimalFromPercent'];
+        $applyApl       = $CORE['applyApl'];
+        $makeCard       = $CORE['makeCard'];
+        $maskToken      = $CORE['maskToken'];
+        $matchDomain    = $CORE['matchDomain'];
+        $resetState     = $CORE['resetState'];
+        $getDomainPref  = $CORE['getDomainPref'];
+        $mkCid          = $CORE['mkCid'];
+        $logExt         = $CORE['logExt'];
+        $getSlotCH      = $CORE['getSlot'];
+        $parseAplArgs   = $CORE['parseAplArgs'];
+        $roomSpokenCH   = $CORE['room_key_by_spoken'];
+        $domainFromAPL  = $CORE['domainFromAplArgs'];
+        $buildTabsCache = $CORE['buildTabsCache'];
+        $findTabIdCH    = $CORE['findTabId'];
+        $fallbackTabCH  = $CORE['fallbackTabDomain'];
+        $extractNumber  = $CORE['extractNumberOnly'];
+        $mergeDecimal   = $CORE['maybeMergeDecimalFromPercent'];
 
-            // Slot-Helfer: bevorzugt die Slot-ID aus den Resolutions (Canonical-Value)
-                    // Slot-Helfer: bevorzugt die Slot-ID aus den Resolutions (Canonical-Value)
-            $getSlotId = static function ($request, string $slotName) use ($getSlotCH) {
+        // Slot-Helfer: bevorzugt die Slot-ID aus den Resolutions (Canonical-Value)
+        $getSlotId = static function ($request, string $slotName) use ($getSlotCH) {
             try {
                 $raw = null;
 
@@ -1239,10 +1263,12 @@ function Execute($request = null)
                     }
                 }
 
-                IPS_LogMessage(
-                    'Alexa',
-                    'SLOTSTRUCT_' . $slotName . '=' . json_encode($slotArr, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
-                );
+                if (($GLOBALS['__ALEXA_LOG_LEVEL'] ?? 'info') === 'debug') {
+                    IPS_LogMessage(
+                        'Alexa',
+                        'SLOTSTRUCT_' . $slotName . '=' . json_encode($slotArr, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                    );
+                }
 
                 if (is_array($slotArr)) {
                     $resPA = $slotArr['resolutions']['resolutionsperauthority'] ?? null;
@@ -1272,7 +1298,9 @@ function Execute($request = null)
                     }
                 }
             } catch (Throwable $e) {
-                IPS_LogMessage('Alexa', 'getSlotId(' . $slotName . ') error: ' . $e->getMessage());
+                if (($GLOBALS['__ALEXA_LOG_LEVEL'] ?? 'info') === 'debug') {
+                    IPS_LogMessage('Alexa', 'getSlotId(' . $slotName . ') error: ' . $e->getMessage());
+                }
             }
 
             return $getSlotCH($request, $slotName);
@@ -1362,7 +1390,7 @@ function Execute($request = null)
             $CFG['rendererDomains'] = $rendererDomains;
         }
 
-               // ---------- Frühe Slots (zweite Runde) ----------
+        // ---------- Frühe Slots (zweite Runde) ----------
         // 1) IDs (kommen idealerweise aus resolutionsPerAuthority->...->id)
         $action1Id  = (string)($getSlotId($request,'Action')  ?? '');
         $szene1Id   = (string)($getSlotId($request,'Szene')   ?? '');
@@ -1576,7 +1604,7 @@ function Execute($request = null)
                 $forcedDevice = $NAV_MAP[$navId]['device'];
                 $navForce     = true;
                 SetValueString($V['DOMAIN_FLAG'], $forcedDomain);
-                IPS_LogMessage('Alexa', 'UI_FORCE → navId=' . $navId . ' / domain=' . $forcedDomain . ' / device=' . $forcedDevice);
+                $log('debug', 'UI_FORCE', ['navId' => $navId, 'domain' => $forcedDomain, 'device' => $forcedDevice]);
             }
         }
 
@@ -1707,7 +1735,7 @@ function Execute($request = null)
 
         // APL args1/args2/args3 (nur Info / leichte Korrekturen)
         if ($APL['a1'] !== null) {
-            IPS_LogMessage('Alexa', "APL entity args1 parsed → " . $APL['a1']);
+            $log('debug', 'APL entity args1 parsed', ['a1' => $APL['a1']]);
             if (is_numeric($APL['a1']))       { $number = $APL['a1']; }
             else if ($lc((string)$APL['a1']) !== 'zurück') { $action = $lc((string)$APL['a1']) ?: $action; }
         }
@@ -1816,7 +1844,7 @@ function Execute($request = null)
         $writeRuntimeString($V['PROZENT_VAR'] ?? 0, $prozent === null ? '' : (string) $prozent);
         $writeRuntimeString($V['ALLES_VAR'] ?? 0, (string) $alles);
 
-         // --------- Außentemperatur-Shortcut ---------
+        // --------- Außentemperatur-Shortcut ---------
         $AUSSEN_ALIASES = ['außentemperatur','aussentemperatur'];
         $AUSSEN_ROOMS   = ['draußen','draussen','außen','aussen'];
 
@@ -1843,8 +1871,7 @@ function Execute($request = null)
 
         // --------- Device-Map Pflege ---------
         [$alexa, $aplSupported, $isNewDevice] = $DM_HELPERS['ensure']($V['DEVICE_MAP'], (string)$deviceId);
-        IPS_LogMessage("Alexa", 'Alexa: ' . $alexa);
-        IPS_LogMessage("Alexa", 'APL Supported: ' . ($aplSupported ? 'true' : 'false'));
+        $log('debug', 'AlexaDevice', ['alexa' => $alexa, 'aplSupported' => $aplSupported ? 'true' : 'false']);
 
         $writeRuntimeString($V['ALEXA_VAR'] ?? 0, (string) $alexa);
 
@@ -1873,7 +1900,7 @@ function Execute($request = null)
         $alexaKey = $roomSpokenCH($ROOMS, $alexa, $token_norm) ?? $normalizeRoom($alexa);
         if (!isset($ROOMS[$alexaKey])) {
             $fallback = isset($ROOMS['wohnzimmer']) ? 'wohnzimmer' : array_key_first($ROOMS);
-            IPS_LogMessage('Alexa', "alexaKey '".($alexaKey ?: '(leer)')."' nicht gefunden – Fallback: '$fallback'");
+            $log('debug', 'alexaKey Fallback', ['key' => $alexaKey ?: '(leer)', 'fallback' => $fallback]);
             $alexaKey = $fallback;
         }
 
@@ -2241,6 +2268,7 @@ function Execute($request = null)
         IPS_LogMessage('Alexa', "Fehler: " . $e->getMessage() . "\n" . $e->getTraceAsString());
         return TellResponse::CreatePlainText('Ein Fehler ist aufgetreten! Andreas sagen!');
     } finally {
-        IPS_LogMessage('Alexa', "Ende");
+        // "Ende" nur bei LOG_LEVEL=debug
+        $logEarly('debug', 'Ende');
     }
 }
