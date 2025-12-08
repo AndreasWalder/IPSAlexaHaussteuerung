@@ -1887,7 +1887,7 @@ function Execute($request = null)
                 ->SetRepromptPlainText('wie kann ich helfen?');
         }
 
-        if ($action === 'frage' && $device === '') {
+        if ($device === '' && ($action === 'frage' || $action1 === 'frage')) {
             $device = 'temperatur';
             $domain = $domain ?? 'heizung';
         }
@@ -2071,7 +2071,8 @@ function Execute($request = null)
 
         // --------- Finaler KIIntentParser-Fallback, bevor wir "Wie bitte?" sagen ---------
         if ($__route === null && $shouldCallKiParser && $kiParserOverride === null) {
-            $kiInputText = $rawUserText !== '' ? trim((string)$rawUserText) : $rawSlotsToText($rawSlots);
+            // NEU – benutze die originalen Slot-Werte
+            $kiInputText = $rawUserText !== '' ? trim((string)$rawUserText) : $rawSlotsToText($rawSlotValues);
             $kiInputText = trim(preg_replace('/\s+/', ' ', (string)$kiInputText));
 
             if ($kiInputText !== '') {
