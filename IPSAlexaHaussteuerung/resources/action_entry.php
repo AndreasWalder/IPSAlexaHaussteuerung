@@ -1,10 +1,11 @@
-<?php 
+<?php
 /**
  * ============================================================
  * ALEXA ACTION SCRIPT — Routing Heizung / Jalousie / Licht / Lüftung / Geräte
  * ============================================================
  *
  * Änderungsverlauf
+ * 2025-12-08: Slot-IDs aus Resolutions bevorzugt (Action/Device/Room/Szene/Object/Alles); "wer bist du" über Action-ID "werbistdu".
  * 2025-11-11: Schlank-Refactor (CoreHelpers)
  * - Slot-Zugriffe über CoreHelpers:getSlot()
  * - APL-Args über CoreHelpers:parseAplArgs()
@@ -40,7 +41,7 @@ const IAH_MODULE_GUID = '{F528D4D0-5729-4315-AE88-9BBABDBD0392}';
 
 function gr_match_who_are_you(string $rawAction, string $rawText): bool
 {
-    $text = mb_strtolower(trim($rawAction !== '' ? $rawAction : $rawText));
+    // Alle erlaubten Phrasen
     $phrases = [
         'wer bist du',
         'was bist du',
@@ -53,20 +54,48 @@ function gr_match_who_are_you(string $rawAction, string $rawText): bool
         'mit wem spreche ich',
         'in welchem raum bin ich',
     ];
-    return $text !== '' && in_array($text, $phrases, true);
+
+    // Alles, was wir prüfen wollen: Slot-Inhalt + evtl. Rohtext
+    $candidates = [];
+
+    $actionId = mb_strtolower(trim($rawAction));
+    if ($actionId !== '') {
+        $candidates[] = $actionId;
+    }
+
+    $text = mb_strtolower(trim($rawText));
+    if ($text !== '') {
+        $candidates[] = $text;
+    }
+
+    // 1. ID-Pfad: Slot-ID "werbistdu" (oder Varianten)
+    foreach ($candidates as $c) {
+        if ($c === 'werbistdu') {
+            return true;
+        }
+    }
+
+    // 2. Fallback: exakte Phrasen („wer bist du“, …)
+    foreach ($candidates as $c) {
+        if (in_array($c, $phrases, true)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 function gr_match_who_are_your_creator(string $rawAction, string $rawText): bool
 {
-    $text = mb_strtolower(trim($rawAction !== '' ? $rawAction : $rawText));
+    $text = mb_strtolower(trim($rawText !== '' ? $rawText : $rawAction));
     $phrases = [
         'wer ist dein erfinder',
         'wer ist dein programmierer',
         'wer hat dich erfunden',
         'wer hat dich programmiert',
         'wer hat dich erschaffen',
-        'wer ist Andreas',
-        'kennst du Andreas',
+        'wer ist andreas',
+        'kennst du andreas',
     ];
     return $text !== '' && in_array($text, $phrases, true);
 }
@@ -853,6 +882,7 @@ function iah_extract_raw_user_text($request): string
             foreach (['raw', 'Raw', 'text', 'Text', 'utterance', 'Utterance'] as $slotKey) {
                 if (isset($request->request->intent->slots->$slotKey) && is_object($request->request->intent->slots->$slotKey)) {
                     $slot = $request->request->intent->slots->$slotKey;
+
                     $val = null;
                     if (isset($slot->value) && is_string($slot->value)) {
                         $val = trim($slot->value);
@@ -1027,6 +1057,27 @@ function iah_build_system_configuration(int $instanceId): array
 function Execute($request = null)
 {
     IPS_LogMessage('Alexa', 'Start');
+    
+    try {
+        $rawData = null;
+
+        if (is_object($request)) {
+            $ref = new ReflectionClass($request);
+            if ($ref->hasProperty('data')) {
+                $prop = $ref->getProperty('data');
+                $prop->setAccessible(true);
+                $rawData = $prop->getValue($request);
+            }
+        }
+
+        IPS_LogMessage(
+            'Alexa',
+            'REQUEST_RAW ' . json_encode($rawData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+        );
+    } catch (Throwable $e) {
+        IPS_LogMessage('Alexa', 'REQUEST_RAW error: ' . $e->getMessage());
+    }
+
     // --- Konstanten für Wizard-Status ---
     $STAGE_AWAIT_NAME = 'await_name';
     $STAGE_AWAIT_APL  = 'await_apl';
@@ -1121,23 +1172,111 @@ function Execute($request = null)
         }
 
         $CORE = require IPS_GetScriptFile((int)$V['CoreHelpers']);
-        $applyApl       = $CORE['applyApl'];
-        $makeCard       = $CORE['makeCard'];
-        $maskToken      = $CORE['maskToken'];
-        $matchDomain    = $CORE['matchDomain'];
-        $resetState     = $CORE['resetState'];
-        $getDomainPref  = $CORE['getDomainPref'];
-        $mkCid          = $CORE['mkCid'];
-        $logExt         = $CORE['logExt'];
-        $getSlotCH      = $CORE['getSlot'];
-        $parseAplArgs   = $CORE['parseAplArgs'];
-        $roomSpokenCH   = $CORE['room_key_by_spoken'];
-        $domainFromAPL  = $CORE['domainFromAplArgs'];
-        $buildTabsCache = $CORE['buildTabsCache'];
-        $findTabIdCH    = $CORE['findTabId'];
-        $fallbackTabCH  = $CORE['fallbackTabDomain'];
-        $extractNumber  = $CORE['extractNumberOnly'];
-        $mergeDecimal   = $CORE['maybeMergeDecimalFromPercent'];
+            $applyApl       = $CORE['applyApl'];
+            $makeCard       = $CORE['makeCard'];
+            $maskToken      = $CORE['maskToken'];
+            $matchDomain    = $CORE['matchDomain'];
+            $resetState     = $CORE['resetState'];
+            $getDomainPref  = $CORE['getDomainPref'];
+            $mkCid          = $CORE['mkCid'];
+            $logExt         = $CORE['logExt'];
+            $getSlotCH      = $CORE['getSlot'];
+            $parseAplArgs   = $CORE['parseAplArgs'];
+            $roomSpokenCH   = $CORE['room_key_by_spoken'];
+            $domainFromAPL  = $CORE['domainFromAplArgs'];
+            $buildTabsCache = $CORE['buildTabsCache'];
+            $findTabIdCH    = $CORE['findTabId'];
+            $fallbackTabCH  = $CORE['fallbackTabDomain'];
+            $extractNumber  = $CORE['extractNumberOnly'];
+            $mergeDecimal   = $CORE['maybeMergeDecimalFromPercent'];
+
+            // Slot-Helfer: bevorzugt die Slot-ID aus den Resolutions (Canonical-Value)
+                    // Slot-Helfer: bevorzugt die Slot-ID aus den Resolutions (Canonical-Value)
+            $getSlotId = static function ($request, string $slotName) use ($getSlotCH) {
+            try {
+                $raw = null;
+
+                if (is_object($request)) {
+                    $ref = new ReflectionClass($request);
+                    if ($ref->hasProperty('data')) {
+                        $prop = $ref->getProperty('data');
+                        $prop->setAccessible(true);
+                        $raw = $prop->getValue($request);
+                    }
+                }
+
+                if (!is_array($raw)) {
+                    return $getSlotCH($request, $slotName);
+                }
+
+                $lower = static function ($value) use (&$lower) {
+                    if (!is_array($value)) {
+                        return $value;
+                    }
+                    $out = [];
+                    foreach ($value as $k => $v) {
+                        $out[mb_strtolower((string)$k, 'UTF-8')] = $lower($v);
+                    }
+                    return $out;
+                };
+
+                $root   = $lower($raw);
+                $sName  = mb_strtolower($slotName, 'UTF-8');
+                $slotArr = null;
+
+                if (isset($root['request']['intent']['slots'][$sName])) {
+                    $slotArr = $root['request']['intent']['slots'][$sName];
+                } elseif (isset($root['request']['intent']['slots']) && is_array($root['request']['intent']['slots'])) {
+                    foreach ($root['request']['intent']['slots'] as $entry) {
+                        if (!is_array($entry)) {
+                            continue;
+                        }
+                        $name = mb_strtolower((string)($entry['name'] ?? ''), 'UTF-8');
+                        if ($name === $sName) {
+                            $slotArr = $entry;
+                            break;
+                        }
+                    }
+                }
+
+                IPS_LogMessage(
+                    'Alexa',
+                    'SLOTSTRUCT_' . $slotName . '=' . json_encode($slotArr, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                );
+
+                if (is_array($slotArr)) {
+                    $resPA = $slotArr['resolutions']['resolutionsperauthority'] ?? null;
+                    if (is_array($resPA)) {
+                        foreach ($resPA as $entry) {
+                            $values = $entry['values'] ?? [];
+                            if (!is_array($values)) {
+                                continue;
+                            }
+                            foreach ($values as $valWrap) {
+                                $v = $valWrap['value'] ?? null;
+                                if (!is_array($v)) {
+                                    continue;
+                                }
+                                if (!empty($v['id'])) {
+                                    return (string)$v['id'];
+                                }
+                                if (!empty($v['name'])) {
+                                    return (string)$v['name'];
+                                }
+                            }
+                        }
+                    }
+
+                    if (!empty($slotArr['id'])) {
+                        return (string)$slotArr['id'];
+                    }
+                }
+            } catch (Throwable $e) {
+                IPS_LogMessage('Alexa', 'getSlotId(' . $slotName . ') error: ' . $e->getMessage());
+            }
+
+            return $getSlotCH($request, $slotName);
+        };
 
         // Helfer-Skripte
         $DM_HELPERS = require IPS_GetScriptFile((int)$V['DeviceMap']);
@@ -1223,18 +1362,73 @@ function Execute($request = null)
             $CFG['rendererDomains'] = $rendererDomains;
         }
 
-        // ---------- Frühe Slots (für Exit) ----------
-        $action1  = $lc($getSlotCH($request,'Action')  ?? '');
-        $szene1   = $lc($getSlotCH($request,'Szene')   ?? '');
-        $device1  = $lc($getSlotCH($request,'Device')  ?? '');
-        $room1    = $lc($getSlotCH($request,'Room')    ?? '');
-        $object1  = $lc($getSlotCH($request,'Object')  ?? '');
-        $number1  = $getSlotCH($request,'Number')      ?? null;
-        $prozent1 = $getSlotCH($request,'Prozent')     ?? null;
-        $alles1   = $lc($getSlotCH($request,'Alles')   ?? '');
+               // ---------- Frühe Slots (zweite Runde) ----------
+        // 1) IDs (kommen idealerweise aus resolutionsPerAuthority->...->id)
+        $action1Id  = (string)($getSlotId($request,'Action')  ?? '');
+        $szene1Id   = (string)($getSlotId($request,'Szene')   ?? '');
+        $device1Id  = (string)($getSlotId($request,'Device')  ?? '');
+        $room1Id    = (string)($getSlotId($request,'Room')    ?? '');
+        $object1Id  = (string)($getSlotId($request,'Object')  ?? '');
+        $alles1Id   = (string)($getSlotId($request,'Alles')   ?? '');
 
-        $rawSlots = ["a"=>$action1,"s"=>$szene1,"d"=>$device1,"r"=>$room1,"o"=>$object1,"n"=>$number1,"p"=>$prozent1,"al"=>$alles1];
-        $log('debug','RawSlots', $rawSlots);
+        // 2) Rohwerte (Slot-Value aus CoreHelpers:getSlot)
+        $action1Val  = (string)($getSlotCH($request,'Action')  ?? '');
+        $szene1Val   = (string)($getSlotCH($request,'Szene')   ?? '');
+        $device1Val  = (string)($getSlotCH($request,'Device')  ?? '');
+        $room1Val    = (string)($getSlotCH($request,'Room')    ?? '');
+        $object1Val  = (string)($getSlotCH($request,'Object')  ?? '');
+        $alles1Val   = (string)($getSlotCH($request,'Alles')   ?? '');
+        $number1     = $getSlotCH($request,'Number')   ?? null;
+        $prozent1    = $getSlotCH($request,'Prozent')  ?? null;
+
+        // 3) Normalisierte Werte (wie bisher) – werden im weiteren Code benutzt
+        $action1  = $lc($action1Id);
+        $szene1   = $lc($szene1Id);
+        $device1  = $lc($device1Id);
+        $room1    = $lc($room1Id);
+        $object1  = $lc($object1Id);
+        $alles1   = $lc($alles1Id);
+
+        $rawSlots = [
+            "a"  => $action1,
+            "s"  => $szene1,
+            "d"  => $device1,
+            "r"  => $room1,
+            "o"  => $object1,
+            "n"  => $number1,
+            "p"  => $prozent1,
+            "al" => $alles1,
+        ];
+
+        $rawSlotIds = [
+            "a"  => $action1Id,
+            "s"  => $szene1Id,
+            "d"  => $device1Id,
+            "r"  => $room1Id,
+            "o"  => $object1Id,
+            "n"  => $number1,
+            "p"  => $prozent1,
+            "al" => $alles1Id,
+        ];
+
+        $rawSlotValues = [
+            "a"  => $action1Val,
+            "s"  => $szene1Val,
+            "d"  => $device1Val,
+            "r"  => $room1Val,
+            "o"  => $object1Val,
+            "n"  => $number1,
+            "p"  => $prozent1,
+            "al" => $alles1Val,
+        ];
+
+        // Logging:
+        // RawSlots     = normalisiert (für KI/Fallback)
+        // RawSlotIds   = das, was getSlotId liefert (also z.B. "werbistdu")
+        // RawSlotValues= der originale Slot-Value (z.B. "wer bist du")
+        $log('debug','RawSlots',      $rawSlots);
+        $log('debug','RawSlotIds',    $rawSlotIds);
+        $log('debug','RawSlotValues', $rawSlotValues);
 
         $rawSlotsToText = static function (array $slots): string {
             $orderedKeys = ['a', 's', 'd', 'r', 'o', 'al'];
@@ -1318,7 +1512,7 @@ function Execute($request = null)
 
         // ---------- Launch/Zurück ----------
         $IS_LAUNCH = $request->IsLaunchRequest();
-        $IS_BACK   = ($lc($getSlotCH($request,'Action') ?? '') === 'zurück');
+        $IS_BACK   = ($lc($getSlotId($request,'Action') ?? '') === 'zurück');
         if ($IS_LAUNCH || $IS_BACK) { $resetState($V); }
 
         // ---------- APL_ARGS zentral ----------
@@ -1410,10 +1604,10 @@ function Execute($request = null)
 
         // --------- Hauptslots (zweite Runde) ---------
         $deviceId = $request->GetDeviceId();
-        $action   = $lc($getSlotCH($request,'Action') ?? '');
-        $szene    = $lc($getSlotCH($request,'Szene')  ?? '');
-        $device   = $lc($getSlotCH($request,'Device') ?? '');
-        $room     = $lc($getSlotCH($request,'Room')   ?? '');
+        $action   = $lc($getSlotId($request,'Action') ?? '');
+        $szene    = $lc($getSlotId($request,'Szene')  ?? '');
+        $device   = $lc($getSlotId($request,'Device') ?? '');
+        $room     = $lc($getSlotId($request,'Room')   ?? '');
 
         // Etagen normalisieren
         $room = preg_replace('/(*UTF8)(*UCP)(?<!\pL)(untergeschoss|ug)(?!\pL)/u', 'keller', $room);
@@ -1421,10 +1615,10 @@ function Execute($request = null)
         $room = preg_replace('/(*UTF8)(*UCP)(?<!\pL)erdgeschoss(?!\pL)/u', 'eg', $room);
         $room = trim(preg_replace('/\s{2,}/u', ' ', $room));
 
-        $object  = $lc($getSlotCH($request,'Object') ?? '');
+        $object  = $lc($getSlotId($request,'Object') ?? '');
         $number  = $getSlotCH($request,'Number') ?? null;
         $prozent = $getSlotCH($request,'Prozent') ?? null;
-        $alles   = $lc($getSlotCH($request,'Alles')  ?? '');
+        $alles   = $lc($getSlotId($request,'Alles')  ?? '');
 
         if (isset($kiParserOverride)) {
             if ($action === '') { $action = (string) ($kiParserOverride['action'] ?? ''); }
@@ -1683,12 +1877,12 @@ function Execute($request = null)
             $alexaKey = $fallback;
         }
 
-        if (gr_match_who_are_you($rawSlots['a'] ?? '', $rawText ?? '')) {
+        if (gr_match_who_are_you($rawSlots['a'] ?? '', $rawUserText ?? '')) {
             return AskResponse::CreatePlainText('Ich bin die Alexa ' . $alexa)
                 ->SetRepromptPlainText('wie kann ich helfen?');
         }
 
-        if (gr_match_who_are_your_creator($rawSlots['a'] ?? '', $rawText ?? '')) {
+        if (gr_match_who_are_your_creator($rawSlots['a'] ?? '', $rawUserText ?? '')) {
             return AskResponse::CreatePlainText('Andreas, der geniale Programmierer, hat mich erschaffen um im Smart Home zu unterstützen.')
                 ->SetRepromptPlainText('wie kann ich helfen?');
         }
@@ -1875,7 +2069,7 @@ function Execute($request = null)
         }
 
 
-                // --------- Finaler KIIntentParser-Fallback, bevor wir "Wie bitte?" sagen ---------
+        // --------- Finaler KIIntentParser-Fallback, bevor wir "Wie bitte?" sagen ---------
         if ($__route === null && $shouldCallKiParser && $kiParserOverride === null) {
             $kiInputText = $rawUserText !== '' ? trim((string)$rawUserText) : $rawSlotsToText($rawSlots);
             $kiInputText = trim(preg_replace('/\s+/', ' ', (string)$kiInputText));
