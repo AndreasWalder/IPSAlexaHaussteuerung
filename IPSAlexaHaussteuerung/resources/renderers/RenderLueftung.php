@@ -118,7 +118,7 @@ $resolveIcon = static function(?string $raw) use($baseUrl,$token,$iconUrl): ?str
 /* =========================
    Floors (order/labels/ui)
    ========================= */
-$GF = is_array($CATALOG['global']['floors'] ?? null) ? $CATALOG['global']['floors'] : [];
+$GF = is_array($CATALOG['global']['domains']['floors'] ?? null) ? $CATALOG['global']['domains']['floors'] : [];
 $floorOrder=[]; if(isset($GF['order'])&&is_array($GF['order'])) foreach($GF['order'] as $fk) $floorOrder[]=strtoupper((string)$fk);
 $floorLabels=[]; if(isset($GF['labels'])&&is_array($GF['labels'])) foreach($GF['labels'] as $fk=>$lab) $floorLabels[strtoupper((string)$fk)]=(string)$lab;
 $floorSectionStyle=['height'=>'3.4vw','fontSize'=>'1.6vw','bold'=>false,'padY'=>'0.8vw']; if(isset($GF['section'])&&is_array($GF['section'])) $floorSectionStyle=array_merge($floorSectionStyle,$GF['section']);
@@ -163,7 +163,7 @@ $appendFanFlat = static function(array $row, string $roomKey = '', string $roomD
     ];
 };
 
-$LGL = is_array($CATALOG['global']['lueftung'] ?? null) ? $CATALOG['global']['lueftung'] : [];
+$LGL = is_array($CATALOG['global']['domains']['lueftung'] ?? null) ? $CATALOG['global']['domains']['lueftung'] : [];
 $centralTitle   = (string)($LGL['central_title'] ?? 'Zentrale Lüftung');
 $globalColors   = is_array($LGL['status_colors'] ?? null) ? $LGL['status_colors'] : ['on'=>'@pillOpen','off'=>'@pillClose','boost'=>'@pillMid'];
 $defaultButtons = is_array($LGL['default_buttons'] ?? null) ? $LGL['default_buttons'] : [

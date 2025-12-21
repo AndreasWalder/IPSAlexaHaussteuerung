@@ -151,7 +151,7 @@ $fail = static function(string $text) use ($JFLAGS) {
 /* =========================
    Floors
    ========================= */
-$GF = is_array($CATALOG['global']['floors'] ?? null) ? $CATALOG['global']['floors'] : [];
+$GF = is_array($CATALOG['global']['domains']['floors'] ?? null) ? $CATALOG['global']['domains']['floors'] : [];
 $floorOrder = [];
 if (isset($GF['order']) && is_array($GF['order'])) foreach ($GF['order'] as $fk) $floorOrder[] = strtoupper((string)$fk);
 $floorLabels = [];
@@ -267,8 +267,8 @@ foreach ($CATALOG as $roomKey => $def) {
 $sceneItems = [];
 $scene2Var = [];
 $sceneTitleMap = [];
-if (isset($CATALOG['global']['licht']['scenes']) && is_array($CATALOG['global']['licht']['scenes'])) {
-    $sceneItems = $CATALOG['global']['licht']['scenes'];
+if (isset($CATALOG['global']['domains']['licht']['scenes']) && is_array($CATALOG['global']['domains']['licht']['scenes'])) {
+    $sceneItems = $CATALOG['global']['domains']['licht']['scenes'];
     foreach ($sceneItems as $key => $def) {
         $id = 'szene.'.$key;
         if (is_array($def)) {
