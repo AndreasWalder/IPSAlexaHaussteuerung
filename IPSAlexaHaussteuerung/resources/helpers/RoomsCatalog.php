@@ -1571,40 +1571,26 @@ return [
             ],
             'external_pages' => [
                 'energie' => [
-                    'title' => 'Energie Monitoring',
-                    'logo' => 'EnergyLogo.svg',
-                    'pageKey' => 'energie',
-                    'pageIdVar' => 12345,
-                    'actions' => [
-                        ['label' => 'Dashboard', 'pageKey' => 'energie'],
-                    ],
+                    'title'     => 'Energie',
+                    'logo'      => 'Energie.png',
+                    'pageKey'   => 'energie',
+                    'actions'   => ['energie'],
+                    'navs'      => ['external.energy-main', 'energie'],
                 ],
-            ],
-        ],
-        'domains' => [
-            'licht' => ['switches' => [],'dimmers' => [],'status' => []]
-        ],
-        'external_pages' => [
-            'energie' => [
-                'title'     => 'Energie',
-                'logo'      => 'Energie.png',
-                'pageKey'   => 'energie',
-                'actions'   => ['energie'],
-                'navs'      => ['external.energy-main', 'energie'],
-            ],
-            'kamera' => [
-                'title'     => 'Kamera',
-                'logo'      => 'Kamera.png',
-                'pageKey'   => 'kamera',
-                'actions'   => ['kamera'],
-                'navs'      => ['kamera.energy-main', 'kamera'],
-            ],
-            'information' => [
-                'title'     => 'Information',
-                'logo'      => 'Information.png',
-                'pageKey'   => 'information',
-                'actions'   => ['information', 'info'],
-                'navs'      => ['information'],
+                'kamera' => [
+                    'title'     => 'Kamera',
+                    'logo'      => 'Kamera.png',
+                    'pageKey'   => 'kamera',
+                    'actions'   => ['kamera'],
+                    'navs'      => ['kamera.energy-main', 'kamera'],
+                ],
+                'information' => [
+                    'title'     => 'Information',
+                    'logo'      => 'Information.png',
+                    'pageKey'   => 'information',
+                    'actions'   => ['information', 'info'],
+                    'navs'      => ['information'],
+                ],
             ],
         ],
     ]

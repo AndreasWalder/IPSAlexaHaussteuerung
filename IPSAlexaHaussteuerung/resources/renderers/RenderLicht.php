@@ -151,7 +151,9 @@ $fail = static function(string $text) use ($JFLAGS) {
 /* =========================
    Floors
    ========================= */
-$GF = is_array($CATALOG['global']['domains']['floors'] ?? null) ? $CATALOG['global']['domains']['floors'] : [];
+$GF = is_array($CATALOG['global']['domains']['floors'] ?? null)
+    ? $CATALOG['global']['domains']['floors']
+    : (is_array($CATALOG['global']['floors'] ?? null) ? $CATALOG['global']['floors'] : []);
 $floorOrder = [];
 if (isset($GF['order']) && is_array($GF['order'])) foreach ($GF['order'] as $fk) $floorOrder[] = strtoupper((string)$fk);
 $floorLabels = [];
@@ -264,11 +266,10 @@ foreach ($CATALOG as $roomKey => $def) {
 /* =========================
    Scenes mapping (global->licht->scenes)
    ========================= */
-$sceneItems = [];
+$sceneItems = $CATALOG['global']['domains']['licht']['scenes'] ?? ($CATALOG['global']['licht']['scenes'] ?? []);
 $scene2Var = [];
 $sceneTitleMap = [];
-if (isset($CATALOG['global']['domains']['licht']['scenes']) && is_array($CATALOG['global']['domains']['licht']['scenes'])) {
-    $sceneItems = $CATALOG['global']['domains']['licht']['scenes'];
+if (is_array($sceneItems)) {
     foreach ($sceneItems as $key => $def) {
         $id = 'szene.'.$key;
         if (is_array($def)) {
@@ -280,6 +281,8 @@ if (isset($CATALOG['global']['domains']['licht']['scenes']) && is_array($CATALOG
         // NEU: akzeptiere auch 'scene.' Alias für APL-Buttons
         $scene2Var['scene.'.$key] = $scene2Var[$id];
     }
+} else {
+    $sceneItems = [];
 }
 
 // NEU: Reiner Scene-Tap? -> nur quittieren, nichts schalten
@@ -667,6 +670,8 @@ if (is_string($lastSwEntity) && $lastSwEntity !== '' && $lastSwDesired !== null)
             }
         }
     }
+} else {
+    $sceneItems = [];
 }
 
 if (is_string($lastDimEntity) && $lastDimEntity !== '' && $lastDimValue !== null) {
