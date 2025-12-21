@@ -96,8 +96,12 @@ if (!function_exists('iah_build_external_page_catalog')) {
     {
         $catalog = [];
         $base = [];
-        if (isset($rooms['global']['external_pages']) && is_array($rooms['global']['external_pages'])) {
-            $base = $rooms['global']['external_pages'];
+        $globalDomains = isset($rooms['global']['domains']) && is_array($rooms['global']['domains'])
+            ? $rooms['global']['domains']
+            : [];
+
+        if (isset($globalDomains['external_pages']) && is_array($globalDomains['external_pages'])) {
+            $base = $globalDomains['external_pages'];
         }
         foreach ($base as $key => $cfg) {
             if (!is_array($cfg)) {

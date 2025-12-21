@@ -1523,50 +1523,63 @@ return [
 
 
     'global' => [
-        'jalousie' => [
-            'icon' => 'JalousieIcon.png',
-            'open_close_var' => 53051,
-            'scenes' => [
-                'og' => ['var' => 56751,'title' => 'Obergeschoss'],
-                'eg_nowg' => ['var' => 10276,'title' => 'EG ohne Wintergarten'],
-                'wg_nt' => ['var' => 57033,'title' => 'Wintergarten ohne Tür'],
-                'wz' => ['var' => 24514,'title' => 'Wohnzimmer'],
-                'all' => ['var' => 40172,'title' => 'Alle zusammen']
-            ]
-        ],
-        'licht' => [
-            'scenes' => [
-                ['section' => 'EG Szenen','sectionH' => '2.6vw','sectionFont' => '1.2vw','sectionBold' => true,'sectionPadY' => '0.4vw'],
-                ['title' => 'Led Küche','id' => 'scene.eg_led_kueche','actions' => [
-                    ['label' => 'Öffnen','color' => '#2ECC71','args' => ['GetHaus','öffnen','scene.eg_led_kueche']],
-                    ['label' => 'Schliessen','color' => '#3C414A','args' => ['GetHaus','schliessen','scene.eg_led_kueche']],
-                    ['label' => 'Party','color' => '#8A2BE2','args' => ['GetHaus','party','scene.eg_led_kueche']]
-                ]],
-                ['section' => 'OG Szenen','sectionH' => '2.6vw','sectionFont' => '1.2vw','sectionBold' => true,'sectionPadY' => '0.4vw'],
-                ['title' => 'Led Whirlpool','id' => 'scene.og_led_whirlpool','actions' => [
-                    ['label' => 'Blau','color' => '#3B82F6','args' => ['GetHaus','color','scene.og_led_whirlpool','blue']],
-                    ['label' => 'Grün','color' => '#10B981','args' => ['GetHaus','color','scene.og_led_whirlpool','green']],
-                    ['label' => 'Rot','color' => '#EF4444','args' => ['GetHaus','color','scene.og_led_whirlpool','red']],
-                    ['label' => 'Weiß','color' => '#9CA3AF','args' => ['GetHaus','color','scene.og_led_whirlpool','white']]
-                ]]
-            ]
-        ],
-        'lueftung' => [
-            'icon' => 'VentIcon.png',
-            'central_title' => 'Zentrale Lüftung',
-            'status_colors' => ['on' => '@pillOpen','off' => '@pillClose','boost' => '#ff7a00'],
-            'default_buttons' => [
-                ['label' => 'An','color' => '@pillOpen','argsTpl' => ['Ventilation','toggle','${entityId}','on']],
-                ['label' => 'Aus','color' => '@pillClose','argsTpl' => ['Ventilation','toggle','${entityId}','off']]
+        'domains' => [
+            'jalousie' => [
+                'icon' => 'JalousieIcon.png',
+                'open_close_var' => 53051,
+                'scenes' => [
+                    'og' => ['var' => 56751,'title' => 'Obergeschoss'],
+                    'eg_nowg' => ['var' => 10276,'title' => 'EG ohne Wintergarten'],
+                    'wg_nt' => ['var' => 57033,'title' => 'Wintergarten ohne Tür'],
+                    'wz' => ['var' => 24514,'title' => 'Wohnzimmer'],
+                    'all' => ['var' => 40172,'title' => 'Alle zusammen']
+                ]
             ],
-            'central' => [
-                ['title' => 'Stiegenhaus Fenster','entityId' => 'vent.central','statusText' => 'Aus','statusDetail' => 'Manuell aktiv','statusLevel' => 'off','icon' => 'stiege.png','order' => 10]
-            ]
-        ],
-        'floors' => [
-            'order' => ['Keller','EG','OG','DG','AUSSEN'],
-            'labels' => ['Keller' => 'Keller','EG' => 'EG','OG' => 'OG','DG' => 'DG','AUSSEN' => 'Außen'],
-            'section' => ['height' => '3.4vw','fontSize' => '1.4vw','bold' => false,'padY' => '0.8vw']
+            'licht' => [
+                'scenes' => [
+                    ['section' => 'EG Szenen','sectionH' => '2.6vw','sectionFont' => '1.2vw','sectionBold' => true,'sectionPadY' => '0.4vw'],
+                    ['title' => 'Led Küche','id' => 'scene.eg_led_kueche','actions' => [
+                        ['label' => 'Öffnen','color' => '#2ECC71','args' => ['GetHaus','öffnen','scene.eg_led_kueche']],
+                        ['label' => 'Schliessen','color' => '#3C414A','args' => ['GetHaus','schliessen','scene.eg_led_kueche']],
+                        ['label' => 'Party','color' => '#8A2BE2','args' => ['GetHaus','party','scene.eg_led_kueche']]
+                    ]],
+                    ['section' => 'OG Szenen','sectionH' => '2.6vw','sectionFont' => '1.2vw','sectionBold' => true,'sectionPadY' => '0.4vw'],
+                    ['title' => 'Led Whirlpool','id' => 'scene.og_led_whirlpool','actions' => [
+                        ['label' => 'Blau','color' => '#3B82F6','args' => ['GetHaus','color','scene.og_led_whirlpool','blue']],
+                        ['label' => 'Grün','color' => '#10B981','args' => ['GetHaus','color','scene.og_led_whirlpool','green']],
+                        ['label' => 'Rot','color' => '#EF4444','args' => ['GetHaus','color','scene.og_led_whirlpool','red']],
+                        ['label' => 'Weiß','color' => '#9CA3AF','args' => ['GetHaus','color','scene.og_led_whirlpool','white']]
+                    ]]
+                ]
+            ],
+            'lueftung' => [
+                'icon' => 'VentIcon.png',
+                'central_title' => 'Zentrale Lüftung',
+                'status_colors' => ['on' => '@pillOpen','off' => '@pillClose','boost' => '#ff7a00'],
+                'default_buttons' => [
+                    ['label' => 'An','color' => '@pillOpen','argsTpl' => ['Ventilation','toggle','${entityId}','on']],
+                    ['label' => 'Aus','color' => '@pillClose','argsTpl' => ['Ventilation','toggle','${entityId}','off']]
+                ],
+                'central' => [
+                    ['title' => 'Stiegenhaus Fenster','entityId' => 'vent.central','statusText' => 'Aus','statusDetail' => 'Manuell aktiv','statusLevel' => 'off','icon' => 'stiege.png','order' => 10]
+                ]
+            ],
+            'floors' => [
+                'order' => ['Keller','EG','OG','DG','AUSSEN'],
+                'labels' => ['Keller' => 'Keller','EG' => 'EG','OG' => 'OG','DG' => 'DG','AUSSEN' => 'Außen'],
+                'section' => ['height' => '3.4vw','fontSize' => '1.4vw','bold' => false,'padY' => '0.8vw']
+            ],
+            'external_pages' => [
+                'energie' => [
+                    'title' => 'Energie Monitoring',
+                    'logo' => 'EnergyLogo.svg',
+                    'pageKey' => 'energie',
+                    'pageIdVar' => 12345,
+                    'actions' => [
+                        ['label' => 'Dashboard', 'pageKey' => 'energie'],
+                    ],
+                ],
+            ],
         ],
         'domains' => [
             'licht' => ['switches' => [],'dimmers' => [],'status' => []]

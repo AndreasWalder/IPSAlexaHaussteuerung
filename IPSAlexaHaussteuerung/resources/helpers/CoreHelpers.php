@@ -199,11 +199,15 @@ $buildTabsCache = static function(array $ROOMS): array {
         }
     };
 
+    $globalDomains = isset($ROOMS['global']['domains']) && is_array($ROOMS['global']['domains'])
+        ? $ROOMS['global']['domains']
+        : [];
+
     $globalSets = [
-        $ROOMS['global']['devices']['tabs'] ?? null,
-        $ROOMS['global']['geraete']['tabs'] ?? null,
-        $ROOMS['global']['sprinkler']['tabs'] ?? null,
-        $ROOMS['global']['bewaesserung']['tabs'] ?? null,
+        $globalDomains['devices']['tabs'] ?? null,
+        $globalDomains['geraete']['tabs'] ?? null,
+        $globalDomains['sprinkler']['tabs'] ?? null,
+        $globalDomains['bewaesserung']['tabs'] ?? null,
         $ROOMS['global']['devices_tabs'] ?? null,
         $ROOMS['global']['geraete_tabs'] ?? null,
         $ROOMS['global']['sprinkler_tabs'] ?? null,
