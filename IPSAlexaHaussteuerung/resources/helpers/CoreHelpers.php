@@ -200,10 +200,10 @@ $buildTabsCache = static function(array $ROOMS): array {
     };
 
     $globalSets = [
-        $ROOMS['global']['devices']['tabs'] ?? null,
-        $ROOMS['global']['geraete']['tabs'] ?? null,
-        $ROOMS['global']['sprinkler']['tabs'] ?? null,
-        $ROOMS['global']['bewaesserung']['tabs'] ?? null,
+        $ROOMS['global']['domains']['devices']['tabs'] ?? $ROOMS['global']['devices']['tabs'] ?? null,
+        $ROOMS['global']['domains']['geraete']['tabs'] ?? $ROOMS['global']['geraete']['tabs'] ?? null,
+        $ROOMS['global']['domains']['sprinkler']['tabs'] ?? $ROOMS['global']['sprinkler']['tabs'] ?? null,
+        $ROOMS['global']['domains']['bewaesserung']['tabs'] ?? $ROOMS['global']['bewaesserung']['tabs'] ?? null,
         $ROOMS['global']['devices_tabs'] ?? null,
         $ROOMS['global']['geraete_tabs'] ?? null,
         $ROOMS['global']['sprinkler_tabs'] ?? null,

@@ -146,7 +146,9 @@ $resolveIcon = static function (?string $raw) use ($baseUrl,$token,$iconUrl,$log
     return null;
 };
 $defaultHeaterIcon = null;
-if (isset($CATALOG['global']['heizung']['icon'])) {
+if (isset($CATALOG['global']['domains']['heizung']['icon'])) {
+    $defaultHeaterIcon = $resolveIcon((string)$CATALOG['global']['domains']['heizung']['icon']);
+} elseif (isset($CATALOG['global']['heizung']['icon'])) {
     $defaultHeaterIcon = $resolveIcon((string)$CATALOG['global']['heizung']['icon']);
 }
 
@@ -189,7 +191,9 @@ if (!function_exists('readFormatted')) {
 /* =========================
    Floors aus Catalog
    ========================= */
-$GF = is_array($CATALOG['global']['floors'] ?? null) ? $CATALOG['global']['floors'] : [];
+$GF = is_array($CATALOG['global']['domains']['floors'] ?? null)
+    ? $CATALOG['global']['domains']['floors']
+    : (is_array($CATALOG['global']['floors'] ?? null) ? $CATALOG['global']['floors'] : []);
 $floorOrder = [];
 if (isset($GF['order']) && is_array($GF['order'])) {
     foreach ($GF['order'] as $fk) { $floorOrder[] = strtoupper((string)$fk); }

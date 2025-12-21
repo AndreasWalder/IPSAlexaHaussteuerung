@@ -211,8 +211,12 @@ function ki_build_nlu_context(array $roomsCatalog, array $opts = []): array
     } else {
         $deviceSet = [];
 
-        if (isset($roomsCatalog['global']) && is_array($roomsCatalog['global'])) {
-            foreach ($roomsCatalog['global'] as $domainKey => $domainDef) {
+        $globalDomains = isset($roomsCatalog['global']['domains']) && is_array($roomsCatalog['global']['domains'])
+            ? $roomsCatalog['global']['domains']
+            : [];
+
+        if ($globalDomains !== []) {
+            foreach ($globalDomains as $domainKey => $domainDef) {
                 if (!is_string($domainKey) || $domainKey === '') {
                     continue;
                 }
@@ -263,8 +267,8 @@ function ki_build_nlu_context(array $roomsCatalog, array $opts = []): array
             }
         };
 
-        if (isset($roomsCatalog['global']) && is_array($roomsCatalog['global'])) {
-            foreach ($roomsCatalog['global'] as $domainDef) {
+        if ($globalDomains !== []) {
+            foreach ($globalDomains as $domainDef) {
                 if (!is_array($domainDef) || !isset($domainDef['scenes'])) {
                     continue;
                 }
