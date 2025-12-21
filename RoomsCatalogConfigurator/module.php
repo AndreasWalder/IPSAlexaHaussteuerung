@@ -814,7 +814,8 @@ class RoomsCatalogConfigurator extends IPSModule
                 if ($v === []) {
                     continue;
                 }
-                $row[$k] = implode(', ', array_map('strval', $v));
+                $enc = json_encode($v, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                $row[$k] = $enc !== false ? $enc : '';
             } elseif (is_bool($v) || is_int($v) || is_float($v) || is_string($v)) {
                 $row[$k] = $v;
             }
@@ -1274,6 +1275,17 @@ class RoomsCatalogConfigurator extends IPSModule
                 if (in_array($k, ['selected', 'roomKey', 'roomLabel', 'domain', 'group', 'key'], true)) {
                     continue;
                 }
+
+                if (is_string($v)) {
+                    $tv = trim($v);
+                    if ($tv !== '' && ($tv[0] === '{' || $tv[0] === '[')) {
+                        $decoded = json_decode($tv, true);
+                        if (is_array($decoded)) {
+                            $v = $decoded;
+                        }
+                    }
+                }
+
                 $cfg[$k] = $v;
             }
 
@@ -1284,6 +1296,61 @@ class RoomsCatalogConfigurator extends IPSModule
                     $rooms[$roomKey]['domains'][$domain][$group] = [];
                 }
                 $rooms[$roomKey]['domains'][$domain][$group][$key] = $cfg;
+            }
+        }
+
+        $existingRoomsMap = (isset($existingCatalog['rooms']) && is_array($existingCatalog['rooms']))
+            ? $existingCatalog['rooms']
+            : $existingCatalog;
+
+        foreach ($rooms as $roomKey => $roomCfg) {
+            $base = (isset($existingRoomsMap[$roomKey]) && is_array($existingRoomsMap[$roomKey]))
+                ? $existingRoomsMap[$roomKey]
+                : [];
+
+            if ($base === []) {
+                continue;
+            }
+
+            foreach ($base as $bk => $bv) {
+                if ($bk === 'domains') {
+                    continue;
+                }
+                if (!array_key_exists($bk, $rooms[$roomKey])) {
+                    $rooms[$roomKey][$bk] = $bv;
+                }
+            }
+
+            $baseDomains = isset($base['domains']) && is_array($base['domains']) ? $base['domains'] : [];
+            if ($baseDomains === []) {
+                continue;
+            }
+
+            if (!isset($rooms[$roomKey]['domains']) || !is_array($rooms[$roomKey]['domains'])) {
+                $rooms[$roomKey]['domains'] = [];
+            }
+
+            foreach ($baseDomains as $domainKey => $domainCfg) {
+                if (!is_array($domainCfg)) {
+                    continue;
+                }
+
+                if (!array_key_exists($domainKey, $rooms[$roomKey]['domains'])) {
+                    if (!$this->domainHasManagedEntries($domainCfg, (string)$domainKey)) {
+                        $rooms[$roomKey]['domains'][$domainKey] = $domainCfg;
+                    }
+                    continue;
+                }
+
+                if (!is_array($rooms[$roomKey]['domains'][$domainKey])) {
+                    continue;
+                }
+
+                $rooms[$roomKey]['domains'][$domainKey] = $this->mergeDomainUnmanagedKeys(
+                    $rooms[$roomKey]['domains'][$domainKey],
+                    $domainCfg,
+                    (string)$domainKey
+                );
             }
         }
 
@@ -1306,6 +1373,61 @@ class RoomsCatalogConfigurator extends IPSModule
 
         return $newCatalog;
     }
+
+    private function arrayHasNestedArray(array $a): bool
+    {
+        foreach ($a as $v) {
+            if (is_array($v)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function domainHasManagedEntries(array $domainCfg, string $domainKey): bool
+    {
+        if ($domainKey === 'heizung' || $domainKey === 'jalousie') {
+            return true;
+        }
+
+        foreach ($domainCfg as $v) {
+            if (is_array($v) && $this->arrayHasNestedArray($v)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function mergeDomainUnmanagedKeys(array $newDomain, array $oldDomain, string $domainKey): array
+    {
+        if ($domainKey === 'heizung' || $domainKey === 'jalousie') {
+            foreach ($oldDomain as $k => $v) {
+                if (!array_key_exists($k, $newDomain) && !is_array($v)) {
+                    $newDomain[$k] = $v;
+                }
+            }
+            return $newDomain;
+        }
+
+        foreach ($oldDomain as $k => $v) {
+            if (array_key_exists($k, $newDomain)) {
+                continue;
+            }
+
+            if (!is_array($v)) {
+                $newDomain[$k] = $v;
+                continue;
+            }
+
+            if (!$this->arrayHasNestedArray($v)) {
+                $newDomain[$k] = $v;
+            }
+        }
+
+        return $newDomain;
+    }
+
 
     private function logDebug(string $message): void
     {
