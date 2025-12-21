@@ -683,8 +683,10 @@ class RoomsCatalogConfigurator extends IPSModule
                 continue;
             }
             $display                  = (string)($roomCfg['display'] ?? (string)$roomKey);
+            $floor                    = (string)($roomCfg['floor'] ?? '');
             $result[(string)$roomKey] = [
                 'display' => $display,
+                'floor'   => $floor,
                 'domains' => $roomCfg['domains']
             ];
             $count++;
@@ -705,6 +707,7 @@ class RoomsCatalogConfigurator extends IPSModule
             }
 
             $roomLabel = (string)($roomCfg['display'] ?? (string)$roomKey);
+            $roomFloor = (string)($roomCfg['floor'] ?? '');
             $domains   = $roomCfg['domains'] ?? [];
 
             foreach ($domains as $domainKey => $domainCfg) {
@@ -721,6 +724,7 @@ class RoomsCatalogConfigurator extends IPSModule
                         $rows[] = $this->buildEntryRow(
                             (string)$roomKey,
                             $roomLabel,
+                            $roomFloor,
                             (string)$domainKey,
                             (string)$domainKey,
                             (string)$hkKey,
@@ -739,6 +743,7 @@ class RoomsCatalogConfigurator extends IPSModule
                         $rows[] = $this->buildEntryRow(
                             (string)$roomKey,
                             $roomLabel,
+                            $roomFloor,
                             (string)$domainKey,
                             (string)$domainKey,
                             (string)$entryKey,
@@ -761,6 +766,7 @@ class RoomsCatalogConfigurator extends IPSModule
                         $rows[] = $this->buildEntryRow(
                             (string)$roomKey,
                             $roomLabel,
+                            $roomFloor,
                             (string)$domainKey,
                             (string)$groupKey,
                             (string)$entryKey,
@@ -777,6 +783,7 @@ class RoomsCatalogConfigurator extends IPSModule
     private function buildEntryRow(
         string $roomKey,
         string $roomLabel,
+        string $roomFloor,
         string $domainKey,
         string $groupKey,
         string $entryKey,
@@ -786,6 +793,7 @@ class RoomsCatalogConfigurator extends IPSModule
             'selected'  => false,
             'roomKey'   => $roomKey,
             'roomLabel' => $roomLabel,
+            'floor'     => isset($cfg['floor']) ? (string)$cfg['floor'] : $roomFloor,
             'domain'    => $domainKey,
             'group'     => $groupKey,
             'key'       => $entryKey
@@ -842,6 +850,7 @@ class RoomsCatalogConfigurator extends IPSModule
             'selected',
             'roomKey',
             'roomLabel',
+            'floor',
             'domain',
             'group',
             'key'
@@ -954,6 +963,14 @@ class RoomsCatalogConfigurator extends IPSModule
             'caption' => 'Raum-Label',
             'name'    => 'roomLabel',
             'width'   => '140px',
+            'add'     => '',
+            'edit'    => ['type' => 'ValidationTextBox'],
+            'visible' => true
+        ];
+        $columns[] = [
+            'caption' => 'Floor',
+            'name'    => 'floor',
+            'width'   => '90px',
             'add'     => '',
             'edit'    => ['type' => 'ValidationTextBox'],
             'visible' => true
@@ -1251,6 +1268,7 @@ class RoomsCatalogConfigurator extends IPSModule
 
             $roomKey   = isset($row['roomKey']) ? (string)$row['roomKey'] : '';
             $roomLabel = isset($row['roomLabel']) ? (string)$row['roomLabel'] : $roomKey;
+            $roomFloor = isset($row['floor']) ? (string)$row['floor'] : '';
             $domain    = isset($row['domain']) ? (string)$row['domain'] : '';
             $group     = isset($row['group']) ? (string)$row['group'] : '';
             $key       = isset($row['key']) ? (string)$row['key'] : '';
@@ -1264,6 +1282,9 @@ class RoomsCatalogConfigurator extends IPSModule
                     'display' => $roomLabel !== '' ? $roomLabel : $roomKey,
                     'domains' => []
                 ];
+                if ($roomFloor !== '') {
+                    $rooms[$roomKey]['floor'] = $roomFloor;
+                }
             }
 
             if (!isset($rooms[$roomKey]['domains'][$domain])) {
@@ -1272,7 +1293,7 @@ class RoomsCatalogConfigurator extends IPSModule
 
             $cfg = [];
             foreach ($row as $k => $v) {
-                if (in_array($k, ['selected', 'roomKey', 'roomLabel', 'domain', 'group', 'key'], true)) {
+                if (in_array($k, ['selected', 'roomKey', 'roomLabel', 'floor', 'domain', 'group', 'key'], true)) {
                     continue;
                 }
 
