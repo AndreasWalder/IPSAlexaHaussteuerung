@@ -7,7 +7,7 @@
  * - Führt Jalousie- und Szenen-Aktionen aus (wenn freigegeben)
  * - Liest Live-Prozentwerte (lesen/posRead → wert Fallback)
  * - Rendert APL Document-Link "doc://alexa/apl/documents/Jalousie"
- * - Floors (EG/OG/DG/UG/AUSSEN/…) aus RoomsCatalog['global']['floors']
+ * - Floors (EG/OG/DG/UG/AUSSEN/… ) aus RoomsCatalog['global']['domains']['floors'] (Fallback: ['global']['floors'])
  * - Icons via /hook/icons (BaseUrl/Token)
  * - Globaler Payload-Limiter für AlexaCustomSkill-Buffer
  *
@@ -199,10 +199,15 @@ function titleByEntity(array $rows, string $entityId): string {
     return '';
 }
 
+
+$GLOBAL = is_array($ROOMS['global'] ?? null) ? $ROOMS['global'] : [];
+$GLOBAL_DOMAINS = is_array($GLOBAL['domains'] ?? null) ? $GLOBAL['domains'] : [];
+$GJ = is_array($GLOBAL_DOMAINS['jalousie'] ?? null) ? $GLOBAL_DOMAINS['jalousie'] : (is_array($GLOBAL['jalousie'] ?? null) ? $GLOBAL['jalousie'] : []);
+
 /* =========================
    Floors
    ========================= */
-$GF = is_array($ROOMS['global']['floors'] ?? null) ? $ROOMS['global']['floors'] : [];
+$GF = is_array($GLOBAL_DOMAINS['floors'] ?? null) ? $GLOBAL_DOMAINS['floors'] : (is_array($GLOBAL['floors'] ?? null) ? $GLOBAL['floors'] : []);
 $floorOrder = [];
 if (isset($GF['order']) && is_array($GF['order'])) foreach ($GF['order'] as $fk) $floorOrder[] = strtoupper((string)$fk);
 $floorLabels = [];
@@ -217,7 +222,7 @@ $entity2Var     = [];
 $entity2PosRead = [];
 $baseRows       = [];
 
-$defaultIconFile = (string)($ROOMS['global']['jalousie']['icon'] ?? '');
+$defaultIconFile = (string)($GJ['icon'] ?? '');
 $iconUrlDefault  = $defaultIconFile !== '' ? $icon($defaultIconFile) : null;
 
 foreach ($ROOMS as $roomKey => $def) {
@@ -261,7 +266,6 @@ foreach ($ROOMS as $roomKey => $def) {
 /* =========================
    Szenen / Global
    ========================= */
-$GJ = is_array($ROOMS['global']['jalousie'] ?? null) ? $ROOMS['global']['jalousie'] : [];
 $GLOBAL_OPEN_CLOSE_VAR = (int)($GJ['open_close_var'] ?? 0);
 
 $scene2Var = [];
