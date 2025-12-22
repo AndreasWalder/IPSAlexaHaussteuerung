@@ -524,6 +524,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             'ROUTE_ALL'         => $this->getRendererScriptId('iahRouteAllRenderer', 'Route_allRenderer'),
             'RENDER_MAIN'       => $this->getRendererScriptId('iahRenderLaunch', 'LaunchRequest'),
             'RENDER_SETTINGS'   => $this->getRendererScriptId('iahRenderSettings', 'EinstellungsRender'),
+            'RENDER_EXTERNAL'   => $this->getRendererScriptId('iahRenderExternal', 'ExternalRenderer'),
             'RENDER_HEIZUNG'    => $this->getRendererScriptId('iahRenderHeizung', 'HeizungRenderer'),
             'RENDER_JALOUSIE'   => $this->getRendererScriptId('iahRenderJalousie', 'JalousieRenderer'),
             'RENDER_LICHT'      => $this->getRendererScriptId('iahRenderLicht', 'LichtRenderer'),
@@ -613,6 +614,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             ['name' => 'GeraeteRenderer',     'ident' => 'iahRenderGeraete',      'file' => $base . 'RenderGeraete.php'],
             ['name' => 'BewaesserungRenderer','ident' => 'iahRenderBewaesserung', 'file' => $base . 'RenderBewaesserung.php'],
             ['name' => 'EinstellungsRender',  'ident' => 'iahRenderSettings',     'file' => $base . 'RenderSettings.php'],
+            ['name' => 'ExternalRenderer',    'ident' => 'iahRenderExternal',     'file' => $base . 'RenderExternal.php'],
         ];
 
         foreach ($map as $def) {
@@ -844,6 +846,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             'ROUTE_ALL'           => $this->getRendererScriptId('iahRouteAllRenderer', 'Route_allRenderer'),
             'RENDER_MAIN'         => $this->getRendererScriptId('iahRenderLaunch', 'LaunchRequest'),
             'RENDER_SETTINGS'     => $this->getRendererScriptId('iahRenderSettings', 'EinstellungsRender'),
+            'RENDER_EXTERNAL'     => $this->getRendererScriptId('iahRenderExternal', 'ExternalRenderer'),
             'RENDER_HEIZUNG'      => $this->getRendererScriptId('iahRenderHeizung', 'HeizungRenderer'),
             'RENDER_JALOUSIE'     => $this->getRendererScriptId('iahRenderJalousie', 'JalousieRenderer'),
             'RENDER_LICHT'        => $this->getRendererScriptId('iahRenderLicht', 'LichtRenderer'),
