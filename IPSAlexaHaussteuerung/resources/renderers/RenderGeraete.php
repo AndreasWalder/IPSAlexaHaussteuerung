@@ -77,7 +77,7 @@ $rendererCfg = gr_renderer_config($routeKey, $CFG);
 $rendererRouteKey = (string)($rendererCfg['route'] ?? 'geraete');
 if ($rendererRouteKey === '') { $rendererRouteKey = 'geraete'; }
 // Room-Scope: nur klassische Geräte/Bewässerung sind raumbezogen
-$respectRoomFilter = in_array($rendererRouteKey, ['geraete', 'bewaesserung'], true);
+$respectRoomFilter = in_array($rendererRouteKey, ['geraete', 'bewaesserung', 'szene'], true);
 $rendererToggleVarKey = (string)($rendererCfg['toggleVarKey'] ?? ($rendererRouteKey . '_toggle'));
 if ($rendererToggleVarKey === '') { $rendererToggleVarKey = $rendererRouteKey . '_toggle'; }
 $rendererRoomDomain = (string)($rendererCfg['roomDomain'] ?? 'devices');
@@ -121,6 +121,14 @@ if ($ACTIONS_ENABLED_IN) {
             'toggle' => $readBool((int)($VAR[$rendererToggleVarKey] ?? 0), false)
         ],
     ];
+}
+
+if (!isset($ACTIONS_ENABLED[$rendererRouteKey]) || !is_array($ACTIONS_ENABLED[$rendererRouteKey])) {
+    $ACTIONS_ENABLED[$rendererRouteKey] = [
+        'toggle' => $readBool((int)($VAR[$rendererToggleVarKey] ?? 0), false)
+    ];
+} elseif (!array_key_exists('toggle', $ACTIONS_ENABLED[$rendererRouteKey])) {
+    $ACTIONS_ENABLED[$rendererRouteKey]['toggle'] = $readBool((int)($VAR[$rendererToggleVarKey] ?? 0), false);
 }
 
 $CAN_TOGGLE  = (bool)($ACTIONS_ENABLED[$rendererRouteKey]['toggle'] ?? false);
