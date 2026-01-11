@@ -65,6 +65,7 @@ $voice_action = (string)($in['action'] ?? '');
 $voice_device = (string)($in['device'] ?? '');
 $voice_alles  = (string)($in['alles']  ?? '');
 $voice_object = (string)($in['object'] ?? '');
+$voice_szene  = (string)($in['szene'] ?? '');
 
 /* =========================
    CFG / ACTION FLAGS / LOGGING
@@ -147,7 +148,7 @@ $logV("[$RID][{$rendererLogName}] ENTER");
 $logV("[$RID][{$rendererLogName}] INPUT ".json_encode([
     'aplSupported'=>$aplSupported,'room'=>$roomSpoken,'args1'=>$args1_raw,'args2'=>$args2_raw,
     'numberRaw'=>$numberRaw,'AE'=>$ACTIONS_ENABLED,
-    'voice'=>['action'=>$voice_action,'device'=>$voice_device,'alles'=>$voice_alles,'object'=>$voice_object]
+    'voice'=>['action'=>$voice_action,'device'=>$voice_device,'alles'=>$voice_alles,'object'=>$voice_object,'szene'=>$voice_szene]
 ], GR_JF));
 
 /* =========================
