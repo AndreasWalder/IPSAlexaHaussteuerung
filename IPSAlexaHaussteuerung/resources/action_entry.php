@@ -1755,6 +1755,15 @@ function Execute($request = null)
             $device = $forcedDevice;
         }
 
+        if ($navForce) {
+            $action = '';
+            $device = '';
+            $room = '';
+            $object = '';
+            $alles = '';
+            $szene = '';
+        }
+
         if (in_array($action, ['ende','fertig','exit','zurück'], true)) {
             SetValueString($V['DOMAIN_FLAG'], "");
         }
@@ -2094,6 +2103,11 @@ function Execute($request = null)
             if (isset($GLOBALS['_APL_OVERRIDE'])) {
                 $args1v = $GLOBALS['_APL_OVERRIDE'][0] ?? $args1v;
                 $args2v = $GLOBALS['_APL_OVERRIDE'][1] ?? $args2v;
+            }
+            if ($navForce) {
+                $aplArgs = [];
+                $args1v = '';
+                $args2v = '';
             }
 
             $payload = [
