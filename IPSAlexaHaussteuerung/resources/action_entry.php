@@ -960,6 +960,7 @@ function iah_build_system_configuration_internal(int $instanceId, array $props, 
         'PENDING_STAGE'  => iah_get_child_object($helper, 'pendingStage', 'PendingStage'),
         'DOMAIN_FLAG'    => iah_get_child_object($instanceId, 'domainFlag', 'domain_flag'),
         'SKILL_ACTIVE'   => iah_get_child_object($instanceId, 'skillActive', 'skillActive'),
+        'ACTIVE_TAB_STATE' => iah_get_child_object($instanceId, 'activeTabState', 'activeTabState'),
         'AUSSEN_TEMP'    => iah_resolve_configured_var($props, 'VarAussenTemp'),
         'INFORMATION'    => iah_resolve_configured_var($props, 'VarInformation'),
         'MELDUNGEN'      => iah_resolve_configured_var($props, 'VarMeldungen'),
@@ -1038,6 +1039,9 @@ function iah_build_system_configuration(int $instanceId): array
                 $var['KIIntentParser'] = iah_build_ki_intent_parser_cfg($props);
             } elseif (!array_key_exists('enabled', $var['KIIntentParser'])) {
                 $var['KIIntentParser']['enabled'] = (bool)($props['KIIntentEnabled'] ?? true);
+            }
+            if (!isset($var['ACTIVE_TAB_STATE']) || (int)$var['ACTIVE_TAB_STATE'] === 0) {
+                $var['ACTIVE_TAB_STATE'] = iah_get_child_object($instanceId, 'activeTabState', 'activeTabState');
             }
             if (empty($var['KIIntentParserScript'])) {
                 $var['KIIntentParserScript'] = iah_get_child_object($helper ?? 0, 'kiIntentParserScript', 'KI_IntentParser');
