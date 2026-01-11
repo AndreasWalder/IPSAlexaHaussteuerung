@@ -2108,15 +2108,6 @@ function Execute($request = null)
                 $aplArgs = [];
                 $args1v = '';
                 $args2v = '';
-                $action = '';
-                $device = '';
-                $room = '';
-                $object = '';
-                $alles = '';
-                $szene = '';
-                $number = null;
-                $prozent = null;
-                $power = null;
             }
 
             $payload = [
