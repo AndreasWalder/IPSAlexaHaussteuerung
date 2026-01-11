@@ -29,6 +29,7 @@ return [
         'ROOM_SAVE'       => 0,
         'DOMAIN_FLAG'     => 0,
         'SKILL_ACTIVE'    => 0,
+        'ACTIVE_TAB_STATE'=> 0,
         'PENDING_DEVICE'  => 0,
         'PENDING_STAGE'   => 0,
         'lastVariableDevice' => 0,

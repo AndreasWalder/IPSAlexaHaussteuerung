@@ -170,6 +170,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->ensureVar($root, 'lastVariableValue', 'lastVarValue', VARIABLETYPE_STRING, '', '');
         $this->ensureVar($root, 'log_recent', 'logRecent', VARIABLETYPE_STRING, '', '');
         $this->ensureVar($root, 'domain_flag', 'domainFlag', VARIABLETYPE_STRING, '', '');
+        $this->ensureVar($root, 'activeTabState', 'activeTabState', VARIABLETYPE_STRING, '', '');
 
         $this->ensureSystemConfigurationScript($catSettings, $catHelper);
         // Hinweis: Die Statusvariablen (Information/Meldungen/Außentemperatur) werden nicht mehr automatisch
@@ -499,6 +500,7 @@ class IPSAlexaHaussteuerung extends IPSModule
                 'last_var_action'     => (int) @IPS_GetObjectIDByIdent('lastVarAction', $root),
                 'last_var_value'      => (int) @IPS_GetObjectIDByIdent('lastVarValue', $root),
                 'log_recent'          => (int) @IPS_GetObjectIDByIdent('logRecent', $root),
+                'active_tab_state'    => (int) @IPS_GetObjectIDByIdent('activeTabState', $root),
             ],
             'scripts'       => [
                 'rooms_catalog' => $this->getObjectIDByIdentOrName((int) $settings, 'roomsCatalog', 'RoomsCatalog'),
