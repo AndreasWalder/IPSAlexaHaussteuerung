@@ -273,6 +273,23 @@ if ($varId <= 0) {
     }
 }
 
+/* v15: Voice-Enums (z.B. "Szene Ruhe") als Set interpretieren */
+if ($action === '' && $varId > 0 && $voice_action !== '' && $rawText === '' && $numberIn === null) {
+    $var = @IPS_GetVariable($varId);
+    $obj = @IPS_GetObject($varId);
+    if (is_array($var) && is_array($obj)) {
+        $infoEnum = gr_info_enum_for_var($obj, $var);
+        $profile = gr_get_profile_name($var);
+        $assoc = gr_get_profile_associations($profile);
+        $hasEnum = !empty($infoEnum['opts']) || !empty($assoc['byValue']) || !empty($assoc['byName']);
+        if ($hasEnum) {
+            $action = 'set';
+            $rawText = $voice_action;
+            $logV("[$RID][{$rendererLogName}] voiceEnumFallback varId={$varId} action={$voice_action}");
+        }
+    }
+}
+
 /* v9: aktiven Tab bestimmen */
 $activeIdFromSpokenTab = false;
 if ($action === 'tab' && $tabIdArg !== '') {
