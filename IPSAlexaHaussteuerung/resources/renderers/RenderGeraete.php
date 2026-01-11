@@ -477,6 +477,31 @@ function gr_info_is_writable(array $obj, array $var): bool {
     return false;
 }
 
+function gr_coerce_enum_raw_value(string $rawValue, array $enumOpts) {
+    $hasNumeric = false;
+    $hasNonNumeric = false;
+    foreach ($enumOpts as $opt) {
+        if (!is_array($opt) || !array_key_exists('value', $opt)) continue;
+        $val = $opt['value'];
+        if (is_int($val) || is_float($val)) {
+            $hasNumeric = true;
+            continue;
+        }
+        if (is_string($val) && is_numeric($val)) {
+            $hasNumeric = true;
+            continue;
+        }
+        $hasNonNumeric = true;
+    }
+    if ($hasNumeric && !$hasNonNumeric) {
+        $trim = trim($rawValue);
+        if ($trim !== '' && is_numeric($trim)) {
+            return (strpos($trim, '.') !== false) ? (float)$trim : (int)$trim;
+        }
+    }
+    return $rawValue;
+}
+
 function gr_collect_voice_candidates(array $candidates): array
 {
     $out = [];
@@ -1276,10 +1301,11 @@ function gr_make_row_for_var(int $varId, bool $aeToggle, ?string $nameOverride):
     $canSet     = (($isWritable && $aeToggle) || $isSteuernLike);
 
     if (!empty($infoEnum)) {
+        $rawEnumValue = gr_coerce_enum_raw_value((string)@GetValue($varId), $infoEnum);
         return $base + [
             'isBool'=>false,'boolOn'=>false,'isEnum'=>true,'isNumber'=>false,
             'canSetNumber'=>$canSet,'readOnly'=>!$canSet,'targetId'=>(string)$varId,
-            'hasEnum'=>true,'enumOpts'=>$infoEnum,'rawValue'=>(string)@GetValue($varId)
+            'hasEnum'=>true,'enumOpts'=>$infoEnum,'rawValue'=>$rawEnumValue
         ];
     }
     
@@ -1302,10 +1328,11 @@ function gr_make_row_for_var(int $varId, bool $aeToggle, ?string $nameOverride):
         foreach ($assoc['byValue'] as $valKey => $label) { $enumOpts[] = ['label'=>$label, 'value'=>$valKey]; }
     }
     if ($enumOpts) {
+        $rawEnumValue = gr_coerce_enum_raw_value((string)@GetValue($varId), $enumOpts);
         return $base + [
             'isBool'=>false,'boolOn'=>false,'isEnum'=>true,'isNumber'=>false,
             'canSetNumber'=>$canSet,'readOnly'=>!$canSet,'targetId'=>(string)$varId,
-            'hasEnum'=>true,'enumOpts'=>$enumOpts,'rawValue'=>(string)@GetValue($varId)
+            'hasEnum'=>true,'enumOpts'=>$enumOpts,'rawValue'=>$rawEnumValue
         ];
     }
 
