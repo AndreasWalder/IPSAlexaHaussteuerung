@@ -125,6 +125,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->ensureVar($catSettings, 'licht_dimmers', 'lichtDimmers', VARIABLETYPE_BOOLEAN, '', true);
         $this->ensureVar($catSettings, 'licht_switches', 'lichtSwitches', VARIABLETYPE_BOOLEAN, '', true);
         $this->ensureVar($catSettings, 'lueftung_toggle', 'lueftungToggle', VARIABLETYPE_BOOLEAN, '', true);
+        $this->ensureVar($catSettings, 'szene_toggle', 'szeneToggle', VARIABLETYPE_BOOLEAN, '', true);
 
         // WFC PageSwitch Params → Default aus Instanz-Settings
         $wfc = $this->ReadPropertyInteger('WfcId');
@@ -810,6 +811,7 @@ class IPSAlexaHaussteuerung extends IPSModule
                 'lueftung_toggle'     => $lueftungToggleVar,
                 'geraete_toggle'      => $getVar($settingsCat, 'geraeteToggle', 'geraete_toggle'),
                 'bewaesserung_toggle' => $getVar($settingsCat, 'bewaesserungToggle', 'bewaesserung_toggle'),
+                'szene_toggle'        => $getVar($settingsCat, 'szeneToggle', 'szene_toggle'),
             ],
             'DEVICE_MAP'     => $getVar($helperCat, 'deviceMapJson', 'DeviceMapJson'),
             'PENDING_DEVICE' => $getVar($helperCat, 'pendingDeviceId', 'PendingDeviceId'),
