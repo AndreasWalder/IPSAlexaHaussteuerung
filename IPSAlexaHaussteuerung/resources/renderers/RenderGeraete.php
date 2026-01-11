@@ -94,6 +94,7 @@ $rendererAplDoc = (string)($rendererCfg['aplDoc'] ?? 'doc://alexa/apl/documents/
 if ($rendererAplDoc === '') { $rendererAplDoc = 'doc://alexa/apl/documents/Geraete'; }
 $rendererAplToken = (string)($rendererCfg['aplToken'] ?? 'hv-geraete');
 if ($rendererAplToken === '') { $rendererAplToken = 'hv-geraete'; }
+$activeTabStateVarId = (int)($CFG['var']['ACTIVE_TAB_STATE'] ?? 0);
 
 // ActionsEnabled-IDs (kompatibel zu alter/ neuer Struktur)
 $VAR = [];
@@ -180,6 +181,8 @@ $logV("[$RID][{$rendererLogName}] domainMap.beforeCollect=" . json_encode(
    ========================= */
 // Für Spezial-Domains (bienen, sicherheit, …) wird der Room-Filter ignoriert
 $tabs = gr_collectRoomDeviceTabs($ROOMS, $roomKeyFilter, $rendererRoomDomain, $respectRoomFilter);
+$activeTabState = gr_load_active_tab_state($activeTabStateVarId);
+$storedActiveId = gr_find_stored_tab_id($tabs, (string)$rendererRouteKey, $activeTabState);
 
 $logV("[$RID][{$rendererLogName}] roomSummary=" . json_encode(gr_rooms_domain_summary($ROOMS, $roomKeyFilter), GR_JF));
 
@@ -249,7 +252,13 @@ if ($varId <= 0) {
         if ($nameCandidate === '') {
             continue;
         }
-        $match = gr_find_var_by_name_from_tabs($tabs, $nameCandidate, $CAN_TOGGLE);
+        $match = null;
+        if ($storedActiveId !== null) {
+            $match = gr_find_var_by_name_in_tab($storedActiveId, $nameCandidate, $CAN_TOGGLE);
+        }
+        if ($match === null) {
+            $match = gr_find_var_by_name_from_tabs($tabs, $nameCandidate, $CAN_TOGGLE);
+        }
         if ($match !== null) {
             $varId = (int)$match['varId'];
             $nameMatched = true;
@@ -265,20 +274,28 @@ if ($varId <= 0) {
 }
 
 /* v9: aktiven Tab bestimmen */
+$activeIdFromSpokenTab = false;
 if ($action === 'tab' && $tabIdArg !== '') {
     $activeId = ctype_digit($tabIdArg) ? $tabIdArg : (gr_match_tab_by_name_or_synonym($tabs, $tabIdArg) ?? (string)$tabs[0]['id']);
+    $activeIdFromSpokenTab = true;
 } elseif (($action === 'toggle' || $action === 'set') && $varId > 0) {
     $activeId = gr_find_tab_for_var($tabs, $varId) ?? (string)$tabs[0]['id'];
 } else {
     $activeId = ($args2_raw !== '' && !ctype_digit($args2_raw))
         ? (gr_match_tab_by_name_or_synonym($tabs, $args2_raw) ?? null)
         : null;
+    if ($activeId !== null) {
+        $activeIdFromSpokenTab = true;
+    }
     if ($activeId === null) {
         foreach ([$voice_action, $voice_device, $voice_alles, $voice_object, $voice_szene] as $cand) {
             $cand = trim((string)$cand); if ($cand==='') continue;
             $id = gr_match_tab_by_name_or_synonym($tabs, $cand);
-            if ($id !== null) { $activeId = $id; break; }
+            if ($id !== null) { $activeId = $id; $activeIdFromSpokenTab = true; break; }
         }
+    }
+    if ($activeId === null && $storedActiveId !== null) {
+        $activeId = $storedActiveId;
     }
     if ($activeId === null) $activeId = (string)$tabs[0]['id'];
 }
@@ -287,6 +304,9 @@ $activeTitle = '';
 foreach ($tabs as $t) { if ((string)$t['id'] === (string)$activeId) { $activeTitle = (string)$t['title']; break; } }
 if ($activeTitle === '') $activeTitle = (string)($tabs[0]['title'] ?? $rendererDefaultTitle);
 $logV("[$RID][{$rendererLogName}] activeTab=$activeId title=$activeTitle");
+if ($activeIdFromSpokenTab) {
+    gr_store_active_tab_state($activeTabStateVarId, $activeTabState, (string)$rendererRouteKey, (string)$activeId);
+}
 
 /* =========================
    ACTIONS (APL)
@@ -511,6 +531,76 @@ function gr_toggle_from_action(string $action): ?string
     }
     if (in_array($action, ['aus','off','ausschalten','stop','stoppen','deaktivieren'], true)) {
         return 'off';
+    }
+    return null;
+}
+
+function gr_load_active_tab_state(int $varId): array
+{
+    if ($varId <= 0 || !IPS_ObjectExists($varId)) {
+        return [];
+    }
+    $raw = (string)@GetValueString($varId);
+    if ($raw === '') {
+        return [];
+    }
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded)) {
+        return [];
+    }
+    return $decoded;
+}
+
+function gr_store_active_tab_state(int $varId, array $state, string $routeKey, string $tabId): void
+{
+    if ($varId <= 0 || !IPS_ObjectExists($varId)) {
+        return;
+    }
+    if ($routeKey === '' || $tabId === '') {
+        return;
+    }
+    $state[$routeKey] = $tabId;
+    @SetValueString($varId, json_encode($state, GR_JF));
+}
+
+function gr_find_stored_tab_id(array $tabs, string $routeKey, array $state): ?string
+{
+    if ($routeKey === '' || !isset($state[$routeKey])) {
+        return null;
+    }
+    $tabId = (string)$state[$routeKey];
+    if ($tabId === '') {
+        return null;
+    }
+    foreach ($tabs as $tab) {
+        if ((string)($tab['id'] ?? '') === $tabId) {
+            return $tabId;
+        }
+    }
+    return null;
+}
+
+function gr_find_var_by_name_in_tab(string $tabId, string $name, bool $aeToggle): ?array
+{
+    if ($tabId === '') {
+        return null;
+    }
+    $rows = gr_buildRowsFromNode((int)$tabId, $aeToggle);
+    $nameKey = gr_keynorm($name);
+    foreach ($rows as $row) {
+        if (!empty($row['isSection'])) {
+            continue;
+        }
+        $rowName = (string)($row['name'] ?? '');
+        if ($rowName === '') {
+            continue;
+        }
+        if (gr_keynorm($rowName) === $nameKey) {
+            return [
+                'varId' => (int)($row['targetId'] ?? 0),
+                'row'   => $row
+            ];
+        }
     }
     return null;
 }

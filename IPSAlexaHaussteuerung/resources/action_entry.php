@@ -960,6 +960,7 @@ function iah_build_system_configuration_internal(int $instanceId, array $props, 
         'PENDING_STAGE'  => iah_get_child_object($helper, 'pendingStage', 'PendingStage'),
         'DOMAIN_FLAG'    => iah_get_child_object($instanceId, 'domainFlag', 'domain_flag'),
         'SKILL_ACTIVE'   => iah_get_child_object($instanceId, 'skillActive', 'skillActive'),
+        'ACTIVE_TAB_STATE' => iah_get_child_object($instanceId, 'activeTabState', 'activeTabState'),
         'AUSSEN_TEMP'    => iah_resolve_configured_var($props, 'VarAussenTemp'),
         'INFORMATION'    => iah_resolve_configured_var($props, 'VarInformation'),
         'MELDUNGEN'      => iah_resolve_configured_var($props, 'VarMeldungen'),
@@ -1038,6 +1039,9 @@ function iah_build_system_configuration(int $instanceId): array
                 $var['KIIntentParser'] = iah_build_ki_intent_parser_cfg($props);
             } elseif (!array_key_exists('enabled', $var['KIIntentParser'])) {
                 $var['KIIntentParser']['enabled'] = (bool)($props['KIIntentEnabled'] ?? true);
+            }
+            if (!isset($var['ACTIVE_TAB_STATE']) || (int)$var['ACTIVE_TAB_STATE'] === 0) {
+                $var['ACTIVE_TAB_STATE'] = iah_get_child_object($instanceId, 'activeTabState', 'activeTabState');
             }
             if (empty($var['KIIntentParserScript'])) {
                 $var['KIIntentParserScript'] = iah_get_child_object($helper ?? 0, 'kiIntentParserScript', 'KI_IntentParser');
@@ -2085,6 +2089,12 @@ function Execute($request = null)
                 $aplArgs[1] = $GLOBALS['_APL_OVERRIDE'][0] ?? ($aplArgs[1] ?? null);
                 $aplArgs[2] = $GLOBALS['_APL_OVERRIDE'][1] ?? ($aplArgs[2] ?? null);
             }
+            $args1v = $APL['a1'];
+            $args2v = $APL['a2'];
+            if (isset($GLOBALS['_APL_OVERRIDE'])) {
+                $args1v = $GLOBALS['_APL_OVERRIDE'][0] ?? $args1v;
+                $args2v = $GLOBALS['_APL_OVERRIDE'][1] ?? $args2v;
+            }
 
             $payload = [
                 'route'           => $__route,
@@ -2116,8 +2126,8 @@ function Execute($request = null)
                 'rooms'           => $rooms,
                 'ROOMS'           => $ROOMS,
                 'ACTIONS_ENABLED' => $ACTIONS_ENABLED,
-                'args1v'          => $APL['a1'],
-                'args2v'          => $APL['a2'],
+                'args1v'          => $args1v,
+                'args2v'          => $args2v,
                 'args3v'          => $APL['a3'],
                 'aplSupported'    => (bool)($aplSupported ?? false),
                 'action'          => (string)($action ?? ''),
@@ -2247,6 +2257,12 @@ function Execute($request = null)
                             $aplArgsKi[1] = $GLOBALS['_APL_OVERRIDE'][0] ?? ($aplArgsKi[1] ?? null);
                             $aplArgsKi[2] = $GLOBALS['_APL_OVERRIDE'][1] ?? ($aplArgsKi[2] ?? null);
                         }
+                        $args1vKi = $APL['a1'];
+                        $args2vKi = $APL['a2'];
+                        if (isset($GLOBALS['_APL_OVERRIDE'])) {
+                            $args1vKi = $GLOBALS['_APL_OVERRIDE'][0] ?? $args1vKi;
+                            $args2vKi = $GLOBALS['_APL_OVERRIDE'][1] ?? $args2vKi;
+                        }
 
                         $payloadKi = [
                             'route'           => $routeKi,
@@ -2278,9 +2294,9 @@ function Execute($request = null)
                             'rooms'           => $roomsKi,
                             'ROOMS'           => $ROOMS,
                             'ACTIONS_ENABLED' => $ACTIONS_ENABLED,
-                            'args1v'          => $APL['a1'],
-                            'args2v'          => $APL['a2'],
-                            'args3v'          => $APL['a3'],
+                                'args1v'          => $args1vKi,
+                                'args2v'          => $args2vKi,
+                                'args3v'          => $APL['a3'],
                             'aplSupported'    => (bool)($aplSupported ?? false),
                             'action'          => (string)($action ?? ''),
                             'device'          => (string)($device ?? ''),
@@ -2290,7 +2306,7 @@ function Execute($request = null)
                             'number'          => $number,
                             'prozent'         => $prozent,
                             'power'           => $power,
-                            'aplArgs'         => $aplArgsKi,
+                                'aplArgs'         => $aplArgsKi,
                             'skillActive'     => (bool)GetValueBoolean($V['SKILL_ACTIVE']),
                             'alexaKey'        => (string)$alexaKey,
                             'alexa'           => (string)$alexa,
