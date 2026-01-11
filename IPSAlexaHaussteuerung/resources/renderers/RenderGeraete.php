@@ -228,6 +228,29 @@ if (!$tabs) {
 }
 
 /* =========================
+   Szene-Aus-Intent (Voice)
+   ========================= */
+$sceneAusIntent = ($rendererRouteKey === 'szene'
+    && gr_norm($voice_action) === 'aus'
+    && gr_norm($voice_device) === 'szene'
+    && gr_norm($voice_szene) === '');
+if ($sceneAusIntent && $varId <= 0) {
+    $match = null;
+    if ($storedActiveId !== null) {
+        $match = gr_find_var_by_name_in_tab($storedActiveId, 'Szene', $CAN_TOGGLE);
+    }
+    if ($match === null) {
+        $match = gr_find_var_by_name_from_tabs($tabs, 'Szene', $CAN_TOGGLE);
+    }
+    if ($match !== null) {
+        $varId = (int)$match['varId'];
+        $action = 'set';
+        $rawText = 'Aus';
+        $logV("[$RID][{$rendererLogName}] sceneAusIntent varId={$varId} action=set rawText=Aus");
+    }
+}
+
+/* =========================
    Name-basierte Var-Resolve (Voice)
    ========================= */
 $nameMatched = false;
