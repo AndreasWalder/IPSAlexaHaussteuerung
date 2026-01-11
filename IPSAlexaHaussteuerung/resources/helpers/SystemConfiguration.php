@@ -18,6 +18,7 @@ return [
             'lueftung_toggle'    => 0,
             'geraete_toggle'     => 0,
             'bewaesserung_toggle'=> 0,
+            'szene_toggle'=> 0,
         ],
         // Runtime/status variables (string/bool vars you want to track)
         'AUSSEN_TEMP'     => 0,
