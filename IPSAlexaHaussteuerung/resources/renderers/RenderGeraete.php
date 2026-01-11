@@ -305,7 +305,7 @@ if ($action === 'tab' && $tabIdArg !== '') {
         $activeIdFromSpokenTab = true;
     }
     if ($activeId === null) {
-        foreach ([$voice_action, $voice_device, $voice_alles, $voice_object, $voice_szene] as $cand) {
+        foreach ([$voice_action, $voice_device, $voice_alles, $voice_object, $voice_szene, $roomSpoken] as $cand) {
             $cand = trim((string)$cand); if ($cand==='') continue;
             $id = gr_match_tab_by_name_or_synonym($tabs, $cand);
             if ($id !== null) { $activeId = $id; $activeIdFromSpokenTab = true; break; }
