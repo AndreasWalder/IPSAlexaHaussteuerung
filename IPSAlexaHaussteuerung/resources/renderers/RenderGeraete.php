@@ -228,6 +228,29 @@ if (!$tabs) {
 }
 
 /* =========================
+   Szene-Aus-Intent (Voice)
+   ========================= */
+$sceneAusIntent = ($rendererRouteKey === 'szene'
+    && gr_norm($voice_action) === 'aus'
+    && gr_norm($voice_device) === 'szene'
+    && gr_norm($voice_szene) === '');
+if ($sceneAusIntent && $varId <= 0) {
+    $match = null;
+    if ($storedActiveId !== null) {
+        $match = gr_find_var_by_name_in_tab($storedActiveId, 'Szene', $CAN_TOGGLE);
+    }
+    if ($match === null) {
+        $match = gr_find_var_by_name_from_tabs($tabs, 'Szene', $CAN_TOGGLE);
+    }
+    if ($match !== null) {
+        $varId = (int)$match['varId'];
+        $action = 'set';
+        $rawText = 'Aus';
+        $logV("[$RID][{$rendererLogName}] sceneAusIntent varId={$varId} action=set rawText=Aus");
+    }
+}
+
+/* =========================
    Name-basierte Var-Resolve (Voice)
    ========================= */
 $nameMatched = false;
@@ -443,6 +466,9 @@ if ($didAction) IPS_Sleep(GR_DELAY_MS);
 
 $rows = gr_buildRowsFromNode((int)$activeId, $CAN_TOGGLE);
 $rows = gr_maybe_sort_rows_uniform_type($rows);
+if ($rendererRouteKey === 'szene') {
+    $rows = gr_ensure_scene_enum_contains_aus($rows);
+}
 
 $logV("[$RID][{$rendererLogName}] rows=".count($rows));
 $enumDebug = array_values(array_filter($rows, static function($r){
@@ -498,6 +524,36 @@ echo json_encode([
 function gr_is_html_doc(string $s): bool {
     $t = ltrim($s);
     return stripos($t, '<!doctype html') === 0;
+}
+
+function gr_ensure_scene_enum_contains_aus(array $rows): array {
+    foreach ($rows as $idx => $row) {
+        if (empty($row['enumOpts']) || !is_array($row['enumOpts'])) {
+            continue;
+        }
+        $rowName = gr_norm((string)($row['name'] ?? ''));
+        if ($rowName !== 'szene') {
+            continue;
+        }
+        $hasAus = false;
+        foreach ($row['enumOpts'] as $opt) {
+            $label = gr_norm((string)($opt['label'] ?? ''));
+            if ($label === 'aus') {
+                $hasAus = true;
+                break;
+            }
+        }
+        if (!$hasAus) {
+            array_unshift($row['enumOpts'], ['label' => 'Aus', 'value' => 0]);
+            $row['hasEnum'] = true;
+            if (isset($row['isEnum'])) {
+                $row['isEnum'] = true;
+            }
+            $rows[$idx] = $row;
+        }
+    }
+
+    return $rows;
 }
 
 function gr_is_placeholder_name(string $name): bool {
