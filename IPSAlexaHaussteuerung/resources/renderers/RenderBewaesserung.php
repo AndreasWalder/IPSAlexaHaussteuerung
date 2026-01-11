@@ -163,7 +163,7 @@ $activeTitle = '';
 foreach ($tabs as $t) { if ((string)$t['id'] === (string)$activeId) { $activeTitle = (string)$t['title']; break; } }
 if ($activeTitle === '') $activeTitle = (string)($tabs[0]['title'] ?? $rendererDefaultTitle);
 $logV("[$RID][{$rendererLogName}] activeTab=$activeId title=$activeTitle");
-if ($action === 'tab' && $tabIdArg !== '') {
+if (($action === 'tab' && $tabIdArg !== '') || $activeIdFromSpokenTab) {
     gr_store_active_tab_state($activeTabStateVarId, $activeTabState, (string)$rendererRouteKey, (string)$activeId);
 }
 
