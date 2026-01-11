@@ -2104,6 +2104,11 @@ function Execute($request = null)
                 $args1v = $GLOBALS['_APL_OVERRIDE'][0] ?? $args1v;
                 $args2v = $GLOBALS['_APL_OVERRIDE'][1] ?? $args2v;
             }
+            if ($navForce) {
+                $aplArgs = [];
+                $args1v = '';
+                $args2v = '';
+            }
 
             $payload = [
                 'route'           => $__route,
