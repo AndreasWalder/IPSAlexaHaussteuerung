@@ -227,12 +227,12 @@ if (!$tabs) {
 /* =========================
    Name-basierte Var-Resolve (Voice)
    ========================= */
+$nameMatched = false;
 if ($varId <= 0) {
     $voiceCandidates = gr_collect_voice_candidates([
         $args2_raw,
         $rawText,
         $args1_raw,
-        $voice_szene,
         $voice_device,
         $voice_object,
         $voice_action,
@@ -247,10 +247,10 @@ if ($varId <= 0) {
         $match = gr_find_var_by_name_from_tabs($tabs, $nameCandidate, $CAN_TOGGLE);
         if ($match !== null) {
             $varId = (int)$match['varId'];
-            $slotToggle = gr_toggle_from_action_word($voice_action);
-            if ($parsed['toggleTo'] !== null || $slotToggle !== null) {
+            $nameMatched = true;
+            if ($parsed['toggleTo'] !== null) {
                 $action = $action !== '' ? $action : 'toggle';
-                $toggleTo = $parsed['toggleTo'] ?? $slotToggle;
+                $toggleTo = $parsed['toggleTo'];
             }
             $logV("[$RID][{$rendererLogName}] nameMatch name={$nameCandidate} varId={$varId} toggleTo=" . ($toggleTo ?? ''));
             break;
@@ -492,21 +492,6 @@ function gr_extract_name_and_toggle(string $text): array
     }
 
     return ['name' => $name, 'toggleTo' => $toggleTo];
-}
-
-function gr_toggle_from_action_word(string $action): ?string
-{
-    $actionNorm = gr_norm($action);
-    if ($actionNorm === '') {
-        return null;
-    }
-    if (in_array($actionNorm, ['ein','an','on','einschalten','start','starten','aktivieren'], true)) {
-        return 'on';
-    }
-    if (in_array($actionNorm, ['aus','off','ausschalten','stop','stoppen','deaktivieren'], true)) {
-        return 'off';
-    }
-    return null;
 }
 
 function gr_find_var_by_name_from_tabs(array $tabs, string $name, bool $aeToggle): ?array
