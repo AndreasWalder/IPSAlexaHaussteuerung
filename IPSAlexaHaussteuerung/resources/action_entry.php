@@ -1040,6 +1040,9 @@ function iah_build_system_configuration(int $instanceId): array
             } elseif (!array_key_exists('enabled', $var['KIIntentParser'])) {
                 $var['KIIntentParser']['enabled'] = (bool)($props['KIIntentEnabled'] ?? true);
             }
+            if (!isset($var['ACTIVE_TAB_STATE']) || (int)$var['ACTIVE_TAB_STATE'] === 0) {
+                $var['ACTIVE_TAB_STATE'] = iah_get_child_object($instanceId, 'activeTabState', 'activeTabState');
+            }
             if (empty($var['KIIntentParserScript'])) {
                 $var['KIIntentParserScript'] = iah_get_child_object($helper ?? 0, 'kiIntentParserScript', 'KI_IntentParser');
             }
