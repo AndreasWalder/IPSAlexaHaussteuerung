@@ -233,9 +233,15 @@ if (!$tabs) {
 $nameMatched = false;
 if ($varId <= 0 && $action === '' && $rawText === '' && $numberIn === null && $voice_action === '') {
     $enumMatched = false;
-    $enumCandidates = gr_collect_voice_candidates([
-        $voice_szene
-    ]);
+    $voiceSzeneNorm = gr_norm($voice_szene);
+    $routeKeyNorm = gr_norm($rendererRouteKey);
+    $sceneAliases = array_filter([$routeKeyNorm, 'szene', 'scene']);
+    $enumCandidates = [];
+    if ($voiceSzeneNorm !== '' && !in_array($voiceSzeneNorm, $sceneAliases, true)) {
+        $enumCandidates = gr_collect_voice_candidates([
+            $voice_szene
+        ]);
+    }
     foreach ($enumCandidates as $candidate) {
         $match = gr_find_enum_match_from_tabs($tabs, $candidate, $CAN_TOGGLE, ['szene']);
         if ($match !== null) {
