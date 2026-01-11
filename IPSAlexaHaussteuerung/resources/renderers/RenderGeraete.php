@@ -65,6 +65,7 @@ $voice_action = (string)($in['action'] ?? '');
 $voice_device = (string)($in['device'] ?? '');
 $voice_alles  = (string)($in['alles']  ?? '');
 $voice_object = (string)($in['object'] ?? '');
+$voice_szene  = (string)($in['szene'] ?? '');
 
 /* =========================
    CFG / ACTION FLAGS / LOGGING
@@ -147,7 +148,7 @@ $logV("[$RID][{$rendererLogName}] ENTER");
 $logV("[$RID][{$rendererLogName}] INPUT ".json_encode([
     'aplSupported'=>$aplSupported,'room'=>$roomSpoken,'args1'=>$args1_raw,'args2'=>$args2_raw,
     'numberRaw'=>$numberRaw,'AE'=>$ACTIONS_ENABLED,
-    'voice'=>['action'=>$voice_action,'device'=>$voice_device,'alles'=>$voice_alles,'object'=>$voice_object]
+    'voice'=>['action'=>$voice_action,'device'=>$voice_device,'alles'=>$voice_alles,'object'=>$voice_object,'szene'=>$voice_szene]
 ], GR_JF));
 
 /* =========================
@@ -223,6 +224,40 @@ if (!$tabs) {
     return;
 }
 
+/* =========================
+   Name-basierte Var-Resolve (Voice)
+   ========================= */
+if ($varId <= 0) {
+    $voiceCandidates = gr_collect_voice_candidates([
+        $args2_raw,
+        $rawText,
+        $args1_raw,
+        $voice_szene,
+        $voice_device,
+        $voice_object,
+        $voice_action,
+        $voice_alles
+    ]);
+    foreach ($voiceCandidates as $candidate) {
+        $parsed = gr_extract_name_and_toggle($candidate);
+        $nameCandidate = $parsed['name'];
+        if ($nameCandidate === '') {
+            continue;
+        }
+        $match = gr_find_var_by_name_from_tabs($tabs, $nameCandidate, $CAN_TOGGLE);
+        if ($match !== null) {
+            $varId = (int)$match['varId'];
+            $slotToggle = gr_toggle_from_action_word($voice_action);
+            if ($parsed['toggleTo'] !== null || $slotToggle !== null) {
+                $action = $action !== '' ? $action : 'toggle';
+                $toggleTo = $parsed['toggleTo'] ?? $slotToggle;
+            }
+            $logV("[$RID][{$rendererLogName}] nameMatch name={$nameCandidate} varId={$varId} toggleTo=" . ($toggleTo ?? ''));
+            break;
+        }
+    }
+}
+
 /* v9: aktiven Tab bestimmen */
 if ($action === 'tab' && $tabIdArg !== '') {
     $activeId = ctype_digit($tabIdArg) ? $tabIdArg : (gr_match_tab_by_name_or_synonym($tabs, $tabIdArg) ?? (string)$tabs[0]['id']);
@@ -253,8 +288,13 @@ $logV("[$RID][{$rendererLogName}] activeTab=$activeId title=$activeTitle");
 $didAction = false;
 
 if ($action === 'toggle' && $varId > 0) {
-    if (!$CAN_TOGGLE) {
-        echo json_encode(['speech'=>'Schalten ist aktuell deaktiviert.','reprompt'=>'','apl'=>null,'endSession'=>false], GR_JF);
+    if (!gr_can_toggle_var($varId, $CAN_TOGGLE)) {
+        echo json_encode([
+            'speech'     => gr_format_value_speech($varId),
+            'reprompt'   => '',
+            'apl'        => null,
+            'endSession' => false
+        ], GR_JF);
         return;
     }
     if (IPS_ObjectExists($varId)) {
@@ -409,6 +449,124 @@ function gr_info_is_writable(array $obj, array $var): bool {
         if (is_string($v)) return in_array(strtolower($v), ['1','true','yes','ja'], true);
     }
     return false;
+}
+
+function gr_collect_voice_candidates(array $candidates): array
+{
+    $out = [];
+    foreach ($candidates as $cand) {
+        $cand = trim((string)$cand);
+        if ($cand === '') {
+            continue;
+        }
+        $out[] = $cand;
+    }
+    return array_values(array_unique($out));
+}
+
+function gr_extract_name_and_toggle(string $text): array
+{
+    $raw = trim($text);
+    if ($raw === '') {
+        return ['name' => '', 'toggleTo' => null];
+    }
+    $lower = gr_norm($raw);
+    $tokens = preg_split('/\s+/', $lower);
+    if (!$tokens) {
+        return ['name' => $raw, 'toggleTo' => null];
+    }
+
+    $last = end($tokens);
+    $toggleTo = null;
+    if (in_array($last, ['ein','an','on','einschalten','start','starten','aktivieren'], true)) {
+        $toggleTo = 'on';
+        array_pop($tokens);
+    } elseif (in_array($last, ['aus','off','ausschalten','stop','stoppen','deaktivieren'], true)) {
+        $toggleTo = 'off';
+        array_pop($tokens);
+    }
+
+    $name = trim(implode(' ', $tokens));
+    if ($name === '') {
+        $name = $raw;
+    }
+
+    return ['name' => $name, 'toggleTo' => $toggleTo];
+}
+
+function gr_toggle_from_action_word(string $action): ?string
+{
+    $actionNorm = gr_norm($action);
+    if ($actionNorm === '') {
+        return null;
+    }
+    if (in_array($actionNorm, ['ein','an','on','einschalten','start','starten','aktivieren'], true)) {
+        return 'on';
+    }
+    if (in_array($actionNorm, ['aus','off','ausschalten','stop','stoppen','deaktivieren'], true)) {
+        return 'off';
+    }
+    return null;
+}
+
+function gr_find_var_by_name_from_tabs(array $tabs, string $name, bool $aeToggle): ?array
+{
+    $nameKey = gr_keynorm($name);
+    if ($nameKey === '') {
+        return null;
+    }
+    foreach ($tabs as $tab) {
+        $tabId = (int)($tab['id'] ?? 0);
+        if ($tabId <= 0) {
+            continue;
+        }
+        $rows = gr_buildRowsFromNode($tabId, $aeToggle);
+        foreach ($rows as $row) {
+            if (!empty($row['isSection'])) {
+                continue;
+            }
+            $rowName = (string)($row['name'] ?? '');
+            if ($rowName === '') {
+                continue;
+            }
+            if (gr_keynorm($rowName) === $nameKey) {
+                return [
+                    'varId' => (int)($row['targetId'] ?? 0),
+                    'row'   => $row
+                ];
+            }
+        }
+    }
+    return null;
+}
+
+function gr_can_toggle_var(int $varId, bool $aeToggle): bool
+{
+    if (!$aeToggle || $varId <= 0 || !IPS_ObjectExists($varId)) {
+        return false;
+    }
+    $var = @IPS_GetVariable($varId);
+    if (!is_array($var)) {
+        return false;
+    }
+    if ((int)($var['VariableType'] ?? 3) !== 0) {
+        return false;
+    }
+    return gr_hasAction($var);
+}
+
+function gr_format_value_speech(int $varId): string
+{
+    if ($varId <= 0 || !IPS_ObjectExists($varId)) {
+        return 'Schaltvorgang nicht möglich. Variable nicht gefunden.';
+    }
+    $var = @IPS_GetVariable($varId);
+    if (!is_array($var)) {
+        return 'Schaltvorgang nicht möglich. Variable nicht gefunden.';
+    }
+    $type = (int)($var['VariableType'] ?? 3);
+    $value = gr_formatValueHuman($varId, $type, @GetValue($varId));
+    return 'Aktueller Wert ist ' . $value . '.';
 }
 
 function gr_normalize_event(string $a1, string $a2, $numRaw): array {
