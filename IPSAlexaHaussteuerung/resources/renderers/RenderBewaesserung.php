@@ -133,19 +133,24 @@ if (!$tabs) {
 }
 
 /* v9: aktiven Tab bestimmen */
+$activeIdFromSpokenTab = false;
 if ($action === 'tab' && $tabIdArg !== '') {
     $activeId = ctype_digit($tabIdArg) ? $tabIdArg : (gr_match_tab_by_name_or_synonym($tabs, $tabIdArg) ?? (string)$tabs[0]['id']);
+    $activeIdFromSpokenTab = true;
 } elseif (($action === 'toggle' || $action === 'set') && $varId > 0) {
     $activeId = gr_find_tab_for_var($tabs, $varId) ?? (string)$tabs[0]['id'];
 } else {
     $activeId = ($args2_raw !== '' && !ctype_digit($args2_raw))
         ? (gr_match_tab_by_name_or_synonym($tabs, $args2_raw) ?? null)
         : null;
+    if ($activeId !== null) {
+        $activeIdFromSpokenTab = true;
+    }
     if ($activeId === null) {
         foreach ([$voice_action, $voice_device, $voice_alles, $voice_object] as $cand) {
             $cand = trim((string)$cand); if ($cand==='') continue;
             $id = gr_match_tab_by_name_or_synonym($tabs, $cand);
-            if ($id !== null) { $activeId = $id; break; }
+            if ($id !== null) { $activeId = $id; $activeIdFromSpokenTab = true; break; }
         }
     }
     if ($activeId === null && $storedActiveId !== null) {
