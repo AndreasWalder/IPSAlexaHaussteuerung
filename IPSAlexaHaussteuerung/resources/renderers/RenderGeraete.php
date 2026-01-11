@@ -239,6 +239,10 @@ if ($varId <= 0) {
         $voice_alles,
         $voice_szene
     ]);
+    if ($voice_szene !== '' && $voice_action !== '') {
+        $voiceCandidates[] = trim($voice_szene . ' ' . $voice_action);
+    }
+    $voiceCandidates = gr_collect_voice_candidates($voiceCandidates);
     foreach ($voiceCandidates as $candidate) {
         $parsed = gr_extract_name_and_toggle($candidate);
         $nameCandidate = $parsed['name'];
@@ -249,9 +253,10 @@ if ($varId <= 0) {
         if ($match !== null) {
             $varId = (int)$match['varId'];
             $nameMatched = true;
-            if ($parsed['toggleTo'] !== null) {
+            $toggleCandidate = $parsed['toggleTo'] ?? gr_toggle_from_action($voice_action);
+            if ($toggleCandidate !== null) {
                 $action = $action !== '' ? $action : 'toggle';
-                $toggleTo = $parsed['toggleTo'];
+                $toggleTo = $toggleCandidate;
             }
             $logV("[$RID][{$rendererLogName}] nameMatch name={$nameCandidate} varId={$varId} toggleTo=" . ($toggleTo ?? ''));
             break;
@@ -493,6 +498,21 @@ function gr_extract_name_and_toggle(string $text): array
     }
 
     return ['name' => $name, 'toggleTo' => $toggleTo];
+}
+
+function gr_toggle_from_action(string $action): ?string
+{
+    $action = gr_norm($action);
+    if ($action === '') {
+        return null;
+    }
+    if (in_array($action, ['ein','an','on','einschalten','start','starten','aktivieren'], true)) {
+        return 'on';
+    }
+    if (in_array($action, ['aus','off','ausschalten','stop','stoppen','deaktivieren'], true)) {
+        return 'off';
+    }
+    return null;
 }
 
 function gr_find_var_by_name_from_tabs(array $tabs, string $name, bool $aeToggle): ?array
