@@ -236,7 +236,8 @@ if ($varId <= 0) {
         $voice_device,
         $voice_object,
         $voice_action,
-        $voice_alles
+        $voice_alles,
+        $voice_szene
     ]);
     foreach ($voiceCandidates as $candidate) {
         $parsed = gr_extract_name_and_toggle($candidate);
@@ -268,7 +269,7 @@ if ($action === 'tab' && $tabIdArg !== '') {
         ? (gr_match_tab_by_name_or_synonym($tabs, $args2_raw) ?? null)
         : null;
     if ($activeId === null) {
-        foreach ([$voice_action, $voice_device, $voice_alles, $voice_object] as $cand) {
+        foreach ([$voice_action, $voice_device, $voice_alles, $voice_object, $voice_szene] as $cand) {
             $cand = trim((string)$cand); if ($cand==='') continue;
             $id = gr_match_tab_by_name_or_synonym($tabs, $cand);
             if ($id !== null) { $activeId = $id; break; }
