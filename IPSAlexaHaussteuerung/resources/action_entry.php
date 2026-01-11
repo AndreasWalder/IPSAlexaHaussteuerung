@@ -1320,6 +1320,19 @@ function Execute($request = null)
                             break;
                         }
                     }
+                } elseif (isset($root['session']['attributes']['slots'][$sName])) {
+                    $slotArr = $root['session']['attributes']['slots'][$sName];
+                } elseif (isset($root['session']['attributes']['slots']) && is_array($root['session']['attributes']['slots'])) {
+                    foreach ($root['session']['attributes']['slots'] as $entry) {
+                        if (!is_array($entry)) {
+                            continue;
+                        }
+                        $name = mb_strtolower((string)($entry['name'] ?? ''), 'UTF-8');
+                        if ($name === $sName) {
+                            $slotArr = $entry;
+                            break;
+                        }
+                    }
                 }
 
                 if (($GLOBALS['__ALEXA_LOG_LEVEL'] ?? 'info') === 'debug') {
