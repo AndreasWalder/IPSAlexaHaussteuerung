@@ -227,12 +227,12 @@ if (!$tabs) {
 /* =========================
    Name-basierte Var-Resolve (Voice)
    ========================= */
+$nameMatched = false;
 if ($varId <= 0) {
     $voiceCandidates = gr_collect_voice_candidates([
         $args2_raw,
         $rawText,
         $args1_raw,
-        $voice_szene,
         $voice_device,
         $voice_object,
         $voice_action,
@@ -247,6 +247,7 @@ if ($varId <= 0) {
         $match = gr_find_var_by_name_from_tabs($tabs, $nameCandidate, $CAN_TOGGLE);
         if ($match !== null) {
             $varId = (int)$match['varId'];
+            $nameMatched = true;
             if ($parsed['toggleTo'] !== null) {
                 $action = $action !== '' ? $action : 'toggle';
                 $toggleTo = $parsed['toggleTo'];
