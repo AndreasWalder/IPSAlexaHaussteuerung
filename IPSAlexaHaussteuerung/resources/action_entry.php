@@ -1280,6 +1280,9 @@ function Execute($request = null)
                     }
                 }
 
+                if (is_object($raw)) {
+                    $raw = json_decode(json_encode($raw), true);
+                }
                 if (!is_array($raw)) {
                     $slotObj = $getSlotCH($request, $slotName);
                     if (is_object($slotObj)) {
