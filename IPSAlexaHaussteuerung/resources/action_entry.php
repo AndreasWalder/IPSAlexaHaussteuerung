@@ -1726,6 +1726,10 @@ function Execute($request = null)
         $prozent = $getSlotCH($request,'Prozent') ?? null;
         $alles   = $lc($getSlotId($request,'Alles')  ?? '');
 
+        if ($szene === '') {
+            $szene = $szene1 !== '' ? $szene1 : $lc($szene1Val);
+        }
+
         if (isset($kiParserOverride)) {
             if ($action === '') { $action = (string) ($kiParserOverride['action'] ?? ''); }
             if ($device === '') { $device = (string) ($kiParserOverride['device'] ?? ''); }
