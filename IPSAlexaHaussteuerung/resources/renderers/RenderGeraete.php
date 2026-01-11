@@ -257,11 +257,11 @@ if ($varId <= 0) {
         $args2_raw,
         $rawText,
         $args1_raw,
+        $voice_szene,
         $voice_device,
         $voice_object,
         $voice_action,
-        $voice_alles,
-        $voice_szene
+        $voice_alles
     ]);
     if ($voice_szene !== '' && $voice_action !== '') {
         $voiceCandidates[] = trim($voice_szene . ' ' . $voice_action);
@@ -281,9 +281,16 @@ if ($varId <= 0) {
             $match = gr_find_var_by_name_from_tabs($tabs, $nameCandidate, $CAN_TOGGLE);
         }
         if ($match !== null) {
+            $toggleCandidate = $parsed['toggleTo'] ?? gr_toggle_from_action($voice_action);
+            if ($toggleCandidate !== null) {
+                $rowIsBool = !empty($match['row']['isBool']);
+                $rowCanToggle = !empty($match['row']['canToggle']);
+                if (!$rowIsBool || !$rowCanToggle) {
+                    continue;
+                }
+            }
             $varId = (int)$match['varId'];
             $nameMatched = true;
-            $toggleCandidate = $parsed['toggleTo'] ?? gr_toggle_from_action($voice_action);
             if ($toggleCandidate !== null) {
                 $action = $action !== '' ? $action : 'toggle';
                 $toggleTo = $toggleCandidate;
