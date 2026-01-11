@@ -470,13 +470,6 @@ if ($rendererRouteKey === 'szene') {
     $rows = gr_ensure_scene_enum_contains_aus($rows);
 }
 
-if ($rendererRouteKey === 'szene'
-    && gr_norm($voice_action) === 'aus'
-    && gr_norm($voice_device) === 'szene'
-    && gr_norm($voice_szene) === '') {
-    $rows = gr_filter_scene_enum_opts($rows);
-}
-
 $logV("[$RID][{$rendererLogName}] rows=".count($rows));
 $enumDebug = array_values(array_filter($rows, static function($r){
     $n = gr_norm((string)($r['name'] ?? ''));
@@ -1139,6 +1132,40 @@ function gr_buildRowsFromNode(int $rootId, bool $aeToggle): array
     return $rows;
 }
 
+function gr_ensure_scene_enum_contains_aus(array $rows): array
+{
+    foreach ($rows as $idx => $row) {
+        if (empty($row['enumOpts']) || !is_array($row['enumOpts'])) {
+            continue;
+        }
+
+        $rowName = gr_norm((string)($row['name'] ?? ''));
+        if ($rowName !== 'szene') {
+            continue;
+        }
+
+        $hasAus = false;
+        foreach ($row['enumOpts'] as $opt) {
+            $label = gr_norm((string)($opt['label'] ?? ''));
+            if ($label === 'aus') {
+                $hasAus = true;
+                break;
+            }
+        }
+
+        if (!$hasAus) {
+            array_unshift($rows[$idx]['enumOpts'], ['label' => 'Aus', 'value' => 'Aus']);
+        }
+
+        $rows[$idx]['hasEnum'] = !empty($rows[$idx]['enumOpts']);
+        $rows[$idx]['isEnum'] = true;
+        $rows[$idx]['isNumber'] = false;
+    }
+
+    return $rows;
+}
+
+
 /**
  * Wenn alle nicht-Section-Zeilen denselben typeName haben und einen updatedTs besitzen,
  * sortiere nach updatedTs absteigend (neueste zuerst). Sonst Reihenfolge unverändert.
@@ -1462,7 +1489,11 @@ function gr_make_row_for_var(int $varId, bool $aeToggle, ?string $nameOverride):
         $enumOpts = [];
         if (!empty($assoc['byValue'])) {
             foreach ($assoc['byValue'] as $valKey => $label) {
-                $enumOpts[] = ['label'=>$label, 'value'=>$valKey];
+                $v = $valKey;
+                if (is_string($v) && is_numeric($v)) {
+                    $v = (strpos($v, '.') !== false) ? (float)$v : (int)$v;
+                }
+                $enumOpts[] = ['label' => $label, 'value' => $v];
             }
         }
         $hasEnum = !empty($enumOpts);
@@ -1513,7 +1544,13 @@ function gr_make_row_for_var(int $varId, bool $aeToggle, ?string $nameOverride):
 
     $enumOpts = [];
     if (!empty($assoc['byValue'])) {
-        foreach ($assoc['byValue'] as $valKey => $label) { $enumOpts[] = ['label'=>$label, 'value'=>$valKey]; }
+        foreach ($assoc['byValue'] as $valKey => $label) {
+            $v = $valKey;
+            if (is_string($v) && is_numeric($v)) {
+                $v = (strpos($v, '.') !== false) ? (float)$v : (int)$v;
+            }
+            $enumOpts[] = ['label' => $label, 'value' => $v];
+        }
     }
     if ($enumOpts) {
         $rawEnumValue = @GetValue($varId);
