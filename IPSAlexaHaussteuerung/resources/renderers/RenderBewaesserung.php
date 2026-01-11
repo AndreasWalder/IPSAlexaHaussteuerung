@@ -708,13 +708,15 @@ function gr_make_row_for_var(int $varId, bool $aeToggle, ?string $nameOverride):
                 $enumOpts[] = ['label'=>$label, 'value'=>$num];
             }
         }
+        $hasEnum = !empty($enumOpts);
         return $base + [
             'isBool'       => false,
             'boolOn'       => false,
-            'isNumber'     => true,
+            'isNumber'     => !$hasEnum,
+            'isEnum'       => $hasEnum,
             'canSetNumber' => ($controllable && $aeToggle),
             'targetId'     => (string)$varId,
-            'hasEnum'      => !empty($enumOpts),
+            'hasEnum'      => $hasEnum,
             'enumOpts'     => $enumOpts,
             'rawValue'     => $raw
         ];
