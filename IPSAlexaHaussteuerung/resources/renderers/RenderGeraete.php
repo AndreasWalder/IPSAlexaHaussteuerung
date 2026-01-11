@@ -444,6 +444,13 @@ if ($didAction) IPS_Sleep(GR_DELAY_MS);
 $rows = gr_buildRowsFromNode((int)$activeId, $CAN_TOGGLE);
 $rows = gr_maybe_sort_rows_uniform_type($rows);
 
+if ($rendererRouteKey === 'szene'
+    && gr_norm($voice_action) === 'aus'
+    && gr_norm($voice_device) === 'szene'
+    && gr_norm($voice_szene) === '') {
+    $rows = gr_filter_scene_enum_opts($rows);
+}
+
 $logV("[$RID][{$rendererLogName}] rows=".count($rows));
 $enumDebug = array_values(array_filter($rows, static function($r){
     $n = gr_norm((string)($r['name'] ?? ''));
@@ -498,6 +505,29 @@ echo json_encode([
 function gr_is_html_doc(string $s): bool {
     $t = ltrim($s);
     return stripos($t, '<!doctype html') === 0;
+}
+
+function gr_filter_scene_enum_opts(array $rows): array {
+    foreach ($rows as $idx => $row) {
+        if (empty($row['enumOpts']) || !is_array($row['enumOpts'])) {
+            continue;
+        }
+        $rowName = gr_norm((string)($row['name'] ?? ''));
+        if ($rowName !== 'szene') {
+            continue;
+        }
+        $filtered = array_values(array_filter($row['enumOpts'], static function($opt) {
+            $label = gr_norm((string)($opt['label'] ?? ''));
+            return $label !== 'aus';
+        }));
+        $rows[$idx]['enumOpts'] = $filtered;
+        $rows[$idx]['hasEnum'] = !empty($filtered);
+        if (isset($rows[$idx]['isEnum'])) {
+            $rows[$idx]['isEnum'] = !empty($filtered);
+        }
+    }
+
+    return $rows;
 }
 
 function gr_is_placeholder_name(string $name): bool {
