@@ -466,6 +466,9 @@ if ($didAction) IPS_Sleep(GR_DELAY_MS);
 
 $rows = gr_buildRowsFromNode((int)$activeId, $CAN_TOGGLE);
 $rows = gr_maybe_sort_rows_uniform_type($rows);
+if ($rendererRouteKey === 'szene') {
+    $rows = gr_ensure_scene_enum_contains_aus($rows);
+}
 
 if ($rendererRouteKey === 'szene'
     && gr_norm($voice_action) === 'aus'
