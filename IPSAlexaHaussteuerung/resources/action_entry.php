@@ -1755,6 +1755,15 @@ function Execute($request = null)
             $device = $forcedDevice;
         }
 
+        if ($navForce) {
+            $action = '';
+            $device = '';
+            $room = '';
+            $object = '';
+            $alles = '';
+            $szene = '';
+        }
+
         if (in_array($action, ['ende','fertig','exit','zurück'], true)) {
             SetValueString($V['DOMAIN_FLAG'], "");
         }
