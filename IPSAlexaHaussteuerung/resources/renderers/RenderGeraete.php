@@ -1406,8 +1406,7 @@ function gr_make_row_for_var(int $varId, bool $aeToggle, ?string $nameOverride):
         $enumOpts = [];
         if (!empty($assoc['byValue'])) {
             foreach ($assoc['byValue'] as $valKey => $label) {
-                $num = (strpos((string)$valKey, '.') !== false) ? (float)$valKey : (int)$valKey;
-                $enumOpts[] = ['label'=>$label, 'value'=>$num];
+                $enumOpts[] = ['label'=>$label, 'value'=>$valKey];
             }
         }
         $hasEnum = !empty($enumOpts);
@@ -1434,7 +1433,7 @@ function gr_make_row_for_var(int $varId, bool $aeToggle, ?string $nameOverride):
     $canSet     = (($isWritable && $aeToggle) || $isSteuernLike);
 
     if (!empty($infoEnum)) {
-        $rawEnumValue = gr_coerce_enum_raw_value((string)@GetValue($varId), $infoEnum);
+        $rawEnumValue = @GetValue($varId);
         return $base + [
             'isBool'=>false,'boolOn'=>false,'isEnum'=>true,'isNumber'=>false,
             'canSetNumber'=>$canSet,'readOnly'=>!$canSet,'targetId'=>(string)$varId,
@@ -1461,7 +1460,7 @@ function gr_make_row_for_var(int $varId, bool $aeToggle, ?string $nameOverride):
         foreach ($assoc['byValue'] as $valKey => $label) { $enumOpts[] = ['label'=>$label, 'value'=>$valKey]; }
     }
     if ($enumOpts) {
-        $rawEnumValue = gr_coerce_enum_raw_value((string)@GetValue($varId), $enumOpts);
+        $rawEnumValue = @GetValue($varId);
         return $base + [
             'isBool'=>false,'boolOn'=>false,'isEnum'=>true,'isNumber'=>false,
             'canSetNumber'=>$canSet,'readOnly'=>!$canSet,'targetId'=>(string)$varId,
