@@ -231,11 +231,19 @@ if (!$tabs) {
    Name-basierte Var-Resolve (Voice)
    ========================= */
 $nameMatched = false;
+if (!isset($sceneAliases)) {
+    $routeKeyNorm = gr_norm($rendererRouteKey);
+    $sceneAliases = array_filter([$routeKeyNorm, 'szene', 'scene']);
+}
 if ($varId <= 0 && $action === '' && $rawText === '' && $numberIn === null && $voice_action === '') {
     $enumMatched = false;
-    $enumCandidates = gr_collect_voice_candidates([
-        $voice_szene
-    ]);
+    $voiceSzeneNorm = gr_norm($voice_szene);
+    $enumCandidates = [];
+    if ($voiceSzeneNorm !== '' && !in_array($voiceSzeneNorm, $sceneAliases, true)) {
+        $enumCandidates = gr_collect_voice_candidates([
+            $voice_szene
+        ]);
+    }
     foreach ($enumCandidates as $candidate) {
         $match = gr_find_enum_match_from_tabs($tabs, $candidate, $CAN_TOGGLE, ['szene']);
         if ($match !== null) {
@@ -273,6 +281,9 @@ if ($varId <= 0) {
         if ($nameCandidate === '') {
             continue;
         }
+        if (in_array(gr_norm($nameCandidate), $sceneAliases, true)) {
+            continue;
+        }
         $match = null;
         if ($storedActiveId !== null) {
             $match = gr_find_var_by_name_in_tab($storedActiveId, $nameCandidate, $CAN_TOGGLE);
@@ -303,6 +314,9 @@ if ($varId <= 0) {
 
 /* v15: Voice-Enums (z.B. "Szene Ruhe") als Set interpretieren */
 if ($action === '' && $varId > 0 && $voice_action !== '' && $rawText === '' && $numberIn === null) {
+    if (in_array(gr_norm($voice_action), $sceneAliases, true)) {
+        $logV("[$RID][{$rendererLogName}] voiceEnumFallback ignored voice_action={$voice_action}");
+    } else {
     $var = @IPS_GetVariable($varId);
     $obj = @IPS_GetObject($varId);
     if (is_array($var) && is_array($obj)) {
@@ -315,6 +329,7 @@ if ($action === '' && $varId > 0 && $voice_action !== '' && $rawText === '' && $
             $rawText = $voice_action;
             $logV("[$RID][{$rendererLogName}] voiceEnumFallback varId={$varId} action={$voice_action}");
         }
+    }
     }
 }
 
