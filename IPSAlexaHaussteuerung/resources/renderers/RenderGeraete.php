@@ -238,6 +238,8 @@ if (!isset($sceneAliases)) {
 if ($varId <= 0 && $action === '' && $rawText === '' && $numberIn === null && $voice_action === '') {
     $enumMatched = false;
     $voiceSzeneNorm = gr_norm($voice_szene);
+    $routeKeyNorm = gr_norm($rendererRouteKey);
+    $sceneAliases = array_filter([$routeKeyNorm, 'szene', 'scene']);
     $enumCandidates = [];
     if ($voiceSzeneNorm !== '' && !in_array($voiceSzeneNorm, $sceneAliases, true)) {
         $enumCandidates = gr_collect_voice_candidates([
