@@ -470,6 +470,13 @@ if ($rendererRouteKey === 'szene') {
     $rows = gr_ensure_scene_enum_contains_aus($rows);
 }
 
+if ($rendererRouteKey === 'szene'
+    && gr_norm($voice_action) === 'aus'
+    && gr_norm($voice_device) === 'szene'
+    && gr_norm($voice_szene) === '') {
+    $rows = gr_filter_scene_enum_opts($rows);
+}
+
 $logV("[$RID][{$rendererLogName}] rows=".count($rows));
 $enumDebug = array_values(array_filter($rows, static function($r){
     $n = gr_norm((string)($r['name'] ?? ''));
@@ -526,7 +533,7 @@ function gr_is_html_doc(string $s): bool {
     return stripos($t, '<!doctype html') === 0;
 }
 
-function gr_ensure_scene_enum_contains_aus(array $rows): array {
+function gr_filter_scene_enum_opts(array $rows): array {
     foreach ($rows as $idx => $row) {
         if (empty($row['enumOpts']) || !is_array($row['enumOpts'])) {
             continue;
@@ -535,21 +542,14 @@ function gr_ensure_scene_enum_contains_aus(array $rows): array {
         if ($rowName !== 'szene') {
             continue;
         }
-        $hasAus = false;
-        foreach ($row['enumOpts'] as $opt) {
+        $filtered = array_values(array_filter($row['enumOpts'], static function($opt) {
             $label = gr_norm((string)($opt['label'] ?? ''));
-            if ($label === 'aus') {
-                $hasAus = true;
-                break;
-            }
-        }
-        if (!$hasAus) {
-            array_unshift($row['enumOpts'], ['label' => 'Aus', 'value' => 0]);
-            $row['hasEnum'] = true;
-            if (isset($row['isEnum'])) {
-                $row['isEnum'] = true;
-            }
-            $rows[$idx] = $row;
+            return $label !== 'aus';
+        }));
+        $rows[$idx]['enumOpts'] = $filtered;
+        $rows[$idx]['hasEnum'] = !empty($filtered);
+        if (isset($rows[$idx]['isEnum'])) {
+            $rows[$idx]['isEnum'] = !empty($filtered);
         }
     }
 
