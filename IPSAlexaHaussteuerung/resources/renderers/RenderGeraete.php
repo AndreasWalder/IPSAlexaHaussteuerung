@@ -1520,7 +1520,7 @@ function gr_make_row_for_var(int $varId, bool $aeToggle, ?string $nameOverride):
     $canSet     = (($isWritable && $aeToggle) || $isSteuernLike);
 
     if (!empty($infoEnum)) {
-        $rawEnumValue = @GetValue($varId);
+        $rawEnumValue = gr_coerce_enum_raw_value((string)@GetValue($varId), $infoEnum);
         return $base + [
             'isBool'=>false,'boolOn'=>false,'isEnum'=>true,'isNumber'=>false,
             'canSetNumber'=>$canSet,'readOnly'=>!$canSet,'targetId'=>(string)$varId,
@@ -1553,7 +1553,7 @@ function gr_make_row_for_var(int $varId, bool $aeToggle, ?string $nameOverride):
         }
     }
     if ($enumOpts) {
-        $rawEnumValue = @GetValue($varId);
+        $rawEnumValue = gr_coerce_enum_raw_value((string)@GetValue($varId), $enumOpts);
         return $base + [
             'isBool'=>false,'boolOn'=>false,'isEnum'=>true,'isNumber'=>false,
             'canSetNumber'=>$canSet,'readOnly'=>!$canSet,'targetId'=>(string)$varId,
