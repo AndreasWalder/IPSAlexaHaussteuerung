@@ -1222,6 +1222,53 @@ function Execute($request = null)
         // Slot-Helfer: bevorzugt die Slot-ID aus den Resolutions (Canonical-Value)
         $getSlotId = static function ($request, string $slotName) use ($getSlotCH) {
             try {
+                $extractIdFromSlot = static function ($slotArr): ?string {
+                    if (!is_array($slotArr)) {
+                        return null;
+                    }
+                    $lower = static function ($value) use (&$lower) {
+                        if (!is_array($value)) {
+                            return $value;
+                        }
+                        $out = [];
+                        foreach ($value as $k => $v) {
+                            $out[mb_strtolower((string)$k, 'UTF-8')] = $lower($v);
+                        }
+                        return $out;
+                    };
+                    $normalized = $lower($slotArr);
+                    $resPA = $normalized['resolutions']['resolutionsperauthority'] ?? null;
+                    if (is_array($resPA)) {
+                        foreach ($resPA as $entry) {
+                            $values = $entry['values'] ?? [];
+                            if (!is_array($values)) {
+                                continue;
+                            }
+                            foreach ($values as $valWrap) {
+                                $v = $valWrap['value'] ?? null;
+                                if (!is_array($v)) {
+                                    continue;
+                                }
+                                if (!empty($v['id'])) {
+                                    return (string)$v['id'];
+                                }
+                                if (!empty($v['name'])) {
+                                    return (string)$v['name'];
+                                }
+                            }
+                        }
+                    }
+                    if (!empty($normalized['id'])) {
+                        return (string)$normalized['id'];
+                    }
+                    if (!empty($normalized['name'])) {
+                        return (string)$normalized['name'];
+                    }
+                    if (!empty($normalized['value'])) {
+                        return (string)$normalized['value'];
+                    }
+                    return null;
+                };
                 $raw = null;
 
                 if (is_object($request)) {
@@ -1233,8 +1280,19 @@ function Execute($request = null)
                     }
                 }
 
+                if (is_object($raw)) {
+                    $raw = json_decode(json_encode($raw), true);
+                }
                 if (!is_array($raw)) {
-                    return $getSlotCH($request, $slotName);
+                    $slotObj = $getSlotCH($request, $slotName);
+                    if (is_object($slotObj)) {
+                        $slotObj = json_decode(json_encode($slotObj), true);
+                    }
+                    $slotId = $extractIdFromSlot($slotObj);
+                    if ($slotId !== null) {
+                        return $slotId;
+                    }
+                    return is_string($slotObj) ? $slotObj : null;
                 }
 
                 $lower = static function ($value) use (&$lower) {
@@ -1256,6 +1314,19 @@ function Execute($request = null)
                     $slotArr = $root['request']['intent']['slots'][$sName];
                 } elseif (isset($root['request']['intent']['slots']) && is_array($root['request']['intent']['slots'])) {
                     foreach ($root['request']['intent']['slots'] as $entry) {
+                        if (!is_array($entry)) {
+                            continue;
+                        }
+                        $name = mb_strtolower((string)($entry['name'] ?? ''), 'UTF-8');
+                        if ($name === $sName) {
+                            $slotArr = $entry;
+                            break;
+                        }
+                    }
+                } elseif (isset($root['session']['attributes']['slots'][$sName])) {
+                    $slotArr = $root['session']['attributes']['slots'][$sName];
+                } elseif (isset($root['session']['attributes']['slots']) && is_array($root['session']['attributes']['slots'])) {
+                    foreach ($root['session']['attributes']['slots'] as $entry) {
                         if (!is_array($entry)) {
                             continue;
                         }
@@ -1299,6 +1370,9 @@ function Execute($request = null)
 
                     if (!empty($slotArr['id'])) {
                         return (string)$slotArr['id'];
+                    }
+                    if (!empty($slotArr['value'])) {
+                        return (string)$slotArr['value'];
                     }
                 }
             } catch (Throwable $e) {
@@ -1651,6 +1725,10 @@ function Execute($request = null)
         $number  = $getSlotCH($request,'Number') ?? null;
         $prozent = $getSlotCH($request,'Prozent') ?? null;
         $alles   = $lc($getSlotId($request,'Alles')  ?? '');
+
+        if ($szene === '') {
+            $szene = $szene1 !== '' ? $szene1 : $lc($szene1Val);
+        }
 
         if (isset($kiParserOverride)) {
             if ($action === '') { $action = (string) ($kiParserOverride['action'] ?? ''); }
