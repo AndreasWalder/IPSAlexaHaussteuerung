@@ -231,16 +231,37 @@ if (!$tabs) {
    Name-basierte Var-Resolve (Voice)
    ========================= */
 $nameMatched = false;
+if ($varId <= 0 && $action === '' && $rawText === '' && $numberIn === null && $voice_action === '') {
+    $enumMatched = false;
+    $enumCandidates = gr_collect_voice_candidates([
+        $voice_szene
+    ]);
+    foreach ($enumCandidates as $candidate) {
+        $match = gr_find_enum_match_from_tabs($tabs, $candidate, $CAN_TOGGLE, ['szene']);
+        if ($match !== null) {
+            $varId = (int)$match['varId'];
+            $action = 'set';
+            $rawText = (string)$match['label'];
+            $enumMatched = true;
+            $logV("[$RID][{$rendererLogName}] enumVoiceMatch label={$candidate} varId={$varId}");
+            break;
+        }
+    }
+    if ($enumMatched) {
+        $nameMatched = true;
+    }
+}
+
 if ($varId <= 0) {
     $voiceCandidates = gr_collect_voice_candidates([
         $args2_raw,
         $rawText,
         $args1_raw,
+        $voice_szene,
         $voice_device,
         $voice_object,
         $voice_action,
-        $voice_alles,
-        $voice_szene
+        $voice_alles
     ]);
     if ($voice_szene !== '' && $voice_action !== '') {
         $voiceCandidates[] = trim($voice_szene . ' ' . $voice_action);
@@ -260,9 +281,16 @@ if ($varId <= 0) {
             $match = gr_find_var_by_name_from_tabs($tabs, $nameCandidate, $CAN_TOGGLE);
         }
         if ($match !== null) {
+            $toggleCandidate = $parsed['toggleTo'] ?? gr_toggle_from_action($voice_action);
+            if ($toggleCandidate !== null) {
+                $rowIsBool = !empty($match['row']['isBool']);
+                $rowCanToggle = !empty($match['row']['canToggle']);
+                if (!$rowIsBool || !$rowCanToggle) {
+                    continue;
+                }
+            }
             $varId = (int)$match['varId'];
             $nameMatched = true;
-            $toggleCandidate = $parsed['toggleTo'] ?? gr_toggle_from_action($voice_action);
             if ($toggleCandidate !== null) {
                 $action = $action !== '' ? $action : 'toggle';
                 $toggleTo = $toggleCandidate;
@@ -673,6 +701,75 @@ function gr_find_var_by_name_from_tabs(array $tabs, string $name, bool $aeToggle
                     'row'   => $row
                 ];
             }
+        }
+    }
+    return null;
+}
+
+function gr_find_enum_match_in_tab(string $tabId, string $label, bool $aeToggle, array $preferVarNames = []): ?array
+{
+    if ($tabId === '') {
+        return null;
+    }
+    $labelKey = gr_keynorm($label);
+    if ($labelKey === '') {
+        return null;
+    }
+    $preferKeys = [];
+    foreach ($preferVarNames as $preferName) {
+        if (!is_string($preferName)) {
+            continue;
+        }
+        $key = gr_keynorm($preferName);
+        if ($key !== '') {
+            $preferKeys[] = $key;
+        }
+    }
+    $rows = gr_buildRowsFromNode((int)$tabId, $aeToggle);
+    foreach ($rows as $row) {
+        if (!empty($row['isSection'])) {
+            continue;
+        }
+        if (empty($row['hasEnum']) || empty($row['enumOpts'])) {
+            continue;
+        }
+        if ($preferKeys) {
+            $rowName = (string)($row['name'] ?? '');
+            if ($rowName === '' || !in_array(gr_keynorm($rowName), $preferKeys, true)) {
+                continue;
+            }
+        }
+        foreach ((array)$row['enumOpts'] as $opt) {
+            $optLabel = (string)($opt['label'] ?? '');
+            if ($optLabel === '') {
+                continue;
+            }
+            if (gr_keynorm($optLabel) === $labelKey) {
+                return [
+                    'varId' => (int)($row['targetId'] ?? 0),
+                    'label' => $optLabel,
+                    'row'   => $row
+                ];
+            }
+        }
+    }
+    return null;
+}
+
+function gr_find_enum_match_from_tabs(array $tabs, string $label, bool $aeToggle, array $preferVarNames = []): ?array
+{
+    $labelKey = gr_keynorm($label);
+    if ($labelKey === '') {
+        return null;
+    }
+    foreach ($tabs as $tab) {
+        $tabId = (int)($tab['id'] ?? 0);
+        if ($tabId <= 0) {
+            continue;
+        }
+        $match = gr_find_enum_match_in_tab((string)$tabId, $label, $aeToggle, $preferVarNames);
+        if ($match !== null) {
+            return $match;
         }
     }
     return null;
