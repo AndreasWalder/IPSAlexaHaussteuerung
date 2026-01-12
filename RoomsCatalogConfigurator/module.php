@@ -1452,6 +1452,6 @@ class RoomsCatalogConfigurator extends IPSModule
 
     private function logDebug(string $message): void
     {
-        IPS_LogMessage('Alexa', 'RCC-DEBUG: ' . $message);
+        // IPS_LogMessage('Alexa', 'RCC-DEBUG: ' . $message);
     }
 }
