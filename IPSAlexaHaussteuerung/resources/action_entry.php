@@ -4,6 +4,7 @@
  * ALEXA ACTION SCRIPT — Routing Heizung / Jalousie / Licht / Lüftung / Geräte
  * ============================================================
  *
+ *
  * Änderungsverlauf
  * 2025-12-08: Slot-IDs aus Resolutions bevorzugt (Action/Device/Room/Szene/Object/Alles); "wer bist du" über Action-ID "werbistdu".
  * 2025-11-11: Schlank-Refactor (CoreHelpers)
