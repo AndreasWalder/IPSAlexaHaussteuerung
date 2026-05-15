@@ -96,8 +96,202 @@ function gr_match_who_are_your_creator(string $rawAction, string $rawText): bool
         'wer hat dich erschaffen',
         'wer ist andreas',
         'kennst du andreas',
+        'wer andreas',
+        'wer dein erfinder',
     ];
     return $text !== '' && in_array($text, $phrases, true);
+}
+
+function gr_match_who_are_andrea(string $rawAction, string $rawText): bool
+{
+    $text = mb_strtolower(trim($rawText !== '' ? $rawText : $rawAction));
+    $phrases = [
+        'wer ist andrea',
+        'kennst du andrea',
+        'wer andrea',
+        'wer seine frau',
+    ];
+    return $text !== '' && in_array($text, $phrases, true);
+}
+
+function gr_match_maehroboter(string $rawAction, string $rawText): bool
+{
+    $text = mb_strtolower(trim($rawText !== '' ? $rawText : $rawAction));
+    $phrases = [
+        'mähroboter',
+        'vox',
+        'wrox',
+    ];
+    return $text !== '' && in_array($text, $phrases, true);
+}
+
+function gr_norm_text(string $value): string
+{
+    $text = mb_strtolower(trim($value), 'UTF-8');
+    $text = str_replace(['ä', 'ö', 'ü', 'ß'], ['ae', 'oe', 'ue', 'ss'], $text);
+    $text = preg_replace('/\s+/u', ' ', $text);
+    return trim((string)$text);
+}
+
+function gr_is_slot_id(string $value): bool
+{
+    $value = trim($value);
+    return $value !== '' && (
+        preg_match('/^[a-f0-9]{32}$/i', $value) === 1 ||
+        str_starts_with($value, 'amzn1.')
+    );
+}
+
+function gr_roborock_triggers(): array
+{
+    return [
+        'roborock',
+        'staubsaugen',
+        'saugen',
+    ];
+}
+
+function gr_roborock_room_map(): array
+{
+    return [
+        'obergeschoss' => 'obergeschoss',
+        'ober geschoss' => 'obergeschoss',
+        'og' => 'obergeschoss',
+        'oben' => 'obergeschoss',
+
+        'erdgeschoss' => 'erdgeschoss',
+        'erd geschoss' => 'erdgeschoss',
+        'eg' => 'erdgeschoss',
+        'unten' => 'erdgeschoss',
+        'untergeschoss' => 'erdgeschoss',
+        'unter geschoss' => 'erdgeschoss',
+    ];
+}
+
+function gr_text_contains_word(string $text, string $word): bool
+{
+    $text = gr_norm_text($text);
+    $word = gr_norm_text($word);
+
+    if ($text === '' || $word === '') {
+        return false;
+    }
+
+    return preg_match('/(?<![a-z0-9])' . preg_quote($word, '/') . '(?![a-z0-9])/u', $text) === 1;
+}
+
+function gr_extract_roborock_room(array $candidates): string
+{
+    $roomMap = gr_roborock_room_map();
+    uksort($roomMap, static fn($a, $b) => mb_strlen($b, 'UTF-8') <=> mb_strlen($a, 'UTF-8'));
+
+    foreach ($candidates as $candidate) {
+        $text = gr_norm_text((string)$candidate);
+
+        if ($text === '' || gr_is_slot_id($text)) {
+            continue;
+        }
+
+        foreach ($roomMap as $alias => $roomKey) {
+            if (gr_text_contains_word($text, $alias)) {
+                return $roomKey;
+            }
+        }
+    }
+
+    $removeWords = array_merge(
+        gr_roborock_triggers(),
+        [
+            'bitte',
+            'starte',
+            'starten',
+            'beginne',
+            'beginnen',
+            'reinigung',
+            'reinigen',
+            'reinige',
+            'putzen',
+            'im',
+            'in',
+            'den',
+            'dem',
+            'der',
+            'die',
+            'das',
+            'zu',
+            'auf',
+        ]
+    );
+
+    foreach ($candidates as $candidate) {
+        $text = gr_norm_text((string)$candidate);
+
+        if ($text === '' || gr_is_slot_id($text)) {
+            continue;
+        }
+
+        foreach ($removeWords as $word) {
+            $text = preg_replace('/(?<![a-z0-9])' . preg_quote(gr_norm_text($word), '/') . '(?![a-z0-9])/u', ' ', $text);
+        }
+
+        $text = trim(preg_replace('/\s+/u', ' ', (string)$text));
+
+        if ($text !== '' && !gr_is_slot_id($text)) {
+            return $text;
+        }
+    }
+
+    return '';
+}
+
+function gr_parse_roborock(array $rawSlots, array $rawSlotValues, string $rawText, string $room, string $roomRaw): array
+{
+    $candidates = [
+        $rawText,
+        $room,
+        $roomRaw,
+        $rawSlots['a'] ?? '',
+        $rawSlots['d'] ?? '',
+        $rawSlots['r'] ?? '',
+        $rawSlots['o'] ?? '',
+        $rawSlots['al'] ?? '',
+        $rawSlots['s'] ?? '',
+        $rawSlotValues['a'] ?? '',
+        $rawSlotValues['d'] ?? '',
+        $rawSlotValues['r'] ?? '',
+        $rawSlotValues['o'] ?? '',
+        $rawSlotValues['al'] ?? '',
+        $rawSlotValues['s'] ?? '',
+    ];
+
+    $matched = false;
+
+    foreach ($candidates as $candidate) {
+        $text = gr_norm_text((string)$candidate);
+
+        if ($text === '' || gr_is_slot_id($text)) {
+            continue;
+        }
+
+        foreach (gr_roborock_triggers() as $trigger) {
+            if (gr_text_contains_word($text, $trigger)) {
+                $matched = true;
+                break 2;
+            }
+        }
+    }
+
+    if (!$matched) {
+        return [
+            'matched' => false,
+            'room' => '',
+        ];
+    }
+
+    return [
+        'matched' => true,
+        'room' => gr_extract_roborock_room($candidates),
+    ];
 }
 
 function iah_get_instance_id(): int
@@ -2008,6 +2202,32 @@ function Execute($request = null)
         if (gr_match_who_are_your_creator($rawSlots['a'] ?? '', $rawUserText ?? '')) {
             return AskResponse::CreatePlainText('Andreas, der geniale Programmierer, hat mich erschaffen um im Smart Home zu unterstützen.')
                 ->SetRepromptPlainText('wie kann ich helfen?');
+        }
+
+        if (gr_match_who_are_andrea($rawSlots['a'] ?? '', $rawUserText ?? '')) {
+            return AskResponse::CreatePlainText('Andrea, die liebevolle Frau hat ihn dabei unterstützt und musste seine Launen aushalten!')
+                ->SetRepromptPlainText('wie kann ich helfen?');
+        }
+
+        if (gr_match_maehroboter($rawSlots['a'] ?? '', $rawUserText ?? '')) {
+            return AskResponse::CreatePlainText('Ok verstanden, mähen gestartet!')
+                ->SetRepromptPlainText('wie kann ich helfen?');
+        }
+
+        $roborock = gr_parse_roborock(
+            $rawSlots,
+            $rawSlotValues,
+            $rawUserText ?? '',
+            $room ?? '',
+            $room_raw ?? ''
+        );
+
+        if (!empty($roborock['matched'])) {
+            $roborockRoom = (string)($roborock['room'] ?? '');
+
+            return AskResponse::CreatePlainText(
+                'Ok verstanden, ich beginne mit der Reinigung' . ($roborockRoom !== '' ? ' im ' . $roborockRoom : '') . '.'
+            )->SetRepromptPlainText('wie kann ich helfen?');
         }
 
         if ($device === '' && ($action === 'frage' || $action1 === 'frage')) {
