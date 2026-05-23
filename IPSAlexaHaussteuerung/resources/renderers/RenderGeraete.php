@@ -332,19 +332,19 @@ if ($varId <= 0) {
         if ($match !== null) {
             $toggleCandidate = $parsed['toggleTo'] ?? gr_toggle_from_action($voice_action);
             $rowIsBool = !empty($match['row']['isBool']);
-            $rowCanToggle = !empty($match['row']['canToggle']);
+            $varId = (int)$match['varId'];
+            $rowCanToggle = $rowIsBool && gr_can_toggle_var($varId, $CAN_TOGGLE);
             if ($toggleCandidate !== null) {
                 if (!$rowIsBool || !$rowCanToggle) {
                     continue;
                 }
             }
-            $varId = (int)$match['varId'];
             $nameMatched = true;
             if ($rowIsBool && $rowCanToggle && ($toggleCandidate !== null || $action === '')) {
                 $action = 'toggle';
                 $toggleTo = $toggleCandidate;
             }
-            $logV("[$RID][{$rendererLogName}] nameMatch name={$nameCandidate} varId={$varId} toggleTo=" . ($toggleTo ?? ''));
+            $logV("[$RID][{$rendererLogName}] nameMatch name={$nameCandidate} varId={$varId} rowBool=" . ($rowIsBool ? 1 : 0) . " canToggle=" . ($rowCanToggle ? 1 : 0) . " action={$action} toggleTo=" . ($toggleTo ?? ''));
             break;
         }
     }
