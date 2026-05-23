@@ -270,7 +270,11 @@ if ($varId <= 0 && $action === '' && $rawText === '' && $numberIn === null && $v
         ]);
     }
     foreach ($enumCandidates as $candidate) {
-        $match = gr_find_enum_match_from_tabs($tabs, $candidate, $CAN_TOGGLE, ['szene']);
+        if ($storedActiveId !== null) {
+            $match = gr_find_enum_match_in_tab($storedActiveId, $candidate, $CAN_TOGGLE, ['szene']);
+        } else {
+            $match = gr_find_enum_match_from_tabs($tabs, $candidate, $CAN_TOGGLE, ['szene']);
+        }
         if ($match !== null) {
             $varId = (int)$match['varId'];
             $action = 'set';
@@ -299,6 +303,11 @@ if ($varId <= 0) {
     if ($voice_szene !== '' && $voice_action !== '') {
         $voiceCandidates[] = trim($voice_szene . ' ' . $voice_action);
     }
+    foreach ([$voice_device, $voice_object, $voice_alles] as $voiceNamePart) {
+        if ($voiceNamePart !== '' && $voice_action !== '') {
+            $voiceCandidates[] = trim($voiceNamePart . ' ' . $voice_action);
+        }
+    }
     $voiceCandidates = gr_collect_voice_candidates($voiceCandidates);
     foreach ($voiceCandidates as $candidate) {
         $parsed = gr_extract_name_and_toggle($candidate);
@@ -309,12 +318,16 @@ if ($varId <= 0) {
         if (in_array(gr_norm($nameCandidate), $sceneAliases, true)) {
             continue;
         }
-        $match = null;
         if ($storedActiveId !== null) {
             $match = gr_find_var_by_name_in_tab($storedActiveId, $nameCandidate, $CAN_TOGGLE);
-        }
-        if ($match === null) {
+            if ($match === null && $parsed['toggleTo'] !== null) {
+                $match = gr_find_var_by_name_in_tab($storedActiveId, $candidate, $CAN_TOGGLE);
+            }
+        } else {
             $match = gr_find_var_by_name_from_tabs($tabs, $nameCandidate, $CAN_TOGGLE);
+            if ($match === null && $parsed['toggleTo'] !== null) {
+                $match = gr_find_var_by_name_from_tabs($tabs, $candidate, $CAN_TOGGLE);
+            }
         }
         if ($match !== null) {
             $toggleCandidate = $parsed['toggleTo'] ?? gr_toggle_from_action($voice_action);
@@ -853,7 +866,7 @@ function gr_can_toggle_var(int $varId, bool $aeToggle): bool
     if ((int)($var['VariableType'] ?? 3) !== 0) {
         return false;
     }
-    return gr_hasAction($var);
+    return true;
 }
 
 function gr_format_value_speech(int $varId): string
@@ -1478,7 +1491,7 @@ function gr_make_row_for_var(int $varId, bool $aeToggle, ?string $nameOverride):
         return $base + [
             'isBool'    => true,
             'boolOn'    => $boolOn,
-            'canToggle' => ($controllable && $aeToggle),
+            'canToggle' => $aeToggle,
             'hasEnum'   => false,
             'enumOpts'  => [],
             'targetId'  => (string)$varId
