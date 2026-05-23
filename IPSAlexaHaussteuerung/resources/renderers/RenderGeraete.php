@@ -410,6 +410,7 @@ if (($action === 'tab' && $tabIdArg !== '') || $activeIdFromSpokenTab) {
    ACTIONS (APL)
    ========================= */
 $didAction = false;
+$speechOut = '';
 
 if ($action === 'toggle' && $varId > 0) {
     if (!gr_can_toggle_var($varId, $CAN_TOGGLE)) {
@@ -433,6 +434,7 @@ if ($action === 'toggle' && $varId > 0) {
             }
             if (gr_hasAction($var)) { @RequestAction($varId, $set); } else { @SetValueBoolean($varId, (bool)$set); }
             $didAction = true; $logB("[$RID][{$rendererLogName}] TOGGLE var=$varId set=".$set);
+            $speechOut = gr_format_value_speech($varId);
         } else {
             echo json_encode(['speech'=>'Schaltvorgang nicht möglich. Variable nicht gefunden.','reprompt'=>'','apl'=>null,'endSession'=>false], GR_JF);
             return;
@@ -469,7 +471,12 @@ elseif ($action === 'set' && $varId > 0) {
             }
         }
         $didAction = true; $logB("[$RID][{$rendererLogName}] SET var=$varId value=".json_encode($finalValue, GR_JF));
+        $speechOut = gr_format_value_speech($varId);
     }
+}
+
+if ($speechOut === '' && $nameMatched && $varId > 0 && $action === '') {
+    $speechOut = gr_format_value_speech($varId);
 }
 
 /* =========================
@@ -523,7 +530,7 @@ if ($DUMP_VAR > 0 && @IPS_ObjectExists($DUMP_VAR)) {
 $apl = $aplSupported ? ['doc' => $doc, 'ds' => $ds, 'token' => $rendererAplToken] : null;
 
 echo json_encode([
-    'speech'     => '',
+    'speech'     => $speechOut,
     'reprompt'   => '',
     'apl'        => $apl,
     'endSession' => false
@@ -880,7 +887,12 @@ function gr_format_value_speech(int $varId): string
     }
     $type = (int)($var['VariableType'] ?? 3);
     $value = gr_formatValueHuman($varId, $type, @GetValue($varId));
-    return 'Aktueller Wert ist ' . $value . '.';
+    $obj = @IPS_GetObject($varId);
+    $name = is_array($obj) ? trim((string)($obj['ObjectName'] ?? '')) : '';
+    if ($name === '') {
+        return 'Aktueller Wert ist ' . $value . '.';
+    }
+    return $name . ' ' . $value . '.';
 }
 
 function gr_normalize_event(string $a1, string $a2, $numRaw): array {
@@ -1792,7 +1804,10 @@ function gr_formatValueHuman(int $varId, int $type, $val): string
     }
 
     switch ($type) {
-        case 0: return gr_asBool($val) ? 'Ja' : 'Nein';
+        case 0:
+            $f = @GetValueFormatted($varId);
+            if (is_string($f) && $f !== '') return $f;
+            return gr_asBool($val) ? 'true' : 'false';
         case 1:
         case 2:
             $f = @GetValueFormatted($varId); if (is_string($f) && $f !== '') return $f;

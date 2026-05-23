@@ -560,6 +560,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $ident = 'iahActionEntry';
         $name = 'Action (Haus\\Übersicht/Einstellungen Entry)';
         $id = @IPS_GetObjectIDByIdent($ident, $parent);
+        $isNew = false;
 
         if (!$id) {
             $byName = @IPS_GetObjectIDByName($name, $parent);
@@ -574,15 +575,17 @@ class IPSAlexaHaussteuerung extends IPSModule
             IPS_SetParent($id, $parent);
             IPS_SetName($id, $name);
             IPS_SetIdent($id, $ident);
+            $isNew = true;
         }
 
         $template = __DIR__ . '/resources/action_entry.php';
-        if (is_file($template)) {
+        if (($isNew || $this->scriptContentIsEmpty((int) $id)) && is_file($template)) {
             $content = file_get_contents($template);
             if ($content !== false) {
                 IPS_SetScriptContent($id, $content);
             }
         }
+        $this->patchActionScriptTabScopedDirectCommands((int) $id);
 
         return (int) $id;
     }
@@ -725,6 +728,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $ident = 'iahSystemConfiguration';
         $name = 'SystemConfiguration';
         $id = @IPS_GetObjectIDByIdent($ident, $parent);
+        $isNew = false;
 
         if (!$id) {
             $byName = @IPS_GetObjectIDByName($name, $parent);
@@ -739,13 +743,133 @@ class IPSAlexaHaussteuerung extends IPSModule
             IPS_SetParent($id, $parent);
             IPS_SetName($id, $name);
             IPS_SetIdent($id, $ident);
+            $isNew = true;
         }
 
-        $snapshot = $this->buildSystemConfigurationSnapshot($settingsCat, $helperCat);
-        $content = "<?php\nreturn " . var_export($snapshot, true) . ";\n";
-        IPS_SetScriptContent($id, $content);
+        if ($isNew || $this->scriptContentIsEmpty((int) $id)) {
+            $snapshot = $this->buildSystemConfigurationSnapshot($settingsCat, $helperCat);
+            $content = "<?php\nreturn " . var_export($snapshot, true) . ";\n";
+            IPS_SetScriptContent($id, $content);
+        }
 
         return (int) $id;
+    }
+
+    private function scriptContentIsEmpty(int $scriptId): bool
+    {
+        if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) {
+            return true;
+        }
+
+        if (function_exists('IPS_GetScriptContent')) {
+            $content = @IPS_GetScriptContent($scriptId);
+            if (is_string($content)) {
+                $trimmed = trim($content);
+                return $trimmed === '' || $trimmed === '<?php';
+            }
+        }
+
+        $file = @IPS_GetScriptFile($scriptId);
+        if (is_string($file) && $file !== '' && is_file($file)) {
+            $content = @file_get_contents($file);
+            if (is_string($content)) {
+                $trimmed = trim($content);
+                return $trimmed === '' || $trimmed === '<?php';
+            }
+        }
+
+        return false;
+    }
+
+    private function getScriptContent(int $scriptId): ?string
+    {
+        if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) {
+            return null;
+        }
+
+        if (function_exists('IPS_GetScriptContent')) {
+            $content = @IPS_GetScriptContent($scriptId);
+            if (is_string($content)) {
+                return $content;
+            }
+        }
+
+        $file = @IPS_GetScriptFile($scriptId);
+        if (is_string($file) && $file !== '' && is_file($file)) {
+            $content = @file_get_contents($file);
+            if (is_string($content)) {
+                return $content;
+            }
+        }
+
+        return null;
+    }
+
+    private function patchActionScriptTabScopedDirectCommands(int $scriptId): void
+    {
+        $content = $this->getScriptContent($scriptId);
+        if (!is_string($content) || $content === '') {
+            return;
+        }
+
+        $updated = $content;
+        $guard = <<<'PHP'
+        $activeDomainPrefForDirectCommands = $getDomainPref($V);
+        $activeDomainKeyForDirectCommands = gr_norm_text((string)($domain ?? ''));
+        $activeDeviceKeyForDirectCommands = gr_norm_text((string)($device ?? ''));
+        $insideDomainTab = (
+            $activeDomainPrefForDirectCommands !== ''
+            || $activeDomainKeyForDirectCommands !== ''
+        );
+        if (!$insideDomainTab && !empty($rendererDomainMap)) {
+            foreach ($rendererDomainMap as $routeKey => $entry) {
+                $keys = [
+                    gr_norm_text((string)$routeKey),
+                    gr_norm_text((string)($entry['roomDomain'] ?? '')),
+                ];
+                foreach ((array)($entry['synonyms'] ?? []) as $synonym) {
+                    $keys[] = gr_norm_text((string)$synonym);
+                }
+                $keys = array_filter(array_unique($keys));
+                if (
+                    in_array($activeDomainKeyForDirectCommands, $keys, true)
+                    || in_array($activeDeviceKeyForDirectCommands, $keys, true)
+                ) {
+                    $insideDomainTab = true;
+                    break;
+                }
+            }
+        }
+PHP;
+
+        if (strpos($updated, 'activeDomainKeyForDirectCommands') === false) {
+            if (strpos($updated, '$activeDomainPrefForDirectCommands = $getDomainPref($V);') !== false) {
+                $updated = preg_replace(
+                    '/\n\s*\$activeDomainPrefForDirectCommands = \$getDomainPref\(\$V\);\R\s*\$insideDomainTab = \(\$activeDomainPrefForDirectCommands !== \'\'\);\R\s*\R\s*if \(!\$insideDomainTab && gr_match_maehroboter\(/',
+                    "\n" . $guard . "\n\n        if (!\$insideDomainTab && gr_match_maehroboter(",
+                    $updated,
+                    1
+                ) ?? $updated;
+            } else {
+                $updated = str_replace(
+                    '        if (gr_match_maehroboter(',
+                    $guard . "\n\n        if (!\$insideDomainTab && gr_match_maehroboter(",
+                    $updated
+                );
+            }
+        }
+
+        if (strpos($updated, "\$insideDomainTab ? ['matched' => false] : gr_parse_roborock(") === false) {
+            $updated = str_replace(
+                '        $roborock = gr_parse_roborock(',
+                "        \$roborock = \$insideDomainTab ? ['matched' => false] : gr_parse_roborock(",
+                $updated
+            );
+        }
+
+        if ($updated !== $content) {
+            IPS_SetScriptContent($scriptId, $updated);
+        }
     }
 
     private function buildSystemConfigurationSnapshot(int $settingsCat, int $helperCat): array

@@ -2210,12 +2210,39 @@ function Execute($request = null)
                 ->SetRepromptPlainText('wie kann ich helfen?');
         }
 
-        if (gr_match_maehroboter($rawSlots['a'] ?? '', $rawUserText ?? '')) {
+        $activeDomainPrefForDirectCommands = $getDomainPref($V);
+        $activeDomainKeyForDirectCommands = gr_norm_text((string)($domain ?? ''));
+        $activeDeviceKeyForDirectCommands = gr_norm_text((string)($device ?? ''));
+        $insideDomainTab = (
+            $activeDomainPrefForDirectCommands !== ''
+            || $activeDomainKeyForDirectCommands !== ''
+        );
+        if (!$insideDomainTab && !empty($rendererDomainMap)) {
+            foreach ($rendererDomainMap as $routeKey => $entry) {
+                $keys = [
+                    gr_norm_text((string)$routeKey),
+                    gr_norm_text((string)($entry['roomDomain'] ?? '')),
+                ];
+                foreach ((array)($entry['synonyms'] ?? []) as $synonym) {
+                    $keys[] = gr_norm_text((string)$synonym);
+                }
+                $keys = array_filter(array_unique($keys));
+                if (
+                    in_array($activeDomainKeyForDirectCommands, $keys, true)
+                    || in_array($activeDeviceKeyForDirectCommands, $keys, true)
+                ) {
+                    $insideDomainTab = true;
+                    break;
+                }
+            }
+        }
+
+        if (!$insideDomainTab && gr_match_maehroboter($rawSlots['a'] ?? '', $rawUserText ?? '')) {
             return AskResponse::CreatePlainText('Ok verstanden, mähen gestartet!')
                 ->SetRepromptPlainText('wie kann ich helfen?');
         }
 
-        $roborock = gr_parse_roborock(
+        $roborock = $insideDomainTab ? ['matched' => false] : gr_parse_roborock(
             $rawSlots,
             $rawSlotValues,
             $rawUserText ?? '',
