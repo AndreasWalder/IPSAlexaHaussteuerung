@@ -2303,7 +2303,8 @@ function Execute($request = null)
         }
 
         // --------- Lazy rooms nur wenn benötigt ---------
-        $needsRooms = in_array($__route ?? '', ['main_launch','heizung','jalousie','licht','lueftung','geraete','bewaesserung'], true);
+        $needsRooms = in_array($__route ?? '', ['main_launch','heizung','jalousie','licht','lueftung','geraete','bewaesserung'], true)
+            || (is_string($__route ?? null) && isset($rendererDomainMap[$__route]));
         $rooms = [];
         if ($needsRooms) {
             if (isset($RBUILDER['build_rooms_status']) && is_callable($RBUILDER['build_rooms_status'])) {
