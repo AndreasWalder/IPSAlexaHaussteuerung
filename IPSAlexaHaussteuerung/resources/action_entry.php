@@ -1827,6 +1827,12 @@ function Execute($request = null)
 
         // ============================================================
         // HOME_AGENT_VOICE_HOOK_BEGIN
+        // AskResponse hält den Alexa-Skill nach einer KI-Antwort für die nächste Frage offen.
+        // Ein Reprompt wird nur nach einer Sprechpause ausgegeben; Alexa begrenzt die Sitzungsdauer.
+        $kiAlexaKeepOpen = static function (string $text) {
+            return AskResponse::CreatePlainText($text)
+                ->SetRepromptPlainText('Noch eine Frage oder ein Schaltbefehl?');
+        };
         // Eigener Freitext-Intent hat Vorrang. GetHaus und sämtliche APL-Aktionen bleiben erhalten.
         $homeAgentDedicatedIntent = strcasecmp((string) $intentName, 'HomeAgentFrageIntent') === 0;
         $homeAgentEnabled = (bool) ($propsEarly['HomeAgentVoiceEnabled'] ?? false)
@@ -1859,12 +1865,12 @@ function Execute($request = null)
                 if (!$homeAgentEnabled) {
                     $log('warn', 'HomeAgentVoice.disabled');
                     if ($homeAgentDedicatedIntent) {
-                        return TellResponse::CreatePlainText('Der KI-Hausassistent ist noch nicht aktiviert.');
+                        return $kiAlexaKeepOpen('Der KI-Hausassistent ist noch nicht aktiviert.');
                     }
                 } elseif ($homeAgentSpokenQuestion === '' || $homeAgentSpokenQuestion === '?') {
                     $log('warn', 'HomeAgentVoice.missing_text', ['intent' => $intentName]);
                     if ($homeAgentDedicatedIntent) {
-                        return TellResponse::CreatePlainText('Ich habe keine Frage verstanden. Bitte versuche es erneut.');
+                        return $kiAlexaKeepOpen('Ich habe keine Frage verstanden. Bitte versuche es erneut.');
                     }
                 } else {
                     $homeAgentHelpers = iah_get_child_object($instanceId, 'iahHelper', 'Alexa new devices helper');
@@ -1913,7 +1919,7 @@ function Execute($request = null)
                                 && trim((string) ($homeAgentData['answer'] ?? '')) !== '') {
                                 $homeAgentAnswer = trim((string) $homeAgentData['answer']);
                                 $log('info', 'HomeAgentVoice.answer', ['durationSeconds' => $homeAgentElapsed, 'text' => $homeAgentAnswer]);
-                                return TellResponse::CreatePlainText($homeAgentAnswer);
+                                return $kiAlexaKeepOpen($homeAgentAnswer);
                             }
                             $log('warn', 'HomeAgentVoice.fallback', [
                                 'durationSeconds' => $homeAgentElapsed,
@@ -1930,12 +1936,12 @@ function Execute($request = null)
                     }
                     if ($homeAgentDedicatedIntent) {
                         // Kein versehentliches Umschalten durch ein anderes Alexa-Routing.
-                        return TellResponse::CreatePlainText('Der Hausassistent ist gerade nicht erreichbar.');
+                        return $kiAlexaKeepOpen('Der Hausassistent ist gerade nicht erreichbar.');
                     }
                 }
             } elseif ($homeAgentDedicatedIntent) {
                 $log('warn', 'HomeAgentVoice.not_routed', ['intent' => $intentName]);
-                return TellResponse::CreatePlainText('Bitte stelle deine Frage noch einmal.');
+                return $kiAlexaKeepOpen('Bitte stelle deine Frage noch einmal.');
             }
         }
         // HOME_AGENT_VOICE_HOOK_END
