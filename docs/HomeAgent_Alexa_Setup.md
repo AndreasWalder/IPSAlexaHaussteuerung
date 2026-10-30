@@ -70,6 +70,27 @@ Die Meldung `HomeAgentVoice.missing_text` bedeutet: Alexa hat zwar den Intent er
 
 **Datenschutz:** Rohlogs können weiterhin andere Informationen über Alexa-Interaktionen enthalten. Der bisherige REQUEST_RAW-Log maskiert jetzt bekannte Zugangstoken und IDs; die neue Home-Agent-Diagnose gibt keinen OpenAI-Key oder MCP-Token aus. Debug-Level nach dem Test wieder reduzieren.
 
+## Test: IPS_RunScriptWaitEx-Parameter (ohne Zugangsdaten)
+
+Der Symcon-Skriptaufruf akzeptiert als Parameterwerte keine PHP-Arrays. Insbesondere `['config' => []]` führt zu
+`Cannot auto-convert value for parameter Parameters (Type is not supported)`.
+Die Produktiv-Anbindung überträgt deshalb die Einstellung als **JSON-String** unter `homeAgentConfigJson`.
+
+Ein gefahrloser Test der Bridge-Skriptausgabe ohne externe API-Aufrufe:
+
+```php
+<?php
+declare(strict_types=1);
+$result = IPS_RunScriptWaitEx(23549, [
+    'homeAgentText' => 'Test',
+    'homeAgentConfigJson' => '{}'
+]);
+var_dump($result);
+```
+
+Erwartet: `{"handled":false,"error":"Konfiguration unvollständig"}`.
+Das prüft nur den Transport und JSON-Rückgabewert, noch nicht die Verbindung zu Home Agent oder OpenAI.
+
 ## Hinweise
 
 - Nur im Alexa-Developer-Portal kann das Interaction Model des Skills geändert und neu gebaut werden. Das Symcon-Modul kann den Alexa-Intent nicht automatisch erstellen.
