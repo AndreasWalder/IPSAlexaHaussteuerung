@@ -64,7 +64,7 @@ function iah_ki_apply_event(array &$store, array $event, array $prices, DateTime
 {
     $backend = (string)($event['backend'] ?? '');
     $id = (string)($event['questionId'] ?? '');
-    if (!in_array($backend,['RoomsCatalog','HomeAgent'],true)
+    if (!in_array($backend,['RoomsCatalog','HomeAgent','IntentParser'],true)
         || !preg_match('/^[a-zA-Z0-9_-]{8,64}$/D',$id)
         || !in_array($event['type'] ?? '', ['start','api','finish'],true)) return false;
     $date=$now->format('Y-m-d');$month=$now->format('Y-m');
