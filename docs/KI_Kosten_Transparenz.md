@@ -9,6 +9,7 @@ Nach dem Modul-Update und Übernehmen legt das Modul unter IPSAlexaHaussteuerung
 - Fragen heute / Monat / gesamt, fehlgeschlagene Fragen, API-Aufrufe heute / Monat / gesamt.
 - Eingabe-Tokens insgesamt und im Monat, gecachte Tokens, Ausgabe-Tokens insgesamt und im Monat, Token-Gesamtzahl.
 - Kosten heute, im Monat und insgesamt (USD), Kosten der letzten Frage, Modell, letzte Ausführung und Status.
+- Prognose der Monatskosten auf Basis des bisherigen Tagesdurchschnitts und durchschnittliche Kosten pro Frage, jeweils getrennt je Backend und insgesamt. Am Monatsanfang kann die Prognose stark schwanken.
 - API-Aufrufe ohne Token-Daten oder ohne bekannten Preis werden gesondert gezählt und in der Übersicht gewarnt.
 
 ## Preisberechnung
