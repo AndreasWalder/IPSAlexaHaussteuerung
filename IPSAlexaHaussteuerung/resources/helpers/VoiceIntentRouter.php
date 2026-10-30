@@ -115,10 +115,11 @@ function iah_vir_execute(array $input,array &$data,int $now): array
 {
     $op=(string)($input['op']??'');
     $device=(string)($input['deviceId']??'');
-    $deviceHash=substr(hash('sha256','IAH-Voice-v1|'.$device),0,16);
+    // Ohne Alexa-Gerätekennung keine geräteübergreifende Kontext-Zuordnung.
+    $deviceHash=$device!=='' ? substr(hash('sha256','IAH-Voice-v1|'.$device),0,16) : 'unknown';
     $devices=&$data['devices'];
     if(!is_array($devices??null))$devices=[];
-    $old=(array)($devices[$deviceHash]??[]);
+    $old=$device!=='' ? (array)($devices[$deviceHash]??[]) : [];
     if($op==='classify') {
         $decision=iah_vir_classify($input,$old);
         $kind=(string)$decision['category'];
@@ -147,9 +148,9 @@ function iah_vir_execute(array $input,array &$data,int $now): array
     }
     if($op==='complete') {
         $route=(string)($input['route']??'');
-        if (in_array($route,['main_launch','licht','jalousie','heizung','lueftung','geraete','bewaesserung',
+        if ($device!=='' && (in_array($route,['main_launch','licht','jalousie','heizung','lueftung','geraete','bewaesserung',
             'einstellungen','sicherheit','listen','energie','kamera','info','szene'],true)
-            || preg_match('/^[a-z][a-z0-9_-]{1,49}$/D',$route)===1) {
+            || preg_match('/^[a-z][a-z0-9_-]{1,49}$/D',$route)===1)) {
             $prior=(string)($old['domain']??'');
             if ($prior===$route) $prior=(string)($old['previous']??'main_launch');
             $devices[$deviceHash]=['domain'=>$route,'previous'=>$prior,'updatedUnix'=>$now,
