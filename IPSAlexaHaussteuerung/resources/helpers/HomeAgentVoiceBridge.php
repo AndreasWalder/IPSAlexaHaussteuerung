@@ -99,8 +99,11 @@ function iah_homeagent_voice(string $text, array $cfg): array
         }
         iah_homeagent_debug('mcp.tools.available', ['names'=>array_map(static fn(array $item): string => $item['function']['name'], $tools)]);
         if (!$tools) throw new RuntimeException('Keine freigegebenen MCP-Tools');
+        $uiDomain=(string)($cfg['ui_context_domain']??'');
+        $uiDomain=preg_match('/^[a-z0-9_-]{2,50}$/D',$uiDomain) ? $uiDomain : '';
+        $uiHint=$uiDomain!=='' ? ' Im Alexa-Bildschirm ist aktuell der Bereich '.$uiDomain.' geöffnet. Nur als Lesekontext nutzen, nicht als Schreibfreigabe.' : '';
         $messages = [
-            ['role'=>'system','content'=>'Du bist eine deutsche Alexa-Haussteuerung. Benutze Home-Agent-Werkzeuge für alle Hausdaten. Erfinde keine Zustände und bestätige Aktionen nur bei Erfolg. Antworte in höchstens '.$maxWords.' Wörtern, einem kurzen Satz, ohne Markdown.'],
+            ['role'=>'system','content'=>'Du bist eine deutsche Alexa-Haussteuerung. Benutze Home-Agent-Werkzeuge für alle Hausdaten. Erfinde keine Zustände und bestätige Aktionen nur bei Erfolg. Antworte in höchstens '.$maxWords.' Wörtern, einem kurzen Satz, ohne Markdown.'.$uiHint],
             ['role'=>'user','content'=>mb_substr(trim($text),0,500)],
         ];
         for ($round = 0; $round < 2; $round++) {

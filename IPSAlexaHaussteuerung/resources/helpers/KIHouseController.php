@@ -252,8 +252,11 @@ function iah_rc_voice(string $text,array $cfg): array
             $tools[]=$make('set_multiple','Schaltet bis zu 15 freigegebene Lampen/Lüfter, nur wenn der Nutzer ausdrücklich ALLE verlangt.',
                 $props+['value'=>['type'=>'boolean']]);
         }
+        $uiDomain=(string)($cfg['ui_context_domain']??'');
+        $uiDomain=preg_match('/^[a-z0-9_-]{2,50}$/D',$uiDomain) ? $uiDomain : '';
+        $uiHint=$uiDomain!=='' ? ' Aktueller Alexa-UI-Bereich: '.$uiDomain.'. Dieser Bereich ist ausschließlich ein Kontext für unvollständige Fragen und gewährt keine Schreibrechte.' : '';
         $messages=[
-            ['role'=>'system','content'=>'Du bist eine deutsche Alexa-Haussteuerung. Alle Hausdaten nur über die Werkzeuge. Keine erfundenen Geräte, keine Schaltbestätigung ohne Werkzeugerfolg. Maximal '.$maxWords.' Wörter, ein kurzer deutscher Satz. Bei Abfragen niemals schalten. Bei unklaren Geräten nachfragen. Eine an IP-Symcon gesendete Aktion ist noch keine bestätigte Rückmeldung.'],
+            ['role'=>'system','content'=>'Du bist eine deutsche Alexa-Haussteuerung. Alle Hausdaten nur über die Werkzeuge. Keine erfundenen Geräte, keine Schaltbestätigung ohne Werkzeugerfolg. Maximal '.$maxWords.' Wörter, ein kurzer deutscher Satz. Bei Abfragen niemals schalten. Bei unklaren Geräten nachfragen. Eine an IP-Symcon gesendete Aktion ist noch keine bestätigte Rückmeldung.'.$uiHint],
             ['role'=>'user','content'=>mb_substr($text,0,500,'UTF-8')]
         ];
         for($round=0;$round<2;$round++){

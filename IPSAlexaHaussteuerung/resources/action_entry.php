@@ -1845,10 +1845,88 @@ function Execute($request = null)
                 ->SetRepromptPlainText('Noch eine Frage oder ein Schaltbefehl?');
         };
         // Eigener Freitext-Intent hat Vorrang. GetHaus und sämtliche APL-Aktionen bleiben erhalten.
+        // --- Lokaler KI-Sprachrouter: Navigation vor OpenAI klassifizieren ---
+        // Die Helper-Skript-ID wird wie die bestehenden Voice-Bridges dynamisch
+        // aus der lokalen IP-Symcon-Instanz geladen (keine duplizierte NAV_MAP).
+        $iahVoiceRouterHelperParent = iah_get_child_object($instanceId, 'iahHelper', 'Alexa new devices helper');
+        $iahVoiceRouterScript = iah_get_child_object($iahVoiceRouterHelperParent, 'voiceIntentRouterScript', 'VoiceIntentRouter');
+        $iahVoiceRouter = static function (array $event) use ($instanceId, $iahVoiceRouterScript, $log): array {
+            if ($iahVoiceRouterScript <= 0 || !function_exists('IPS_RunScriptWaitEx')) return [];
+            try {
+                $event['instanceId'] = $instanceId;
+                $raw = IPS_RunScriptWaitEx($iahVoiceRouterScript, [
+                    'voiceIntentRouterJson' => json_encode($event, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR)
+                ]);
+                $result = json_decode((string)$raw, true);
+                return is_array($result) ? $result : [];
+            } catch (Throwable $err) {
+                $log('warn', 'VoiceRouter.unavailable', ['errorType'=>get_class($err)]);
+                return [];
+            }
+        };
+        $iahVoiceDeviceId = method_exists($request, 'GetDeviceId') ? (string)$request->GetDeviceId() : '';
+        $iahVoiceRequestType = (string)($request->type ?? '');
+        $iahVoiceIsAplEvent = $iahVoiceRequestType === 'Alexa.Presentation.APL.UserEvent';
+        $iahVoiceHasScreen = isset($request->context->System->device->supportedInterfaces->{'Alexa.Presentation.APL'});
+        $iahVoiceViewport = $request->context->Viewport ?? null;
+        $iahVoiceViewportMode = (string)($iahVoiceViewport->mode ?? '');
+        $iahVoiceViewportShape = (string)($iahVoiceViewport->shape ?? '');
+        $iahVoiceAplSource = (string)($request->source->type ?? '');
+        // Ein APL-Event oder ein eindeutiger GetHaus-Klick ist keine KI-Anfrage.
+        $iahVoiceSpoken = strcasecmp((string)$intentName, 'HomeAgentFrageIntent') === 0
+            ? trim((string)($getSlotCH($request,'Frage') ?? ''))
+            : trim((string)($rawUserText !== '' ? $rawUserText : $rawSlotsToText($rawSlotValues)));
+        $iahVoiceSpoken = trim(preg_replace('/\s+/u',' ',$iahVoiceSpoken) ?? '');
+        $iahVoiceDecision = $iahVoiceRouter([
+            'op'=>'classify',
+            'deviceId'=>$iahVoiceDeviceId,
+            'text'=>$iahVoiceSpoken,
+            'storeTranscript'=>(bool)($propsEarly['VoiceRouterStoreTranscript']??true),
+            'intent'=>$intentName,
+            'requestType'=>$iahVoiceRequestType,
+            'aplArgs'=>array_values((array)($APL['args']??[])),
+            'routes'=>array_values($rendererDomainMap),
+            'screen'=>$iahVoiceHasScreen,
+            'viewportMode'=>$iahVoiceViewportMode,
+            'viewportShape'=>$iahVoiceViewportShape,
+            'aplSource'=>$iahVoiceAplSource,
+        ]);
+        // Fail-closed beim Ausfall/Timeout des Diagnose-Helpers.
+        // Ein Kachelname darf NIE ohne Navigationserkennung in die KI-Schaltlogik gelangen.
+        if (!isset($iahVoiceDecision['category'])
+            && strcasecmp((string)$intentName,'HomeAgentFrageIntent')===0) {
+            $fallbackTiles=[
+                'licht'=>'licht','lichter'=>'licht','jalousie'=>'jalousie',
+                'jalousien'=>'jalousie','heizung'=>'heizung','temperatur'=>'heizung',
+                'lueftung'=>'lueftung','luefter'=>'lueftung',
+                'geraete'=>'geraete','bewaesserung'=>'bewaesserung',
+                'einstellungen'=>'einstellungen','sicherheit'=>'sicherheit',
+                'energie'=>'energie','kamera'=>'kamera','info'=>'info',
+                'szene'=>'szene','listen'=>'listen',
+                'zurueck'=>'main_launch','home'=>'main_launch',
+                'hauptmenue'=>'main_launch'
+            ];
+            $fallbackWord=gr_norm_text($iahVoiceSpoken);
+            if (isset($fallbackTiles[$fallbackWord])) {
+                $iahVoiceDecision=['category'=>'navigation','route'=>$fallbackTiles[$fallbackWord],
+                    'reason'=>'local_router_fallback'];
+            } elseif (!preg_match('/^(?:wer|was|wann|wo|wie|welche|ist|sind|hat|haben|schalte|schalt|mach|stelle|fahre|fahr|oeffne|schliesse|starte|stoppe|dimme|dimme|pruefe)\b/u',$fallbackWord)) {
+                $iahVoiceDecision=['category'=>'clarify','route'=>'','reason'=>'router_unavailable_clarify'];
+            }
+            $log('warn','VoiceRouter.fallback',['category'=>(string)($iahVoiceDecision['category']??'legacy')]);
+        }
+        // Navigation wird NACH dem KI-Hook an den vorhandenen ROUTE_ALL-Renderer übergeben.
+        $iahVoiceIsNavigation = ($iahVoiceDecision['category']??'') === 'navigation';
+        $iahVoiceNavKey = $iahVoiceIsNavigation ? (string)($iahVoiceDecision['route']??'') : '';
         $homeAgentDedicatedIntent = strcasecmp((string) $intentName, 'HomeAgentFrageIntent') === 0;
         $homeAgentEnabled = (bool) ($propsEarly['HomeAgentVoiceEnabled'] ?? false)
             && (string) ($propsEarly['KIVoiceMode'] ?? 'RoomsCatalog') !== 'Classic';
+        if (($iahVoiceDecision['category']??'') === 'clarify' && $homeAgentDedicatedIntent) {
+            return $kiAlexaKeepOpen('Möchtest du eine Kachel öffnen, Geräte abfragen oder etwas schalten? Bitte sage es genauer.');
+        }
         if (!$IS_LAUNCH && !$IS_BACK && !$wantsExit
+            && !in_array((string)($iahVoiceDecision['category']??''), ['navigation','apl_navigation','apl_action','clarify'], true)
+            && !$iahVoiceIsAplEvent
             && ($homeAgentDedicatedIntent || empty($APL['args']))
             && ($homeAgentDedicatedIntent || $homeAgentEnabled)) {
             $homeAgentStarted = microtime(true);
@@ -1860,6 +1938,8 @@ function Execute($request = null)
                 $homeAgentSpokenQuestion = trim((string) $rawUserText);
             }
             $homeAgentSpokenQuestion = trim(preg_replace('/\s+/u', ' ', $homeAgentSpokenQuestion) ?? '');
+            $iahVoiceContextDomain = ($iahVoiceDecision['category']??'') === 'query'
+                ? (string)($iahVoiceDecision['contextDomain']??'') : '';
             $isHomeAgentQuestion = $homeAgentDedicatedIntent
                 || preg_match('/^(?:wer|was|wann|wo|wie|wieviel|wie\s+viel|welche[rsn]?|ist|sind|hat|haben|gibt|kannst\s+du|prüfe|überprüfe|kontrolliere|zeige|sag(?:e)?\s+mir|vergleiche|zähl(?:e)?|warum)\b/ui', $homeAgentSpokenQuestion) === 1
                 || str_contains($homeAgentSpokenQuestion, '?');
@@ -1904,6 +1984,7 @@ function Execute($request = null)
                                 'timeout_seconds' => (int) ($propsEarly['HomeAgentVoiceTimeoutSeconds'] ?? 6),
                                 'allow_writes' => $homeAgentAllowCommands,
                                 'ki_cost_instance_id' => $instanceId,
+                                'ui_context_domain' => $iahVoiceContextDomain,
                             ], JSON_THROW_ON_ERROR);
                             if ($kiVoiceMode === 'RoomsCatalog') {
                                 // IPS_RunScriptWaitEx akzeptiert nur skalare Parameterwerte.
@@ -1915,6 +1996,7 @@ function Execute($request = null)
                                     'timeout_seconds' => (int) ($propsEarly['HomeAgentVoiceTimeoutSeconds'] ?? 6),
                                     'allow_writes' => $homeAgentAllowCommands,
                                     'ki_cost_instance_id' => $instanceId,
+                                'ui_context_domain' => $iahVoiceContextDomain,
                                 ], JSON_THROW_ON_ERROR);
                                 $homeAgentJson = IPS_RunScriptWaitEx($homeAgentBridge, [
                                     'kiCatalogText' => $homeAgentSpokenQuestion,
@@ -1932,6 +2014,10 @@ function Execute($request = null)
                                 && trim((string) ($homeAgentData['answer'] ?? '')) !== '') {
                                 $homeAgentAnswer = trim((string) $homeAgentData['answer']);
                                 $log('info', 'HomeAgentVoice.answer', ['durationSeconds' => $homeAgentElapsed, 'words' => count(preg_split('/\s+/u', $homeAgentAnswer, -1, PREG_SPLIT_NO_EMPTY) ?: [])]);
+                                $iahVoiceRouter(['op'=>'outcome','deviceId'=>$iahVoiceDeviceId,
+                                    'backend'=>$kiVoiceMode,'success'=>true,
+                                    'durationMs'=>(int)round($homeAgentElapsed*1000),
+                                    'model'=>(string)($propsEarly['KIModelSelection']??'gpt-6-luna')]);
                                 return $kiAlexaKeepOpen($homeAgentAnswer);
                             }
                             $log('warn', 'HomeAgentVoice.fallback', [
@@ -1947,6 +2033,10 @@ function Execute($request = null)
                     } else {
                         $log('warn', 'HomeAgentVoice.bridge.missing', ['scriptId' => $homeAgentBridge]);
                     }
+                    $iahVoiceRouter(['op'=>'outcome','deviceId'=>$iahVoiceDeviceId,
+                        'backend'=>$kiVoiceMode,'success'=>false,
+                        'durationMs'=>(int)round((microtime(true)-$homeAgentStarted)*1000),
+                        'model'=>(string)($propsEarly['KIModelSelection']??'gpt-6-luna')]);
                     if ($homeAgentDedicatedIntent) {
                         // Kein versehentliches Umschalten durch ein anderes Alexa-Routing.
                         return $kiAlexaKeepOpen('Der Hausassistent ist gerade nicht erreichbar.');
@@ -1964,6 +2054,18 @@ function Execute($request = null)
         $navForce = false;
         $forcedDomain = null;
         $forcedDevice = null;
+        $iahVoiceForceHome = false;
+        // VoiceRouter entscheidet nur das Ziel; die eigentliche Kachel wird
+        // weiterhin ausschließlich über die bewährten UI-Renderer geöffnet.
+        if ($iahVoiceNavKey === 'main_launch') {
+            $iahVoiceForceHome = true;
+        } elseif ($iahVoiceNavKey !== '') {
+            $forcedDomain = $iahVoiceNavKey;
+            $forcedDevice = $iahVoiceNavKey === 'heizung' ? 'temperatur' : $iahVoiceNavKey;
+            $navForce = true;
+            if ((int)($V['DOMAIN_FLAG']??0)>0) SetValueString((int)$V['DOMAIN_FLAG'], $forcedDomain);
+            $log('info','VoiceRouter.navigate',['route'=>$forcedDomain,'reason'=>(string)($iahVoiceDecision['reason']??'')]);
+        }
 
         if (is_array($APL['args']) && count($APL['args']) >= 2 && (string)$APL['args'][0] === 'GetHaus') {
             $navId  = $lc((string)($APL['a1'] ?? ''));
@@ -2020,7 +2122,7 @@ function Execute($request = null)
         }
 
         // --------- HTML.Message → nur Route setzen ---------
-        $__route = null;
+        $__route = $iahVoiceForceHome ? 'main_launch' : null;
         if (($request->type ?? '') === 'Alexa.Presentation.HTML.Message') {
             $msg = (array)($request->message ?? []);
             if (($msg['type'] ?? null) === 'back') {
@@ -2458,8 +2560,10 @@ function Execute($request = null)
 
         // Route bestimmen
         $__route = $__route ?? null;
-        foreach ($ROUTES as $r=>$cond) {
-            if ($cond()) { $__route = ($r==='main' || $r==='main_home') ? 'main_launch' : $r; break; }
+        if ($__route === null) {
+            foreach ($ROUTES as $r=>$cond) {
+                if ($cond()) { $__route = ($r==='main' || $r==='main_home') ? 'main_launch' : $r; break; }
+            }
         }
 
         // --------- Lazy rooms nur wenn benötigt ---------
@@ -2553,6 +2657,13 @@ function Execute($request = null)
             if (!is_array($res) || empty($res['ok'])) {
                 return TellResponse::CreatePlainText('Fehler beim Rendern.');
             }
+            // Nur ERFOLGREICHE Bildschirm-Navigation als aktuellen Gerätekontext speichern.
+            $iahVoiceRouter([
+                'op'=>'complete','deviceId'=>$iahVoiceDeviceId,'route'=>(string)$__route,
+                'source'=>$iahVoiceIsNavigation ? 'voice_navigation'
+                    : ($iahVoiceIsAplEvent ? 'apl_navigation' : 'classic_navigation'),
+                'screen'=>$iahVoiceHasScreen
+            ]);
 
             if (array_key_exists('setDomainFlag', (array)($res['flags'] ?? []))) {
                 $val = $res['flags']['setDomainFlag'];

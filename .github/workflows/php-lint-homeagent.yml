@@ -6,6 +6,7 @@ on:
       - feature/ki-roomscatalog-editor-20261030
       - feature/ki-cost-transparency-20261030
       - security/sanitize-logs-example-catalog-20261030
+      - feature/voice-intent-navigation-apl-diagnostics-20261030
   pull_request:
     paths:
       - 'IPSAlexaHaussteuerung/**'
@@ -28,6 +29,7 @@ jobs:
           php -l IPSAlexaHaussteuerung/resources/action_entry.php
           php -l IPSAlexaHaussteuerung/resources/helpers/HomeAgentVoiceBridge.php
           php -l IPSAlexaHaussteuerung/resources/helpers/KIHouseController.php
+          php -l IPSAlexaHaussteuerung/resources/helpers/VoiceIntentRouter.php
           php -l IPSAlexaHaussteuerung/resources/helpers/KIIntentParser.php
           php -l IPSAlexaHaussteuerung/src/KICostAccounting.php
           php -l IPSAlexaHaussteuerung/src/KICostTrait.php
@@ -46,3 +48,5 @@ jobs:
         run: php tests/test_ki_model_selection.php
       - name: Test public catalog and credential-safe Alexa logging
         run: php tests/test_security_hardening.php
+      - name: Test Alexa UI voice/APL routing and diagnostics
+        run: php tests/test_voice_intent_router.php

@@ -75,6 +75,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyInteger('HomeAgentVoiceTimeoutSeconds', 6);
         $this->RegisterPropertyFloat('KICostMonthlyWarningUSD', 5.00);
         $this->RegisterPropertyString('KICostPriceTableJson', json_encode(iah_ki_price_table()));
+        $this->RegisterPropertyBoolean('VoiceRouterStoreTranscript', true);
         $this->RegisterAttributeString('DelayedPageSwitchPayload', '');
         $this->RegisterTimer('DelayedPageSwitch', 0, 'IAH_HandleDelayedPageSwitch($_IPS["TARGET"]);');
         $this->RegisterTimer('KICostRefresh', 60000, 'IAH_RefreshKICostDisplay($_IPS["TARGET"]);');
@@ -131,6 +132,14 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->ensureRendererScripts($catRenderers);
 
         $catDiag = $this->ensureCategory($root, 'Diagnose', 'iahDiag');
+        $voiceDiag = $this->ensureCategory($catDiag, 'KI-Sprachrouter und APL-Navigation', 'iahVoiceDiag');
+        // Entscheidungen und UI-Kontext pro anonymisiertem Alexa-Gerät.
+        $rawVoiceState = $this->ensureVar($voiceDiag, 'Router-Datenspeicher (nicht bearbeiten)', 'iahVoiceState', VARIABLETYPE_STRING, '', null);
+        IPS_SetHidden($rawVoiceState, true);
+        $this->ensureVar($voiceDiag, 'Letzte Routerentscheidung (JSON)', 'iahVoiceLast', VARIABLETYPE_STRING, '', null);
+        $this->ensureVar($voiceDiag, 'Letzte 80 Routerentscheidungen (JSON)', 'iahVoiceHistory', VARIABLETYPE_STRING, '', null);
+        $this->ensureVar($voiceDiag, 'Routingzähler (JSON)', 'iahVoiceCounters', VARIABLETYPE_STRING, '', null);
+        $this->ensureVar($voiceDiag, 'Alexa-UI-Kontext je Gerät (JSON)', 'iahVoiceContexts', VARIABLETYPE_STRING, '', null);
 
         // Einstellungen toggles (Defaults wie im Original-Flow: aktiv = true)
         $this->ensureVar($catSettings, 'bewaesserung_toggle', 'bewaesserungToggle', VARIABLETYPE_BOOLEAN, '', true);
@@ -620,6 +629,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             ['name' => 'KI_IntentParser', 'ident' => 'kiIntentParserScript', 'file' => __DIR__ . '/resources/helpers/KIIntentParser.php'],
             ['name' => 'HomeAgentVoiceBridge', 'ident' => 'homeAgentVoiceBridgeScript', 'file' => __DIR__ . '/resources/helpers/HomeAgentVoiceBridge.php'],
             ['name' => 'KIHouseController', 'ident' => 'kiHouseControllerScript', 'file' => __DIR__ . '/resources/helpers/KIHouseController.php'],
+            ['name' => 'VoiceIntentRouter', 'ident' => 'voiceIntentRouterScript', 'file' => __DIR__ . '/resources/helpers/VoiceIntentRouter.php'],
         ];
 
         foreach ($map as $def) {
