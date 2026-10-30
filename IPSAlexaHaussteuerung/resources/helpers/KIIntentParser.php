@@ -473,6 +473,30 @@ function ki_chat_request(array $body, array $cfg): array
 
     ki_log('API-Antwort erfolgreich dekodiert.');
 
+    // Auch der ältere KI-Intent-Parser verbraucht ggf. API-Tokens.
+    // Separat erfassen, damit die Gesamtübersicht nicht zu niedrig ausfällt.
+    $costInstanceId = (int)($GLOBALS['_IPS']['ki_cost_instance_id'] ?? 0);
+    if ($costInstanceId > 0 && function_exists('IAH_RecordKICostEvent')) {
+        $questionId = bin2hex(random_bytes(12));
+        $common = ['backend'=>'IntentParser','questionId'=>$questionId];
+        try {
+            foreach ([
+                ['type'=>'start','model'=>(string)($body['model']??'')],
+                ['type'=>'api','callId'=>'parser-0','response'=>[
+                    'model'=>(string)($data['model']??($body['model']??'')),
+                    'usage'=>$data['usage']??null]],
+                ['type'=>'finish','success'=>true]
+            ] as $event) {
+                if (!IAH_RecordKICostEvent($costInstanceId,
+                    json_encode(array_merge($common,$event),JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE))) {
+                    ki_log('KICost.warning: Parser-Tokenstatistik konnte nicht vollständig gespeichert werden.');
+                }
+            }
+        } catch (Throwable $error) {
+            ki_log('KICost.warning: Parser-Tokenstatistik nicht verfügbar.');
+        }
+    }
+
     return $data;
 }
 
