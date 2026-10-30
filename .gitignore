@@ -1,0 +1,17 @@
+# Local IP-Symcon exports and credentials must never be published.
+.env
+.env.*
+!.env.example
+*.local.php
+*.private.php
+*.secret.php
+*.secrets.json
+*.credentials.json
+*.bak
+*.backup
+private/
+backups/
+ips-local-export/
+symcon-backups/
+RoomsCatalog.prod.php
+RoomsCatalog.local.php
