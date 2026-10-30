@@ -174,12 +174,9 @@ trait KICostTrait
     private function GetKICostForecast(float $monthlyCost, \DateTimeImmutable $now): float
     {
         $daysInMonth=(int)$now->format('t');
-        $day=(int)$now->format('j');
-        // Prognose anhand der verstrichenen Zeit im laufenden Monat.
-        $secondsElapsed=max(1,($day-1)*86400+(int)$now->format('G')*3600
-            +(int)$now->format('i')*60+(int)$now->format('s'));
-        $fraction=min(1.0,$secondsElapsed/max(1,$daysInMonth*86400));
-        return $monthlyCost/$fraction;
+        $elapsedDays=max(1,(int)$now->format('j'));
+        // Konservative Tagesdurchschnitts-Hochrechnung; am Monatsanfang schwankend.
+        return $monthlyCost/$elapsedDays*$daysInMonth;
     }
 
     private function RenderKICostOverview(array $store, \DateTimeImmutable $now): string
@@ -189,7 +186,7 @@ trait KICostTrait
         $html='<div style="font-family:Arial,sans-serif;font-size:14px">'
             .'<h3>KI-Kosten in USD</h3><table style="width:100%;border-collapse:collapse">'
             .'<thead><tr style="background:#eee"><th>Backend</th><th>Fragen heute</th>'
-            .'<th>Fragen gesamt</th><th>Heute</th><th>Monat</th><th>Gesamt</th><th>Letzte Frage</th>'
+            .'<th>Fragen gesamt</th><th>Heute</th><th>Monat</th><th>Prognose Monat</th><th>Gesamt</th><th>Letzte Frage</th>'
             .'</tr></thead><tbody>';
         foreach ([
             'Alle'=>'Alle KI-Anbindungen','RoomsCatalog'=>'RoomsCatalog',
@@ -200,6 +197,7 @@ trait KICostTrait
             $values=[
                 $label,$day['questions'],$total['questions'],
                 $usd((float)$day['costUsd']),$usd((float)$month['costUsd']),
+                $usd($this->GetKICostForecast((float)$month['costUsd'],$now)),
                 $usd((float)$total['costUsd']),$usd((float)($snap['last']['costUsd']??0))
             ];
             $html.='<tr>';
