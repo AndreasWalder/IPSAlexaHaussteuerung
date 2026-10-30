@@ -62,6 +62,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyString('KIIntentLogChannel', 'Alexa');
         $this->RegisterPropertyInteger('KIIntentRateLimit', 60);
         $this->RegisterPropertyBoolean('HomeAgentVoiceEnabled', false);
+        $this->RegisterPropertyString('KIVoiceMode', 'RoomsCatalog');
         $this->RegisterPropertyString('HomeAgentVoiceEndpoint', '');
         $this->RegisterPropertyString('HomeAgentVoiceToken', '');
         $this->RegisterPropertyBoolean('HomeAgentVoiceRouteCommands', false);
@@ -608,6 +609,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             ['name' => 'Normalizer', 'ident' => 'normalizerScript', 'file' => __DIR__ . '/resources/helpers/Normalizer.php'],
             ['name' => 'KI_IntentParser', 'ident' => 'kiIntentParserScript', 'file' => __DIR__ . '/resources/helpers/KIIntentParser.php'],
             ['name' => 'HomeAgentVoiceBridge', 'ident' => 'homeAgentVoiceBridgeScript', 'file' => __DIR__ . '/resources/helpers/HomeAgentVoiceBridge.php'],
+            ['name' => 'KIHouseController', 'ident' => 'kiHouseControllerScript', 'file' => __DIR__ . '/resources/helpers/KIHouseController.php'],
         ];
 
         foreach ($map as $def) {

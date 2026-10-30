@@ -1,11 +1,14 @@
-name: PHP lint – Alexa Home Agent
+name: PHP lint – Alexa KI RoomsCatalog
 on:
   push:
     branches:
       - feature/home-agent-frageintent-diagnostics-20261030
+      - feature/ki-roomscatalog-editor-20261030
   pull_request:
     paths:
       - 'IPSAlexaHaussteuerung/**'
+      - 'RoomsCatalogConfigurator/**'
+      - 'tests/**'
       - 'docs/HomeAgentFrageIntent.json'
   workflow_dispatch:
 jobs:
@@ -22,7 +25,11 @@ jobs:
           php -l IPSAlexaHaussteuerung/module.php
           php -l IPSAlexaHaussteuerung/resources/action_entry.php
           php -l IPSAlexaHaussteuerung/resources/helpers/HomeAgentVoiceBridge.php
+          php -l IPSAlexaHaussteuerung/resources/helpers/KIHouseController.php
+          php -l RoomsCatalogConfigurator/module.php
       - name: Check JSON syntax
         run: |
           php -r 'json_decode(file_get_contents("IPSAlexaHaussteuerung/form.json"), true, 512, JSON_THROW_ON_ERROR);'
           php -r 'json_decode(file_get_contents("docs/HomeAgentFrageIntent.json"), true, 512, JSON_THROW_ON_ERROR);'
+      - name: Test RoomsCatalog KI permission checks
+        run: php tests/test_ki_rooms_catalog.php

@@ -92,14 +92,34 @@
     },
     {
       "type": "ExpansionPanel",
-      "caption": "Home Agent – kurze Alexa-Antworten (MCP)",
+      "caption": "KI-Haussteuerung – direkte RoomsCatalog-Integration / Home Agent",
       "expanded": false,
       "items": [
         {
           "name": "HomeAgentVoiceEnabled",
           "type": "CheckBox",
-          "caption": "KI-Hausfragen über Home Agent beantworten",
+          "caption": "KI-Hausfragen beantworten",
           "value": false
+        },
+        {
+          "name": "KIVoiceMode",
+          "type": "Select",
+          "caption": "KI-Verarbeitung",
+          "value": "RoomsCatalog",
+          "options": [
+            {
+              "caption": "KI + RoomsCatalog (direkt, empfohlen)",
+              "value": "RoomsCatalog"
+            },
+            {
+              "caption": "KI + Home Agent (MCP)",
+              "value": "HomeAgent"
+            },
+            {
+              "caption": "Klassisch (ohne KI-Hausfragen)",
+              "value": "Classic"
+            }
+          ]
         },
         {
           "name": "HomeAgentVoiceEndpoint",
@@ -116,7 +136,7 @@
         {
           "name": "HomeAgentVoiceRouteCommands",
           "type": "CheckBox",
-          "caption": "Komplexe Sprachbefehle über Home Agent",
+          "caption": "KI darf explizite Schaltbefehle ausführen (Gerätefreigabe zusätzlich erforderlich)",
           "value": false
         },
         {
@@ -138,6 +158,10 @@
         {
           "type": "Label",
           "caption": "OpenAI-Key und Modell aus KI Intent Parser; Freigaben im Home Agent."
+        },
+        {
+          "type": "Label",
+          "caption": "Bei RoomsCatalog: Mit KI / Nur abfragen pro Gerät im RoomsCatalogConfigurator festlegen. Bestandsgeräte standardmäßig nur lesbar."
         }
       ]
     },
