@@ -1652,6 +1652,115 @@ class RoomsCatalogConfigurator extends IPSModule
     }
 
 
+
+    private function getProdEntries(): array
+    {
+        $id = $this->ReadPropertyInteger('RoomsCatalogScriptID');
+        if ($id <= 0 || !IPS_ScriptExists($id)) return [];
+        return $this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($this->loadRoomsCatalog($id, 'PROD')));
+    }
+
+    private function filterByAI(array $rows, string $filter): array
+    {
+        return array_values(array_filter($rows, static function ($row) use ($filter): bool {
+            $enabled = !empty($row['kiEnabled']);
+            $readOnly = !empty($row['kiReadOnly']);
+            return match ($filter) {
+                'enabled' => $enabled,
+                'writable' => $enabled && !$readOnly,
+                'disabled' => !$enabled,
+                default => true
+            };
+        }));
+    }
+
+    private function decorateRow(array $row): array
+    {
+        $enabled = !empty($row['kiEnabled']);
+        $readOnly = !empty($row['kiReadOnly']);
+        $row['kiStatus'] = !$enabled ? 'Ohne KI' : ($readOnly ? 'Nur lesen' : 'Schaltbar');
+        $row['rowColor'] = !$enabled ? '#EEEEEE' : ($readOnly ? '#E2F2FF' : '#DDF4DE');
+        if ($this->validateEntries([$row]) !== []) {
+            $row['kiStatus'] = 'Pruefen';
+            $row['rowColor'] = '#FFCCCC';
+        }
+        $row['title'] = (string)($row['title'] ?? $row['key'] ?? '');
+        return $row;
+    }
+
+    private function buildOverviewColumns(): array
+    {
+        return [
+            ['caption'=>'Markiert','name'=>'selected','width'=>'85px','add'=>false,'edit'=>['type'=>'CheckBox']],
+            ['caption'=>'Raum','name'=>'roomLabel','width'=>'160px','add'=>'','quickFilter'=>true],
+            ['caption'=>'Etage','name'=>'floor','width'=>'75px','add'=>'','quickFilter'=>true],
+            ['caption'=>'Bereich','name'=>'domain','width'=>'105px','add'=>'licht','quickFilter'=>true],
+            ['caption'=>'Gruppe','name'=>'group','width'=>'105px','add'=>'switches','quickFilter'=>true],
+            ['caption'=>'Gerät','name'=>'title','width'=>'auto','add'=>'','quickFilter'=>true],
+            ['caption'=>'Key','name'=>'key','width'=>'130px','add'=>'','quickFilter'=>true],
+            ['caption'=>'Mit KI','name'=>'kiEnabled','width'=>'80px','add'=>false,'edit'=>['type'=>'CheckBox']],
+            ['caption'=>'Nur abfragen','name'=>'kiReadOnly','width'=>'110px','add'=>true,'edit'=>['type'=>'CheckBox']],
+            ['caption'=>'Freigabe','name'=>'kiStatus','width'=>'105px','add'=>'','save'=>false],
+            ['caption'=>'Raum-Key','name'=>'roomKey','visible'=>false,'add'=>'','quickFilter'=>true],
+            ['caption'=>'Synonyme','name'=>'synonyms','visible'=>false,'add'=>'','quickFilter'=>true]
+        ];
+    }
+
+    /** Dynamischer Bearbeitungsdialog für Symcon-Listen, benötigt PHP-Form-Dialog-Support. */
+    public function GetEntryEditForm(array $row): string
+    {
+        $items = [
+            [
+                'type'=>'ExpansionPanel','caption'=>'Raum und Geraet','expanded'=>true,
+                'items'=>[
+                    ['type'=>'RowLayout','items'=>[
+                        ['type'=>'ValidationTextBox','name'=>'roomKey','caption'=>'Raum-Key'],
+                        ['type'=>'ValidationTextBox','name'=>'roomLabel','caption'=>'Raumname'],
+                        ['type'=>'Select','name'=>'floor','caption'=>'Etage','options'=>array_map(
+                            static fn($x): array=>['caption'=>$x,'value'=>$x],
+                            ['','Keller','EG','OG','DG','AUSSEN'])]
+                    ]],
+                    ['type'=>'RowLayout','items'=>[
+                        ['type'=>'ValidationTextBox','name'=>'domain','caption'=>'Bereich'],
+                        ['type'=>'ValidationTextBox','name'=>'group','caption'=>'Gruppe'],
+                        ['type'=>'ValidationTextBox','name'=>'key','caption'=>'Geraete-Key']
+                    ]],
+                    ['type'=>'ValidationTextBox','name'=>'title','caption'=>'Anzeigename'],
+                    ['type'=>'ValidationTextBox','name'=>'synonyms','caption'=>'Synonyme (Komma getrennt)'],
+                    ['type'=>'ValidationTextBox','name'=>'entityId','caption'=>'Entity-ID (optional)']
+                ]
+            ],
+            [
+                'type'=>'ExpansionPanel','caption'=>'KI-Freigabe','expanded'=>true,'items'=>[
+                    ['type'=>'CheckBox','name'=>'kiEnabled','caption'=>'Mit KI: Abfragen freigeben'],
+                    ['type'=>'CheckBox','name'=>'kiReadOnly','caption'=>'Nur abfragen: Schalten gesperrt'],
+                    ['type'=>'Label','caption'=>'Schaltbefehle nur mit globaler Freigabe, expliziter Geraetefreigabe und gueltiger IP-Symcon-Aktion.']
+                ]
+            ]
+        ];
+        $hidden = ['selected','roomKey','roomLabel','floor','domain','group','key','title',
+            'synonyms','entityId','kiEnabled','kiReadOnly','rowColor','kiStatus','diffKeys','editable'];
+        $idFields = ['id','controlId','statusId','tiltId','set','state','ist','soll','eingestellt',
+            'stellung','toggle','value','wert','var'];
+        $extra = [];
+        foreach ($row as $name => $value) {
+            if (in_array($name,$hidden,true)) continue;
+            if (in_array($name,$idFields,true)) {
+                $extra[]=['type'=>in_array($name,['id','var'],true)?'SelectObject':'SelectVariable',
+                    'name'=>$name,'caption'=>'IP-Symcon: '.$name];
+            } elseif (is_bool($value)) {
+                $extra[]=['type'=>'CheckBox','name'=>$name,'caption'=>$name];
+            } elseif (is_int($value)||is_float($value)) {
+                $extra[]=['type'=>'NumberSpinner','name'=>$name,'caption'=>$name];
+            } else {
+                $extra[]=['type'=>'ValidationTextBox','name'=>$name,'caption'=>$name];
+            }
+        }
+        $items[]=['type'=>'ExpansionPanel','caption'=>'Weitere Felder / Objekt-IDs','expanded'=>true,
+            'items'=>$extra!==[]?$extra:[['type'=>'Label','caption'=>'Keine weiteren Eigenschaften vorhanden']]];
+        return json_encode($items,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
+    }
+
     private function logDebug(string $message): void
     {
         // IPS_LogMessage('Alexa', 'RCC-DEBUG: ' . $message);
