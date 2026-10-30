@@ -92,7 +92,9 @@ trait KICostTrait
                 \IPS_LogMessage('Alexa',sprintf('KICost.WARNUNG: Monatsgrenze %.2f USD erreicht (%.6f USD).',
                     $limit,(float)$snap['month']['costUsd']));
             }
-            if (in_array($event['type']??'', ['api','finish'],true)) $this->PublishKICostVariables($store,$now);
+            // Nach der kompletten Frage aktualisieren, um Alexa nicht mit vielen IPS-SetValue-Aufrufen zu verzögern.
+            // Bei einem harten Abbruch bleiben API-Kosten gespeichert und der 60-s-Timer aktualisiert die Ansicht.
+            if (($event['type']??'') === 'finish') $this->PublishKICostVariables($store,$now);
             return true;
         } catch (\Throwable $e) {
             \IPS_LogMessage('Alexa','KICost.error: '.$e->getMessage());
