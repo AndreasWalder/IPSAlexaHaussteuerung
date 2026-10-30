@@ -91,6 +91,57 @@
       ]
     },
     {
+      "type": "ExpansionPanel",
+      "caption": "Home Agent – kurze Alexa-Antworten (MCP)",
+      "expanded": false,
+      "items": [
+        {
+          "name": "HomeAgentVoiceEnabled",
+          "type": "CheckBox",
+          "caption": "KI-Hausfragen über Home Agent beantworten",
+          "value": false
+        },
+        {
+          "name": "HomeAgentVoiceEndpoint",
+          "type": "ValidationTextBox",
+          "caption": "Home Agent MCP-Endpunkt",
+          "value": ""
+        },
+        {
+          "name": "HomeAgentVoiceToken",
+          "type": "PasswordTextBox",
+          "caption": "Home Agent Zugangstoken",
+          "value": ""
+        },
+        {
+          "name": "HomeAgentVoiceRouteCommands",
+          "type": "CheckBox",
+          "caption": "Komplexe Sprachbefehle über Home Agent",
+          "value": false
+        },
+        {
+          "name": "HomeAgentVoiceMaxWords",
+          "type": "NumberSpinner",
+          "caption": "Maximale Wörter",
+          "minimum": 8,
+          "maximum": 45,
+          "value": 20
+        },
+        {
+          "name": "HomeAgentVoiceTimeoutSeconds",
+          "type": "NumberSpinner",
+          "caption": "Zeitbudget (Sekunden)",
+          "minimum": 2,
+          "maximum": 7,
+          "value": 6
+        },
+        {
+          "type": "Label",
+          "caption": "OpenAI-Key und Modell aus KI Intent Parser; Freigaben im Home Agent."
+        }
+      ]
+    },
+    {
       "name": "StartPage",
       "type": "ValidationTextBox",
       "caption": "StartPage (leer = #<WFC-ID>)",
@@ -109,7 +160,15 @@
           "delete": true,
           "rowCount": 5,
           "columns": [
-            { "caption": "Key", "name": "key", "width": "120px", "add": "", "edit": { "type": "ValidationTextBox" } },
+            {
+              "caption": "Key",
+              "name": "key",
+              "width": "120px",
+              "add": "",
+              "edit": {
+                "type": "ValidationTextBox"
+              }
+            },
             {
               "caption": "Typ",
               "name": "type",
@@ -118,13 +177,35 @@
               "edit": {
                 "type": "Select",
                 "options": [
-                  { "caption": "IPS Item", "value": "wfc_item" },
-                  { "caption": "Externe URL", "value": "external_url" }
+                  {
+                    "caption": "IPS Item",
+                    "value": "wfc_item"
+                  },
+                  {
+                    "caption": "Externe URL",
+                    "value": "external_url"
+                  }
                 ]
               }
             },
-            { "caption": "Wert / URL", "name": "value", "width": "260px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Label", "name": "label", "width": "180px", "add": "", "edit": { "type": "ValidationTextBox" } }
+            {
+              "caption": "Wert / URL",
+              "name": "value",
+              "width": "260px",
+              "add": "",
+              "edit": {
+                "type": "ValidationTextBox"
+              }
+            },
+            {
+              "caption": "Label",
+              "name": "label",
+              "width": "180px",
+              "add": "",
+              "edit": {
+                "type": "ValidationTextBox"
+              }
+            }
           ]
         }
       ]
@@ -142,15 +223,87 @@
           "delete": true,
           "rowCount": 4,
           "columns": [
-            { "caption": "Route", "name": "route", "width": "90px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Log-Label", "name": "logName", "width": "120px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "RoomsCatalog-Domain", "name": "roomDomain", "width": "150px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Fallback-Titel", "name": "title", "width": "140px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Subtitel", "name": "subtitle", "width": "140px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Fehlermeldung", "name": "speechEmpty", "width": "200px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "APL-Dokument", "name": "aplDoc", "width": "220px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "APL-Token", "name": "aplToken", "width": "120px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Toggle-Variable", "name": "toggleVarKey", "width": "150px", "add": "", "edit": { "type": "ValidationTextBox" } }
+            {
+              "caption": "Route",
+              "name": "route",
+              "width": "90px",
+              "add": "",
+              "edit": {
+                "type": "ValidationTextBox"
+              }
+            },
+            {
+              "caption": "Log-Label",
+              "name": "logName",
+              "width": "120px",
+              "add": "",
+              "edit": {
+                "type": "ValidationTextBox"
+              }
+            },
+            {
+              "caption": "RoomsCatalog-Domain",
+              "name": "roomDomain",
+              "width": "150px",
+              "add": "",
+              "edit": {
+                "type": "ValidationTextBox"
+              }
+            },
+            {
+              "caption": "Fallback-Titel",
+              "name": "title",
+              "width": "140px",
+              "add": "",
+              "edit": {
+                "type": "ValidationTextBox"
+              }
+            },
+            {
+              "caption": "Subtitel",
+              "name": "subtitle",
+              "width": "140px",
+              "add": "",
+              "edit": {
+                "type": "ValidationTextBox"
+              }
+            },
+            {
+              "caption": "Fehlermeldung",
+              "name": "speechEmpty",
+              "width": "200px",
+              "add": "",
+              "edit": {
+                "type": "ValidationTextBox"
+              }
+            },
+            {
+              "caption": "APL-Dokument",
+              "name": "aplDoc",
+              "width": "220px",
+              "add": "",
+              "edit": {
+                "type": "ValidationTextBox"
+              }
+            },
+            {
+              "caption": "APL-Token",
+              "name": "aplToken",
+              "width": "120px",
+              "add": "",
+              "edit": {
+                "type": "ValidationTextBox"
+              }
+            },
+            {
+              "caption": "Toggle-Variable",
+              "name": "toggleVarKey",
+              "width": "150px",
+              "add": "",
+              "edit": {
+                "type": "ValidationTextBox"
+              }
+            }
           ]
         }
       ]
@@ -204,11 +357,51 @@
           "delete": true,
           "rowCount": 5,
           "columns": [
-            { "caption": "ID", "name": "id", "width": "100px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Titel", "name": "title", "width": "160px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Subtitel", "name": "subtitle", "width": "180px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Icon-Datei", "name": "icon", "width": "160px", "add": "", "edit": { "type": "ValidationTextBox" } },
-            { "caption": "Farbe (#RRGGBB)", "name": "color", "width": "140px", "add": "", "edit": { "type": "ValidationTextBox" } }
+            {
+              "caption": "ID",
+              "name": "id",
+              "width": "100px",
+              "add": "",
+              "edit": {
+                "type": "ValidationTextBox"
+              }
+            },
+            {
+              "caption": "Titel",
+              "name": "title",
+              "width": "160px",
+              "add": "",
+              "edit": {
+                "type": "ValidationTextBox"
+              }
+            },
+            {
+              "caption": "Subtitel",
+              "name": "subtitle",
+              "width": "180px",
+              "add": "",
+              "edit": {
+                "type": "ValidationTextBox"
+              }
+            },
+            {
+              "caption": "Icon-Datei",
+              "name": "icon",
+              "width": "160px",
+              "add": "",
+              "edit": {
+                "type": "ValidationTextBox"
+              }
+            },
+            {
+              "caption": "Farbe (#RRGGBB)",
+              "name": "color",
+              "width": "140px",
+              "add": "",
+              "edit": {
+                "type": "ValidationTextBox"
+              }
+            }
           ]
         }
       ]
