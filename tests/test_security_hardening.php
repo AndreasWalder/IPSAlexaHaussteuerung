@@ -28,17 +28,17 @@ checkSecurity(!str_contains(substr($module,$helperPos,$helperEnd-$helperPos),'Ro
 checkSecurity(str_contains($module,'patchActionScriptSafeRequestLogging((int) $id)'),
     'Module update must also sanitize EXISTING Alexa action script logs');
 $renderer=$read('IPSAlexaHaussteuerung/resources/renderers/Route_allRenderer.php');
-checkSecurity(!str_contains($renderer,"' token='.$token"),'No raw token in renderer logs');
-checkSecurity(!str_contains($renderer,"'tileBase'=>$tileBase"),'No password-bearing full URLs in renderer log');
-checkSecurity(!str_contains($renderer,"'shellUrl'=>$shellUrl"),'No query-token shell URL in renderer log');
-checkSecurity(!str_contains($renderer,"'pageValue'=>$pageValue"),'No arbitrary external URL in debug log');
-checkSecurity(!str_contains($renderer,"' raw='.(string)$data"),'No unredacted renderer response logging');
+checkSecurity(!str_contains($renderer,"' token='.\$token"),'No raw token in renderer logs');
+checkSecurity(!str_contains($renderer,"'tileBase'=>\$tileBase"),'No password-bearing full URLs in renderer log');
+checkSecurity(!str_contains($renderer,"'shellUrl'=>\$shellUrl"),'No query-token shell URL in renderer log');
+checkSecurity(!str_contains($renderer,"'pageValue'=>\$pageValue"),'No arbitrary external URL in debug log');
+checkSecurity(!str_contains($renderer,"' raw='.(string)\$data"),'No unredacted renderer response logging');
 $action=$read('IPSAlexaHaussteuerung/resources/action_entry.php');
 checkSecurity(str_contains($action,'IAH_SAFE_REQUEST_LOG_BEGIN'),'Action request logging must be anonymized');
 checkSecurity(!str_contains($action,"'REQUEST_RAW ' ."),'Never log full requests with tokens, user IDs, personal speech');
-checkSecurity(!str_contains($action,"['text' => $homeAgentSpokenQuestion]"),'Never log spoken Alexa free text');
+checkSecurity(!str_contains($action,"['text' => \$homeAgentSpokenQuestion]"),'Never log spoken Alexa free text');
 $parser=$read('IPSAlexaHaussteuerung/resources/helpers/KIIntentParser.php');
-checkSecurity(!str_contains($parser,"$status . ': ' . $response"),
+checkSecurity(!str_contains($parser,"\$status . ': ' . \$response"),
     'HTTP error bodies can contain private data');
 $docs=$read('docs/HomeAgent_Alexa_Setup.md');
 checkSecurity(str_contains($docs,'192.0.2.10'),'Documentation uses RFC 5737 TEST-NET-1');
