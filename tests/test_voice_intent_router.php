@@ -42,6 +42,9 @@ t($back['category']==='navigation'&&$back['route']==='licht','Zurück resolves t
 t($data['history'][1]['transcript']==='Licht','history preserves original utterance');
 $otherDevice=iah_vir_execute(['op'=>'classify','deviceId'=>'example-echo-device-B','intent'=>'HomeAgentFrageIntent','text'=>'Welche sind an?'], $data, $now);
 t($otherDevice['contextDomain']==='','context isolated per Alexa device');
+iah_vir_execute(['op'=>'outcome','deviceId'=>'example-echo-device-A','backend'=>'RoomsCatalog',
+    'success'=>true,'durationMs'=>3214,'model'=>'gpt-6-luna'],$data,$now);
+t(($data['last']['category']??'')==='ki_outcome'&&$data['last']['durationMs']===3214,'KI outcome recorded');
 $follow=iah_vir_execute(['op'=>'classify','deviceId'=>'example-echo-device-A','intent'=>'HomeAgentFrageIntent','text'=>'Welche sind an?','storeTranscript'=>false],$data,$now);
 t($follow['contextDomain']==='licht'&&$data['last']['transcript']==='','read context, opt-out transcript');
 $redacted=iah_vir_transcript('Mein Passwort ist supergeheim! und sk-proj-ABCDEF0123456789abc');
