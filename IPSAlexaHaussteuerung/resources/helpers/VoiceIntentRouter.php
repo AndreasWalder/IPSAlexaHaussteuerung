@@ -13,6 +13,18 @@ function iah_vir_norm(string $text): string
     $text=preg_replace('/[^\pL\pN\s_-]/u',' ',$text)??'';
     return trim(preg_replace('/\s+/u',' ',$text)??'');
 }
+/**
+ * Nur für ausdrücklich aktivierte Transkript-Diagnose; max. 400 Zeichen.
+ * Keine API-Schlüssel oder potenzielle Credentials aus Sprache in Logs speichern.
+ */
+function iah_vir_transcript(string $text): string
+{
+    $text=trim(preg_replace('/[\x00-\x1F\x7F]+/u',' ',$text)??'');
+    $text=mb_substr($text,0,400,'UTF-8');
+    $text=preg_replace('/\b(?:sk-proj-|sk-|ghp_|github_pat_)[a-zA-Z0-9_-]{12,}\b/u','[GESCHUETZTER_SCHLUESSEL]',$text)??$text;
+    $text=preg_replace('/\b(?:passwort|password|pin|token|api[\s-]?key)\s*(?:ist|lautet|:|=)?\s*[^\s,;.]+/iu','$1 [GESCHUETZT]',$text)??$text;
+    return $text;
+}
 function iah_vir_aliases(array $dynamic=[]): array
 {
     $map=[
@@ -110,6 +122,7 @@ function iah_vir_execute(array $input,array &$data,int $now): array
             'intent'=>substr(preg_replace('/[^a-zA-Z0-9_-]/','',(string)($input['intent']??''))??'',0,70),
             'requestType'=>substr(preg_replace('/[^a-zA-Z0-9_.-]/','',(string)($input['requestType']??''))??'',0,80),
             'chars'=>mb_strlen((string)($input['text']??''),'UTF-8'),
+            'transcript'=>!empty($input['storeTranscript']) ? iah_vir_transcript((string)($input['text']??'')) : '',
             'screen'=>(bool)($input['screen']??false),
             'viewportMode'=>substr(preg_replace('/[^a-zA-Z]/','',(string)($input['viewportMode']??''))??'',0,16),
             'viewportShape'=>substr(preg_replace('/[^a-zA-Z]/','',(string)($input['viewportShape']??''))??'',0,16),
@@ -175,6 +188,8 @@ function iah_vir_ip_symcon(array $input): array
         }
         if(($input['op']??'')==='classify') {
             $last=$data['last']??[];
+            // Dieser Logeintrag darf auf Wunsch auch den gesprochenen Text enthalten.
+            // Keine IDs, Access-Tokens, APL-Argumentinhalte oder Secrets protokollieren.
             IPS_LogMessage('Alexa','VoiceRouter '.json_encode($last,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE));
         }
         return $result;
