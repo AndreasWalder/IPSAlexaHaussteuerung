@@ -1871,17 +1871,20 @@ function Execute($request = null)
                     if ($homeAgentBridge > 0 && function_exists('IPS_RunScriptWaitEx')) {
                         try {
                             $log('info', 'HomeAgentVoice.bridge.start', ['scriptId' => $homeAgentBridge]);
+                            // IPS_RunScriptWaitEx akzeptiert nur skalare Parameterwerte.
+                            // Die Konfiguration deshalb als JSON-String übertragen (nicht als Array).
+                            $homeAgentConfigJson = json_encode([
+                                'endpoint' => (string) ($propsEarly['HomeAgentVoiceEndpoint'] ?? ''),
+                                'token' => (string) ($propsEarly['HomeAgentVoiceToken'] ?? ''),
+                                'api_key' => (string) ($propsEarly['KIIntentApiKey'] ?? ''),
+                                'model' => (string) ($propsEarly['KIIntentModel'] ?? 'gpt-4.1-mini'),
+                                'max_words' => (int) ($propsEarly['HomeAgentVoiceMaxWords'] ?? 20),
+                                'timeout_seconds' => (int) ($propsEarly['HomeAgentVoiceTimeoutSeconds'] ?? 6),
+                                'allow_writes' => $homeAgentAllowCommands,
+                            ], JSON_THROW_ON_ERROR);
                             $homeAgentJson = IPS_RunScriptWaitEx($homeAgentBridge, [
                                 'homeAgentText' => $homeAgentSpokenQuestion,
-                                'config' => [
-                                    'endpoint' => (string) ($propsEarly['HomeAgentVoiceEndpoint'] ?? ''),
-                                    'token' => (string) ($propsEarly['HomeAgentVoiceToken'] ?? ''),
-                                    'api_key' => (string) ($propsEarly['KIIntentApiKey'] ?? ''),
-                                    'model' => (string) ($propsEarly['KIIntentModel'] ?? 'gpt-4.1-mini'),
-                                    'max_words' => (int) ($propsEarly['HomeAgentVoiceMaxWords'] ?? 20),
-                                    'timeout_seconds' => (int) ($propsEarly['HomeAgentVoiceTimeoutSeconds'] ?? 6),
-                                    'allow_writes' => $homeAgentAllowCommands,
-                                ],
+                                'homeAgentConfigJson' => $homeAgentConfigJson,
                             ]);
                             $homeAgentData = json_decode((string) $homeAgentJson, true);
                             $homeAgentElapsed = round(microtime(true) - $homeAgentStarted, 3);
