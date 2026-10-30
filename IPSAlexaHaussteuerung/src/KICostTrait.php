@@ -115,4 +115,53 @@ trait KICostTrait
                 new \DateTimeImmutable('now',new \DateTimeZone('Europe/Vienna')));
         } finally { \IPS_SemaphoreLeave($mutex); }
     }
+
+    private function PublishKICostVariables(array $store, \DateTimeImmutable $now): void
+    {
+        $root=(int)@\IPS_GetObjectIDByIdent('iahKICost',$this->InstanceID);
+        if ($root<=0) return;
+        foreach (['Alle','RoomsCatalog','HomeAgent','IntentParser'] as $backend) {
+            $cat=(int)@\IPS_GetObjectIDByIdent('iahKICost'.$backend,$root);
+            if ($cat<=0) continue;
+            $snap=\iah_ki_section_snapshot($store,$backend,$now);
+            $all=$snap['total'];$day=$snap['today'];$month=$snap['month'];$last=$snap['last'];
+            $values=[
+                'questionsToday'=>(int)$day['questions'],'questionsMonth'=>(int)$month['questions'],
+                'questionsTotal'=>(int)$all['questions'],'questionsFailed'=>(int)$all['failures'],
+                'apiCallsToday'=>(int)$day['apiCalls'],'apiCallsMonth'=>(int)$month['apiCalls'],
+                'apiCallsTotal'=>(int)$all['apiCalls'],
+                'inputTokensTotal'=>(int)$all['inputTokens'],
+                'cachedTokensTotal'=>(int)$all['cachedInputTokens'],
+                'outputTokensTotal'=>(int)$all['outputTokens'],
+                'allTokensTotal'=>(int)$all['totalTokens'],
+                'inputTokensMonth'=>(int)$month['inputTokens'],
+                'outputTokensMonth'=>(int)$month['outputTokens'],
+                'costTodayUSD'=>(float)$day['costUsd'],
+                'costMonthUSD'=>(float)$month['costUsd'],
+                'costTotalUSD'=>(float)$all['costUsd'],
+                'lastCostUSD'=>(float)($last['costUsd']??0),
+                'lastQuestionApiCalls'=>(int)($last['apiCalls']??0),
+                'lastQuestionInputTokens'=>(int)($last['inputTokens']??0),
+                'lastQuestionCachedTokens'=>(int)($last['cachedInputTokens']??0),
+                'lastQuestionOutputTokens'=>(int)($last['outputTokens']??0),
+                'lastQuestionModel'=>(string)($last['model']??''),
+                'lastQuestionStatus'=>(string)($last['status']??''),
+                'lastQuestionTime'=>(string)($last['finishedAt']??''),
+                'unpricedCalls'=>(int)$all['callsWithoutPrice'],
+                'unmeasuredCalls'=>(int)$all['callsWithoutUsage'],
+                'detailsJSON'=>json_encode($snap['history'],JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE),
+            ];
+            foreach ($values as $ident=>$value) {
+                $var=(int)@\IPS_GetObjectIDByIdent($ident,$cat);
+                if ($var<=0 || !\IPS_VariableExists($var)) continue;
+                if (is_int($value)) \SetValueInteger($var,$value);
+                elseif (is_float($value)) \SetValueFloat($var,$value);
+                else \SetValueString($var,$value);
+            }
+        }
+        $overview=(int)@\IPS_GetObjectIDByIdent('kiCostOverview',$root);
+        if ($overview>0 && \IPS_VariableExists($overview))
+            \SetValueString($overview,$this->RenderKICostOverview($store,$now));
+    }
+
 }
