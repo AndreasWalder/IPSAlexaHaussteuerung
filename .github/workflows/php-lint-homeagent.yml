@@ -31,3 +31,5 @@ jobs:
         run: |
           php -r 'json_decode(file_get_contents("IPSAlexaHaussteuerung/form.json"), true, 512, JSON_THROW_ON_ERROR);'
           php -r 'json_decode(file_get_contents("docs/HomeAgentFrageIntent.json"), true, 512, JSON_THROW_ON_ERROR);'
+      - name: Test RoomsCatalog KI permission checks
+        run: php tests/test_ki_rooms_catalog.php
