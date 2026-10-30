@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/src/Helpers.php';
 require_once __DIR__ . '/src/LogTrait.php';
+require_once __DIR__ . '/src/KICostAccounting.php';
 require_once __DIR__ . '/src/Router.php';
 require_once __DIR__ . '/src/Routes/RouteAll.php';
 require_once __DIR__ . '/src/Renderers/RenderMain.php';
@@ -68,8 +69,11 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyBoolean('HomeAgentVoiceRouteCommands', false);
         $this->RegisterPropertyInteger('HomeAgentVoiceMaxWords', 20);
         $this->RegisterPropertyInteger('HomeAgentVoiceTimeoutSeconds', 6);
+        $this->RegisterPropertyFloat('KICostMonthlyWarningUSD', 5.00);
+        $this->RegisterPropertyString('KICostPriceTableJson', json_encode(iah_ki_price_table(), JSON_UNESCAPED_SLASHES));
         $this->RegisterAttributeString('DelayedPageSwitchPayload', '');
         $this->RegisterTimer('DelayedPageSwitch', 0, 'IAH_HandleDelayedPageSwitch($_IPS["TARGET"]);');
+        $this->RegisterTimer('KICostRefresh', 60000, 'IAH_RefreshKICostDisplay($_IPS["TARGET"]);');
 
         // Pages
         $this->RegisterPropertyString(
@@ -180,6 +184,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->ensureVar($root, 'activeTabState', 'activeTabState', VARIABLETYPE_STRING, '', '');
 
         $this->ensureSystemConfigurationScript($catSettings, $catHelper);
+        $this->EnsureKICostInfrastructure();
         // Hinweis: Die Statusvariablen (Information/Meldungen/Außentemperatur) werden nicht mehr automatisch
         // erstellt. Sie müssen über die Instanzkonfiguration mit bestehenden Variablen verknüpft werden.
     }
@@ -265,6 +270,1568 @@ class IPSAlexaHaussteuerung extends IPSModule
         }
 
         return $id;
+    }
+
+
+    /**
+     * Kostenüberwachung: drei getrennte Bereiche, HTML-Gesamtübersicht und
+     * persistente Rohdaten. Die Werte werden beim Aktualisieren NIE genullt.
+     */
+    private function EnsureKICostInfrastructure(): void
+    {
+        $root=$this->ensureCategory($this->InstanceID,'KI-Kosten','iahKICost');
+        if (!IPS_VariableProfileExists('IAH.KICostUSD')) {
+            IPS_CreateVariableProfile('IAH.KICostUSD',VARIABLETYPE_FLOAT);
+            IPS_SetVariableProfileDigits('IAH.KICostUSD',6);
+            IPS_SetVariableProfileText('IAH.KICostUSD','
+    {
+        $id = @IPS_GetObjectIDByIdent($ident, $parent);
+        if ($id) {
+            return (int) $id;
+        }
+
+        $id = @IPS_GetObjectIDByName($name, $parent);
+        if ($id) {
+            return (int) $id;
+        }
+
+        return 0;
+    }
+
+    public function GetConfigurationForm()
+    {
+        $formPath = __DIR__ . '/form.json';
+        if (!is_file($formPath)) {
+            return json_encode(['elements' => [], 'actions' => []]);
+        }
+
+        $content = file_get_contents($formPath);
+        $form = json_decode((string) $content, true);
+        if (!is_array($form)) {
+            $form = ['elements' => [], 'actions' => []];
+        }
+
+        if (!isset($form['elements']) || !is_array($form['elements'])) {
+            $form['elements'] = [];
+        }
+        if (!isset($form['actions']) || !is_array($form['actions'])) {
+            $form['actions'] = [];
+        }
+
+        return json_encode($form, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * Button handler from form
+     */
+    public function TestOpenPage(int $which)
+    {
+        $V = $this->BuildVars();
+        $pageMappings = (array)($V['pageMappings'] ?? []);
+        $key = $which === 1 ? 'energie' : 'kamera';
+        $page = '';
+        if (isset($pageMappings[$key]) && ($pageMappings[$key]['type'] ?? '') === 'wfc_item') {
+            $page = (string) ($pageMappings[$key]['value'] ?? '');
+        }
+        if ($page === '') {
+            $legacy = $which === 1
+                ? $this->ReadPropertyString('EnergiePageId')
+                : $this->ReadPropertyString('KameraPageId');
+            $page = trim($legacy);
+        }
+
+        $this->TriggerPageSwitch($page, (int) $V['WfcId']);
+    }
+
+    public function TriggerPageSwitch(string $pageId, int $wfcId): void
+    {
+        $pageId = trim($pageId);
+        if ($pageId === '' || $wfcId <= 0) {
+            return;
+        }
+
+        $payload = json_encode([
+            'page' => $pageId,
+            'wfc'  => $wfcId,
+        ], JSON_UNESCAPED_SLASHES);
+
+        $this->WriteAttributeString('DelayedPageSwitchPayload', (string) $payload);
+        $this->SetTimerInterval('DelayedPageSwitch', 10 * 1000);
+    }
+
+    public function HandleDelayedPageSwitch(): void
+    {
+        $raw = $this->ReadAttributeString('DelayedPageSwitchPayload');
+        $data = @json_decode($raw, true);
+        $this->SetTimerInterval('DelayedPageSwitch', 0);
+        $this->WriteAttributeString('DelayedPageSwitchPayload', '');
+
+        if (!is_array($data)) {
+            $this->log('warn', 'DelayedPageSwitch: invalid payload', ['raw' => $raw]);
+            return;
+        }
+
+        $page = (string) ($data['page'] ?? '');
+        $wfc = (int) ($data['wfc'] ?? 0);
+        if ($page === '' || $wfc <= 0) {
+            $this->log('warn', 'DelayedPageSwitch: missing params', ['data' => $data]);
+            return;
+        }
+
+        if (!IPS_InstanceExists($wfc)) {
+            $this->log('warn', 'DelayedPageSwitch: WFC missing', ['wfc' => $wfc]);
+            return;
+        }
+
+        try {
+            WFC_SwitchPage($wfc, $page);
+        } catch (\Throwable $t) {
+            $this->log('error', 'DelayedPageSwitch failed', ['msg' => $t->getMessage()]);
+        }
+    }
+
+    /**
+     * Legacy-compatible API
+     */
+    public function RunRouteAll(string $payloadJson)
+    {
+        $payload = @json_decode($payloadJson, true);
+        if (!is_array($payload)) {
+            $payload = [];
+        }
+
+        $cfg = $this->BuildConfig();
+        $router = new \IPSAlexaHaussteuerung\Router();
+        $res = $router->route($payload, $cfg);
+
+        return json_encode($res, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    public function RequestAction($Ident, $Value)
+    {
+        switch ($Ident) {
+            case 'RunRouteAll':
+                if (!is_string($Value)) {
+                    $Value = json_encode($Value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                }
+                if (!is_string($Value)) {
+                    $Value = '';
+                }
+
+                return $this->RunRouteAll($Value);
+
+            case 'ManualRefresh':
+                return $this->ManualRefresh();
+
+            default:
+                trigger_error('Invalid ident for IPSAlexaHaussteuerung: ' . (string) $Ident, E_USER_NOTICE);
+        }
+
+        return null;
+    }
+
+    /**
+     * Build merged config for Router/Renderers
+     */
+    private function BuildConfig(): array
+    {
+        return [
+            'V'         => $this->BuildVars(),
+            'S'         => $this->BuildScripts(),
+            'LOG_LEVEL' => $this->ReadPropertyString('LOG_LEVEL'),
+            'rendererDomains' => $this->readRendererDomainsProperty(),
+            'launchCatalog' => $this->readLaunchCatalogProperty(),
+        ];
+    }
+
+    private function BuildVars(): array
+    {
+        $root = $this->InstanceID;
+        $settings = $this->getObjectIDByIdentOrName($root, 'iahSettings', 'Einstellungen');
+        $helper = $this->getObjectIDByIdentOrName($root, 'iahHelper', 'Alexa new devices helper');
+        $diag    = $this->getObjectIDByIdentOrName($root, 'iahDiag', 'Diagnose');
+        if ($diag <= 0) {
+            $diag = $root;
+        }
+
+        $get = function (int $parent, string $ident) {
+            return (int) @IPS_GetObjectIDByIdent($ident, $parent);
+        };
+
+        $resolveVar = static function (int $id): int {
+            if ($id > 0 && IPS_VariableExists($id)) {
+                return $id;
+            }
+
+            return 0;
+        };
+
+        $deviceMapJsonVar = $get((int) $helper, 'deviceMapJson');
+
+        $pageMappings = $this->readPageMappingsProperty();
+        $startPage = $this->deriveStartPage();
+        $energieLegacy = $this->legacyPageIdFromMappings(
+            $pageMappings,
+            'energie',
+            $this->ReadPropertyString('EnergiePageId')
+        );
+        $kameraLegacy = $this->legacyPageIdFromMappings(
+            $pageMappings,
+            'kamera',
+            $this->ReadPropertyString('KameraPageId')
+        );
+
+        return [
+            'BaseUrl'       => $this->ReadPropertyString('BaseUrl'),
+            'Source'        => $this->ReadPropertyString('Source'),
+            'Token'         => $this->ReadPropertyString('Token'),
+            'Passwort'      => $this->ReadPropertyString('Passwort'),
+            'StartPage'     => $startPage,
+            'WfcId'         => $this->ReadPropertyInteger('WfcId'),
+            'EnergiePageId' => $energieLegacy,
+            'KameraPageId'  => $kameraLegacy,
+            'pageMappings'  => $pageMappings,
+            'InstanceID'    => $this->InstanceID,
+            'KIIntentParser' => $this->buildKiIntentParserConfig(),
+            // IDs der erzeugten/verknüpften Variablen
+            'vars'          => [
+                'settings_cat'       => (int) $settings,
+                'helper_cat'         => (int) $helper,
+                'bewaesserung_toggle' => $get((int) $settings, 'bewaesserungToggle'),
+                'geraete_toggle'      => $get((int) $settings, 'geraeteToggle'),
+                'heizung_stellen'     => $get((int) $settings, 'heizungStellen'),
+                'jalousie_steuern'    => $get((int) $settings, 'jalousieSteuern'),
+                'licht_dimmers'       => $get((int) $settings, 'lichtDimmers'),
+                'licht_switches'      => $get((int) $settings, 'lichtSwitches'),
+                'lueftung_toggle'     => $get((int) $settings, 'lueftungToggle'),
+                'wfc_page_params'     => $get((int) $settings, 'wfcPageParams'),
+                'devicemap_json'      => $deviceMapJsonVar,
+                'pending_deviceid'    => $get((int) $helper, 'pendingDeviceId'),
+                'pending_stage'       => $get((int) $helper, 'pendingStage'),
+                'action'              => (int) @IPS_GetObjectIDByIdent('action', $diag),
+                'device'              => (int) @IPS_GetObjectIDByIdent('device', $diag),
+                'room'                => (int) @IPS_GetObjectIDByIdent('room', $diag),
+                'szene'               => (int) @IPS_GetObjectIDByIdent('szene', $diag),
+                'object'              => (int) @IPS_GetObjectIDByIdent('object', $diag),
+                'number'              => (int) @IPS_GetObjectIDByIdent('number', $diag),
+                'prozent'             => (int) @IPS_GetObjectIDByIdent('prozent', $diag),
+                'alles'               => (int) @IPS_GetObjectIDByIdent('alles', $diag),
+                'skill_active'        => (int) @IPS_GetObjectIDByIdent('skillActive', $root),
+                'dump_file'           => (int) @IPS_GetObjectIDByIdent('dumpFile', $root),
+                'last_var_device'     => (int) @IPS_GetObjectIDByIdent('lastVarDevice', $root),
+                'last_var_id'         => (int) @IPS_GetObjectIDByIdent('lastVarId', $root),
+                'last_var_action'     => (int) @IPS_GetObjectIDByIdent('lastVarAction', $root),
+                'last_var_value'      => (int) @IPS_GetObjectIDByIdent('lastVarValue', $root),
+                'log_recent'          => (int) @IPS_GetObjectIDByIdent('logRecent', $root),
+                'active_tab_state'    => (int) @IPS_GetObjectIDByIdent('activeTabState', $root),
+            ],
+            'scripts'       => [
+                'rooms_catalog' => $this->getObjectIDByIdentOrName((int) $settings, 'roomsCatalog', 'RoomsCatalog'),
+                'ki_intent_parser' => $this->getObjectIDByIdentOrName((int) $helper, 'kiIntentParserScript', 'KI_IntentParser'),
+            ],
+        ];
+    }
+
+    private function buildKiIntentParserConfig(): array
+    {
+        return [
+            'enabled'       => $this->ReadPropertyBoolean('KIIntentEnabled'),
+            'api_key'        => $this->ReadPropertyString('KIIntentApiKey'),
+            'model'          => $this->ReadPropertyString('KIIntentModel'),
+            'log_channel'    => $this->ReadPropertyString('KIIntentLogChannel'),
+            'rate_limit_sec' => $this->ReadPropertyInteger('KIIntentRateLimit'),
+        ];
+    }
+
+    private function BuildScripts(): array
+    {
+        return [
+            'ACTION'            => $this->getActionScriptId(),
+            'ROUTE_ALL'         => $this->getRendererScriptId('iahRouteAllRenderer', 'Route_allRenderer'),
+            'RENDER_MAIN'       => $this->getRendererScriptId('iahRenderLaunch', 'LaunchRequest'),
+            'RENDER_SETTINGS'   => $this->getRendererScriptId('iahRenderSettings', 'EinstellungsRender'),
+            'RENDER_EXTERNAL'   => $this->getRendererScriptId('iahRenderExternal', 'ExternalRenderer'),
+            'RENDER_HEIZUNG'    => $this->getRendererScriptId('iahRenderHeizung', 'HeizungRenderer'),
+            'RENDER_JALOUSIE'   => $this->getRendererScriptId('iahRenderJalousie', 'JalousieRenderer'),
+            'RENDER_LICHT'      => $this->getRendererScriptId('iahRenderLicht', 'LichtRenderer'),
+            'RENDER_LUEFTUNG'   => $this->getRendererScriptId('iahRenderLueftung', 'LüftungRenderer'),
+            'RENDER_GERAETE'    => $this->getRendererScriptId('iahRenderGeraete', 'GeraeteRenderer'),
+            'RENDER_BEWAESSERUNG' => $this->getRendererScriptId('iahRenderBewaesserung', 'BewaesserungRenderer'),
+        ];
+    }
+
+    private function getActionScriptId(): int
+    {
+        $id = @IPS_GetObjectIDByIdent('iahActionEntry', $this->InstanceID);
+        if ($id) {
+            return (int) $id;
+        }
+
+        $name = 'Action (Haus\\Übersicht/Einstellungen Entry)';
+        $local = @IPS_GetObjectIDByName($name, $this->InstanceID);
+        if ($local) {
+            IPS_SetIdent($local, 'iahActionEntry');
+            return (int) $local;
+        }
+
+        $global = @IPS_GetObjectIDByName('Action', 0);
+        return (int) $global;
+    }
+
+    private function ensureActionScript(int $parent): int
+    {
+        $ident = 'iahActionEntry';
+        $name = 'Action (Haus\\Übersicht/Einstellungen Entry)';
+        $id = @IPS_GetObjectIDByIdent($ident, $parent);
+        $isNew = false;
+
+        if (!$id) {
+            $byName = @IPS_GetObjectIDByName($name, $parent);
+            if ($byName) {
+                $id = $byName;
+                IPS_SetIdent($id, $ident);
+            }
+        }
+
+        if (!$id) {
+            $id = IPS_CreateScript(0);
+            IPS_SetParent($id, $parent);
+            IPS_SetName($id, $name);
+            IPS_SetIdent($id, $ident);
+            $isNew = true;
+        }
+
+        $template = __DIR__ . '/resources/action_entry.php';
+        if (($isNew || $this->scriptContentIsEmpty((int) $id)) && is_file($template)) {
+            $content = file_get_contents($template);
+            if ($content !== false) {
+                IPS_SetScriptContent($id, $content);
+            }
+        }
+        $this->patchActionScriptTabScopedDirectCommands((int) $id);
+        $this->patchActionScriptHomeAgentVoice((int) $id);
+
+        return (int) $id;
+    }
+
+    private function ensureHelperScripts(int $parent): void
+    {
+        $map = [
+            ['name' => 'CoreHelpers', 'ident' => 'coreHelpersScript', 'file' => __DIR__ . '/resources/helpers/CoreHelpers.php'],
+            ['name' => 'DeviceMap', 'ident' => 'deviceMapScript', 'file' => __DIR__ . '/resources/helpers/DeviceMap.php'],
+            ['name' => 'RoomBuilderHelpers', 'ident' => 'roomBuilderHelpersScript', 'file' => __DIR__ . '/resources/helpers/RoomBuilderHelpers.php'],
+            ['name' => 'DeviceMapWizard', 'ident' => 'deviceMapWizardScript', 'file' => __DIR__ . '/resources/helpers/DeviceMapWizard.php'],
+            ['name' => 'Lexikon', 'ident' => 'lexikonScript', 'file' => __DIR__ . '/resources/helpers/Lexikon.php'],
+            ['name' => 'Normalizer', 'ident' => 'normalizerScript', 'file' => __DIR__ . '/resources/helpers/Normalizer.php'],
+            ['name' => 'KI_IntentParser', 'ident' => 'kiIntentParserScript', 'file' => __DIR__ . '/resources/helpers/KIIntentParser.php'],
+            ['name' => 'HomeAgentVoiceBridge', 'ident' => 'homeAgentVoiceBridgeScript', 'file' => __DIR__ . '/resources/helpers/HomeAgentVoiceBridge.php'],
+            ['name' => 'KIHouseController', 'ident' => 'kiHouseControllerScript', 'file' => __DIR__ . '/resources/helpers/KIHouseController.php'],
+        ];
+
+        foreach ($map as $def) {
+            $this->ensureScriptTemplate($parent, $def['name'], $def['ident'], $def['file']);
+        }
+    }
+
+    private function ensureRendererScripts(int $parent): void
+    {
+        $base = __DIR__ . '/resources/renderers/';
+        $map = [
+            ['name' => 'Route_allRenderer',   'ident' => 'iahRouteAllRenderer',   'file' => $base . 'Route_allRenderer.php'],
+            ['name' => 'LaunchRequest',       'ident' => 'iahRenderLaunch',       'file' => $base . 'LaunchRequest.php'],
+            ['name' => 'HeizungRenderer',     'ident' => 'iahRenderHeizung',      'file' => $base . 'RenderHeizung.php'],
+            ['name' => 'JalousieRenderer',    'ident' => 'iahRenderJalousie',     'file' => $base . 'RenderJalousie.php'],
+            ['name' => 'LichtRenderer',       'ident' => 'iahRenderLicht',        'file' => $base . 'RenderLicht.php'],
+            ['name' => 'LüftungRenderer',     'ident' => 'iahRenderLueftung',     'file' => $base . 'RenderLueftung.php'],
+            ['name' => 'GeraeteRenderer',     'ident' => 'iahRenderGeraete',      'file' => $base . 'RenderGeraete.php'],
+            ['name' => 'BewaesserungRenderer','ident' => 'iahRenderBewaesserung', 'file' => $base . 'RenderBewaesserung.php'],
+            ['name' => 'EinstellungsRender',  'ident' => 'iahRenderSettings',     'file' => $base . 'RenderSettings.php'],
+            ['name' => 'ExternalRenderer',    'ident' => 'iahRenderExternal',     'file' => $base . 'RenderExternal.php'],
+        ];
+
+        foreach ($map as $def) {
+            $this->ensureScriptTemplate($parent, $def['name'], $def['ident'], $def['file']);
+        }
+    }
+
+    private function ensureScriptTemplate(int $parent, string $name, string $ident, string $template): int
+    {
+        $id = @IPS_GetObjectIDByIdent($ident, $parent);
+
+        if (!$id) {
+            $byName = @IPS_GetObjectIDByName($name, $parent);
+            if ($byName) {
+                $id = $byName;
+                IPS_SetIdent($id, $ident);
+            }
+        }
+
+        if (!$id) {
+            $id = IPS_CreateScript(0);
+            IPS_SetParent($id, $parent);
+            IPS_SetName($id, $name);
+            IPS_SetIdent($id, $ident);
+        }
+
+        if (is_file($template)) {
+            $content = file_get_contents($template);
+            if ($content !== false) {
+                IPS_SetScriptContent($id, $content);
+            }
+        }
+
+        return (int) $id;
+    }
+
+    private function getRendererScriptId(string $ident, string $name): int
+    {
+        $id = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
+        if ($id) {
+            return (int) $id;
+        }
+
+        $renderersCat = @IPS_GetObjectIDByIdent('iahRenderers', $this->InstanceID);
+        if ($renderersCat) {
+            $id = @IPS_GetObjectIDByIdent($ident, $renderersCat);
+            if ($id) {
+                return (int) $id;
+            }
+        }
+
+        return $this->findScriptIdByName($name);
+    }
+
+    private function findScriptIdByName(string $name): int
+    {
+        $local = @IPS_GetObjectIDByName($name, $this->InstanceID);
+        if ($local) {
+            return (int) $local;
+        }
+
+        $global = @IPS_GetObjectIDByName($name, 0);
+        return (int) $global;
+    }
+
+    private function ensureRoomsCatalogTemplate(int $parent): int
+    {
+        $name = 'RoomsCatalog';
+        $ident = 'roomsCatalog';
+        $id = @IPS_GetObjectIDByIdent($ident, $parent);
+        $isNew = false;
+
+        if (!$id) {
+            $byName = @IPS_GetObjectIDByName($name, $parent);
+            if ($byName) {
+                $id = $byName;
+                IPS_SetIdent($id, $ident);
+            }
+        }
+
+        if (!$id) {
+            $id = IPS_CreateScript(0);
+            IPS_SetParent($id, $parent);
+            IPS_SetName($id, $name);
+            IPS_SetIdent($id, $ident);
+            $isNew = true;
+        }
+
+        if ($isNew) {
+            $template = __DIR__ . '/resources/helpers/RoomsCatalog.php';
+            if (is_file($template)) {
+                $content = file_get_contents($template);
+                if ($content !== false) {
+                    IPS_SetScriptContent($id, $content);
+                }
+            }
+        }
+
+        return (int) $id;
+    }
+
+    private function ensureSystemConfigurationScript(int $settingsCat, int $helperCat): int
+    {
+        $parent = $settingsCat;
+        $ident = 'iahSystemConfiguration';
+        $name = 'SystemConfiguration';
+        $id = @IPS_GetObjectIDByIdent($ident, $parent);
+        $isNew = false;
+
+        if (!$id) {
+            $byName = @IPS_GetObjectIDByName($name, $parent);
+            if ($byName) {
+                $id = $byName;
+                IPS_SetIdent($id, $ident);
+            }
+        }
+
+        if (!$id) {
+            $id = IPS_CreateScript(0);
+            IPS_SetParent($id, $parent);
+            IPS_SetName($id, $name);
+            IPS_SetIdent($id, $ident);
+            $isNew = true;
+        }
+
+        if ($isNew || $this->scriptContentIsEmpty((int) $id)) {
+            $snapshot = $this->buildSystemConfigurationSnapshot($settingsCat, $helperCat);
+            $content = "<?php\nreturn " . var_export($snapshot, true) . ";\n";
+            IPS_SetScriptContent($id, $content);
+        }
+
+        return (int) $id;
+    }
+
+    private function scriptContentIsEmpty(int $scriptId): bool
+    {
+        if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) {
+            return true;
+        }
+
+        if (function_exists('IPS_GetScriptContent')) {
+            $content = @IPS_GetScriptContent($scriptId);
+            if (is_string($content)) {
+                $trimmed = trim($content);
+                return $trimmed === '' || $trimmed === '<?php';
+            }
+        }
+
+        $file = @IPS_GetScriptFile($scriptId);
+        if (is_string($file) && $file !== '' && is_file($file)) {
+            $content = @file_get_contents($file);
+            if (is_string($content)) {
+                $trimmed = trim($content);
+                return $trimmed === '' || $trimmed === '<?php';
+            }
+        }
+
+        return false;
+    }
+
+    private function getScriptContent(int $scriptId): ?string
+    {
+        if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) {
+            return null;
+        }
+
+        if (function_exists('IPS_GetScriptContent')) {
+            $content = @IPS_GetScriptContent($scriptId);
+            if (is_string($content)) {
+                return $content;
+            }
+        }
+
+        $file = @IPS_GetScriptFile($scriptId);
+        if (is_string($file) && $file !== '' && is_file($file)) {
+            $content = @file_get_contents($file);
+            if (is_string($content)) {
+                return $content;
+            }
+        }
+
+        return null;
+    }
+
+    private function patchActionScriptTabScopedDirectCommands(int $scriptId): void
+    {
+        $content = $this->getScriptContent($scriptId);
+        if (!is_string($content) || $content === '') {
+            return;
+        }
+
+        $updated = $content;
+        $guard = <<<'PHP'
+        $activeDomainPrefForDirectCommands = $getDomainPref($V);
+        $activeDomainKeyForDirectCommands = gr_norm_text((string)($domain ?? ''));
+        $activeDeviceKeyForDirectCommands = gr_norm_text((string)($device ?? ''));
+        $insideDomainTab = (
+            $activeDomainPrefForDirectCommands !== ''
+            || $activeDomainKeyForDirectCommands !== ''
+        );
+        if (!$insideDomainTab && !empty($rendererDomainMap)) {
+            foreach ($rendererDomainMap as $routeKey => $entry) {
+                $keys = [
+                    gr_norm_text((string)$routeKey),
+                    gr_norm_text((string)($entry['roomDomain'] ?? '')),
+                ];
+                foreach ((array)($entry['synonyms'] ?? []) as $synonym) {
+                    $keys[] = gr_norm_text((string)$synonym);
+                }
+                $keys = array_filter(array_unique($keys));
+                if (
+                    in_array($activeDomainKeyForDirectCommands, $keys, true)
+                    || in_array($activeDeviceKeyForDirectCommands, $keys, true)
+                ) {
+                    $insideDomainTab = true;
+                    break;
+                }
+            }
+        }
+PHP;
+
+        if (strpos($updated, 'activeDomainKeyForDirectCommands') === false) {
+            if (strpos($updated, '$activeDomainPrefForDirectCommands = $getDomainPref($V);') !== false) {
+                $updated = preg_replace(
+                    '/\n\s*\$activeDomainPrefForDirectCommands = \$getDomainPref\(\$V\);\R\s*\$insideDomainTab = \(\$activeDomainPrefForDirectCommands !== \'\'\);\R\s*\R\s*if \(!\$insideDomainTab && gr_match_maehroboter\(/',
+                    "\n" . $guard . "\n\n        if (!\$insideDomainTab && gr_match_maehroboter(",
+                    $updated,
+                    1
+                ) ?? $updated;
+            } else {
+                $updated = str_replace(
+                    '        if (gr_match_maehroboter(',
+                    $guard . "\n\n        if (!\$insideDomainTab && gr_match_maehroboter(",
+                    $updated
+                );
+            }
+        }
+
+        if (strpos($updated, "\$insideDomainTab ? ['matched' => false] : gr_parse_roborock(") === false) {
+            $updated = str_replace(
+                '        $roborock = gr_parse_roborock(',
+                "        \$roborock = \$insideDomainTab ? ['matched' => false] : gr_parse_roborock(",
+                $updated
+            );
+        }
+
+        if ($updated !== $content) {
+            IPS_SetScriptContent($scriptId, $updated);
+        }
+    }
+
+    private function patchActionScriptHomeAgentVoice(int $scriptId): void
+    {
+        $template = @file_get_contents(__DIR__ . '/resources/action_entry.php');
+        $content = $this->getScriptContent($scriptId);
+        if (!is_string($template) || !is_string($content)) {
+            return;
+        }
+        $start = '        // HOME_AGENT_VOICE_HOOK_BEGIN';
+        $end = '        // HOME_AGENT_VOICE_HOOK_END';
+        $first = strpos($template, $start);
+        $last = strpos($template, $end);
+        if ($first === false || $last === false || $last < $first) {
+            return;
+        }
+        $hook = substr($template, $first, $last + strlen($end) - $first);
+        $existingStart = strpos($content, $start);
+        $existingEnd = strpos($content, $end);
+        if ($existingStart !== false && $existingEnd !== false && $existingEnd >= $existingStart) {
+            $updated = substr_replace($content, $hook, $existingStart, $existingEnd + strlen($end) - $existingStart);
+        } else {
+            $pos = strpos($content, '        // FRÜHER, HARTER UI-OVERRIDE');
+            if ($pos === false) {
+                return;
+            }
+            $line = strrpos(substr($content, 0, $pos), "\n");
+            $at = $line === false ? $pos : $line + 1;
+            $updated = substr_replace($content, $hook . "\n\n", $at, 0);
+        }
+        if ($updated !== $content) {
+            IPS_SetScriptContent($scriptId, $updated);
+        }
+    }
+
+    private function buildSystemConfigurationSnapshot(int $settingsCat, int $helperCat): array
+    {
+        $root = $this->InstanceID;
+        $getVar = function (int $parent, string $ident, string $name = ''): int {
+            $id = @IPS_GetObjectIDByIdent($ident, $parent);
+            if ($id) {
+                return (int) $id;
+            }
+            if ($name !== '') {
+                $byName = @IPS_GetObjectIDByName($name, $parent);
+                if ($byName) {
+                    IPS_SetIdent($byName, $ident);
+                    return (int) $byName;
+                }
+            }
+            return 0;
+        };
+
+        $resolveVar = static function (int $id): int {
+            if ($id > 0 && IPS_VariableExists($id)) {
+                return $id;
+            }
+            return 0;
+        };
+
+        $lueftungToggleVar = $getVar($settingsCat, 'lueftungToggle', 'lueftung_toggle');
+        $diagCat = $this->getObjectIDByIdentOrName($root, 'iahDiag', 'Diagnose');
+        if ($diagCat <= 0) {
+            $diagCat = $root;
+        }
+
+        $pageMappings = $this->readPageMappingsProperty();
+        $startPage = $this->deriveStartPage();
+        $energieLegacy = $this->legacyPageIdFromMappings(
+            $pageMappings,
+            'energie',
+            $this->ReadPropertyString('EnergiePageId')
+        );
+        $kameraLegacy = $this->legacyPageIdFromMappings(
+            $pageMappings,
+            'kamera',
+            $this->ReadPropertyString('KameraPageId')
+        );
+
+        $var = [
+            'BaseUrl'       => $this->ReadPropertyString('BaseUrl'),
+            'Source'        => $this->ReadPropertyString('Source'),
+            'Token'         => $this->ReadPropertyString('Token'),
+            'Passwort'      => $this->ReadPropertyString('Passwort'),
+            'StartPage'     => $startPage,
+            'LOG_LEVEL'     => $this->ReadPropertyString('LOG_LEVEL'),
+            'WfcId'         => $this->ReadPropertyInteger('WfcId'),
+            'EnergiePageId' => $energieLegacy,
+            'KameraPageId'  => $kameraLegacy,
+            'pageMappings'  => $pageMappings,
+            'KIIntentParser' => $this->buildKiIntentParserConfig(),
+            'ActionsEnabled' => [
+                'heizung_stellen'     => $getVar($settingsCat, 'heizungStellen', 'heizung_stellen'),
+                'jalousie_steuern'    => $getVar($settingsCat, 'jalousieSteuern', 'jalousie_steuern'),
+                'licht_switches'      => $getVar($settingsCat, 'lichtSwitches', 'licht_switches'),
+                'licht_dimmers'       => $getVar($settingsCat, 'lichtDimmers', 'licht_dimmers'),
+                'lueft_stellen'       => $lueftungToggleVar,
+                'lueftung_toggle'     => $lueftungToggleVar,
+                'geraete_toggle'      => $getVar($settingsCat, 'geraeteToggle', 'geraete_toggle'),
+                'bewaesserung_toggle' => $getVar($settingsCat, 'bewaesserungToggle', 'bewaesserung_toggle'),
+                'szene_toggle'        => $getVar($settingsCat, 'szeneToggle', 'szene_toggle'),
+            ],
+            'DEVICE_MAP'     => $getVar($helperCat, 'deviceMapJson', 'DeviceMapJson'),
+            'PENDING_DEVICE' => $getVar($helperCat, 'pendingDeviceId', 'PendingDeviceId'),
+            'PENDING_STAGE'  => $getVar($helperCat, 'pendingStage', 'PendingStage'),
+            'DOMAIN_FLAG'    => $getVar($root, 'domainFlag', 'domain_flag'),
+            'SKILL_ACTIVE'   => $getVar($root, 'skillActive', 'skillActive'),
+            'lastVariableDevice' => $getVar($root, 'lastVarDevice', 'lastVariableDevice'),
+            'lastVariableId'     => $getVar($root, 'lastVarId', 'lastVariableId'),
+            'lastVariableAction' => $getVar($root, 'lastVarAction', 'lastVariableAction'),
+            'lastVariableValue'  => $getVar($root, 'lastVarValue', 'lastVariableValue'),
+            'ACTION_VAR'         => $getVar($diagCat, 'action', 'action'),
+            'DEVICE_VAR'         => $getVar($diagCat, 'device', 'device'),
+            'ROOM_VAR'           => $getVar($diagCat, 'room', 'room'),
+            'SZENE_VAR'          => $getVar($diagCat, 'szene', 'szene'),
+            'OBJECT_VAR'         => $getVar($diagCat, 'object', 'object'),
+            'NUMBER_VAR'         => $getVar($diagCat, 'number', 'number'),
+            'PROZENT_VAR'        => $getVar($diagCat, 'prozent', 'prozent'),
+            'ALLES_VAR'          => $getVar($diagCat, 'alles', 'alles'),
+            'AUSSEN_TEMP'    => $resolveVar($this->ReadPropertyInteger('VarAussenTemp')),
+            'INFORMATION'    => $resolveVar($this->ReadPropertyInteger('VarInformation')),
+            'MELDUNGEN'      => $resolveVar($this->ReadPropertyInteger('VarMeldungen')),
+            'HEIZRAUM_IST'   => $resolveVar($this->ReadPropertyInteger('VarHeizraumIst')),
+            'OG_GANG_IST'    => $resolveVar($this->ReadPropertyInteger('VarOgGangIst')),
+            'TECHNIK_IST'    => $resolveVar($this->ReadPropertyInteger('VarTechnikIst')),
+            'CoreHelpers'        => $getVar($helperCat, 'coreHelpersScript', 'CoreHelpers'),
+            'DeviceMap'          => $getVar($helperCat, 'deviceMapScript', 'DeviceMap'),
+            'RoomBuilderHelpers' => $getVar($helperCat, 'roomBuilderHelpersScript', 'RoomBuilderHelpers'),
+            'DeviceMapWizard'    => $getVar($helperCat, 'deviceMapWizardScript', 'DeviceMapWizard'),
+            'Lexikon'            => $getVar($helperCat, 'lexikonScript', 'Lexikon'),
+            'KIIntentParserScript' => $getVar($helperCat, 'kiIntentParserScript', 'KI_IntentParser'),
+        ];
+
+        $scripts = [
+            'ROUTE_ALL'           => $this->getRendererScriptId('iahRouteAllRenderer', 'Route_allRenderer'),
+            'RENDER_MAIN'         => $this->getRendererScriptId('iahRenderLaunch', 'LaunchRequest'),
+            'RENDER_SETTINGS'     => $this->getRendererScriptId('iahRenderSettings', 'EinstellungsRender'),
+            'RENDER_EXTERNAL'     => $this->getRendererScriptId('iahRenderExternal', 'ExternalRenderer'),
+            'RENDER_HEIZUNG'      => $this->getRendererScriptId('iahRenderHeizung', 'HeizungRenderer'),
+            'RENDER_JALOUSIE'     => $this->getRendererScriptId('iahRenderJalousie', 'JalousieRenderer'),
+            'RENDER_LICHT'        => $this->getRendererScriptId('iahRenderLicht', 'LichtRenderer'),
+            'RENDER_LUEFTUNG'     => $this->getRendererScriptId('iahRenderLueftung', 'LüftungRenderer'),
+            'RENDER_GERAETE'      => $this->getRendererScriptId('iahRenderGeraete', 'GeraeteRenderer'),
+            'RENDER_BEWAESSERUNG' => $this->getRendererScriptId('iahRenderBewaesserung', 'BewaesserungRenderer'),
+            'ROOMS_CATALOG'       => $getVar($settingsCat, 'roomsCatalog', 'RoomsCatalog'),
+            'NORMALIZER'          => $getVar($helperCat, 'normalizerScript', 'Normalizer'),
+        ];
+
+        $requiredVars = ['CoreHelpers', 'DeviceMap', 'RoomBuilderHelpers', 'DeviceMapWizard', 'Lexikon', 'DEVICE_MAP', 'PENDING_DEVICE', 'PENDING_STAGE', 'DOMAIN_FLAG', 'SKILL_ACTIVE', 'ACTION_VAR', 'DEVICE_VAR', 'ROOM_VAR'];
+        $requiredScripts = ['ROOMS_CATALOG', 'NORMALIZER'];
+        $missing = [];
+
+        foreach ($requiredVars as $key) {
+            $val = $var[$key] ?? 0;
+            if ((int) $val === 0) {
+                $missing[] = $key;
+            }
+        }
+
+        foreach ($requiredScripts as $key) {
+            $val = $scripts[$key] ?? 0;
+            if ((int) $val === 0) {
+                $missing[] = $key;
+            }
+        }
+
+        return [
+            'var' => $var,
+            'script' => $scripts,
+            'missing' => $missing,
+            'rendererDomains' => $this->readRendererDomainsProperty(),
+            'launchCatalog' => $this->readLaunchCatalogProperty(),
+        ];
+    }
+
+    /**
+     * Rebind and re-check infrastructure and scripts; returns summary string
+     */
+    public function DiagRebind(): string
+    {
+        $this->EnsureInfrastructure();
+        $S = $this->BuildScripts();
+        $ok = [];
+        foreach ($S as $k => $v) {
+            $ok[] = $k . ':' . ($v ?: 0);
+        }
+
+        return 'Scripts: [' . implode(', ', $ok) . ']';
+    }
+
+    /**
+     * Build and run a minimal test payload ('main_launch')
+     */
+    public function DiagTestLaunch(): string
+    {
+        $payload = ['route' => 'main_launch', 'aplSupported' => true];
+        $router = new \IPSAlexaHaussteuerung\Router();
+        $res = $router->route($payload, $this->BuildConfig());
+
+        return json_encode($res, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * Sends the custom JSON payload (from property DiagPayload) through the Router and stores the result
+     * in dumpFile var + log
+     */
+    public function DiagSendCustom(): string
+    {
+        $json = $this->ReadPropertyString('DiagPayload');
+        $payload = @json_decode($json, true);
+        if (!is_array($payload)) {
+            $payload = [];
+        }
+
+        $router = new \IPSAlexaHaussteuerung\Router();
+        $res = $router->route($payload, $this->BuildConfig());
+        $out = json_encode($res, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        // write to dumpFile variable if present
+        $dumpId = (int) ($this->BuildVars()['vars']['dump_file'] ?? 0);
+        if ($dumpId > 0) {
+            @SetValueString($dumpId, $out);
+        }
+
+        $this->log('info', 'DiagSendCustom result', ['len' => strlen($out)]);
+        return $out;
+    }
+
+    /**
+     * Clears the dumpFile variable (Antwort-Vorschau)
+     */
+    public function DiagClearDump(): void
+    {
+        $dumpId = (int) ($this->BuildVars()['vars']['dump_file'] ?? 0);
+        if ($dumpId > 0) {
+            @SetValueString($dumpId, '');
+        }
+    }
+
+    /**
+     * Clears the recent log buffer
+     */
+    public function DiagClearLogs(): void
+    {
+        $logId = (int) ($this->BuildVars()['vars']['log_recent'] ?? 0);
+        if ($logId > 0) {
+            @SetValueString($logId, '');
+        }
+    }
+
+    /**
+     * Rebuilds renderer scripts and helper structure manually via the configuration form button.
+     */
+    public function ManualRefresh(): string
+    {
+        $this->log('info', 'Manual refresh requested from configuration form');
+        $summary = $this->DiagRebind();
+        $this->log('info', 'Manual refresh completed', ['summary' => $summary]);
+
+        return 'alles neu aktualisiert';
+    }
+
+    private function readRendererDomainsProperty(): array
+    {
+        $raw = $this->ReadPropertyString('RendererDomains');
+        $data = json_decode($raw, true);
+        if (!is_array($data)) {
+            $data = [];
+        }
+
+        $map = [];
+        foreach ($data as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            $route = strtolower(trim((string)($entry['route'] ?? '')));
+            if ($route === '') {
+                continue;
+            }
+            $base = $this->rendererDomainBase($route);
+            $override = $this->rendererDomainDefaultsMap()[$route] ?? [];
+            $custom = $this->sanitizeRendererDomainEntry($entry);
+            $custom['route'] = $route;
+            $map[$route] = array_merge($base, $override, $custom);
+        }
+
+        foreach ($this->rendererDomainDefaults() as $def) {
+            $route = $def['route'];
+            if (!isset($map[$route])) {
+                $map[$route] = $def;
+            } else {
+                $map[$route] = array_merge($def, $map[$route]);
+            }
+        }
+
+        $claimedDomains = [];
+        foreach ($map as $entry) {
+            $roomDomain = strtolower((string)($entry['roomDomain'] ?? ''));
+            if ($roomDomain === '') {
+                $roomDomain = strtolower((string)($entry['route'] ?? ''));
+            }
+            if ($roomDomain !== '') {
+                $claimedDomains[$roomDomain] = true;
+            }
+        }
+
+        $dynamicRoutes = $this->discoverRoomsCatalogTabDomains();
+        foreach ($dynamicRoutes as $route => $entry) {
+            $roomDomain = strtolower((string)($entry['roomDomain'] ?? $route));
+            if (isset($claimedDomains[$roomDomain])) {
+                continue;
+            }
+            if (!isset($map[$route])) {
+                $map[$route] = array_merge($this->rendererDomainBase($route), $entry);
+            }
+            $claimedDomains[$roomDomain] = true;
+        }
+
+        return array_values($map);
+    }
+
+    private function sanitizeRendererDomainEntry(array $entry): array
+    {
+        $out = [];
+        $stringFields = ['logName', 'roomDomain', 'title', 'subtitle', 'speechEmpty', 'aplDoc', 'aplToken', 'toggleVarKey'];
+        foreach ($stringFields as $key) {
+            if (!array_key_exists($key, $entry)) {
+                continue;
+            }
+            $val = trim((string)$entry[$key]);
+            if ($val === '') {
+                continue;
+            }
+            $out[$key] = $val;
+        }
+
+        return $out;
+    }
+
+    private function discoverRoomsCatalogTabDomains(): array
+    {
+        $settings = $this->getObjectIDByIdentOrName($this->InstanceID, 'iahSettings', 'Einstellungen');
+        if ($settings <= 0) {
+            return [];
+        }
+
+        $scriptId = $this->getObjectIDByIdentOrName($settings, 'roomsCatalog', 'RoomsCatalog');
+        if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) {
+            return [];
+        }
+
+        $path = IPS_GetScriptFile($scriptId);
+        if (!is_string($path) || $path === '' || !is_file($path)) {
+            return [];
+        }
+
+        try {
+            $rooms = @include $path;
+        } catch (\Throwable $e) {
+            $rooms = null;
+        }
+
+        if (!is_array($rooms)) {
+            return [];
+        }
+
+        return $this->extractRoomsCatalogTabDomains($rooms);
+    }
+
+    private function extractRoomsCatalogTabDomains(array $rooms): array
+    {
+        $routes = [];
+    
+        foreach ($rooms as $room) {
+            if (!is_array($room)) {
+                continue;
+            }
+    
+            $domains = (array)($room['domains'] ?? []);
+            foreach ($domains as $domainKey => $definition) {
+                $tabs = (array)($definition['tabs'] ?? []);
+                if ($tabs === []) {
+                    // nur Domains mit tabs
+                    continue;
+                }
+    
+                $baseDomain = strtolower((string)$domainKey);
+                $route      = $this->normalizeRoomsCatalogDomainRoute($baseDomain, $tabs);
+                if ($route === '' || isset($routes[$route])) {
+                    continue;
+                }
+    
+                $title = $this->inferRoomsCatalogDomainTitle($tabs, $route);
+    
+                $routes[$route] = [
+                    'route'      => $route,
+                    'roomDomain' => $baseDomain !== '' ? $baseDomain : $route,
+                    'title'      => $title,
+                    'logName'    => $title,
+                ];
+            }
+        }
+    
+        return $routes;
+    }
+
+    private function normalizeRoomsCatalogDomainRoute(string $domainKey, array $tabs): string
+    {
+        $domainKey = strtolower($domainKey);
+        $titleSlug = $this->slugifyRoute($this->inferRoomsCatalogDomainTitle($tabs, $domainKey));
+        if ($titleSlug !== '') {
+            return $titleSlug;
+        }
+
+        return $this->slugifyRoute($domainKey);
+    }
+
+    private function slugifyRoute(string $raw): string
+    {
+        $slug = strtolower(trim($raw));
+        $slug = strtr($slug, ['ä' => 'ae', 'ö' => 'oe', 'ü' => 'ue', 'ß' => 'ss']);
+        $slug = preg_replace('/[^a-z0-9]+/i', '-', $slug);
+        $slug = trim((string)$slug, '-');
+
+        return $slug;
+    }
+
+    private function inferRoomsCatalogDomainTitle(array $tabs, string $route): string
+    {
+        foreach ($tabs as $key => $tab) {
+            $title = '';
+            if (is_array($tab)) {
+                $title = trim((string)($tab['title'] ?? ''));
+                if ($title === '') {
+                    $title = trim((string)$key);
+                }
+            } else {
+                $title = trim((string)$tab);
+                if ($title === '') {
+                    $title = trim((string)$key);
+                }
+            }
+
+            if ($title !== '') {
+                return $title;
+            }
+        }
+
+        return ucfirst($route);
+    }
+
+    private function rendererDomainDefaults(): array
+    {
+        $defaults = [];
+        foreach ($this->rendererDomainDefaultsMap() as $route => $override) {
+            $defaults[] = array_merge($this->rendererDomainBase($route), $override);
+        }
+
+        return $defaults;
+    }
+
+    private function rendererDomainDefaultsMap(): array
+    {
+        return [
+            'geraete' => [
+                'logName'     => 'Geraete',
+                'roomDomain'  => 'devices',
+                'title'       => 'Geräte',
+                'speechEmpty' => 'Keine Geräte im RoomsCatalog konfiguriert.',
+                'aplDoc'      => 'doc://alexa/apl/documents/Geraete',
+                'aplToken'    => 'hv-geraete',
+            ],
+            'bewaesserung' => [
+                'logName'     => 'Bewaesserung',
+                'roomDomain'  => 'sprinkler',
+                'title'       => 'Bewässerung',
+                'speechEmpty' => 'Keine Bewässerung im RoomsCatalog konfiguriert.',
+                'aplDoc'      => 'doc://alexa/apl/documents/Bewaesserung',
+                'aplToken'    => 'hv-bewaesserung',
+            ],
+        ];
+    }
+
+    private function launchCatalogDefaults(): array
+    {
+        $file = __DIR__ . '/resources/helpers/LaunchCatalogDefaults.php';
+        $defaults = @include $file;
+        if (is_array($defaults)) {
+            return $defaults;
+        }
+
+        return [
+            'title' => 'HAUS VISUALISIERUNG',
+            'subtitleTemplate' => 'Raumname: {{alexa}}',
+            'footerText' => 'Tipp eine Kachel an – oder sage z. B. „Jalousie“.',
+            'logo' => 'Logo.png',
+            'homeIcon' => 'HomeIcon.png',
+            'headerIcon' => 'Icon.png',
+            'tiles' => [],
+        ];
+    }
+
+    private function readLaunchCatalogProperty(): array
+    {
+        $defaults = $this->launchCatalogDefaults();
+        $raw = json_decode($this->ReadPropertyString('LaunchCatalog'), true);
+        $tiles = [];
+        if (is_array($raw)) {
+            foreach ($raw as $entry) {
+                if (!is_array($entry)) {
+                    continue;
+                }
+                $tile = $this->sanitizeLaunchCatalogEntry($entry);
+                if ($tile !== null) {
+                    $tiles[] = $tile;
+                }
+            }
+        }
+        if ($tiles === []) {
+            $tiles = (array)($defaults['tiles'] ?? []);
+        }
+
+        $readString = static function (string $value, string $fallback): string {
+            $trimmed = trim($value);
+            return $trimmed !== '' ? $trimmed : $fallback;
+        };
+
+        return [
+            'title' => $readString($this->ReadPropertyString('LaunchTitle'), (string) ($defaults['title'] ?? '')),
+            'subtitleTemplate' => $readString(
+                $this->ReadPropertyString('LaunchSubtitleTemplate'),
+                (string) ($defaults['subtitleTemplate'] ?? '')
+            ),
+            'footerText' => $readString(
+                $this->ReadPropertyString('LaunchFooterText'),
+                (string) ($defaults['footerText'] ?? '')
+            ),
+            'logo' => $readString($this->ReadPropertyString('LaunchLogo'), (string) ($defaults['logo'] ?? 'Logo.png')),
+            'homeIcon' => $readString(
+                $this->ReadPropertyString('LaunchHomeIcon'),
+                (string) ($defaults['homeIcon'] ?? 'HomeIcon.png')
+            ),
+            'headerIcon' => $readString(
+                $this->ReadPropertyString('LaunchHeaderIcon'),
+                (string) ($defaults['headerIcon'] ?? 'Icon.png')
+            ),
+            'tiles' => $tiles,
+        ];
+    }
+
+    private function sanitizeLaunchCatalogEntry(array $entry): ?array
+    {
+        $id = strtolower(trim((string) ($entry['id'] ?? '')));
+        $title = trim((string) ($entry['title'] ?? ''));
+        if ($id === '' || $title === '') {
+            return null;
+        }
+
+        $tile = ['id' => $id, 'title' => $title];
+        $subtitle = trim((string) ($entry['subtitle'] ?? ''));
+        if ($subtitle !== '') {
+            $tile['subtitle'] = $subtitle;
+        }
+
+        $icon = trim((string) ($entry['icon'] ?? ''));
+        if ($icon !== '') {
+            $tile['icon'] = $icon;
+        }
+
+        $color = trim((string) ($entry['color'] ?? ''));
+        if ($color !== '') {
+            if ($color[0] !== '#') {
+                $color = '#' . $color;
+            }
+            if (preg_match('/^#[0-9A-F]{3,6}$/i', $color)) {
+                $tile['color'] = strtoupper($color);
+            }
+        }
+
+        return $tile;
+    }
+
+    private function pageMappingDefaults(): array
+    {
+        return [
+            ['key' => 'energie', 'type' => 'wfc_item', 'value' => 'item2124', 'label' => 'Energie'],
+            ['key' => 'kamera', 'type' => 'wfc_item', 'value' => 'item9907', 'label' => 'Kamera'],
+        ];
+    }
+
+    private function readPageMappingsProperty(): array
+    {
+        $raw = json_decode($this->ReadPropertyString('PageMappings'), true);
+        $map = [];
+        if (is_array($raw)) {
+            foreach ($raw as $entry) {
+                if (!is_array($entry)) {
+                    continue;
+                }
+                $parsed = $this->sanitizePageMappingEntry($entry);
+                if ($parsed === null) {
+                    continue;
+                }
+                $key = $parsed['key'];
+                unset($parsed['key']);
+                $map[$key] = $parsed;
+            }
+        }
+
+        if ($map === []) {
+            $fallbacks = [
+                'energie' => trim($this->ReadPropertyString('EnergiePageId')),
+                'kamera'  => trim($this->ReadPropertyString('KameraPageId')),
+            ];
+            foreach ($fallbacks as $key => $value) {
+                if ($value === '') {
+                    continue;
+                }
+                $map[$key] = [
+                    'type'  => 'wfc_item',
+                    'value' => $value,
+                    'label' => ucfirst($key),
+                ];
+            }
+        }
+
+        if ($map === []) {
+            foreach ($this->pageMappingDefaults() as $entry) {
+                $parsed = $this->sanitizePageMappingEntry($entry);
+                if ($parsed === null) {
+                    continue;
+                }
+                $key = $parsed['key'];
+                unset($parsed['key']);
+                $map[$key] = $parsed;
+            }
+        }
+
+        return $map;
+    }
+
+    private function sanitizePageMappingEntry(array $entry): ?array
+    {
+        $key = strtolower(trim((string) ($entry['key'] ?? '')));
+        if ($key === '') {
+            return null;
+        }
+
+        $type = strtolower(trim((string) ($entry['type'] ?? 'wfc_item')));
+        if (!in_array($type, ['wfc_item', 'external_url'], true)) {
+            $type = 'wfc_item';
+        }
+
+        $value = trim((string) ($entry['value'] ?? ''));
+        if ($value === '') {
+            return null;
+        }
+        if ($type === 'external_url' && stripos($value, 'https://') !== 0) {
+            return null;
+        }
+
+        $normalized = [
+            'key'   => $key,
+            'type'  => $type,
+            'value' => $value,
+        ];
+
+        $label = trim((string) ($entry['label'] ?? ''));
+        if ($label !== '') {
+            $normalized['label'] = $label;
+        }
+
+        return $normalized;
+    }
+
+    private function legacyPageIdFromMappings(array $pageMappings, string $key, string $fallback): string
+    {
+        $normKey = strtolower($key);
+        if (isset($pageMappings[$normKey]) && ($pageMappings[$normKey]['type'] ?? '') === 'wfc_item') {
+            $value = trim((string) ($pageMappings[$normKey]['value'] ?? ''));
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return trim($fallback);
+    }
+
+    private function findDefaultWfcPageId(array $pageMappings): string
+    {
+        if (isset($pageMappings['energie']) && ($pageMappings['energie']['type'] ?? '') === 'wfc_item') {
+            $value = trim((string) ($pageMappings['energie']['value'] ?? ''));
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        foreach ($pageMappings as $entry) {
+            if (($entry['type'] ?? '') !== 'wfc_item') {
+                continue;
+            }
+            $value = trim((string) ($entry['value'] ?? ''));
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return trim($this->ReadPropertyString('EnergiePageId'));
+    }
+
+    private function deriveStartPage(): string
+    {
+        $raw = trim($this->ReadPropertyString('StartPage'));
+        $wfcId = (int) $this->ReadPropertyInteger('WfcId');
+
+        if ($raw !== '' && !preg_match('/^#?\d+$/', $raw)) {
+            return $raw;
+        }
+
+        if ($wfcId > 0) {
+            return '#' . $wfcId;
+        }
+
+        return $raw;
+    }
+
+    private function rendererDomainBase(string $route): array
+    {
+        $normalizedRoute = strtolower($route);
+        $title = $normalizedRoute !== '' ? ucfirst($normalizedRoute) : 'Renderer';
+        $tokenSlug = preg_replace('/[^a-z0-9]+/i', '', $normalizedRoute);
+        if ($tokenSlug === '') {
+            $tokenSlug = 'renderer';
+        }
+
+        return [
+            'route'        => $normalizedRoute,
+            'logName'      => $title,
+            'roomDomain'   => 'devices',
+            'title'        => $title,
+            'subtitle'     => 'Steckdosen & mehr',
+            'speechEmpty'  => 'Keine Einträge im RoomsCatalog konfiguriert.',
+            'aplDoc'       => 'doc://alexa/apl/documents/' . $title,
+            'aplToken'     => 'hv-' . $tokenSlug,
+            'toggleVarKey' => $normalizedRoute . '_toggle',
+        ];
+    }
+}
+,'');
+        }
+        $data=$this->ensureVar($root,'KI-Kosten Rohdaten (nicht bearbeiten)','kiCostData',VARIABLETYPE_STRING,'',null);
+        IPS_SetHidden($data,true);
+        $this->ensureVar($root,'KI-Kosten Übersicht','kiCostOverview',VARIABLETYPE_STRING,'~HTMLBox',null);
+
+        foreach (['Alle'=>'Alle KI-Anbindungen','RoomsCatalog'=>'KI + RoomsCatalog','HomeAgent'=>'KI + Home Agent'] as $ident=>$label) {
+            $category=$this->ensureCategory($root,$label,'iahKICost'.$ident);
+            foreach ($this->KICostVariableDefinitions() as $key=>[$caption,$type,$profile]) {
+                $this->ensureVar($category,$caption,$key,$type,$profile,null);
+            }
+        }
+        $this->RefreshKICostDisplay();
+    }
+
+    private function KICostVariableDefinitions(): array
+    {
+        $i=VARIABLETYPE_INTEGER;$f=VARIABLETYPE_FLOAT;$str=VARIABLETYPE_STRING;
+        return [
+            'questionsToday'=>['Fragen heute',$i,''],
+            'questionsMonth'=>['Fragen diesen Monat',$i,''],
+            'questionsTotal'=>['Fragen gesamt',$i,''],
+            'questionsFailed'=>['Fehlgeschlagene Fragen gesamt',$i,''],
+            'apiCallsToday'=>['OpenAI-Aufrufe heute',$i,''],
+            'apiCallsMonth'=>['OpenAI-Aufrufe diesen Monat',$i,''],
+            'apiCallsTotal'=>['OpenAI-Aufrufe gesamt',$i,''],
+            'inputTokensTotal'=>['Eingabe-Tokens gesamt',$i,''],
+            'cachedTokensTotal'=>['Davon gecachte Eingabe-Tokens',$i,''],
+            'outputTokensTotal'=>['Ausgabe-Tokens gesamt',$i,''],
+            'allTokensTotal'=>['Tokens insgesamt',$i,''],
+            'inputTokensMonth'=>['Eingabe-Tokens diesen Monat',$i,''],
+            'outputTokensMonth'=>['Ausgabe-Tokens diesen Monat',$i,''],
+            'costTodayUSD'=>['KI-Kosten heute (USD)',$f,'IAH.KICostUSD'],
+            'costMonthUSD'=>['KI-Kosten diesen Monat (USD)',$f,'IAH.KICostUSD'],
+            'costTotalUSD'=>['KI-Kosten gesamt (USD)',$f,'IAH.KICostUSD'],
+            'lastCostUSD'=>['Letzte Frage – Kosten (USD)',$f,'IAH.KICostUSD'],
+            'lastQuestionApiCalls'=>['Letzte Frage – API-Aufrufe',$i,''],
+            'lastQuestionInputTokens'=>['Letzte Frage – Eingabe-Tokens',$i,''],
+            'lastQuestionCachedTokens'=>['Letzte Frage – Cache-Tokens',$i,''],
+            'lastQuestionOutputTokens'=>['Letzte Frage – Ausgabe-Tokens',$i,''],
+            'lastQuestionModel'=>['Letztes Modell',$str,''],
+            'lastQuestionStatus'=>['Letzte Frage – Ergebnis',$str,''],
+            'lastQuestionTime'=>['Letzte Frage – Zeitpunkt',$str,''],
+            'unpricedCalls'=>['API-Aufrufe ohne bekannte Preise',$i,''],
+            'unmeasuredCalls'=>['API-Aufrufe ohne Token-Daten',$i,''],
+            'detailsJSON'=>['Letzte 100 Fragen – Details (JSON)',$str,'']
+        ];
+    }
+
+    /**
+     * Wird vom jeweiligen Bridge-Skript nach *jedem* API-Aufruf aufgerufen.
+     * JSON-Parameter verhindert verschachtelte Arrays in IPS_RunScriptWaitEx.
+     */
+    public function RecordKICostEvent(string $eventJson): bool
+    {
+        $event=json_decode($eventJson,true);
+        if (!is_array($event)) return false;
+        $mutex='IAH.KICost.'.$this->InstanceID;
+        if (!IPS_SemaphoreEnter($mutex,5000)) {
+            IPS_LogMessage('Alexa','KICost.error: Statistik-Semaphor belegt');
+            return false;
+        }
+        try {
+            $root=(int)@IPS_GetObjectIDByIdent('iahKICost',$this->InstanceID);
+            $id=$root>0?(int)@IPS_GetObjectIDByIdent('kiCostData',$root):0;
+            if ($id<=0 || !IPS_VariableExists($id)) return false;
+            $store=json_decode((string)GetValueString($id),true);
+            if (!is_array($store)) $store=[];
+            $prices=json_decode($this->ReadPropertyString('KICostPriceTableJson'),true);
+            if (!is_array($prices)) $prices=iah_ki_price_table();
+            $now=new DateTimeImmutable('now',new DateTimeZone('Europe/Vienna'));
+            if (!iah_ki_apply_event($store,$event,$prices,$now)) return false;
+            SetValueString($id,json_encode($store,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR));
+            $snapshot=iah_ki_section_snapshot($store,'Alle',$now);
+            $threshold=$this->ReadPropertyFloat('KICostMonthlyWarningUSD');
+            $month=$now->format('Y-m');
+            if ($threshold>0 && (float)$snapshot['month']['costUsd'] >= $threshold
+                && ($store['warnedMonth']??'')!==$month) {
+                $store['warnedMonth']=$month;
+                SetValueString($id,json_encode($store,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
+                IPS_LogMessage('Alexa',sprintf(
+                    'KICost.WARNUNG: Monatsgrenze %.2f USD erreicht (%.6f USD).', $threshold,
+                    (float)$snapshot['month']['costUsd']));
+            }
+            // Nicht bei jeder API-Runde alle 80 Anzeigevariablen schreiben.
+            if (in_array($event['type']??'', ['finish','api'],true)) $this->PublishKICostVariables($store,$now);
+            return true;
+        } catch (Throwable $e) {
+            IPS_LogMessage('Alexa','KICost.error: '.$e->getMessage());
+            return false;
+        } finally {
+            IPS_SemaphoreLeave($mutex);
+        }
+    }
+
+    public function RefreshKICostDisplay(): void
+    {
+        $mutex='IAH.KICost.'.$this->InstanceID;
+        if (!IPS_SemaphoreEnter($mutex,500)) return;
+        try {
+            $root=(int)@IPS_GetObjectIDByIdent('iahKICost',$this->InstanceID);
+            $dataId=$root>0?(int)@IPS_GetObjectIDByIdent('kiCostData',$root):0;
+            if ($dataId<=0 || !IPS_VariableExists($dataId)) return;
+            $store=json_decode((string)GetValueString($dataId),true);
+            $this->PublishKICostVariables(is_array($store)?$store:[],
+                new DateTimeImmutable('now',new DateTimeZone('Europe/Vienna')));
+        } finally {IPS_SemaphoreLeave($mutex);}
+    }
+
+    private function PublishKICostVariables(array $store,DateTimeImmutable $now): void
+    {
+        $root=(int)@IPS_GetObjectIDByIdent('iahKICost',$this->InstanceID);
+        if ($root<=0) return;
+        foreach (['Alle','RoomsCatalog','HomeAgent'] as $backend) {
+            $cat=(int)@IPS_GetObjectIDByIdent('iahKICost'.$backend,$root);
+            if ($cat<=0) continue;
+            $snap=iah_ki_section_snapshot($store,$backend,$now);
+            $all=$snap['total'];$day=$snap['today'];$month=$snap['month'];$last=$snap['last'];
+            $values=[
+                'questionsToday'=>(int)$day['questions'],'questionsMonth'=>(int)$month['questions'],
+                'questionsTotal'=>(int)$all['questions'],'questionsFailed'=>(int)$all['failures'],
+                'apiCallsToday'=>(int)$day['apiCalls'],'apiCallsMonth'=>(int)$month['apiCalls'],
+                'apiCallsTotal'=>(int)$all['apiCalls'],
+                'inputTokensTotal'=>(int)$all['inputTokens'],'cachedTokensTotal'=>(int)$all['cachedInputTokens'],
+                'outputTokensTotal'=>(int)$all['outputTokens'],'allTokensTotal'=>(int)$all['totalTokens'],
+                'inputTokensMonth'=>(int)$month['inputTokens'],'outputTokensMonth'=>(int)$month['outputTokens'],
+                'costTodayUSD'=>(float)$day['costUsd'],'costMonthUSD'=>(float)$month['costUsd'],
+                'costTotalUSD'=>(float)$all['costUsd'],'lastCostUSD'=>(float)($last['costUsd']??0),
+                'lastQuestionApiCalls'=>(int)($last['apiCalls']??0),
+                'lastQuestionInputTokens'=>(int)($last['inputTokens']??0),
+                'lastQuestionCachedTokens'=>(int)($last['cachedInputTokens']??0),
+                'lastQuestionOutputTokens'=>(int)($last['outputTokens']??0),
+                'lastQuestionModel'=>(string)($last['model']??''),
+                'lastQuestionStatus'=>(string)($last['status']??''),
+                'lastQuestionTime'=>(string)($last['finishedAt']??''),
+                'unpricedCalls'=>(int)$all['callsWithoutPrice'],
+                'unmeasuredCalls'=>(int)$all['callsWithoutUsage'],
+                'detailsJSON'=>json_encode($snap['history'],JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE),
+            ];
+            foreach ($values as $ident=>$value) {
+                $var=(int)@IPS_GetObjectIDByIdent($ident,$cat);
+                if ($var<=0 || !IPS_VariableExists($var)) continue;
+                if (is_int($value)) SetValueInteger($var,$value);
+                elseif (is_float($value)) SetValueFloat($var,$value);
+                else SetValueString($var,$value);
+            }
+        }
+        $overviewId=(int)@IPS_GetObjectIDByIdent('kiCostOverview',$root);
+        if ($overviewId>0 && IPS_VariableExists($overviewId)) SetValueString($overviewId,$this->RenderKICostOverview($store,$now));
+    }
+
+    private function RenderKICostOverview(array $store,DateTimeImmutable $now): string
+    {
+        $usd=static fn(float $v):string=>'$ '.number_format($v,6,'.',',');
+        $escape=static fn($v):string=>htmlspecialchars((string)$v,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+        $style='<style>.ki-cost{font:14px Arial,sans-serif;color:#222}.ki-cost table{border-collapse:collapse;width:100%;margin:10px 0}'
+            .'.ki-cost th,.ki-cost td{padding:7px 9px;border-bottom:1px solid #ddd;text-align:left}'
+            .'.ki-cost th{background:#edf1f5}.ki-cost .num{text-align:right;font-variant-numeric:tabular-nums}'
+            .'.ki-cost small{color:#666}.ki-cost .warning{color:#a12b10;font-weight:bold}</style>';
+        $html=$style.'<div class="ki-cost"><h3>Alexa KI-Kosten · USD</h3><table><thead><tr><th>KI-Backend</th><th class="num">Fragen heute</th>'
+            .'<th class="num">Fragen gesamt</th><th class="num">Heute</th><th class="num">Monat</th><th class="num">Gesamt</th>'
+            .'<th class="num">Letzte Frage</th></tr></thead><tbody>';
+        foreach (['Alle'=>'Gesamt','RoomsCatalog'=>'RoomsCatalog','HomeAgent'=>'Home Agent'] as $key=>$label) {
+            $s=iah_ki_section_snapshot($store,$key,$now);$a=$s['total'];$d=$s['today'];$m=$s['month'];
+            $html.='<tr><th>'.$label.'</th><td class="num">'.$d['questions'].'</td><td class="num">'.$a['questions']
+                .'</td><td class="num">'.$usd((float)$d['costUsd']).'</td><td class="num">'.$usd((float)$m['costUsd'])
+                .'</td><td class="num">'.$usd((float)$a['costUsd']).'</td><td class="num">'.$usd((float)($s['last']['costUsd']??0)).'</td></tr>';
+        }
+        $html.='</tbody></table>';
+        $total=iah_ki_section_snapshot($store,'Alle',$now);
+        if ((int)$total['total']['callsWithoutPrice']>0 || (int)$total['total']['callsWithoutUsage']>0)
+            $html.='<p class="warning">Achtung: '.(int)$total['total']['callsWithoutPrice'].' API-Aufrufe ohne Preis, '
+                .(int)$total['total']['callsWithoutUsage'].' ohne Token-Daten; die angezeigten Kosten können unvollständig sein.</p>';
+        $html.='<h4>Letzte Fragen</h4><table><thead><tr><th>Zeit</th><th>Backend</th><th>Modell</th>'
+            .'<th class="num">Eingabe</th><th class="num">Cache</th><th class="num">Ausgabe</th>'
+            .'<th class="num">API-Aufrufe</th><th class="num">USD</th><th>Ergebnis</th></tr></thead><tbody>';
+        foreach (array_slice((array)$total['history'],0,25) as $entry) {
+            $html.='<tr><td>'.$escape($entry['finishedAt']??'').'</td><td>'.$escape($entry['backend']??'')
+                .'</td><td>'.$escape($entry['model']??'').'</td><td class="num">'.(int)($entry['inputTokens']??0)
+                .'</td><td class="num">'.(int)($entry['cachedInputTokens']??0)
+                .'</td><td class="num">'.(int)($entry['outputTokens']??0).'</td><td class="num">'
+                .(int)($entry['apiCalls']??0).'</td><td class="num">'.$usd((float)($entry['costUsd']??0))
+                .'</td><td>'.$escape($entry['status']??'').'</td></tr>';
+        }
+        $html.='</tbody></table><small>Schätzung aus echten Chat-Completions-Tokens und hinterlegten Modellpreisen. '
+            .'Keine rückwirkende Erfassung; Steuern, Wechselkurs, andere API-Anwendungen und mögliche Sondertarife '
+            .'sind nicht enthalten. Preiseinstellungen im Alexa-Modul pflegen.</small></div>';
+        return $html;
     }
 
     private function getObjectIDByIdentOrName(int $parent, string $ident, string $name): int
