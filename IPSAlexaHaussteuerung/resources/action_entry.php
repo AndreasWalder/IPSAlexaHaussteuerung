@@ -1043,7 +1043,7 @@ function iah_build_ki_intent_parser_cfg(array $props): array
     return [
         'enabled'       => (bool) ($props['KIIntentEnabled'] ?? true),
         'api_key'        => (string) ($props['KIIntentApiKey'] ?? ''),
-        'model'          => (string) ($props['KIIntentModel'] ?? 'gpt-4.1-mini'),
+        'model'          => (string) ($props['KIModelSelection'] ?? 'gpt-6-luna'),
         'log_channel'    => (string) ($props['KIIntentLogChannel'] ?? 'Alexa'),
         'rate_limit_sec' => (int) ($props['KIIntentRateLimit'] ?? 60),
     ];
@@ -1888,7 +1888,7 @@ function Execute($request = null)
                                 'endpoint' => (string) ($propsEarly['HomeAgentVoiceEndpoint'] ?? ''),
                                 'token' => (string) ($propsEarly['HomeAgentVoiceToken'] ?? ''),
                                 'api_key' => (string) ($propsEarly['KIIntentApiKey'] ?? ''),
-                                'model' => (string) ($propsEarly['KIIntentModel'] ?? 'gpt-4.1-mini'),
+                                'model' => (string) ($propsEarly['KIModelSelection'] ?? 'gpt-6-luna'),
                                 'max_words' => (int) ($propsEarly['HomeAgentVoiceMaxWords'] ?? 20),
                                 'timeout_seconds' => (int) ($propsEarly['HomeAgentVoiceTimeoutSeconds'] ?? 6),
                                 'allow_writes' => $homeAgentAllowCommands,
@@ -1899,7 +1899,7 @@ function Execute($request = null)
                                 $kiCatalogJson = json_encode([
                                     'catalog_script_id' => (int) ($S['ROOMS_CATALOG'] ?? 0),
                                     'api_key' => (string) ($propsEarly['KIIntentApiKey'] ?? ''),
-                                    'model' => (string) ($propsEarly['KIIntentModel'] ?? 'gpt-4.1-mini'),
+                                    'model' => (string) ($propsEarly['KIModelSelection'] ?? 'gpt-6-luna'),
                                     'max_words' => (int) ($propsEarly['HomeAgentVoiceMaxWords'] ?? 20),
                                     'timeout_seconds' => (int) ($propsEarly['HomeAgentVoiceTimeoutSeconds'] ?? 6),
                                     'allow_writes' => $homeAgentAllowCommands,
