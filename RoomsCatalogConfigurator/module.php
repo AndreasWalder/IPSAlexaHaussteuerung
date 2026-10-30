@@ -75,28 +75,28 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         $this->logDebug('ReloadCatalog: Button gedrückt');
         $this->reloadAllFromCatalog();
-        $this->ReloadForm();
+        $this->RefreshVisibleLists();
     }
 
     public function SetRoomFilter(string $roomKey)
     {
         $this->WriteAttributeString('FilterRoom', $roomKey);
         $this->logDebug('SetRoomFilter: roomKey="' . $roomKey . '"');
-        $this->ReloadForm();
+        $this->RefreshVisibleLists();
     }
 
     public function SetDomainFilter(string $domainKey)
     {
         $this->WriteAttributeString('FilterDomain', $domainKey);
                $this->logDebug('SetDomainFilter: domainKey="' . $domainKey . '"');
-        $this->ReloadForm();
+        $this->RefreshVisibleLists();
     }
 
     public function SetGroupFilter(string $groupKey)
     {
         $this->WriteAttributeString('FilterGroup', $groupKey);
         $this->logDebug('SetGroupFilter: groupKey="' . $groupKey . '"');
-        $this->ReloadForm();
+        $this->RefreshVisibleLists();
     }
 
 
@@ -104,7 +104,7 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         if (!in_array($filter, ['all', 'enabled', 'writable', 'disabled'], true)) $filter = 'all';
         $this->WriteAttributeString('FilterAI', $filter);
-        $this->ReloadForm();
+        $this->RefreshVisibleLists();
     }
 
     /** Markierte Zeilen erhalten die KI-Freigaben ausschließlich im EDIT-Katalog. */
@@ -132,7 +132,8 @@ class RoomsCatalogConfigurator extends IPSModule
         $original = $this->loadRoomsCatalog($editId, 'EDIT');
         $updated = $this->rebuildRoomsCatalogFromEntries($rows, $original);
         IPS_SetScriptContent($editId, "<?php\nreturn " . var_export($updated, true) . ";\n");
-        $this->ReloadCatalog();
+        $this->reloadAllFromCatalog();
+        $this->RefreshVisibleLists();
         echo $changed . ' KI-Freigaben im EDIT-Katalog gespeichert (noch nicht produktiv).';
     }
 
@@ -363,7 +364,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->logDebug('SaveToEdit: ENDE, rooms=' . $roomCount);
 
         $this->reloadAllFromCatalog();
-        $this->ReloadForm();
+        $this->RefreshVisibleLists();
     }
 
     /**
@@ -534,7 +535,8 @@ class RoomsCatalogConfigurator extends IPSModule
 
         $this->logDebug('CloneSelectedEntry: Eintrag geklont');
 
-        $this->ReloadCatalog();
+        $this->reloadAllFromCatalog();
+        $this->RefreshVisibleLists();
     }
 
     /**
@@ -582,7 +584,8 @@ class RoomsCatalogConfigurator extends IPSModule
 
         $this->logDebug('DeleteSelectedEntries: gelöschte Zeilen=' . $deleted);
 
-        $this->ReloadCatalog();
+        $this->reloadAllFromCatalog();
+        $this->RefreshVisibleLists();
     }
 
     // =====================================================================
@@ -637,6 +640,7 @@ class RoomsCatalogConfigurator extends IPSModule
             'elements' => [
                 [
                     'type'=>'Label',
+                    'name'=>'CatalogSummary',
                     'caption'=>'RoomsCatalog EDIT: ' . count($entriesEdit) . ' Geraete, KI sichtbar: ' . $aiReadable
                         . ', KI schaltbar: ' . $aiWritable . '. Aenderungen werden erst mit der Freigabe produktiv.'
                 ],
@@ -661,6 +665,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 [
                     'type'    => 'ExpansionPanel',
                     'caption' => 'Geraete bearbeiten (RoomsCatalog EDIT)',
+                    'expanded' => true,
                     'items'   => [
                         [
                             'type'  => 'RowLayout',
@@ -713,22 +718,22 @@ class RoomsCatalogConfigurator extends IPSModule
                             'caption'  => 'Geraete und KI-Freigaben',
                             'rowCount' => 20,
                             'loadValuesFromConfiguration' => false,
-                            'form' => 'return json_decode(RCC_GetEntryEditForm($id, $Entries), true);',
+                            'form' => 'return json_decode(RCC_GetEntryEditForm($id, (string)($Entries["roomKey"] ?? ""), (string)($Entries["domain"] ?? ""), (string)($Entries["group"] ?? ""), (string)($Entries["key"] ?? "")), true);',
                             'add'      => true,
                             'delete'   => false,
                             'sort'     => ['column' => 'roomLabel', 'direction' => 'ascending'],
                             'columns'  => $columnsProd,
                             'values'   => $visibleProd,
                             'rowColor' => 'rowColor',
-                            'onEdit'   => 'RCC_SaveToEdit($id, json_encode($Entries));',
-                            'onAdd'    => 'RCC_SaveToEdit($id, json_encode($Entries));'
+                            'onEdit'   => 'RCC_SaveToEdit($id, json_encode(array_filter($Entries, "is_string", ARRAY_FILTER_USE_KEY)));',
+                            'onAdd'    => 'RCC_SaveToEdit($id, json_encode(array_filter($Entries, "is_string", ARRAY_FILTER_USE_KEY)));'
                         ],
                         [
                             'type'  => 'RowLayout',
                             'items' => [
                                 [
                                     'type'    => 'Label',
-                                    'caption' => 'Aktionen für markierte PROD-Einträge:'
+                                    'caption' => 'Aktionen für markierte EDIT-Einträge:'
                                 ],
                                 [
                                     'type'    => 'Button',
@@ -1652,6 +1657,35 @@ class RoomsCatalogConfigurator extends IPSModule
     }
 
 
+
+    /**
+     * Aktualisiert sichtbare Tabellen/Statistik ohne das komplette Konfigurations-
+     * formular zu ersetzen. Dadurch bleibt "Geraete bearbeiten" aufgeklappt.
+     */
+    private function RefreshVisibleLists(): void
+    {
+        $edit = $this->getRuntimeEntries();
+        $prod = $this->getProdEntries();
+        $room = $this->ReadAttributeString('FilterRoom');
+        $domain = $this->ReadAttributeString('FilterDomain');
+        $group = $this->ReadAttributeString('FilterGroup');
+        $ai = $this->ReadAttributeString('FilterAI');
+
+        $visible = $this->filterByAI($this->applyFilters($edit, $room, $domain, $group), $ai);
+        $visible = array_map(fn(array $row): array => $this->decorateRow($row), $visible);
+        $diff = $this->buildDiffEntries($prod, $edit);
+        $visibleDiff = $this->filterByAI($this->applyFilters($diff, $room, $domain, $group), $ai);
+
+        // Das Aktualisieren der Listen lässt ExpansionPanel-/Filterzustand intakt.
+        $this->UpdateFormField('Entries', 'values', json_encode($visible, JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->UpdateFormField('EntriesEdit', 'values', json_encode($visibleDiff, JSON_INVALID_UTF8_SUBSTITUTE));
+
+        $readable = count(array_filter($edit, static fn($r): bool => !empty($r['kiEnabled'])));
+        $writable = count(array_filter($edit, static fn($r): bool => !empty($r['kiEnabled']) && empty($r['kiReadOnly'])));
+        $summary = 'RoomsCatalog EDIT: ' . count($edit) . ' Geraete, KI sichtbar: ' . $readable .
+            ', KI schaltbar: ' . $writable . '. Aenderungen werden erst mit der Freigabe produktiv.';
+        $this->UpdateFormField('CatalogSummary', 'caption', $summary);
+    }
 
     private function getProdEntries(): array
     {
