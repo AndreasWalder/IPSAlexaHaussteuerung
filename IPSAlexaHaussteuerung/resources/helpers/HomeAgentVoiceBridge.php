@@ -119,5 +119,18 @@ function iah_homeagent_voice(string $text, array $cfg): array
     return ['handled'=>false,'error'=>'Keine Antwort'];
 }
 if (isset($_IPS) && array_key_exists('homeAgentText', $_IPS)) {
-    echo json_encode(iah_homeagent_voice((string)$_IPS['homeAgentText'], (array)($_IPS['config'] ?? [])), JSON_UNESCAPED_UNICODE);
+    // Keine PHP-Arrays in IPS_RunScriptWaitEx übergeben:
+    // Der Aufrufer überträgt alle Einstellungen als JSON in einem String.
+    $configJson = (string) ($_IPS['homeAgentConfigJson'] ?? '{}');
+    try {
+        $config = json_decode($configJson, true, 512, JSON_THROW_ON_ERROR);
+        if (!is_array($config)) {
+            throw new UnexpectedValueException('Home-Agent-Konfiguration ist kein JSON-Objekt');
+        }
+        $result = iah_homeagent_voice((string) $_IPS['homeAgentText'], $config);
+    } catch (Throwable $exception) {
+        iah_homeagent_debug('config.decode_failed');
+        $result = ['handled' => false, 'error' => 'Home-Agent-Konfiguration ist ungültig'];
+    }
+    echo json_encode($result, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 }
