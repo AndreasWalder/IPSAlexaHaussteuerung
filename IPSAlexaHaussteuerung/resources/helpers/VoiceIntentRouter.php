@@ -22,7 +22,7 @@ function iah_vir_transcript(string $text): string
     $text=trim(preg_replace('/[\x00-\x1F\x7F]+/u',' ',$text)??'');
     $text=mb_substr($text,0,400,'UTF-8');
     $text=preg_replace('/\b(?:sk-proj-|sk-|ghp_|github_pat_)[a-zA-Z0-9_-]{12,}\b/u','[GESCHUETZTER_SCHLUESSEL]',$text)??$text;
-    $text=preg_replace('/\b(?:passwort|password|pin|token|api[\s-]?key)\s*(?:ist|lautet|:|=)?\s*[^\s,;.]+/iu','$1 [GESCHUETZT]',$text)??$text;
+    $text=preg_replace('/\b(passwort|password|pin|token|api[\s-]?key)\s*(?:ist|lautet|:|=)?\s*[^\s,;.]+/iu','$1 [GESCHUETZT]',$text)??$text;
     return $text;
 }
 function iah_vir_aliases(array $dynamic=[]): array
@@ -147,8 +147,14 @@ function iah_vir_execute(array $input,array &$data,int $now): array
             $devices[$deviceHash]=['domain'=>$route,'previous'=>$prior,'updatedUnix'=>$now,
                 'screen'=>(bool)($input['screen']??false)];
             $data['lastRoute']=['at'=>date('c',$now),'deviceHash'=>$deviceHash,
-                'domain'=>$route,'previous'=>$prior,
+                'category'=>'ui_rendered','reason'=>'renderer_success',
+                'route'=>$route,'previous'=>$prior,
                 'source'=>substr(preg_replace('/[^a-zA-Z0-9_-]/','',(string)($input['source']??''))??'',0,40)];
+            $data['last']=$data['lastRoute'];
+            $data['history']??=[];
+            array_unshift($data['history'],$data['lastRoute']);
+            $data['history']=array_slice($data['history'],0,80);
+            $data['counts']['ui_rendered']=1+(int)($data['counts']['ui_rendered']??0);
         }
         return ['ok'=>true];
     }
@@ -186,10 +192,10 @@ function iah_vir_ip_symcon(array $input): array
             $id=(int)@IPS_GetObjectIDByIdent($ident,$category);
             if($id>0&&IPS_VariableExists($id))SetValueString($id,$value);
         }
-        if(($input['op']??'')==='classify') {
+        if(in_array(($input['op']??''),['classify','complete'],true)) {
             $last=$data['last']??[];
-            // Dieser Logeintrag darf auf Wunsch auch den gesprochenen Text enthalten.
-            // Keine IDs, Access-Tokens, APL-Argumentinhalte oder Secrets protokollieren.
+            // Ausdrücklich erlaubte Sprache im Diagnoseverlauf, aber keine
+            // IDs, Access-Tokens oder APL-Argumentinhalte protokollieren.
             IPS_LogMessage('Alexa','VoiceRouter '.json_encode($last,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE));
         }
         return $result;
