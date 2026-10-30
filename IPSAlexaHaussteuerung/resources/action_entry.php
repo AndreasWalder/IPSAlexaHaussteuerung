@@ -1826,6 +1826,45 @@ function Execute($request = null)
         $log('debug','APL_ARGS', $APL['args']);
 
         // ============================================================
+        // HOME_AGENT_VOICE_HOOK_BEGIN
+        if (!$IS_LAUNCH && !$IS_BACK && !$wantsExit && empty($APL['args'])
+            && (bool)($propsEarly['HomeAgentVoiceEnabled'] ?? false)) {
+            $voiceText = trim((string)($rawUserText !== '' ? $rawUserText : $rawSlotsToText($rawSlotValues)));
+            $isQuestion = preg_match('/^(?:wer|was|wann|wo|wie|wieviel|wie\\s+viel|welche[rsn]?|ist|sind|hat|haben|gibt|kannst\\s+du|prüfe|überprüfe|kontrolliere|zeige|sag(?:e)?\\s+mir|vergleiche|zähl(?:e)?|warum)\\b/ui', $voiceText) === 1
+                || str_contains($voiceText, '?');
+            $simple = preg_match('/^(?:schalte|mach|stelle|fahre|öffne|schließe|starte|stoppe|dimme)\\b/ui', $voiceText) === 1;
+            $commands = (bool)($propsEarly['HomeAgentVoiceRouteCommands'] ?? false);
+            if ($voiceText !== '' && ($isQuestion || ($commands && !$simple))) {
+                $helperCat = iah_get_child_object($instanceId, 'iahHelper', 'Alexa new devices helper');
+                $bridgeScript = iah_get_child_object($helperCat, 'homeAgentVoiceBridgeScript', 'HomeAgentVoiceBridge');
+                if ($bridgeScript > 0) {
+                    try {
+                        $json = IPS_RunScriptWaitEx($bridgeScript, [
+                            'homeAgentText'=>$voiceText,
+                            'config'=>[
+                                'endpoint'=>(string)($propsEarly['HomeAgentVoiceEndpoint'] ?? ''),
+                                'token'=>(string)($propsEarly['HomeAgentVoiceToken'] ?? ''),
+                                'api_key'=>(string)($propsEarly['KIIntentApiKey'] ?? ''),
+                                'model'=>(string)($propsEarly['KIIntentModel'] ?? 'gpt-4.1-mini'),
+                                'max_words'=>(int)($propsEarly['HomeAgentVoiceMaxWords'] ?? 20),
+                                'timeout_seconds'=>(int)($propsEarly['HomeAgentVoiceTimeoutSeconds'] ?? 6),
+                                'allow_writes'=>$commands,
+                            ],
+                        ]);
+                        $data = json_decode((string)$json, true);
+                        if (is_array($data) && ($data['handled'] ?? false) === true
+                            && trim((string)($data['answer'] ?? '')) !== '') {
+                            return TellResponse::CreatePlainText((string)$data['answer']);
+                        }
+                        $log('debug', 'HomeAgentVoice.fallback', ['error'=>(string)($data['error'] ?? 'Keine Antwort')]);
+                    } catch (Throwable $voiceError) {
+                        $log('warn', 'HomeAgentVoice.exception', ['error'=>$voiceError->getMessage()]);
+                    }
+                }
+            }
+        }
+        // HOME_AGENT_VOICE_HOOK_END
+
         // FRÜHER, HARTER UI-OVERRIDE (Buttons aus der Main-Ansicht)
         // ============================================================
         $navForce = false;
