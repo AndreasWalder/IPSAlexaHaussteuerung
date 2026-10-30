@@ -81,7 +81,9 @@ function iah_vir_classify(array $input,array $saved=[]): array
     if ($text==='')return $result;
     if (in_array($text,['zurueck','gehe zurueck','geh zurueck','hauptmenue','hauptmenue oeffnen',
         'startseite','zur hauptseite','zur startseite','home','hauptansicht'],true)) {
-        return array_replace($result,['category'=>'navigation','route'=>'main_launch','reason'=>'voice_back']);
+        $back=(string)($saved['previous']??'');
+        if($back==='' || $back===$current || !preg_match('/^(?:main_launch|[a-z][a-z0-9_-]{1,49})$/D',$back))$back='main_launch';
+        return array_replace($result,['category'=>'navigation','route'=>$back,'reason'=>'voice_back']);
     }
     if(isset($aliases[$text]))return array_replace($result,
         ['category'=>'navigation','route'=>$aliases[$text],'reason'=>'bare_tile']);
@@ -144,6 +146,7 @@ function iah_vir_execute(array $input,array &$data,int $now): array
             'einstellungen','sicherheit','listen','energie','kamera','info','szene'],true)
             || preg_match('/^[a-z][a-z0-9_-]{1,49}$/D',$route)===1) {
             $prior=(string)($old['domain']??'');
+            if ($prior===$route) $prior=(string)($old['previous']??'main_launch');
             $devices[$deviceHash]=['domain'=>$route,'previous'=>$prior,'updatedUnix'=>$now,
                 'screen'=>(bool)($input['screen']??false)];
             $data['lastRoute']=['at'=>date('c',$now),'deviceHash'=>$deviceHash,
