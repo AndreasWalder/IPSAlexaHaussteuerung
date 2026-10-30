@@ -1,0 +1,17 @@
+{
+  "name": "HomeAgentFrageIntent",
+  "slots": [
+    {
+      "name": "Frage",
+      "type": "AMAZON.SearchQuery"
+    }
+  ],
+  "samples": [
+    "frage {Frage}",
+    "sag mir {Frage}",
+    "sage mir {Frage}",
+    "prüfe {Frage}",
+    "ich möchte wissen {Frage}",
+    "kontrolliere {Frage}"
+  ]
+}
