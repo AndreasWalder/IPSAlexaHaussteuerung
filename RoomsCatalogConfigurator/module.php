@@ -53,6 +53,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('FilterRoom', '');
         $this->RegisterAttributeString('FilterDomain', '');
         $this->RegisterAttributeString('FilterGroup', '');
+        $this->RegisterAttributeString('FilterAI', 'all');
     }
 
     public function ApplyChanges()
@@ -98,6 +99,134 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->ReloadForm();
     }
 
+
+    public function SetAIFilter(string $filter): void
+    {
+        if (!in_array($filter, ['all', 'enabled', 'writable', 'disabled'], true)) $filter = 'all';
+        $this->WriteAttributeString('FilterAI', $filter);
+        $this->ReloadForm();
+    }
+
+    /** Markierte Zeilen erhalten die KI-Freigaben ausschließlich im EDIT-Katalog. */
+    public function SetSelectedAI(bool $enabled, bool $readOnly): void
+    {
+        $rows = $this->getRuntimeEntries();
+        $changed = 0;
+        foreach ($rows as &$row) {
+            if (!is_array($row) || empty($row['selected']) || !$this->isSupportedAIEntry($row)) continue;
+            $row['kiEnabled'] = $enabled;
+            $row['kiReadOnly'] = $readOnly;
+            $row['selected'] = false;
+            $changed++;
+        }
+        unset($row);
+        if (!$changed) {
+            echo 'Keine geeigneten Eintraege markiert.';
+            return;
+        }
+        $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        if ($editId <= 0 || !IPS_ScriptExists($editId)) {
+            echo 'RoomsCatalogEdit ist nicht konfiguriert.';
+            return;
+        }
+        $original = $this->loadRoomsCatalog($editId, 'EDIT');
+        $updated = $this->rebuildRoomsCatalogFromEntries($rows, $original);
+        IPS_SetScriptContent($editId, "<?php\nreturn " . var_export($updated, true) . ";\n");
+        $this->ReloadCatalog();
+        echo $changed . ' KI-Freigaben im EDIT-Katalog gespeichert (noch nicht produktiv).';
+    }
+
+    public function PreviewChanges(): void
+    {
+        $prod = $this->getProdEntries();
+        $edit = $this->getRuntimeEntries();
+        $diff = $this->buildDiffEntries($prod, $edit);
+        $new = $changed = $removed = 0;
+        foreach ($diff as $entry) {
+            $kind = (string)($entry['diffKeys'] ?? '');
+            if ($kind === 'new') $new++;
+            elseif ($kind === 'removed') $removed++;
+            else $changed++;
+        }
+        echo sprintf('PROD: %d, EDIT: %d. Unterschiede: %d (neu %d, geaendert %d, geloescht %d).',
+            count($prod),count($edit),count($diff),$new,$changed,$removed);
+    }
+
+    public function ValidateCatalog(): void
+    {
+        $errors = $this->validateEntries($this->getRuntimeEntries());
+        echo $errors === []
+            ? 'Katalogpruefung erfolgreich.'
+            : count($errors) . " Problem(e):\n" . implode("\n", array_slice($errors,0,35));
+    }
+
+    private function validateEntries(array $rows, bool $checkReadIds = true): array
+    {
+        $errors = [];
+        $seen = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) continue;
+            $key = $this->buildCompositeKey($row);
+            if ($key === null) {
+                $errors[] = 'Unvollstaendige Adresse (Raum/Domain/Gruppe/Key).';
+                continue;
+            }
+            if (isset($seen[$key])) $errors[] = 'Doppelter Key: ' . $key;
+            $seen[$key] = true;
+            if (empty($row['kiEnabled'])) continue;
+            if (!$this->isSupportedAIEntry($row)) {
+                $errors[] = $key . ': kein unterstuetztes KI-Geraet.';
+                continue;
+            }
+            $read = $this->aiReadId($row);
+            if ($checkReadIds && ($read <= 0 || !IPS_VariableExists($read))) {
+                $errors[] = $key . ': ungueltige Lesevariable ' . $read;
+            }
+            if (empty($row['kiReadOnly'])) {
+                $write = $this->aiWriteId($row);
+                if ($write <= 0 || !IPS_VariableExists($write)) $errors[] = $key . ': ungueltige Schaltvariable.';
+                elseif (function_exists('HasAction') && !HasAction($write)) $errors[] = $key . ': keine Schaltaktion.';
+                if (!in_array((string)($row['group'] ?? ''), ['switches','dimmers','fans','heizung'],true)) {
+                    $errors[] = $key . ': Schreiben fuer diese Gruppe gesperrt.';
+                }
+            }
+        }
+        return $errors;
+    }
+
+    private function aiReadId(array $row): int
+    {
+        $group = (string)($row['group'] ?? '');
+        $fields = match ($group) {
+            'heizung' => ['ist','soll','eingestellt'],
+            'dimmers' => ['value','state'],
+            'jalousie' => ['wert'],
+            default => ['state','value']
+        };
+        foreach ($fields as $field) if ((int)($row[$field] ?? 0)>0) return (int)$row[$field];
+        return 0;
+    }
+
+    private function aiWriteId(array $row): int
+    {
+        return match ((string)($row['group'] ?? '')) {
+            'switches','fans' => (int)($row['toggle'] ?? 0),
+            'dimmers' => (int)($row['set'] ?? 0),
+            'heizung' => (int)($row['soll'] ?? $row['eingestellt'] ?? 0),
+            default => 0
+        };
+    }
+
+    private function isSupportedAIEntry(array $row): bool
+    {
+        $domain = (string)($row['domain'] ?? '');
+        $group = (string)($row['group'] ?? '');
+        return ($domain === 'licht' && in_array($group,['switches','dimmers','status'],true))
+            || ($domain === 'heizung' && $group === 'heizung')
+            || ($domain === 'jalousie' && $group === 'jalousie')
+            || ($domain === 'lueftung' && $group === 'fans');
+    }
+
     /**
      * Speichert die (gefilterten) Einträge zurück in das RoomsCatalogEdit-Script.
      * Wird über den Formular-Button mit RCC_($id, json_encode($Entries)) aufgerufen.
@@ -127,6 +256,10 @@ class RoomsCatalogConfigurator extends IPSModule
             return;
         }
 
+        foreach ($entries as &$entry) {
+            if (is_array($entry)) unset($entry['rowColor'], $entry['kiStatus'], $entry['diffKeys'], $entry['editable']);
+        }
+        unset($entry);
         $this->logDebug('SaveToEdit: START, rows=' . count($entries));
 
         $editScriptId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
@@ -153,7 +286,7 @@ class RoomsCatalogConfigurator extends IPSModule
                     $changedNonSelection = false;
 
                     foreach ($row as $k => $v) {
-                        if ($k === 'selected') {
+                        if (in_array($k, ['selected', 'rowColor', 'kiStatus', 'diffKeys'], true)) {
                             continue;
                         }
                         $ov = $orig[$k] ?? null;
@@ -165,7 +298,7 @@ class RoomsCatalogConfigurator extends IPSModule
 
                     if (!$changedNonSelection) {
                         foreach ($orig as $k => $ov) {
-                            if ($k === 'selected') {
+                            if (in_array($k, ['selected', 'rowColor', 'kiStatus', 'diffKeys'], true)) {
                                 continue;
                             }
                             if (!array_key_exists($k, $row)) {
@@ -252,13 +385,23 @@ class RoomsCatalogConfigurator extends IPSModule
         }
 
         $editCatalog = $this->loadRoomsCatalog($editId, 'EDIT');
+        $errors = $this->validateEntries($this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($editCatalog)), false);
+        if ($errors !== []) {
+            echo 'Veröffentlichung abgebrochen: ' . implode('; ',array_slice($errors,0,4));
+            return;
+        }
         if ($editCatalog === []) {
             $this->logDebug('SaveEditToProd: Edit-Katalog leer oder ungültig');
             return;
         }
 
         $php = "<?php\nreturn " . var_export($editCatalog, true) . ";\n";
+        $backup = IPS_CreateScript(0);
+        IPS_SetParent($backup, IPS_GetParent($prodId));
+        IPS_SetName($backup, 'RoomsCatalog_Backup_' . date('Ymd_His') . '_' . $backup);
+        IPS_SetScriptContent($backup, IPS_GetScriptContent($prodId));
         IPS_SetScriptContent($prodId, $php);
+        echo 'Produktiver Katalog aktualisiert; Backup-Skript ' . $backup . '.';
 
         $roomsArray = $this->extractRoomsFromCatalog($editCatalog);
         $roomCount  = count($roomsArray);
@@ -373,6 +516,12 @@ class RoomsCatalogConfigurator extends IPSModule
 
             $clone['key'] = $newKey;
         }
+        foreach (['state','toggle','set','value','ist','soll','eingestellt','wert','stellung','id','var','controlId','statusId','tiltId'] as $idField) {
+            if (isset($clone[$idField])) $clone[$idField] = 0;
+        }
+        $clone['kiEnabled'] = false;
+        $clone['kiReadOnly'] = true;
+        if (isset($clone['entityId'])) $clone['entityId'] = '';
 
         array_splice($entries, $cloneIndex + 1, 0, [$clone]);
 
