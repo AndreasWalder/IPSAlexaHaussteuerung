@@ -18,14 +18,30 @@ Offiziell belegte Modellpreise (USD je 1 Mio. Tokens):
 
 | Modell | Eingabe | Gecachte Eingabe | Ausgabe |
 | --- | ---: | ---: | ---: |
+| **gpt-6-luna** (neuer Standard) | **0,10** | **0,01** | **0,50** |
 | gpt-4.1-mini | 0,40 | 0,10 | 1,60 |
 | gpt-4.1-nano | 0,10 | 0,025 | 0,40 |
 | gpt-4.1 | 2,00 | 0,50 | 8,00 |
 
-Quelle: https://openai.com/index/gpt-4-1/
+Quellen: https://developers.openai.com/api/docs/pricing und https://openai.com/index/gpt-4-1/
 
 Berechnung: (Eingabe − Cache) × Eingabepreis / 1.000.000 + Cache × Cachepreis / 1.000.000 + Ausgabe × Ausgabepreis / 1.000.000.
 Die Modellpreise können in der Modulkonfiguration unter KI-Kosten & Tokenverbrauch als JSON angepasst werden. Preiswerte zum Zeitpunkt des Aufrufs werden gespeichert; historische Werte werden nicht rückwirkend umgerechnet. Unbekannte Modelle werden nicht fälschlich als kostenlos interpretiert.
+
+## GPT-6 Luna und GPT-4.1 mini umschalten
+
+In der IP-Symcon-Instanz **IPSAlexaHaussteuerung → KI Intent Parser → KI-Modell** steht ein Auswahlfeld mit genau zwei Modellen:
+
+- **GPT-6 Luna** (neuer Standard auch bei bestehenden Instanzen, da neue zentrale Einstellungsvariable): günstig und auf kurze Sprachbefehle ausgerichtet.
+- **GPT-4.1 mini**: bisher bewährte Alternative.
+
+Nach der Auswahl in der Instanzkonfiguration **Übernehmen** klicken. Die Auswahl gilt einheitlich für **KI + RoomsCatalog**, **KI + Home Agent** und den älteren KI-Intent-Parser. Die bisherige Property `KIIntentModel` bleibt aus Kompatibilitätsgründen intern erhalten, wird von der neuen Modellauswahl aber nicht mehr verwendet.
+
+Für Luna nutzt die Anbindung weiterhin Chat Completions, stellt bei Funktionsaufrufen jedoch `reasoning_effort: "none"` ein. Für GPT-4.1 mini bleibt das alte Chat-Completions-Format ohne diesen Parameter erhalten. Dokumentation: https://developers.openai.com/api/docs/guides/latest-model
+
+Die KI-Kostenüberwachung trennt weiterhin nach Anbindung und berücksichtigt im Rohdaten-Detail außerdem das jeweils **wirklich verwendete Modell und dessen Preis** zum Zeitpunkt des Aufrufs. Eine Modellumstellung verändert die gespeicherten historischen Kosten nicht.
+
+**Wichtig:** Für beide Modelle genügt derselbe bestehende API-Schlüssel, sofern das jeweilige Modell im API-Projekt nutzbar ist. Die Kombination konnte auf GitHub automatisiert getestet werden, aber echte OpenAI-/Alexa-Sprachaufrufe sind erst nach dem Update vor Ort testbar.
 
 ## Zuverlässigkeit
 
