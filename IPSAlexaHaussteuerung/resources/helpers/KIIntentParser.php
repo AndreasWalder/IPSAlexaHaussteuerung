@@ -455,7 +455,7 @@ function ki_chat_request(array $body, array $cfg): array
     if ($response === false) {
         $err = curl_error($ch);
         curl_close($ch);
-        ki_log('cURL-Fehler: ' . $err);
+        ki_log('cURL-Verbindungsfehler beim OpenAI-Aufruf (Details nicht protokolliert)');
         return [];
     }
 
@@ -466,7 +466,7 @@ function ki_chat_request(array $body, array $cfg): array
     ki_log('API-Antwort erhalten: HTTP-Status=' . $status . ', Response-Länge=' . $len);
 
     if ($status < 200 || $status >= 300) {
-        ki_log('OpenAI HTTP-Fehler ' . $status . ': ' . $response);
+        ki_log('OpenAI HTTP-Fehler, Status ' . $status . ' (Antwortinhalt aus Datenschutzgründen nicht protokolliert)');
         return [];
     }
 
