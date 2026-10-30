@@ -1891,6 +1891,30 @@ function Execute($request = null)
             'viewportShape'=>$iahVoiceViewportShape,
             'aplSource'=>$iahVoiceAplSource,
         ]);
+        // Fail-closed beim Ausfall/Timeout des Diagnose-Helpers.
+        // Ein Kachelname darf NIE ohne Navigationserkennung in die KI-Schaltlogik gelangen.
+        if (!isset($iahVoiceDecision['category'])
+            && strcasecmp((string)$intentName,'HomeAgentFrageIntent')===0) {
+            $fallbackTiles=[
+                'licht'=>'licht','lichter'=>'licht','jalousie'=>'jalousie',
+                'jalousien'=>'jalousie','heizung'=>'heizung','temperatur'=>'heizung',
+                'lueftung'=>'lueftung','luefter'=>'lueftung',
+                'geraete'=>'geraete','bewaesserung'=>'bewaesserung',
+                'einstellungen'=>'einstellungen','sicherheit'=>'sicherheit',
+                'energie'=>'energie','kamera'=>'kamera','info'=>'info',
+                'szene'=>'szene','listen'=>'listen',
+                'zurueck'=>'main_launch','home'=>'main_launch',
+                'hauptmenue'=>'main_launch'
+            ];
+            $fallbackWord=gr_norm_text($iahVoiceSpoken);
+            if (isset($fallbackTiles[$fallbackWord])) {
+                $iahVoiceDecision=['category'=>'navigation','route'=>$fallbackTiles[$fallbackWord],
+                    'reason'=>'local_router_fallback'];
+            } elseif (!preg_match('/^(?:wer|was|wann|wo|wie|welche|ist|sind|hat|haben|schalte|schalt|mach|stelle|fahre|fahr|oeffne|schliesse|starte|stoppe|dimme|dimme|pruefe)\b/u',$fallbackWord)) {
+                $iahVoiceDecision=['category'=>'clarify','route'=>'','reason'=>'router_unavailable_clarify'];
+            }
+            $log('warn','VoiceRouter.fallback',['category'=>(string)($iahVoiceDecision['category']??'legacy')]);
+        }
         // Navigation wird NACH dem KI-Hook an den vorhandenen ROUTE_ALL-Renderer übergeben.
         $iahVoiceIsNavigation = ($iahVoiceDecision['category']??'') === 'navigation';
         $iahVoiceNavKey = $iahVoiceIsNavigation ? (string)($iahVoiceDecision['route']??'') : '';
