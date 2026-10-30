@@ -250,9 +250,13 @@ function iah_rc_voice(string $text,array $cfg): array
         ];
         for($round=0;$round<2;$round++){
             iah_rc_log('openai.start',['round'=>$round+1]);
-            $response=iah_rc_http(['model'=>(string)($cfg['model']??'gpt-4.1-mini'),'messages'=>$messages,
-                'tools'=>$tools,'tool_choice'=>$round===0?'required':'auto','max_completion_tokens'=>200],
-                $key,$deadline);
+            $model=(string)($cfg['model']??'gpt-6-luna');
+            $request=['model'=>$model,'messages'=>$messages,
+                'tools'=>$tools,'tool_choice'=>$round===0?'required':'auto','max_completion_tokens'=>200];
+            // GPT-6 Luna unter Chat Completions: Function Calling nur ohne Reasoning.
+            // GPT-4.1 mini erhält weiterhin das bewährte Request-Format.
+            if($model==='gpt-6-luna')$request['reasoning_effort']='none';
+            $response=iah_rc_http($request,$key,$deadline);
             $costReport('api',['callId'=>'round-'.$round,'response'=>[
                 'model'=>(string)($response['model']??($cfg['model']??'')),
                 'usage'=>$response['usage']??null
