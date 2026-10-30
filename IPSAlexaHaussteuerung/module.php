@@ -61,7 +61,9 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyInteger('SystemConfigScriptId', 0);
         $this->RegisterPropertyBoolean('KIIntentEnabled', true);
         $this->RegisterPropertyString('KIIntentApiKey', '');
-        $this->RegisterPropertyString('KIIntentModel', 'gpt-4.1-mini');
+        $this->RegisterPropertyString('KIIntentModel', 'gpt-4.1-mini'); // Altwert: weiterhin für bestehende Konfigurationen gespeichert
+        // Neue zentrale Modellauswahl (auch bei bereits installierten Modulen standardmäßig Luna).
+        $this->RegisterPropertyString('KIModelSelection', 'gpt-6-luna');
         $this->RegisterPropertyString('KIIntentLogChannel', 'Alexa');
         $this->RegisterPropertyInteger('KIIntentRateLimit', 60);
         $this->RegisterPropertyBoolean('HomeAgentVoiceEnabled', false);
@@ -528,7 +530,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         return [
             'enabled'       => $this->ReadPropertyBoolean('KIIntentEnabled'),
             'api_key'        => $this->ReadPropertyString('KIIntentApiKey'),
-            'model'          => $this->ReadPropertyString('KIIntentModel'),
+            'model'          => $this->ReadPropertyString('KIModelSelection'),
             'log_channel'    => $this->ReadPropertyString('KIIntentLogChannel'),
             'rate_limit_sec' => $this->ReadPropertyInteger('KIIntentRateLimit'),
         ];
