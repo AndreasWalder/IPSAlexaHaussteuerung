@@ -198,6 +198,14 @@ function iah_rc_http(array $payload,string $apiKey,float $deadline): array
         return json_decode($data,true,512,JSON_THROW_ON_ERROR);
     } finally {curl_close($ch);}
 }
+/** Für beide KI-Modelle mit einem Unit-Test überprüfbare API-Parameter. */
+function iah_rc_chat_payload(string $model,array $messages,array $tools,int $round): array
+{
+    $payload=['model'=>$model,'messages'=>$messages,'tools'=>$tools,
+        'tool_choice'=>$round===0?'required':'auto','max_completion_tokens'=>200];
+    if($model==='gpt-6-luna')$payload['reasoning_effort']='none';
+    return $payload;
+}
 function iah_rc_voice(string $text,array $cfg): array
 {
     $key=trim((string)($cfg['api_key']??''));$catalogId=(int)($cfg['catalog_script_id']??0);
@@ -251,11 +259,7 @@ function iah_rc_voice(string $text,array $cfg): array
         for($round=0;$round<2;$round++){
             iah_rc_log('openai.start',['round'=>$round+1]);
             $model=(string)($cfg['model']??'gpt-6-luna');
-            $request=['model'=>$model,'messages'=>$messages,
-                'tools'=>$tools,'tool_choice'=>$round===0?'required':'auto','max_completion_tokens'=>200];
-            // GPT-6 Luna unter Chat Completions: Function Calling nur ohne Reasoning.
-            // GPT-4.1 mini erhält weiterhin das bewährte Request-Format.
-            if($model==='gpt-6-luna')$request['reasoning_effort']='none';
+            $request=iah_rc_chat_payload($model,$messages,$tools,$round);
             $response=iah_rc_http($request,$key,$deadline);
             $costReport('api',['callId'=>'round-'.$round,'response'=>[
                 'model'=>(string)($response['model']??($cfg['model']??'')),
