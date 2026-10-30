@@ -166,6 +166,39 @@
       ]
     },
     {
+      "type": "ExpansionPanel",
+      "caption": "KI-Kosten & Tokenverbrauch (RoomsCatalog / Home Agent)",
+      "expanded": false,
+      "items": [
+        {
+          "type": "Label",
+          "caption": "KI-Kosten werden ab Modul-Update automatisch je Backend und gesamt in der Kategorie 'KI-Kosten' unter dieser Instanz gespeichert. Es werden pro OpenAI-Aufruf die echten Tokenzahlen einschließlich Cache erfasst."
+        },
+        {
+          "type": "Label",
+          "caption": "Preiswerte = USD pro 1.000.000 Tokens (Eingabe / gecachte Eingabe / Ausgabe). Weitere Modelle hier bei Bedarf ergänzen. Unbekannte Modelle werden NICHT als kostenlos gerechnet, sondern gesondert gemeldet."
+        },
+        {
+          "name": "KICostPriceTableJson",
+          "type": "ValidationTextBox",
+          "caption": "Modellpreisliste (JSON, USD/1 Mio. Tokens)",
+          "value": "{\"gpt-4.1-mini\":{\"input\":0.4,\"cached\":0.1,\"output\":1.6},\"gpt-4.1-nano\":{\"input\":0.1,\"cached\":0.025,\"output\":0.4},\"gpt-4.1\":{\"input\":2,\"cached\":0.5,\"output\":8}}"
+        },
+        {
+          "name": "KICostMonthlyWarningUSD",
+          "type": "NumberSpinner",
+          "caption": "Warnung ab Monatskosten (USD; 0 = aus)",
+          "value": 5,
+          "minimum": 0,
+          "digits": 2
+        },
+        {
+          "type": "Label",
+          "caption": "Anzeigen: Objektbaum → IPSAlexaHaussteuerung → KI-Kosten. Übersicht als HTML-Tabelle, einzelne Zähler je Backend und letzte 100 Fragen (JSON). Die offiziellen OpenAI-API-Rechnungskosten können durch andere Anwendungen/Tarife abweichen."
+        }
+      ]
+    },
+    {
       "name": "StartPage",
       "type": "ValidationTextBox",
       "caption": "StartPage (leer = #<WFC-ID>)",
