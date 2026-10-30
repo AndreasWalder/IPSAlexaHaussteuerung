@@ -15,7 +15,7 @@ class IPSModule
     public function ReloadForm(): void { throw new RuntimeException('ReloadForm would collapse the editor'); }
 }
 function IPS_ScriptExists(int $id): bool { return false; }
-function IPS_VariableExists(int $id): bool { return $id === 38988 || $id === 39641; }
+function IPS_VariableExists(int $id): bool { return $id === 91001 || $id === 91002; }
 require dirname(__DIR__) . '/RoomsCatalogConfigurator/module.php';
 function assertEditor(bool $ok, string $message): void
 {
@@ -35,10 +35,10 @@ function namesInDialog(array $form): array
 }
 $instance = new RoomsCatalogConfigurator();
 $row = [
-    'selected' => false, 'roomKey' => 'buero', 'roomLabel' => 'Büro',
+    'selected' => false, 'roomKey' => 'testraum', 'roomLabel' => 'Testraum',
     'floor' => 'EG', 'domain' => 'licht', 'group' => 'switches',
-    'key' => 'decke', 'title' => 'Büro Deckenlicht',
-    'state' => 38988, 'toggle' => 39641, 'kiEnabled' => true, 'kiReadOnly' => true
+    'key' => 'decke', 'title' => 'Testlampe',
+    'state' => 91001, 'toggle' => 91002, 'kiEnabled' => true, 'kiReadOnly' => true
 ];
 $instance->WriteAttributeString('RuntimeEntries', json_encode([$row], JSON_THROW_ON_ERROR));
 $instance->WriteAttributeString('FilterAI', 'all');
@@ -59,7 +59,7 @@ assertEditor(str_contains($list['form'], '$Entries["roomKey"]'), 'Selected row k
 assertEditor(!str_contains($list['form'], '$id, $Entries)'), 'Whole list incorrectly passed to dynamic form');
 assertEditor(str_contains($list['onAdd'], 'ARRAY_FILTER_USE_KEY'), 'onAdd must save selected row only');
 
-$edit = json_decode($instance->GetEntryEditForm('buero', 'licht', 'switches', 'decke'), true, 512, JSON_THROW_ON_ERROR);
+$edit = json_decode($instance->GetEntryEditForm('testraum', 'licht', 'switches', 'decke'), true, 512, JSON_THROW_ON_ERROR);
 $editNames = namesInDialog($edit);
 assertEditor(in_array('kiEnabled', $editNames, true) && in_array('toggle', $editNames, true), 'Existing row edit form incomplete');
 $add = json_decode($instance->GetEntryEditForm(), true, 512, JSON_THROW_ON_ERROR);
@@ -67,7 +67,7 @@ $addNames = namesInDialog($add);
 assertEditor(in_array('roomKey', $addNames, true) && in_array('state', $addNames, true)
     && in_array('toggle', $addNames, true), 'New device form missing fields');
 
-$instance->SetRoomFilter('buero');
+$instance->SetRoomFilter('testraum');
 assertEditor(isset($instance->updatedFields['Entries.values']), 'Filtering should update existing list');
 assertEditor(isset($instance->updatedFields['EntriesEdit.values']), 'Diff must update in-place');
 assertEditor(isset($instance->updatedFields['CatalogSummary.caption']), 'Summary must update in-place');
