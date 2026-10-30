@@ -87,6 +87,11 @@ function iah_vir_classify(array $input,array $saved=[]): array
     }
     if(isset($aliases[$text]))return array_replace($result,
         ['category'=>'navigation','route'=>$aliases[$text],'reason'=>'bare_tile']);
+    // "Öffne die Jalousie" meint eher die physische Beschattung,
+    // "Öffne die Kachel Jalousie" dagegen eindeutig die Navigation.
+    if(preg_match('/^oeffne\\s+(?:die\\s+)?(?:jalousie|jalousien|rollo|rollos|rollladen|rolllaeden)(?:\\s|$)/u',$text)) {
+        return array_replace($result,['category'=>'action','reason'=>'explicit_blind_action']);
+    }
     if (preg_match('/^(?:oeffne|oeffnen|zeige\s+(?:mir\s+)?(?:die\s+)?(?:kachel|seite|ansicht|menue)\s+(?:fuer\s+)?|gehe\s+(?:zu|zum|zur)\s+|geh\s+(?:zu|zum|zur)\s+|wechsle?\s+(?:zu|zum|zur)\s+|navigiere\s+(?:zu|zum|zur)\s+)(.+)$/u',$text,$m)) {
         $target=trim($m[1]);
         $target=preg_replace('/^(?:(?:die|das|den|der|dem|zum|zur|kachel|seite|ansicht|menue|bereich|fuer)\s+)+/u','',$target)??$target;
