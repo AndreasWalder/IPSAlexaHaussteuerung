@@ -61,6 +61,12 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyString('KIIntentModel', 'gpt-4.1-mini');
         $this->RegisterPropertyString('KIIntentLogChannel', 'Alexa');
         $this->RegisterPropertyInteger('KIIntentRateLimit', 60);
+        $this->RegisterPropertyBoolean('HomeAgentVoiceEnabled', false);
+        $this->RegisterPropertyString('HomeAgentVoiceEndpoint', '');
+        $this->RegisterPropertyString('HomeAgentVoiceToken', '');
+        $this->RegisterPropertyBoolean('HomeAgentVoiceRouteCommands', false);
+        $this->RegisterPropertyInteger('HomeAgentVoiceMaxWords', 20);
+        $this->RegisterPropertyInteger('HomeAgentVoiceTimeoutSeconds', 6);
         $this->RegisterAttributeString('DelayedPageSwitchPayload', '');
         $this->RegisterTimer('DelayedPageSwitch', 0, 'IAH_HandleDelayedPageSwitch($_IPS["TARGET"]);');
 
@@ -586,6 +592,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             }
         }
         $this->patchActionScriptTabScopedDirectCommands((int) $id);
+        $this->patchActionScriptHomeAgentVoice((int) $id);
 
         return (int) $id;
     }
@@ -600,6 +607,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             ['name' => 'Lexikon', 'ident' => 'lexikonScript', 'file' => __DIR__ . '/resources/helpers/Lexikon.php'],
             ['name' => 'Normalizer', 'ident' => 'normalizerScript', 'file' => __DIR__ . '/resources/helpers/Normalizer.php'],
             ['name' => 'KI_IntentParser', 'ident' => 'kiIntentParserScript', 'file' => __DIR__ . '/resources/helpers/KIIntentParser.php'],
+            ['name' => 'HomeAgentVoiceBridge', 'ident' => 'homeAgentVoiceBridgeScript', 'file' => __DIR__ . '/resources/helpers/HomeAgentVoiceBridge.php'],
         ];
 
         foreach ($map as $def) {
@@ -867,6 +875,39 @@ PHP;
             );
         }
 
+        if ($updated !== $content) {
+            IPS_SetScriptContent($scriptId, $updated);
+        }
+    }
+
+    private function patchActionScriptHomeAgentVoice(int $scriptId): void
+    {
+        $template = @file_get_contents(__DIR__ . '/resources/action_entry.php');
+        $content = $this->getScriptContent($scriptId);
+        if (!is_string($template) || !is_string($content)) {
+            return;
+        }
+        $start = '        // HOME_AGENT_VOICE_HOOK_BEGIN';
+        $end = '        // HOME_AGENT_VOICE_HOOK_END';
+        $first = strpos($template, $start);
+        $last = strpos($template, $end);
+        if ($first === false || $last === false || $last < $first) {
+            return;
+        }
+        $hook = substr($template, $first, $last + strlen($end) - $first);
+        $existingStart = strpos($content, $start);
+        $existingEnd = strpos($content, $end);
+        if ($existingStart !== false && $existingEnd !== false && $existingEnd >= $existingStart) {
+            $updated = substr_replace($content, $hook, $existingStart, $existingEnd + strlen($end) - $existingStart);
+        } else {
+            $pos = strpos($content, '        // FRÜHER, HARTER UI-OVERRIDE');
+            if ($pos === false) {
+                return;
+            }
+            $line = strrpos(substr($content, 0, $pos), "\n");
+            $at = $line === false ? $pos : $line + 1;
+            $updated = substr_replace($content, $hook . "\n\n", $at, 0);
+        }
         if ($updated !== $content) {
             IPS_SetScriptContent($scriptId, $updated);
         }
