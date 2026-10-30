@@ -164,4 +164,55 @@ trait KICostTrait
             \SetValueString($overview,$this->RenderKICostOverview($store,$now));
     }
 
+
+    private function RenderKICostOverview(array $store, \DateTimeImmutable $now): string
+    {
+        $usd=static fn(float $v):string=>'$ '.number_format($v,6,'.',',');
+        $esc=static fn($v):string=>htmlspecialchars((string)$v,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+        $html='<div style="font-family:Arial,sans-serif;font-size:14px">'
+            .'<h3>KI-Kosten in USD</h3><table style="width:100%;border-collapse:collapse">'
+            .'<thead><tr style="background:#eee"><th>Backend</th><th>Fragen heute</th>'
+            .'<th>Fragen gesamt</th><th>Heute</th><th>Monat</th><th>Gesamt</th><th>Letzte Frage</th>'
+            .'</tr></thead><tbody>';
+        foreach ([
+            'Alle'=>'Alle KI-Anbindungen','RoomsCatalog'=>'RoomsCatalog',
+            'HomeAgent'=>'Home Agent','IntentParser'=>'Intent-Parser'
+        ] as $key=>$label) {
+            $snap=\iah_ki_section_snapshot($store,$key,$now);
+            $day=$snap['today'];$month=$snap['month'];$total=$snap['total'];
+            $values=[
+                $label,$day['questions'],$total['questions'],
+                $usd((float)$day['costUsd']),$usd((float)$month['costUsd']),
+                $usd((float)$total['costUsd']),$usd((float)($snap['last']['costUsd']??0))
+            ];
+            $html.='<tr>';
+            foreach ($values as $value) $html.='<td style="padding:7px;border-bottom:1px solid #ddd">'.$esc($value).'</td>';
+            $html.='</tr>';
+        }
+        $html.='</tbody></table>';
+        $all=\iah_ki_section_snapshot($store,'Alle',$now);
+        if ((int)$all['total']['callsWithoutPrice']>0 || (int)$all['total']['callsWithoutUsage']>0) {
+            $html.='<p style="color:#b30"><b>Unvollständige Kostenerfassung:</b> '
+                .(int)$all['total']['callsWithoutPrice'].' Aufrufe ohne bekannten Preis, '
+                .(int)$all['total']['callsWithoutUsage'].' ohne Token-Verbrauch.</p>';
+        }
+        $html.='<h4>Letzte 25 Fragen</h4><table style="width:100%;border-collapse:collapse">'
+            .'<thead><tr style="background:#eee"><th>Zeit</th><th>Backend</th><th>Modell</th>'
+            .'<th>Input</th><th>Cache</th><th>Output</th><th>Calls</th><th>Kosten</th><th>Status</th></tr></thead><tbody>';
+        foreach (array_slice($all['history'],0,25) as $item) {
+            $cells=[
+                $item['finishedAt']??'', $item['backend']??'', $item['model']??'',
+                $item['inputTokens']??0, $item['cachedInputTokens']??0,
+                $item['outputTokens']??0, $item['apiCalls']??0,
+                $usd((float)($item['costUsd']??0)), $item['status']??''
+            ];
+            $html.='<tr>';
+            foreach ($cells as $value) $html.='<td style="padding:6px;border-bottom:1px solid #ddd">'.$esc($value).'</td>';
+            $html.='</tr>';
+        }
+        return $html.'</tbody></table><small>Aus API-Tokens und hinterlegten Modellpreisen berechnete '
+            .'USD-Kostenschätzung ab Installation. Keine amtliche Abrechnung; keine fremden API-Anwendungen, '
+            .'Steuern oder EUR-Umrechnung. Unbekannte Preise werden als Warnung ausgewiesen.</small></div>';
+    }
+
 }
