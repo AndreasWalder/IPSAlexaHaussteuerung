@@ -35,6 +35,14 @@ function iah_homeagent_rpc(string $url, string $token, string $method, array $pa
     if (isset($out['error']) || !is_array($out['result'] ?? null)) throw new RuntimeException('MCP-Fehler: '.$method);
     return $out['result'];
 }
+/** Erzeugt den Chat-Completions-Request für beide wählbaren Modelle. */
+function iah_homeagent_chat_payload(string $model,array $messages,array $tools,int $round):array
+{
+    $payload=['model'=>$model,'messages'=>$messages,'tools'=>$tools,
+        'tool_choice'=>$round===0?'required':'auto','max_completion_tokens'=>200];
+    if($model==='gpt-6-luna')$payload['reasoning_effort']='none';
+    return $payload;
+}
 function iah_homeagent_voice(string $text, array $cfg): array
 {
     $endpoint = trim((string)($cfg['endpoint'] ?? ''));
@@ -96,17 +104,10 @@ function iah_homeagent_voice(string $text, array $cfg): array
             ['role'=>'user','content'=>mb_substr(trim($text),0,500)],
         ];
         for ($round = 0; $round < 2; $round++) {
-            iah_homeagent_debug('openai.start', ['round'=>$round+1, 'model'=>(string)($cfg['model'] ?? 'gpt-4.1-mini')]);
+            iah_homeagent_debug('openai.start', ['round'=>$round+1, 'model'=>(string)($cfg['model'] ?? 'gpt-6-luna')]);
             $openAiStarted = microtime(true);
             $model=(string)($cfg['model'] ?? 'gpt-6-luna');
-            $request=[
-                'model'=>$model,'messages'=>$messages,'tools'=>$tools,
-                'tool_choice'=>$round === 0 ? 'required' : 'auto',
-                'max_completion_tokens'=>200,
-            ];
-            // Chat Completions mit GPT-6 Luna unterstützt Function Calling
-            // ausschließlich mit reasoning_effort="none".
-            if ($model === 'gpt-6-luna') $request['reasoning_effort']='none';
+            $request=iah_homeagent_chat_payload($model,$messages,$tools,$round);
             $out = iah_homeagent_post('https://api.openai.com/v1/chat/completions',
                 $request, ['Authorization: Bearer '.$key], $deadline);
             iah_homeagent_debug('openai.done', ['round'=>$round+1, 'durationMs'=>round((microtime(true)-$openAiStarted)*1000)]);
