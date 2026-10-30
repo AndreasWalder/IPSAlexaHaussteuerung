@@ -1741,8 +1741,36 @@ class RoomsCatalogConfigurator extends IPSModule
     }
 
     /** Dynamischer Bearbeitungsdialog für Symcon-Listen, benötigt PHP-Form-Dialog-Support. */
-    public function GetEntryEditForm(array $row): string
+    public function GetEntryEditForm(string $roomKey = '', string $domain = '', string $group = '', string $key = ''): string
     {
+        // Im "form"-Skript der Symcon-Liste steht $Entries nicht nur für eine
+        // einzelne Zeile: es enthält auch numerisch alle Tabellenzeilen.
+        // Deswegen nur die vier Schlüssel übergeben und die Daten gezielt laden.
+        $row = [];
+        if ($roomKey !== '' && $domain !== '' && $group !== '' && $key !== '') {
+            foreach ($this->getRuntimeEntries() as $candidate) {
+                if (!is_array($candidate)) continue;
+                if ((string)($candidate['roomKey'] ?? '') === $roomKey
+                    && (string)($candidate['domain'] ?? '') === $domain
+                    && (string)($candidate['group'] ?? '') === $group
+                    && (string)($candidate['key'] ?? '') === $key) {
+                    $row = $candidate;
+                    break;
+                }
+            }
+        }
+        if ($row === []) {
+            // Leerer "Hinzufügen"-Dialog mit sicheren Defaults und
+            // Variablenfeldern für einen neuen Lichtschalter.
+            $row = [
+                'roomKey' => $roomKey, 'roomLabel' => '',
+                'floor' => 'EG', 'domain' => $domain ?: 'licht',
+                'group' => $group ?: 'switches', 'key' => $key,
+                'title' => '', 'synonyms' => '', 'entityId' => '',
+                'kiEnabled' => false, 'kiReadOnly' => true,
+                'state' => 0, 'toggle' => 0
+            ];
+        }
         $items = [
             [
                 'type'=>'ExpansionPanel','caption'=>'Raum und Geraet','expanded'=>true,
