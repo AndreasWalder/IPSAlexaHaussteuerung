@@ -87,7 +87,7 @@ function iah_vir_classify(array $input,array $saved=[]): array
         ['category'=>'navigation','route'=>$aliases[$text],'reason'=>'bare_tile']);
     if (preg_match('/^(?:oeffne|oeffnen|zeige\s+(?:mir\s+)?(?:die\s+)?(?:kachel|seite|ansicht|menue)\s+(?:fuer\s+)?|gehe\s+(?:zu|zum|zur)\s+|geh\s+(?:zu|zum|zur)\s+|wechsle?\s+(?:zu|zum|zur)\s+|navigiere\s+(?:zu|zum|zur)\s+)(.+)$/u',$text,$m)) {
         $target=trim($m[1]);
-        $target=preg_replace('/^(?:die|das|den|der|dem|zum|zur)\s+/u','',$target)??$target;
+        $target=preg_replace('/^(?:(?:die|das|den|der|dem|zum|zur|kachel|seite|ansicht|menue|bereich|fuer)\s+)+/u','',$target)??$target;
         if (in_array($target,['startseite','hauptmenue','home','hauptansicht'],true))
             return array_replace($result,['category'=>'navigation','route'=>'main_launch','reason'=>'explicit_home']);
         if(isset($aliases[$target]))return array_replace($result,
