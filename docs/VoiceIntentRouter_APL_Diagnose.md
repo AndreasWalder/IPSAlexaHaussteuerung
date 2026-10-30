@@ -35,7 +35,7 @@ mit:
 - **Alexa-UI-Kontext je Gerät (JSON)**: letzte und vorherige Kachel mit Zeitstempel; alte Geräte-Einträge werden bereinigt.
 - **Router-Datenspeicher (nicht bearbeiten)**: ausgeblendete Rohdatenvariable; wird beim Update nicht überschrieben.
 
-Im Alexa-Protokoll erscheinen zusätzlich `VoiceRouter`-Einträge. Die protokollierten Kategorien sind `navigation`, `query`, `action`, `clarify`, `apl_navigation`, `apl_action`, `passthrough` und `ui_rendered`.
+Im Alexa-Protokoll erscheinen zusätzlich `VoiceRouter`-Einträge. Die protokollierten Kategorien sind `navigation`, `query`, `action`, `clarify`, `apl_navigation`, `apl_action`, `passthrough` sowie `ui_rendered` und `ki_outcome` (Erfolg, Backend, Modell und Antwortdauer in Millisekunden).
 
 ## Gesprochene Texte speichern und loggen
 
