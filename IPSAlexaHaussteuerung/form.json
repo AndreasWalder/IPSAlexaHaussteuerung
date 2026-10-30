@@ -181,6 +181,31 @@
     },
     {
       "type": "ExpansionPanel",
+      "caption": "Alexa-UI-Navigation, Sprachrouter & Diagnose",
+      "expanded": false,
+      "items": [
+        {
+          "type": "Label",
+          "caption": "Eindeutige Kachelnamen wie Licht, Jalousie oder Lüftung öffnen lokal den vorhandenen UI-Renderer. Fragen gehen weiterhin an die KI. APL-Kachel-Events haben Vorrang vor KI. Pro Alexa-Gerät wird der zuletzt geöffnete Bereich (30 Minuten gültig) für Folgefragen gespeichert."
+        },
+        {
+          "name": "VoiceRouterStoreTranscript",
+          "type": "CheckBox",
+          "caption": "Gesprochene Texte in Diagnosevariablen und Alexa-Log speichern",
+          "value": true
+        },
+        {
+          "type": "Label",
+          "caption": "Diagnose: Objektbaum → Diagnose → KI-Sprachrouter und APL-Navigation. Dort: letzte Entscheidung, Verlauf der letzten 80 Entscheidungen, Routingzähler, aktueller Kontext pro Gerät. Protokolliert werden bei aktivierter Option erkannte Sprachtexte bis 400 Zeichen; bekannte Schlüssel-/Passwortmuster werden ausgeblendet. Deaktivieren verhindert neue Transkriptaufzeichnungen, löscht jedoch bestehende nicht."
+        },
+        {
+          "type": "Label",
+          "caption": "Sicherheitsregel: Eine reine Kachelangabe löst niemals eine Schaltaktion aus. Bei unklarem Freitext wird nachgefragt. APL-Buttons werden unverändert an die klassischen Renderer übergeben."
+        }
+      ]
+    },
+    {
+      "type": "ExpansionPanel",
       "caption": "KI-Kosten & Tokenverbrauch (RoomsCatalog / Home Agent)",
       "expanded": false,
       "items": [
