@@ -48,6 +48,8 @@ trait KICostTrait
             'costTodayUSD'=>['KI-Kosten heute (USD)',$f,$usd],
             'costMonthUSD'=>['KI-Kosten diesen Monat (USD)',$f,$usd],
             'costTotalUSD'=>['KI-Kosten gesamt (USD)',$f,$usd],
+            'costMonthForecastUSD'=>['Hochrechnung Monatsende (USD)',$f,$usd],
+            'averageCostPerQuestionUSD'=>['Durchschnitt pro Frage (USD)',$f,$usd],
             'lastCostUSD'=>['Letzte Frage – Kosten (USD)',$f,$usd],
             'lastQuestionApiCalls'=>['Letzte Frage – API-Aufrufe',$i,''],
             'lastQuestionInputTokens'=>['Letzte Frage – Eingabe-Tokens',$i,''],
@@ -141,6 +143,8 @@ trait KICostTrait
                 'costTodayUSD'=>(float)$day['costUsd'],
                 'costMonthUSD'=>(float)$month['costUsd'],
                 'costTotalUSD'=>(float)$all['costUsd'],
+                'costMonthForecastUSD'=>(float)$this->GetKICostForecast((float)$month['costUsd'],$now),
+                'averageCostPerQuestionUSD'=>(int)$all['questions']>0 ? (float)$all['costUsd']/(int)$all['questions'] : 0.0,
                 'lastCostUSD'=>(float)($last['costUsd']??0),
                 'lastQuestionApiCalls'=>(int)($last['apiCalls']??0),
                 'lastQuestionInputTokens'=>(int)($last['inputTokens']??0),
@@ -166,6 +170,17 @@ trait KICostTrait
             \SetValueString($overview,$this->RenderKICostOverview($store,$now));
     }
 
+
+    private function GetKICostForecast(float $monthlyCost, \DateTimeImmutable $now): float
+    {
+        $daysInMonth=(int)$now->format('t');
+        $day=(int)$now->format('j');
+        // Prognose anhand der verstrichenen Zeit im laufenden Monat.
+        $secondsElapsed=max(1,($day-1)*86400+(int)$now->format('G')*3600
+            +(int)$now->format('i')*60+(int)$now->format('s'));
+        $fraction=min(1.0,$secondsElapsed/max(1,$daysInMonth*86400));
+        return $monthlyCost/$fraction;
+    }
 
     private function RenderKICostOverview(array $store, \DateTimeImmutable $now): string
     {
