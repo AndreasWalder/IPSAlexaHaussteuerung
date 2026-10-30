@@ -146,6 +146,23 @@ function iah_vir_execute(array $input,array &$data,int $now): array
         $decision['deviceHash']=$deviceHash;
         return $decision;
     }
+    if($op==='outcome') {
+        $backend=(string)($input['backend']??'');
+        if(!in_array($backend,['RoomsCatalog','HomeAgent','Classic'],true))$backend='unbekannt';
+        $entry=[
+            'at'=>date('c',$now),'deviceHash'=>$deviceHash,
+            'category'=>'ki_outcome','backend'=>$backend,
+            'success'=>(bool)($input['success']??false),
+            'durationMs'=>max(0,min(60000,(int)($input['durationMs']??0))),
+            'model'=>substr(preg_replace('/[^a-zA-Z0-9_.-]/','',(string)($input['model']??''))??'',0,50)
+        ];
+        $data['last']=$entry;
+        $data['history']??=[];
+        array_unshift($data['history'],$entry);
+        $data['history']=array_slice($data['history'],0,80);
+        $data['counts']['ki_outcome']=1+(int)($data['counts']['ki_outcome']??0);
+        return ['ok'=>true];
+    }
     if($op==='complete') {
         $route=(string)($input['route']??'');
         if ($device!=='' && (in_array($route,['main_launch','licht','jalousie','heizung','lueftung','geraete','bewaesserung',
@@ -201,7 +218,7 @@ function iah_vir_ip_symcon(array $input): array
             $id=(int)@IPS_GetObjectIDByIdent($ident,$category);
             if($id>0&&IPS_VariableExists($id))SetValueString($id,$value);
         }
-        if(in_array(($input['op']??''),['classify','complete'],true)) {
+        if(in_array(($input['op']??''),['classify','complete','outcome'],true)) {
             $last=$data['last']??[];
             // Ausdrücklich erlaubte Sprache im Diagnoseverlauf, aber keine
             // IDs, Access-Tokens oder APL-Argumentinhalte protokollieren.
