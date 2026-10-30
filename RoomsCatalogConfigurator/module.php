@@ -591,7 +591,9 @@ class RoomsCatalogConfigurator extends IPSModule
 
     public function GetConfigurationForm()
     {
-        $entriesProd  = $this->getRuntimeEntries();
+        $entriesProd  = $this->getProdEntries();
+        $entriesEdit  = $this->getRuntimeEntries();
+        $filterAI     = $this->ReadAttributeString('FilterAI');
         $filterRoom   = $this->ReadAttributeString('FilterRoom');
         $filterDomain = $this->ReadAttributeString('FilterDomain');
         $filterGroup  = $this->ReadAttributeString('FilterGroup');
@@ -604,11 +606,12 @@ class RoomsCatalogConfigurator extends IPSModule
             $entriesEditFlat = $this->buildFlatEntriesFromRooms($editRooms);
         }
 
-        [$roomOptions, $domainOptions, $groupOptions] = $this->buildFilterOptionsFromEntries($entriesProd);
+        [$roomOptions, $domainOptions, $groupOptions] = $this->buildFilterOptionsFromEntries(array_merge($entriesProd, $entriesEdit));
 
-        $visibleProd    = $this->applyFilters($entriesProd, $filterRoom, $filterDomain, $filterGroup);
-        $diffEntriesAll = $this->buildDiffEntries($entriesProd, $entriesEditFlat);
-        $visibleDiff    = $this->applyFilters($diffEntriesAll, $filterRoom, $filterDomain, $filterGroup);
+        $visibleProd    = $this->filterByAI($this->applyFilters($entriesEdit, $filterRoom, $filterDomain, $filterGroup), $filterAI);
+        $visibleProd    = array_map(fn(array $r): array => $this->decorateRow($r), $visibleProd);
+        $diffEntriesAll = $this->buildDiffEntries($entriesProd, $entriesEdit);
+        $visibleDiff    = $this->filterByAI($this->applyFilters($diffEntriesAll, $filterRoom, $filterDomain, $filterGroup), $filterAI);
 
         $this->logDebug('GetConfigurationForm: sichtbare PROD-Einträge=' . count($visibleProd));
         $this->logDebug('GetConfigurationForm: sichtbare DIFF-Einträge=' . count($visibleDiff));
@@ -616,7 +619,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $allForColumns = array_merge($visibleProd, $visibleDiff);
         $dynamicKeys   = $this->analyzeEntriesForDynamicColumns($allForColumns);
 
-        $columnsProd = $this->buildColumns($dynamicKeys);
+        $columnsProd = $this->buildOverviewColumns();
         $columnsEdit = [];
         foreach ($columnsProd as $col) {
             if (($col['name'] ?? '') === 'selected') {
@@ -625,10 +628,18 @@ class RoomsCatalogConfigurator extends IPSModule
             $columnsEdit[] = $col;
         }
 
+        $columnsEdit[] = ['caption'=>'Aenderung','name'=>'diffKeys','width'=>'130px','save'=>false,'quickFilter'=>true];
         $diffExpanded = count($visibleDiff) > 0;
+        $aiReadable = count(array_filter($entriesEdit, static fn($r): bool => !empty($r['kiEnabled'])));
+        $aiWritable = count(array_filter($entriesEdit, static fn($r): bool => !empty($r['kiEnabled']) && empty($r['kiReadOnly'])));
 
         $form = [
             'elements' => [
+                [
+                    'type'=>'Label',
+                    'caption'=>'RoomsCatalog EDIT: ' . count($entriesEdit) . ' Geraete, KI sichtbar: ' . $aiReadable
+                        . ', KI schaltbar: ' . $aiWritable . '. Aenderungen werden erst mit der Freigabe produktiv.'
+                ],
                 [
                     'type'    => 'ExpansionPanel',
                     'caption' => 'RoomsCatalog Scripts',
@@ -649,7 +660,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 ],
                 [
                     'type'    => 'ExpansionPanel',
-                    'caption' => 'Einträge (RoomsCatalog PROD)',
+                    'caption' => 'Geraete bearbeiten (RoomsCatalog EDIT)',
                     'items'   => [
                         [
                             'type'  => 'RowLayout',
@@ -679,6 +690,17 @@ class RoomsCatalogConfigurator extends IPSModule
                                     'onChange' => 'RCC_SetGroupFilter($id, $FilterGroup);'
                                 ],
                                 [
+                                    'type'=>'Select','name'=>'FilterAI','caption'=>'KI-Filter',
+                                    'options'=>[
+                                        ['caption'=>'Alle Geraete','value'=>'all'],
+                                        ['caption'=>'Mit KI','value'=>'enabled'],
+                                        ['caption'=>'KI darf schalten','value'=>'writable'],
+                                        ['caption'=>'Ohne KI','value'=>'disabled']
+                                    ],
+                                    'value'=>$filterAI,
+                                    'onChange'=>'RCC_SetAIFilter($id, $FilterAI);'
+                                ],
+                                [
                                     'type'    => 'Button',
                                     'caption' => 'ROOMSCATALOG NEU LADEN',
                                     'onClick' => 'RCC_ReloadCatalog($id);'
@@ -688,13 +710,16 @@ class RoomsCatalogConfigurator extends IPSModule
                         [
                             'type'     => 'List',
                             'name'     => 'Entries',
-                            'caption'  => 'Einträge PROD',
-                            'rowCount' => 25,
+                            'caption'  => 'Geraete und KI-Freigaben',
+                            'rowCount' => 20,
+                            'loadValuesFromConfiguration' => false,
+                            'form' => 'return json_decode(RCC_GetEntryEditForm($id, $Entries), true);',
                             'add'      => true,
                             'delete'   => false,
-                            'sort'     => true,
+                            'sort'     => ['column' => 'roomLabel', 'direction' => 'ascending'],
                             'columns'  => $columnsProd,
                             'values'   => $visibleProd,
+                            'rowColor' => 'rowColor',
                             'onEdit'   => 'RCC_SaveToEdit($id, json_encode($Entries));',
                             'onAdd'    => 'RCC_SaveToEdit($id, json_encode($Entries));'
                         ],
@@ -713,6 +738,7 @@ class RoomsCatalogConfigurator extends IPSModule
                                 [
                                     'type'    => 'Button',
                                     'caption' => 'MARKIERTE LÖSCHEN',
+                                    'confirm' => 'Markierte Eintraege im EDIT-Katalog wirklich loeschen?',
                                     'onClick' => 'RCC_DeleteSelectedEntries($id);'
                                 ]
                             ]
@@ -721,17 +747,17 @@ class RoomsCatalogConfigurator extends IPSModule
                 ],
                 [
                     'type'     => 'ExpansionPanel',
-                    'caption'  => 'RoomsCatalogEdit / Diff zu PROD',
+                    'caption'  => 'Vorschau: Unterschiede EDIT zu PROD',
                     'expanded' => $diffExpanded,
                     'items'    => [
                         [
                             'type'     => 'List',
                             'name'     => 'EntriesEdit',
-                            'caption'  => 'Einträge EDIT (Diff)',
-                            'rowCount' => 25,
+                            'caption'  => 'EDIT-zu-PROD-Aenderungen',
+                            'rowCount' => 15,
                             'add'      => false,
                             'delete'   => false,
-                            'sort'     => true,
+                            'sort'     => ['column'=>'roomLabel','direction'=>'ascending'],
                             'columns'  => $columnsEdit,
                             'values'   => $visibleDiff,
                             'rowColor' => 'rowColor'
@@ -742,7 +768,20 @@ class RoomsCatalogConfigurator extends IPSModule
             'actions' => [
                 [
                     'type'    => 'Label',
-                    'caption' => 'Hinweis: Änderungen in der oberen Liste werden automatisch in den RoomsCatalogEdit geschrieben.'
+                    'caption' => 'Farbe: Gruen = KI schaltbar, Blau = nur lesen, Grau = KI aus, Rot = pruefen. EDIT wird erst nach Freigabe produktiv.'
+                ],
+                [
+                    'type'=>'RowLayout','items'=>[
+                        ['type'=>'Button','caption'=>'MARKIERTE: MIT KI / NUR LESEN','onClick'=>'RCC_SetSelectedAI($id, true, true);'],
+                        ['type'=>'Button','caption'=>'MARKIERTE: KI + SCHALTEN','confirm'=>'KI-Schreibrechte fuer markierte Eintraege im EDIT-Katalog freigeben?','onClick'=>'RCC_SetSelectedAI($id, true, false);'],
+                        ['type'=>'Button','caption'=>'MARKIERTE: OHNE KI','onClick'=>'RCC_SetSelectedAI($id, false, true);']
+                    ]
+                ],
+                [
+                    'type'=>'RowLayout','items'=>[
+                        ['type'=>'Button','caption'=>'DIFF-VORSCHAU','onClick'=>'RCC_PreviewChanges($id);'],
+                        ['type'=>'Button','caption'=>'KATALOG PRUEFEN','onClick'=>'RCC_ValidateCatalog($id);']
+                    ]
                 ],
                 [
                     'type'    => 'Button',
@@ -751,7 +790,8 @@ class RoomsCatalogConfigurator extends IPSModule
                 ],
                 [
                     'type'    => 'Button',
-                    'caption' => 'SPEICHERN NACH ROOMS CATALOG',
+                    'caption' => 'EDIT NACH PROD UEBERNEHMEN',
+                    'confirm' => 'Aenderungen produktiv uebernehmen? Es wird zuvor ein Backup angelegt.',
                     'onClick' => 'RCC_SaveEditToProd($id);'
                 ]
             ]
@@ -768,7 +808,10 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         $this->logDebug('reloadAllFromCatalog: START');
 
-        $scriptId = $this->ReadPropertyInteger('RoomsCatalogScriptID');
+        $scriptId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) {
+            $scriptId = $this->ReadPropertyInteger('RoomsCatalogScriptID');
+        }
         if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) {
             $this->logDebug('reloadAllFromCatalog: kein gültiges ScriptID gesetzt');
             $this->WriteAttributeString('RuntimeEntries', '[]');
@@ -945,12 +988,22 @@ class RoomsCatalogConfigurator extends IPSModule
             'floor'     => isset($cfg['floor']) ? (string)$cfg['floor'] : $roomFloor,
             'domain'    => $domainKey,
             'group'     => $groupKey,
-            'key'       => $entryKey
+            'key'       => $entryKey,
+            'kiEnabled' => $roomKey !== 'global' && (($domainKey === 'licht' && in_array($groupKey, ['switches','dimmers','status'], true))
+                || ($domainKey === 'heizung' && $groupKey === 'heizung')
+                || ($domainKey === 'jalousie' && $groupKey === 'jalousie')
+                || ($domainKey === 'lueftung' && $groupKey === 'fans')),
+            'kiReadOnly' => true
         ];
 
         $forceIdKeys = ['id', 'controlId', 'statusId', 'tiltId', 'set', 'state', 'ist', 'soll'];
 
         foreach ($cfg as $k => $v) {
+            // Persistierte KI-Flags muessen die sicheren Defaults uebersteuern koennen.
+            if (in_array($k, ['kiEnabled','kiReadOnly'], true)) {
+                $row[$k] = (bool)$v;
+                continue;
+            }
             if (array_key_exists($k, $row)) {
                 continue;
             }
@@ -1442,7 +1495,7 @@ class RoomsCatalogConfigurator extends IPSModule
 
             $cfg = [];
             foreach ($row as $k => $v) {
-                if (in_array($k, ['selected', 'roomKey', 'roomLabel', 'floor', 'domain', 'group', 'key'], true)) {
+                if (in_array($k, ['selected', 'roomKey', 'roomLabel', 'floor', 'domain', 'group', 'key', 'rowColor','kiStatus','diffKeys','editable'], true)) {
                     continue;
                 }
 
