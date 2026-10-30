@@ -98,12 +98,17 @@ function iah_homeagent_voice(string $text, array $cfg): array
         for ($round = 0; $round < 2; $round++) {
             iah_homeagent_debug('openai.start', ['round'=>$round+1, 'model'=>(string)($cfg['model'] ?? 'gpt-4.1-mini')]);
             $openAiStarted = microtime(true);
-            $out = iah_homeagent_post('https://api.openai.com/v1/chat/completions', [
-                'model'=>(string)($cfg['model'] ?? 'gpt-4.1-mini'),
-                'messages'=>$messages,'tools'=>$tools,
+            $model=(string)($cfg['model'] ?? 'gpt-6-luna');
+            $request=[
+                'model'=>$model,'messages'=>$messages,'tools'=>$tools,
                 'tool_choice'=>$round === 0 ? 'required' : 'auto',
                 'max_completion_tokens'=>200,
-            ], ['Authorization: Bearer '.$key], $deadline);
+            ];
+            // Chat Completions mit GPT-6 Luna unterstützt Function Calling
+            // ausschließlich mit reasoning_effort="none".
+            if ($model === 'gpt-6-luna') $request['reasoning_effort']='none';
+            $out = iah_homeagent_post('https://api.openai.com/v1/chat/completions',
+                $request, ['Authorization: Bearer '.$key], $deadline);
             iah_homeagent_debug('openai.done', ['round'=>$round+1, 'durationMs'=>round((microtime(true)-$openAiStarted)*1000)]);
             $costReport('api',['callId'=>'round-'.$round,'response'=>[
                 'model'=>(string)($out['model']??($cfg['model']??'')),
