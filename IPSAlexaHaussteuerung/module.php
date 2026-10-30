@@ -944,11 +944,8 @@ PHP;
             "\$log('debug', 'KIIntentParser.trigger.' . \$reason, ['chars' => mb_strlen(\$text, 'UTF-8')]);",
             $updated
         );
-        $updated = str_replace(
-            "\$log('info', 'HomeAgentVoice.answer', ['durationSeconds' => \$homeAgentElapsed, 'text' => \$homeAgentAnswer]);",
-            "\$log('info', 'HomeAgentVoice.answer', ['durationSeconds' => \$homeAgentElapsed, 'words' => count(preg_split('/\\\\s+/u', \$homeAgentAnswer, -1, PREG_SPLIT_NO_EMPTY) ?: [])]);",
-            $updated
-        );
+        // Der Home-Agent-Hook wird bereits direkt davor aus dem sicheren
+        // Action-Template aktualisiert; ein zweiter String-Patch ist unnötig.
         if ($updated !== $content) {
             IPS_SetScriptContent($scriptId, $updated);
             IPS_LogMessage('Alexa', 'SecurityMigration: Alexa-Action-Logging ohne Zugangsdaten aktualisiert.');
