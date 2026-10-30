@@ -1291,17 +1291,28 @@ function Execute($request = null)
             }
         }
 
-        // REQUEST_RAW immer loggen bei LOG_LEVEL info + debug
+        // IAH_SAFE_REQUEST_LOG_BEGIN
+        // Auf Info/Debug-Niveau KEINE vollständigen Alexa-Requests, Session-/User-IDs,
+        // Zugangstokens oder frei gesprochenen Texte in Symcon-Logs ausgeben.
         if (in_array($LOG_LEVEL_EARLY, ['info', 'debug'], true)) {
-            IPS_LogMessage(
-                'Alexa',
-                'REQUEST_RAW ' . (preg_replace('/("(?:accessToken|apiAccessToken|token|userId|sessionId|applicationId|deviceId)"\s*:\s*")[^"]*(")/i', '$1[REDACTED]$2', (string) json_encode($rawData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) ?? '[unavailable]')
-            );
+            $summary = is_array($rawData) ? $rawData : (is_object($rawData) ? (array)$rawData : []);
+            $requestMeta = is_array($summary['request'] ?? null)
+                ? $summary['request'] : (is_object($summary['request'] ?? null) ? (array)$summary['request'] : []);
+            $kind = (string)($requestMeta['type'] ?? '');
+            $intentInfo = is_array($requestMeta['intent'] ?? null)
+                ? $requestMeta['intent'] : (is_object($requestMeta['intent'] ?? null) ? (array)$requestMeta['intent'] : []);
+            $intentSafe = preg_replace('/[^a-zA-Z0-9_-]/', '', (string)($intentInfo['name'] ?? '')) ?? '';
+            IPS_LogMessage('Alexa', 'REQUEST_META ' . json_encode([
+                'requestType' => preg_replace('/[^a-zA-Z0-9_-]/', '', $kind),
+                'intent' => $intentSafe,
+                'received' => $request !== null
+            ], JSON_UNESCAPED_UNICODE));
         }
+        // IAH_SAFE_REQUEST_LOG_END
     } catch (Throwable $e) {
         // Fehler im REQUEST_RAW-Block nur bei LOG_LEVEL debug loggen
         if ($LOG_LEVEL_EARLY === 'debug') {
-            IPS_LogMessage('Alexa', 'REQUEST_RAW error: ' . $e->getMessage());
+            IPS_LogMessage('Alexa', 'REQUEST_META errorType=' . get_class($e));
         }
     }
 
@@ -1785,7 +1796,7 @@ function Execute($request = null)
                 return;
             }
 
-            $log('debug', 'KIIntentParser.trigger.' . $reason, ['text' => $text]);
+            $log('debug', 'KIIntentParser.trigger.' . $reason, ['chars' => mb_strlen($text, 'UTF-8')]);
             $kiResponseRaw = IPS_RunScriptWaitEx($kiParserScriptId, ['text' => $text, 'ki_cost_instance_id' => $instanceId]);
             $kiParsed = json_decode((string) $kiResponseRaw, true);
             if (is_array($kiParsed) && !empty($kiParsed['rate_limited'])) {
@@ -1861,7 +1872,7 @@ function Execute($request = null)
                     'intent' => $intentName, 'source' => $homeAgentDedicatedIntent ? 'Frage' : 'legacy',
                     'chars' => mb_strlen($homeAgentSpokenQuestion, 'UTF-8')
                 ]);
-                $log('debug', 'HomeAgentVoice.recognized_text', ['text' => $homeAgentSpokenQuestion]);
+                $log('debug', 'HomeAgentVoice.recognized_text', ['chars' => mb_strlen($homeAgentSpokenQuestion, 'UTF-8')]);
                 if (!$homeAgentEnabled) {
                     $log('warn', 'HomeAgentVoice.disabled');
                     if ($homeAgentDedicatedIntent) {
@@ -1920,7 +1931,7 @@ function Execute($request = null)
                             if (is_array($homeAgentData) && ($homeAgentData['handled'] ?? false) === true
                                 && trim((string) ($homeAgentData['answer'] ?? '')) !== '') {
                                 $homeAgentAnswer = trim((string) $homeAgentData['answer']);
-                                $log('info', 'HomeAgentVoice.answer', ['durationSeconds' => $homeAgentElapsed, 'text' => $homeAgentAnswer]);
+                                $log('info', 'HomeAgentVoice.answer', ['durationSeconds' => $homeAgentElapsed, 'words' => count(preg_split('/\s+/u', $homeAgentAnswer, -1, PREG_SPLIT_NO_EMPTY) ?: [])]);
                                 return $kiAlexaKeepOpen($homeAgentAnswer);
                             }
                             $log('warn', 'HomeAgentVoice.fallback', [

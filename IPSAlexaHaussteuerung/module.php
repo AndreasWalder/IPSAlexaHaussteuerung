@@ -603,6 +603,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         }
         $this->patchActionScriptTabScopedDirectCommands((int) $id);
         $this->patchActionScriptHomeAgentVoice((int) $id);
+        $this->patchActionScriptSafeRequestLogging((int) $id);
 
         return (int) $id;
     }
@@ -888,6 +889,66 @@ PHP;
 
         if ($updated !== $content) {
             IPS_SetScriptContent($scriptId, $updated);
+        }
+    }
+
+
+    /**
+     * Sicherheitsmigration für bereits bestehende/angepasste Action-Skripte.
+     * Der Action-Quelltext wird beim Modulupdate bewusst NICHT komplett
+     * überschrieben; deshalb den bestehenden alten REQUEST_RAW-Block gezielt
+     * ersetzen. Andere benutzerdefinierte Funktionen bleiben erhalten.
+     */
+    private function patchActionScriptSafeRequestLogging(int $scriptId): void
+    {
+        $template = @file_get_contents(__DIR__ . '/resources/action_entry.php');
+        $content = $this->getScriptContent($scriptId);
+        if (!is_string($template) || !is_string($content)) {
+            return;
+        }
+        $begin = '        // IAH_SAFE_REQUEST_LOG_BEGIN';
+        $end = '        // IAH_SAFE_REQUEST_LOG_END';
+        $from = strpos($template, $begin);
+        $to = strpos($template, $end, $from === false ? 0 : $from);
+        if ($from === false || $to === false) {
+            return;
+        }
+        $safe = substr($template, $from, $to + strlen($end) - $from);
+        $oldFrom = strpos($content, $begin);
+        $oldTo = $oldFrom === false ? false : strpos($content, $end, $oldFrom);
+        if ($oldFrom !== false && $oldTo !== false) {
+            $updated = substr_replace($content, $safe, $oldFrom, $oldTo + strlen($end) - $oldFrom);
+        } else {
+            $oldFrom = strpos($content, '        // REQUEST_RAW immer loggen bei LOG_LEVEL info + debug');
+            $oldTo = $oldFrom === false ? false : strpos($content, '    } catch (Throwable $e) {', $oldFrom);
+            if ($oldFrom === false || $oldTo === false) {
+                // Keine bekannte REQUEST_RAW-Version: niemals Fremdcode zerstören.
+                IPS_LogMessage('Alexa', 'SecurityMigration: REQUEST_RAW-Block nicht erkannt; Action-Skript manuell prüfen.');
+                return;
+            }
+            $updated = substr_replace($content, $safe . "\n", $oldFrom, $oldTo - $oldFrom);
+        }
+        // Weitere bekannte Diagnosezeilen aus älteren Action-Skripten maskieren.
+        $updated = str_replace(
+            "IPS_LogMessage('Alexa', 'REQUEST_RAW error: ' . \$e->getMessage());",
+            "IPS_LogMessage('Alexa', 'REQUEST_META errorType=' . get_class(\$e));",
+            $updated
+        );
+        $updated = str_replace(
+            "\$log('debug', 'HomeAgentVoice.recognized_text', ['text' => \$homeAgentSpokenQuestion]);",
+            "\$log('debug', 'HomeAgentVoice.recognized_text', ['chars' => mb_strlen(\$homeAgentSpokenQuestion, 'UTF-8')]);",
+            $updated
+        );
+        $updated = str_replace(
+            "\$log('debug', 'KIIntentParser.trigger.' . \$reason, ['text' => \$text]);",
+            "\$log('debug', 'KIIntentParser.trigger.' . \$reason, ['chars' => mb_strlen(\$text, 'UTF-8')]);",
+            $updated
+        );
+        // Der Home-Agent-Hook wird bereits direkt davor aus dem sicheren
+        // Action-Template aktualisiert; ein zweiter String-Patch ist unnötig.
+        if ($updated !== $content) {
+            IPS_SetScriptContent($scriptId, $updated);
+            IPS_LogMessage('Alexa', 'SecurityMigration: Alexa-Action-Logging ohne Zugangsdaten aktualisiert.');
         }
     }
 

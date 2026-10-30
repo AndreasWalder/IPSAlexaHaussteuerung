@@ -32,10 +32,10 @@ Wichtig: Ein `AMAZON.SearchQuery`-Slot benötigt eine Trägerphrase (z. B. „fr
 - „Komplexe Sprachbefehle über Home Agent“ zunächst deaktivieren (Schreibaktionen brauchen zusätzliche Freigabe).
 - Modul-Update übernehmen. **Vorher die in Symcon erzeugten Skripte sichern.** Das Modul aktualisiert den Home-Agent-Hook im bestehenden Action-Skript sowie das Helper-Skript `HomeAgentVoiceBridge`.
 
-Beispiel für den Endpunkt bei Instanz-ID 24681 (lokale IP bei abweichender Serveradresse anpassen):
+Fiktives Beispiel für einen Endpunkt. `192.0.2.10` gehört zum reservierten Dokumentationsnetz (RFC 5737) und ist keine echte Serveradresse. IP-Adresse und Instanz-ID durch die Werte der eigenen lokalen IP-Symcon-Installation ersetzen:
 
 ```text
-http://192.168.1.4:3777/hook/homeagent/24681
+http://192.0.2.10:3777/hook/homeagent/12345
 ```
 
 ## 3. Sprachtest
@@ -97,3 +97,5 @@ Das prüft nur den Transport und JSON-Rückgabewert, noch nicht die Verbindung z
 - Der vorherige `GetHaus`-Intent ohne ausgefüllte Slots übermittelt **keinen ursprünglichen Sprachtext**; daraus kann die KI die Frage nicht rekonstruieren.
 - Alexa Custom Skills haben ein begrenztes Zeitbudget. Eine MCP-/OpenAI-Verarbeitung kann trotzdem zu lange dauern. Aktuell wird die Anfrage maximal zwei OpenAI-Runden lang verarbeitet.
 - Der klassische GetHaus-/APL-Pfad bleibt unverändert. Der neue Intent wird ausschließlich über Home Agent beantwortet.
+
+**Sicherheit:** Beispieladresse niemals als produktiven Endpunkt eintragen. Die echte Server-IP und das MCP-Token werden nur in der lokalen IP-Symcon-Konfiguration gepflegt; keine Zugangsdaten in GitHub, README, Screenshots oder Diagnoseprotokollen veröffentlichen. Für externe Erreichbarkeit TLS und eine geeignete Zugangssicherung verwenden.
