@@ -1829,7 +1829,8 @@ function Execute($request = null)
         // HOME_AGENT_VOICE_HOOK_BEGIN
         // Eigener Freitext-Intent hat Vorrang. GetHaus und sämtliche APL-Aktionen bleiben erhalten.
         $homeAgentDedicatedIntent = strcasecmp((string) $intentName, 'HomeAgentFrageIntent') === 0;
-        $homeAgentEnabled = (bool) ($propsEarly['HomeAgentVoiceEnabled'] ?? false);
+        $homeAgentEnabled = (bool) ($propsEarly['HomeAgentVoiceEnabled'] ?? false)
+            && (string) ($propsEarly['KIVoiceMode'] ?? 'RoomsCatalog') !== 'Classic';
         if (!$IS_LAUNCH && !$IS_BACK && !$wantsExit
             && ($homeAgentDedicatedIntent || empty($APL['args']))
             && ($homeAgentDedicatedIntent || $homeAgentEnabled)) {
@@ -1867,7 +1868,11 @@ function Execute($request = null)
                     }
                 } else {
                     $homeAgentHelpers = iah_get_child_object($instanceId, 'iahHelper', 'Alexa new devices helper');
-                    $homeAgentBridge = iah_get_child_object($homeAgentHelpers, 'homeAgentVoiceBridgeScript', 'HomeAgentVoiceBridge');
+                    $kiVoiceMode = (string) ($propsEarly['KIVoiceMode'] ?? 'RoomsCatalog');
+                    $helperIdent = $kiVoiceMode === 'RoomsCatalog' ? 'kiHouseControllerScript' : 'homeAgentVoiceBridgeScript';
+                    $helperName = $kiVoiceMode === 'RoomsCatalog' ? 'KIHouseController' : 'HomeAgentVoiceBridge';
+                    $homeAgentBridge = iah_get_child_object($homeAgentHelpers, $helperIdent, $helperName);
+                    $log('info', 'KIVoice.backend.selected', ['mode' => $kiVoiceMode, 'helper' => $helperIdent]);
                     if ($homeAgentBridge > 0 && function_exists('IPS_RunScriptWaitEx')) {
                         try {
                             $log('info', 'HomeAgentVoice.bridge.start', ['scriptId' => $homeAgentBridge]);
@@ -1882,10 +1887,26 @@ function Execute($request = null)
                                 'timeout_seconds' => (int) ($propsEarly['HomeAgentVoiceTimeoutSeconds'] ?? 6),
                                 'allow_writes' => $homeAgentAllowCommands,
                             ], JSON_THROW_ON_ERROR);
-                            $homeAgentJson = IPS_RunScriptWaitEx($homeAgentBridge, [
-                                'homeAgentText' => $homeAgentSpokenQuestion,
-                                'homeAgentConfigJson' => $homeAgentConfigJson,
-                            ]);
+                            if ($kiVoiceMode === 'RoomsCatalog') {
+                                // IPS_RunScriptWaitEx akzeptiert nur skalare Parameterwerte.
+                                $kiCatalogJson = json_encode([
+                                    'catalog_script_id' => (int) ($S['ROOMS_CATALOG'] ?? 0),
+                                    'api_key' => (string) ($propsEarly['KIIntentApiKey'] ?? ''),
+                                    'model' => (string) ($propsEarly['KIIntentModel'] ?? 'gpt-4.1-mini'),
+                                    'max_words' => (int) ($propsEarly['HomeAgentVoiceMaxWords'] ?? 20),
+                                    'timeout_seconds' => (int) ($propsEarly['HomeAgentVoiceTimeoutSeconds'] ?? 6),
+                                    'allow_writes' => $homeAgentAllowCommands,
+                                ], JSON_THROW_ON_ERROR);
+                                $homeAgentJson = IPS_RunScriptWaitEx($homeAgentBridge, [
+                                    'kiCatalogText' => $homeAgentSpokenQuestion,
+                                    'kiCatalogConfigJson' => $kiCatalogJson,
+                                ]);
+                            } else {
+                                $homeAgentJson = IPS_RunScriptWaitEx($homeAgentBridge, [
+                                    'homeAgentText' => $homeAgentSpokenQuestion,
+                                    'homeAgentConfigJson' => $homeAgentConfigJson,
+                                ]);
+                            }
                             $homeAgentData = json_decode((string) $homeAgentJson, true);
                             $homeAgentElapsed = round(microtime(true) - $homeAgentStarted, 3);
                             if (is_array($homeAgentData) && ($homeAgentData['handled'] ?? false) === true
