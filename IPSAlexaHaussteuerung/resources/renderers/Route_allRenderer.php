@@ -294,7 +294,10 @@ try {
     $j = static function(array $a) use($JSON){ return json_encode($a, $JSON); };
 
     $cid = $mkCid();
-    IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] entered route='.($route ?: '(leer)').' action='.$action.' device='.$device.' room='.$room.' alexaKey='.$alexaKey .' baseUrl='.$baseUrl .' token='.$token);
+    // Niemals Zugangsdaten, Hostnamen oder frei formulierte Nutzereingaben protokollieren.
+    IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] entered route='.preg_replace('/[^a-z0-9_-]/i', '', $route)
+        .' baseUrlConfigured='.($baseUrl !== '' ? 'yes' : 'no')
+        .' tokenConfigured='.($token !== '' ? 'yes' : 'no'));
 
     $flags = ['setDomainFlag'=>null,'resetDomainFlag'=>false,'setSkillActive'=>null];
 
@@ -334,7 +337,7 @@ try {
                 'launchCatalog'       => is_array($CFG['launchCatalog'] ?? null) ? $CFG['launchCatalog'] : [],
             ], $JSON),
         ]);
-        IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] return script='.(int)$S['RENDER_MAIN'].' raw='.(string)$data);
+        IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] return script='.(int)$S['RENDER_MAIN'].' responseBytes='.(is_string($data) ? strlen($data) : 0));
         if (!$data) {
             IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] render_main failed');
             echo json_encode(['ok'=>false,'route'=>$route,'err'=>'render_main failed'], $JSON);
@@ -659,10 +662,12 @@ try {
             'logo'  => $logoUrl,
         ], '', '&', PHP_QUERY_RFC3986);
 
+        // URLs enthalten ggf. WFC-Passwort oder Hook-Token als Query-Parameter.
+        // Nur Existenz anzeigen, niemals vollständige URLs protokollieren.
         IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] external.urls ' . $j([
-            'tileBase'=>$tileBase,
-            'logoUrl'=>$logoUrl,
-            'shellUrl'=>$shellUrl,
+            'tileBaseConfigured'=>$tileBase !== '',
+            'logoConfigured'=>$logoUrl !== null,
+            'shellConfigured'=>$shellUrl !== ''
         ]));
 
         // Delayed PageSwitch direkt über Modul-Instanz anstoßen
@@ -676,7 +681,7 @@ try {
                     IAH_TriggerPageSwitch($instanceId, (string)$pageId, (int)$wfcId);
                     IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] external.delay dispatched ok=true');
                 } catch (Throwable $e) {
-                    IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] external.delay error '.$e->getMessage());
+                    IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] external.delay error type='.get_class($e));
                 }
             } else {
                 IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] external.delay missing module function IAH_TriggerPageSwitch');
@@ -752,6 +757,6 @@ try {
     IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] unknown route: '.$route);
     echo json_encode(['ok'=>false,'err'=>'unknown route: '.$route], $JSON);
 } catch (Throwable $e) {
-    IPS_LogMessage('Alexa', 'ROUTE_ALL error: '.$e->getMessage().' trace='.substr($e->getTraceAsString(),0,4000));
-    echo json_encode(['ok'=>false,'err'=>$e->getMessage()], $JSON);
+    IPS_LogMessage('Alexa', 'ROUTE_ALL error type='.get_class($e));
+    echo json_encode(['ok'=>false,'err'=>'internal renderer error'], $JSON);
 }
