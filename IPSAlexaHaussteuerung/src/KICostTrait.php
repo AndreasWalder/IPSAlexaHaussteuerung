@@ -79,8 +79,10 @@ trait KICostTrait
             if ($id<=0 || !\IPS_VariableExists($id)) return false;
             $store=json_decode((string)\GetValueString($id),true);
             if (!is_array($store)) $store=[];
-            $prices=json_decode($this->ReadPropertyString('KICostPriceTableJson'),true);
-            if (!is_array($prices)) $prices=\iah_ki_price_table();
+            $configuredPrices=json_decode($this->ReadPropertyString('KICostPriceTableJson'),true);
+            // Neue Modellpreise stehen auch bei einem vorhandenen älteren JSON
+            // zur Verfügung. Individuell geänderte Preise haben Vorrang.
+            $prices=array_replace(\iah_ki_price_table(),is_array($configuredPrices)?$configuredPrices:[]);
             $now=new \DateTimeImmutable('now',new \DateTimeZone('Europe/Vienna'));
             if (!\iah_ki_apply_event($store,$event,$prices,$now)) return false;
             \SetValueString($id,json_encode($store,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR));
