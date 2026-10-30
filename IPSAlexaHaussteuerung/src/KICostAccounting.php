@@ -86,10 +86,6 @@ function iah_ki_apply_event(array &$store, array $event, array $prices, DateTime
                     'inputTokens'=>0,'cachedInputTokens'=>0,'outputTokens'=>0,'totalTokens'=>0,
                     'apiCalls'=>0,'callsWithoutUsage'=>0,'callsWithoutPrice'=>0,'seenCalls'=>[]
                 ];
-                foreach (['total','days','months'] as $scope) {
-                    $c=&$s[$scope === 'total' ? 'total' : $scope][$scope === 'days' ? $date : $month] ?? $s['total'];
-                    unset($c);
-                }
                 iah_ki_merge_counters($s['total'],['questions'=>1]);
                 iah_ki_merge_counters($s['days'][$date],['questions'=>1]);
                 iah_ki_merge_counters($s['months'][$month],['questions'=>1]);
@@ -130,6 +126,7 @@ function iah_ki_apply_event(array &$store, array $event, array $prices, DateTime
             $entry['status']=$success?'success':'error';
             $entry['finishedAt']=$now->format(DATE_ATOM);
             $s['last']=$entry;
+            $s['history']??=[];
             array_unshift($s['history'],$entry);
             $s['history']=array_slice($s['history'],0,100);
             unset($active[$id]);
