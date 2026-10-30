@@ -50,7 +50,7 @@ $expired=classify('Welche sind an?','HomeAgentFrageIntent',['domain'=>'licht','u
 t($expired['contextDomain']==='','old UI context expires');
 $module=file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/module.php');
 t(str_contains($module,"RegisterPropertyBoolean('VoiceRouterStoreTranscript', true)"),'transcript setting present');
-t(str_contains($module,"'VoiceIntentRouter.php'"),'router installed on module update');
+t(str_contains($module,'resources/helpers/VoiceIntentRouter.php'),'router installed on module update');
 $entry=file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/resources/action_entry.php');
 t(str_contains($entry,'$iahVoiceDecision')&&str_contains($entry,'$iahVoiceNavKey'),'classification used before existing UI');
 t(str_contains($entry,"'ui_context_domain' => $iahVoiceContextDomain"),'context passed to KI');
