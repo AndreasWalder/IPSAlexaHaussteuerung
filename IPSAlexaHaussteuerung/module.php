@@ -1650,7 +1650,7 @@ PHP;
         IPS_SetHidden($data,true);
         $this->ensureVar($root,'KI-Kosten Übersicht','kiCostOverview',VARIABLETYPE_STRING,'~HTMLBox',null);
 
-        foreach (['Alle'=>'Alle KI-Anbindungen','RoomsCatalog'=>'KI + RoomsCatalog','HomeAgent'=>'KI + Home Agent'] as $ident=>$label) {
+        foreach (['Alle'=>'Alle KI-Anbindungen','RoomsCatalog'=>'KI + RoomsCatalog','HomeAgent'=>'KI + Home Agent','IntentParser'=>'Sonstige KI – Intent-Parser'] as $ident=>$label) {
             $category=$this->ensureCategory($root,$label,'iahKICost'.$ident);
             foreach ($this->KICostVariableDefinitions() as $key=>[$caption,$type,$profile]) {
                 $this->ensureVar($category,$caption,$key,$type,$profile,null);
@@ -1757,7 +1757,7 @@ PHP;
     {
         $root=(int)@IPS_GetObjectIDByIdent('iahKICost',$this->InstanceID);
         if ($root<=0) return;
-        foreach (['Alle','RoomsCatalog','HomeAgent'] as $backend) {
+        foreach (['Alle','RoomsCatalog','HomeAgent','IntentParser'] as $backend) {
             $cat=(int)@IPS_GetObjectIDByIdent('iahKICost'.$backend,$root);
             if ($cat<=0) continue;
             $snap=iah_ki_section_snapshot($store,$backend,$now);
@@ -1806,7 +1806,7 @@ PHP;
         $html=$style.'<div class="ki-cost"><h3>Alexa KI-Kosten · USD</h3><table><thead><tr><th>KI-Backend</th><th class="num">Fragen heute</th>'
             .'<th class="num">Fragen gesamt</th><th class="num">Heute</th><th class="num">Monat</th><th class="num">Gesamt</th>'
             .'<th class="num">Letzte Frage</th></tr></thead><tbody>';
-        foreach (['Alle'=>'Gesamt','RoomsCatalog'=>'RoomsCatalog','HomeAgent'=>'Home Agent'] as $key=>$label) {
+        foreach (['Alle'=>'Gesamt','RoomsCatalog'=>'RoomsCatalog','HomeAgent'=>'Home Agent','IntentParser'=>'Intent-Parser'] as $key=>$label) {
             $s=iah_ki_section_snapshot($store,$key,$now);$a=$s['total'];$d=$s['today'];$m=$s['month'];
             $html.='<tr><th>'.$label.'</th><td class="num">'.$d['questions'].'</td><td class="num">'.$a['questions']
                 .'</td><td class="num">'.$usd((float)$d['costUsd']).'</td><td class="num">'.$usd((float)$m['costUsd'])
