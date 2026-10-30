@@ -35,6 +35,14 @@ function iah_homeagent_rpc(string $url, string $token, string $method, array $pa
     if (isset($out['error']) || !is_array($out['result'] ?? null)) throw new RuntimeException('MCP-Fehler: '.$method);
     return $out['result'];
 }
+/** Erzeugt den Chat-Completions-Request für beide wählbaren Modelle. */
+function iah_homeagent_chat_payload(string $model,array $messages,array $tools,int $round):array
+{
+    $payload=['model'=>$model,'messages'=>$messages,'tools'=>$tools,
+        'tool_choice'=>$round===0?'required':'auto','max_completion_tokens'=>200];
+    if($model==='gpt-6-luna')$payload['reasoning_effort']='none';
+    return $payload;
+}
 function iah_homeagent_voice(string $text, array $cfg): array
 {
     $endpoint = trim((string)($cfg['endpoint'] ?? ''));
@@ -50,6 +58,24 @@ function iah_homeagent_voice(string $text, array $cfg): array
         || !preg_match('~^/hook/homeagent/\\d+/?$~', $parsed['path'] ?? '')) {
         return ['handled'=>false,'error'=>'Ungültiger MCP-Endpunkt'];
     }
+    $costInstanceId=(int)($cfg['ki_cost_instance_id']??0);
+    $costQuestionId=bin2hex(random_bytes(12));
+    $costReport=static function(string $type,array $more=[]) use($costInstanceId,$costQuestionId):void {
+        if($costInstanceId<=0 || !function_exists('IAH_RecordKICostEvent')) return;
+        try {
+            $event=array_merge(['type'=>$type,'backend'=>'HomeAgent','questionId'=>$costQuestionId],$more);
+            if(!IAH_RecordKICostEvent($costInstanceId,json_encode($event,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE))) {
+                iah_homeagent_debug('cost.warning',['stage'=>$type,'reason'=>'Event nicht gespeichert']);
+            }
+        } catch(Throwable $error) {
+            iah_homeagent_debug('cost.warning',['stage'=>$type,'reason'=>'Statistikfehler']);
+        }
+    };
+    $costReport('start',['model'=>(string)($cfg['model']??'gpt-4.1-mini')]);
+    $costFinish=static function(array $result) use($costReport):array {
+        $costReport('finish',['success'=>(bool)($result['handled']??false)]);
+        return $result;
+    };
     $deadline = microtime(true) + max(2, min(7, (int)($cfg['timeout_seconds'] ?? 6)));
     $maxWords = max(8, min(45, (int)($cfg['max_words'] ?? 20)));
     $write = (bool)($cfg['allow_writes'] ?? false);
@@ -78,15 +104,17 @@ function iah_homeagent_voice(string $text, array $cfg): array
             ['role'=>'user','content'=>mb_substr(trim($text),0,500)],
         ];
         for ($round = 0; $round < 2; $round++) {
-            iah_homeagent_debug('openai.start', ['round'=>$round+1, 'model'=>(string)($cfg['model'] ?? 'gpt-4.1-mini')]);
+            iah_homeagent_debug('openai.start', ['round'=>$round+1, 'model'=>(string)($cfg['model'] ?? 'gpt-6-luna')]);
             $openAiStarted = microtime(true);
-            $out = iah_homeagent_post('https://api.openai.com/v1/chat/completions', [
-                'model'=>(string)($cfg['model'] ?? 'gpt-4.1-mini'),
-                'messages'=>$messages,'tools'=>$tools,
-                'tool_choice'=>$round === 0 ? 'required' : 'auto',
-                'max_completion_tokens'=>200,
-            ], ['Authorization: Bearer '.$key], $deadline);
+            $model=(string)($cfg['model'] ?? 'gpt-6-luna');
+            $request=iah_homeagent_chat_payload($model,$messages,$tools,$round);
+            $out = iah_homeagent_post('https://api.openai.com/v1/chat/completions',
+                $request, ['Authorization: Bearer '.$key], $deadline);
             iah_homeagent_debug('openai.done', ['round'=>$round+1, 'durationMs'=>round((microtime(true)-$openAiStarted)*1000)]);
+            $costReport('api',['callId'=>'round-'.$round,'response'=>[
+                'model'=>(string)($out['model']??($cfg['model']??'')),
+                'usage'=>$out['usage']??null
+            ]]);
             $message = $out['choices'][0]['message'] ?? null;
             if (!is_array($message)) throw new RuntimeException('Keine KI-Antwort');
             $calls = $message['tool_calls'] ?? [];
@@ -95,7 +123,7 @@ function iah_homeagent_voice(string $text, array $cfg): array
                 $answer = implode(' ', array_slice($words ?: [],0,$maxWords));
                 if ($answer === '') throw new RuntimeException('Leere Antwort');
                 iah_homeagent_debug('answer.done', ['totalMs'=>round((microtime(true)-$startedAt)*1000), 'words'=>count($words ?: [])]);
-                return ['handled'=>true,'answer'=>$answer];
+                return $costFinish(['handled'=>true,'answer'=>$answer]);
             }
             if ($round > 0) throw new RuntimeException('Zu viele Werkzeugrunden');
             $messages[] = $message;
@@ -109,14 +137,14 @@ function iah_homeagent_voice(string $text, array $cfg): array
                 $result = iah_homeagent_rpc($endpoint,$token,'tools/call',['name'=>$name,'arguments'=>$args],$deadline);
                 iah_homeagent_debug('mcp.tool.done', ['name'=>$name, 'durationMs'=>round((microtime(true)-$toolStarted)*1000), 'isError'=>(bool)($result['isError'] ?? false)]);
                 $messages[] = ['role'=>'tool','tool_call_id'=>$call['id'],'content'=>mb_substr(json_encode($result,JSON_UNESCAPED_UNICODE),0,12000)];
-                if (!empty($result['isError'])) return ['handled'=>true,'answer'=>'Die Haussteuerung hat einen Fehler gemeldet.'];
+                if (!empty($result['isError'])) return $costFinish(['handled'=>true,'answer'=>'Die Haussteuerung hat einen Fehler gemeldet.']);
             }
         }
     } catch (Throwable $e) {
         iah_homeagent_debug('bridge.failed', ['durationMs'=>round((microtime(true)-$startedAt)*1000), 'error'=>$e->getMessage()]);
-        return $attemptedWrite ? ['handled'=>true,'answer'=>'Ich konnte die Ausführung nicht bestätigen.'] : ['handled'=>false,'error'=>$e->getMessage()];
+        return $costFinish($attemptedWrite ? ['handled'=>true,'answer'=>'Ich konnte die Ausführung nicht bestätigen.'] : ['handled'=>false,'error'=>$e->getMessage()]);
     }
-    return ['handled'=>false,'error'=>'Keine Antwort'];
+    return $costFinish(['handled'=>false,'error'=>'Keine Antwort']);
 }
 if (isset($_IPS) && array_key_exists('homeAgentText', $_IPS)) {
     // Keine PHP-Arrays in IPS_RunScriptWaitEx übergeben:

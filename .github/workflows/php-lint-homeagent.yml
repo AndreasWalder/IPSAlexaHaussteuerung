@@ -4,6 +4,7 @@ on:
     branches:
       - feature/home-agent-frageintent-diagnostics-20261030
       - feature/ki-roomscatalog-editor-20261030
+      - feature/ki-cost-transparency-20261030
   pull_request:
     paths:
       - 'IPSAlexaHaussteuerung/**'
@@ -26,6 +27,9 @@ jobs:
           php -l IPSAlexaHaussteuerung/resources/action_entry.php
           php -l IPSAlexaHaussteuerung/resources/helpers/HomeAgentVoiceBridge.php
           php -l IPSAlexaHaussteuerung/resources/helpers/KIHouseController.php
+          php -l IPSAlexaHaussteuerung/resources/helpers/KIIntentParser.php
+          php -l IPSAlexaHaussteuerung/src/KICostAccounting.php
+          php -l IPSAlexaHaussteuerung/src/KICostTrait.php
           php -l RoomsCatalogConfigurator/module.php
       - name: Check JSON syntax
         run: |
@@ -35,3 +39,7 @@ jobs:
         run: php tests/test_ki_rooms_catalog.php
       - name: Test RoomsCatalog form add/edit and persistent expansion
         run: php tests/test_rooms_catalog_editor_ui.php
+      - name: Test OpenAI token and cost accounting
+        run: php tests/test_ki_cost_accounting.php
+      - name: Test GPT-6 Luna and GPT-4.1 mini model selection
+        run: php tests/test_ki_model_selection.php

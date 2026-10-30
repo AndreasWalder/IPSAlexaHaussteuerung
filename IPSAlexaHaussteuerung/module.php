@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/src/Helpers.php';
 require_once __DIR__ . '/src/LogTrait.php';
+require_once __DIR__ . '/src/KICostAccounting.php';
+require_once __DIR__ . '/src/KICostTrait.php';
 require_once __DIR__ . '/src/Router.php';
 require_once __DIR__ . '/src/Routes/RouteAll.php';
 require_once __DIR__ . '/src/Renderers/RenderMain.php';
@@ -18,6 +20,7 @@ require_once __DIR__ . '/src/Renderers/RenderExternal.php';
 class IPSAlexaHaussteuerung extends IPSModule
 {
     use \IPSAlexaHaussteuerung\LogTrait;
+    use \IAHKICost\KICostTrait;
 
     /** @var bool */
     private $isApplyingChanges = false;
@@ -58,7 +61,9 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyInteger('SystemConfigScriptId', 0);
         $this->RegisterPropertyBoolean('KIIntentEnabled', true);
         $this->RegisterPropertyString('KIIntentApiKey', '');
-        $this->RegisterPropertyString('KIIntentModel', 'gpt-4.1-mini');
+        $this->RegisterPropertyString('KIIntentModel', 'gpt-4.1-mini'); // Altwert: weiterhin für bestehende Konfigurationen gespeichert
+        // Neue zentrale Modellauswahl (auch bei bereits installierten Modulen standardmäßig Luna).
+        $this->RegisterPropertyString('KIModelSelection', 'gpt-6-luna');
         $this->RegisterPropertyString('KIIntentLogChannel', 'Alexa');
         $this->RegisterPropertyInteger('KIIntentRateLimit', 60);
         $this->RegisterPropertyBoolean('HomeAgentVoiceEnabled', false);
@@ -68,8 +73,11 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyBoolean('HomeAgentVoiceRouteCommands', false);
         $this->RegisterPropertyInteger('HomeAgentVoiceMaxWords', 20);
         $this->RegisterPropertyInteger('HomeAgentVoiceTimeoutSeconds', 6);
+        $this->RegisterPropertyFloat('KICostMonthlyWarningUSD', 5.00);
+        $this->RegisterPropertyString('KICostPriceTableJson', json_encode(iah_ki_price_table()));
         $this->RegisterAttributeString('DelayedPageSwitchPayload', '');
         $this->RegisterTimer('DelayedPageSwitch', 0, 'IAH_HandleDelayedPageSwitch($_IPS["TARGET"]);');
+        $this->RegisterTimer('KICostRefresh', 60000, 'IAH_RefreshKICostDisplay($_IPS["TARGET"]);');
 
         // Pages
         $this->RegisterPropertyString(
@@ -180,6 +188,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->ensureVar($root, 'activeTabState', 'activeTabState', VARIABLETYPE_STRING, '', '');
 
         $this->ensureSystemConfigurationScript($catSettings, $catHelper);
+        $this->EnsureKICostInfrastructure();
         // Hinweis: Die Statusvariablen (Information/Meldungen/Außentemperatur) werden nicht mehr automatisch
         // erstellt. Sie müssen über die Instanzkonfiguration mit bestehenden Variablen verknüpft werden.
     }
@@ -521,7 +530,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         return [
             'enabled'       => $this->ReadPropertyBoolean('KIIntentEnabled'),
             'api_key'        => $this->ReadPropertyString('KIIntentApiKey'),
-            'model'          => $this->ReadPropertyString('KIIntentModel'),
+            'model'          => $this->ReadPropertyString('KIModelSelection'),
             'log_channel'    => $this->ReadPropertyString('KIIntentLogChannel'),
             'rate_limit_sec' => $this->ReadPropertyInteger('KIIntentRateLimit'),
         ];

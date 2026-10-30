@@ -198,16 +198,43 @@ function iah_rc_http(array $payload,string $apiKey,float $deadline): array
         return json_decode($data,true,512,JSON_THROW_ON_ERROR);
     } finally {curl_close($ch);}
 }
+/** Für beide KI-Modelle mit einem Unit-Test überprüfbare API-Parameter. */
+function iah_rc_chat_payload(string $model,array $messages,array $tools,int $round): array
+{
+    $payload=['model'=>$model,'messages'=>$messages,'tools'=>$tools,
+        'tool_choice'=>$round===0?'required':'auto','max_completion_tokens'=>200];
+    if($model==='gpt-6-luna')$payload['reasoning_effort']='none';
+    return $payload;
+}
 function iah_rc_voice(string $text,array $cfg): array
 {
     $key=trim((string)($cfg['api_key']??''));$catalogId=(int)($cfg['catalog_script_id']??0);
     if($key===''||$catalogId<=0||trim($text)==='')return ['handled'=>false,'error'=>'KI-Konfiguration unvollständig'];
+    // Ereignisse an das persistente IPS-Modul melden, ohne den normalen Antwortweg zu beeinflussen.
+    $costInstanceId=(int)($cfg['ki_cost_instance_id']??0);
+    $costQuestionId=bin2hex(random_bytes(12));
+    $costReport=static function (string $type,array $more=[]) use($costInstanceId,$costQuestionId):void {
+        if ($costInstanceId<=0 || !function_exists('IAH_RecordKICostEvent')) return;
+        try {
+            $event=array_merge(['type'=>$type,'backend'=>'RoomsCatalog','questionId'=>$costQuestionId],$more);
+            if (!IAH_RecordKICostEvent($costInstanceId,json_encode($event,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE))) {
+                iah_rc_log('cost.warning',['stage'=>$type,'reason'=>'Event nicht gespeichert']);
+            }
+        } catch (Throwable $err) {
+            iah_rc_log('cost.warning',['stage'=>$type,'reason'=>'Statistikfehler']);
+        }
+    };
+    $costReport('start',['model'=>(string)($cfg['model']??'gpt-4.1-mini')]);
+    $costFinish=static function (array $result) use($costReport):array {
+        $costReport('finish',['success'=>(bool)($result['handled']??false)]);
+        return $result;
+    };
     $started=microtime(true);$deadline=$started+max(2,min(7,(int)($cfg['timeout_seconds']??6)));
     $maxWords=max(8,min(45,(int)($cfg['max_words']??20)));$allowWrites=(bool)($cfg['allow_writes']??false);
     try{
         $devices=iah_rc_index($catalogId);
         iah_rc_log('catalog.loaded',['count'=>count($devices),'writeEnabled'=>$allowWrites]);
-        if(!$devices)return ['handled'=>true,'answer'=>'Im RoomsCatalog sind keine KI-Geräte freigegeben.'];
+        if(!$devices)return $costFinish(['handled'=>true,'answer'=>'Im RoomsCatalog sind keine KI-Geräte freigegeben.']);
         $props=[
             'deviceKey'=>['type'=>'string'],'name'=>['type'=>'string'],'room'=>['type'=>'string'],
             'floor'=>['type'=>'string'],'domain'=>['type'=>'string'],'group'=>['type'=>'string'],
@@ -231,9 +258,13 @@ function iah_rc_voice(string $text,array $cfg): array
         ];
         for($round=0;$round<2;$round++){
             iah_rc_log('openai.start',['round'=>$round+1]);
-            $response=iah_rc_http(['model'=>(string)($cfg['model']??'gpt-4.1-mini'),'messages'=>$messages,
-                'tools'=>$tools,'tool_choice'=>$round===0?'required':'auto','max_completion_tokens'=>200],
-                $key,$deadline);
+            $model=(string)($cfg['model']??'gpt-6-luna');
+            $request=iah_rc_chat_payload($model,$messages,$tools,$round);
+            $response=iah_rc_http($request,$key,$deadline);
+            $costReport('api',['callId'=>'round-'.$round,'response'=>[
+                'model'=>(string)($response['model']??($cfg['model']??'')),
+                'usage'=>$response['usage']??null
+            ]]);
             $msg=$response['choices'][0]['message']??null;
             if(!is_array($msg))throw new RuntimeException('Keine KI-Antwort');
             $calls=$msg['tool_calls']??[];
@@ -242,7 +273,7 @@ function iah_rc_voice(string $text,array $cfg): array
                 if(!$words)throw new RuntimeException('Keine Sprachantwort');
                 $answer=implode(' ',array_slice($words,0,$maxWords));
                 iah_rc_log('answer',['durationMs'=>round((microtime(true)-$started)*1000),'text'=>$answer]);
-                return ['handled'=>true,'answer'=>$answer];
+                return $costFinish(['handled'=>true,'answer'=>$answer]);
             }
             if($round>0)throw new RuntimeException('Zu viele Tool-Runden');
             $messages[]=$msg;
@@ -259,9 +290,9 @@ function iah_rc_voice(string $text,array $cfg): array
         }
     }catch(Throwable $e){
         iah_rc_log('error',['reason'=>$e->getMessage(),'durationMs'=>round((microtime(true)-$started)*1000)]);
-        return ['handled'=>false,'error'=>$e->getMessage()];
+        return $costFinish(['handled'=>false,'error'=>$e->getMessage()]);
     }
-    return ['handled'=>false,'error'=>'Keine Antwort'];
+    return $costFinish(['handled'=>false,'error'=>'Keine Antwort']);
 }
 if(isset($_IPS)&&is_array($_IPS)&&array_key_exists('kiCatalogText',$_IPS)){
     $cfg=json_decode((string)($_IPS['kiCatalogConfigJson']??'{}'),true);

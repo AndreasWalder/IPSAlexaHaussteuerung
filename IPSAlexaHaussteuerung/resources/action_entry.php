@@ -1043,7 +1043,7 @@ function iah_build_ki_intent_parser_cfg(array $props): array
     return [
         'enabled'       => (bool) ($props['KIIntentEnabled'] ?? true),
         'api_key'        => (string) ($props['KIIntentApiKey'] ?? ''),
-        'model'          => (string) ($props['KIIntentModel'] ?? 'gpt-4.1-mini'),
+        'model'          => (string) ($props['KIModelSelection'] ?? 'gpt-6-luna'),
         'log_channel'    => (string) ($props['KIIntentLogChannel'] ?? 'Alexa'),
         'rate_limit_sec' => (int) ($props['KIIntentRateLimit'] ?? 60),
     ];
@@ -1780,13 +1780,13 @@ function Execute($request = null)
         $kiParserEnabled = (bool)($kiParserConfig['enabled'] ?? true);
         $shouldCallKiParser = $kiParserEnabled && $kiParserScriptId > 0 && function_exists('IPS_RunScriptWaitEx');
 
-        $invokeKiParser = static function (string $text, string $reason) use (&$kiParserOverride, $kiParserScriptId, $kiParserConfig, $log, $lc) {
+        $invokeKiParser = static function (string $text, string $reason) use (&$kiParserOverride, $kiParserScriptId, $kiParserConfig, $instanceId, $log, $lc) {
             if ($text === '') {
                 return;
             }
 
             $log('debug', 'KIIntentParser.trigger.' . $reason, ['text' => $text]);
-            $kiResponseRaw = IPS_RunScriptWaitEx($kiParserScriptId, ['text' => $text]);
+            $kiResponseRaw = IPS_RunScriptWaitEx($kiParserScriptId, ['text' => $text, 'ki_cost_instance_id' => $instanceId]);
             $kiParsed = json_decode((string) $kiResponseRaw, true);
             if (is_array($kiParsed) && !empty($kiParsed['rate_limited'])) {
                 $log('warn', 'KIIntentParser.rate_limited', []);
@@ -1888,20 +1888,22 @@ function Execute($request = null)
                                 'endpoint' => (string) ($propsEarly['HomeAgentVoiceEndpoint'] ?? ''),
                                 'token' => (string) ($propsEarly['HomeAgentVoiceToken'] ?? ''),
                                 'api_key' => (string) ($propsEarly['KIIntentApiKey'] ?? ''),
-                                'model' => (string) ($propsEarly['KIIntentModel'] ?? 'gpt-4.1-mini'),
+                                'model' => (string) ($propsEarly['KIModelSelection'] ?? 'gpt-6-luna'),
                                 'max_words' => (int) ($propsEarly['HomeAgentVoiceMaxWords'] ?? 20),
                                 'timeout_seconds' => (int) ($propsEarly['HomeAgentVoiceTimeoutSeconds'] ?? 6),
                                 'allow_writes' => $homeAgentAllowCommands,
+                                'ki_cost_instance_id' => $instanceId,
                             ], JSON_THROW_ON_ERROR);
                             if ($kiVoiceMode === 'RoomsCatalog') {
                                 // IPS_RunScriptWaitEx akzeptiert nur skalare Parameterwerte.
                                 $kiCatalogJson = json_encode([
                                     'catalog_script_id' => (int) ($S['ROOMS_CATALOG'] ?? 0),
                                     'api_key' => (string) ($propsEarly['KIIntentApiKey'] ?? ''),
-                                    'model' => (string) ($propsEarly['KIIntentModel'] ?? 'gpt-4.1-mini'),
+                                    'model' => (string) ($propsEarly['KIModelSelection'] ?? 'gpt-6-luna'),
                                     'max_words' => (int) ($propsEarly['HomeAgentVoiceMaxWords'] ?? 20),
                                     'timeout_seconds' => (int) ($propsEarly['HomeAgentVoiceTimeoutSeconds'] ?? 6),
                                     'allow_writes' => $homeAgentAllowCommands,
+                                    'ki_cost_instance_id' => $instanceId,
                                 ], JSON_THROW_ON_ERROR);
                                 $homeAgentJson = IPS_RunScriptWaitEx($homeAgentBridge, [
                                     'kiCatalogText' => $homeAgentSpokenQuestion,
