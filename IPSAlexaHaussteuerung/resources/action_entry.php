@@ -1078,7 +1078,7 @@ function iah_extract_raw_user_text($request): string
             }
         }
         if (isset($request->request->intent) && is_object($request->request->intent) && isset($request->request->intent->slots) && is_object($request->request->intent->slots)) {
-            foreach (['raw', 'Raw', 'text', 'Text', 'utterance', 'Utterance'] as $slotKey) {
+            foreach (['Frage', 'frage', 'Question', 'raw', 'Raw', 'text', 'Text', 'utterance', 'Utterance'] as $slotKey) {
                 if (isset($request->request->intent->slots->$slotKey) && is_object($request->request->intent->slots->$slotKey)) {
                     $slot = $request->request->intent->slots->$slotKey;
 
@@ -1295,7 +1295,7 @@ function Execute($request = null)
         if (in_array($LOG_LEVEL_EARLY, ['info', 'debug'], true)) {
             IPS_LogMessage(
                 'Alexa',
-                'REQUEST_RAW ' . json_encode($rawData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                'REQUEST_RAW ' . (preg_replace('/("(?:accessToken|apiAccessToken|token|userId|sessionId|applicationId|deviceId)"\s*:\s*")[^"]*(")/i', '$1[REDACTED]$2', (string) json_encode($rawData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) ?? '[unavailable]')
             );
         }
     } catch (Throwable $e) {
@@ -1827,40 +1827,91 @@ function Execute($request = null)
 
         // ============================================================
         // HOME_AGENT_VOICE_HOOK_BEGIN
-        if (!$IS_LAUNCH && !$IS_BACK && !$wantsExit && empty($APL['args'])
-            && (bool)($propsEarly['HomeAgentVoiceEnabled'] ?? false)) {
-            $voiceText = trim((string)($rawUserText !== '' ? $rawUserText : $rawSlotsToText($rawSlotValues)));
-            $isQuestion = preg_match('/^(?:wer|was|wann|wo|wie|wieviel|wie\\s+viel|welche[rsn]?|ist|sind|hat|haben|gibt|kannst\\s+du|prüfe|überprüfe|kontrolliere|zeige|sag(?:e)?\\s+mir|vergleiche|zähl(?:e)?|warum)\\b/ui', $voiceText) === 1
-                || str_contains($voiceText, '?');
-            $simple = preg_match('/^(?:schalte|mach|stelle|fahre|öffne|schließe|starte|stoppe|dimme)\\b/ui', $voiceText) === 1;
-            $commands = (bool)($propsEarly['HomeAgentVoiceRouteCommands'] ?? false);
-            if ($voiceText !== '' && ($isQuestion || ($commands && !$simple))) {
-                $helperCat = iah_get_child_object($instanceId, 'iahHelper', 'Alexa new devices helper');
-                $bridgeScript = iah_get_child_object($helperCat, 'homeAgentVoiceBridgeScript', 'HomeAgentVoiceBridge');
-                if ($bridgeScript > 0) {
-                    try {
-                        $json = IPS_RunScriptWaitEx($bridgeScript, [
-                            'homeAgentText'=>$voiceText,
-                            'config'=>[
-                                'endpoint'=>(string)($propsEarly['HomeAgentVoiceEndpoint'] ?? ''),
-                                'token'=>(string)($propsEarly['HomeAgentVoiceToken'] ?? ''),
-                                'api_key'=>(string)($propsEarly['KIIntentApiKey'] ?? ''),
-                                'model'=>(string)($propsEarly['KIIntentModel'] ?? 'gpt-4.1-mini'),
-                                'max_words'=>(int)($propsEarly['HomeAgentVoiceMaxWords'] ?? 20),
-                                'timeout_seconds'=>(int)($propsEarly['HomeAgentVoiceTimeoutSeconds'] ?? 6),
-                                'allow_writes'=>$commands,
-                            ],
-                        ]);
-                        $data = json_decode((string)$json, true);
-                        if (is_array($data) && ($data['handled'] ?? false) === true
-                            && trim((string)($data['answer'] ?? '')) !== '') {
-                            return TellResponse::CreatePlainText((string)$data['answer']);
+        // Eigener Freitext-Intent hat Vorrang. GetHaus und sämtliche APL-Aktionen bleiben erhalten.
+        $homeAgentDedicatedIntent = strcasecmp((string) $intentName, 'HomeAgentFrageIntent') === 0;
+        $homeAgentEnabled = (bool) ($propsEarly['HomeAgentVoiceEnabled'] ?? false);
+        if (!$IS_LAUNCH && !$IS_BACK && !$wantsExit
+            && ($homeAgentDedicatedIntent || empty($APL['args']))
+            && ($homeAgentDedicatedIntent || $homeAgentEnabled)) {
+            $homeAgentStarted = microtime(true);
+            // AMAZON.SearchQuery liefert die Äußerung im Slot "Frage", nicht im Request-Text.
+            $homeAgentSpokenQuestion = $homeAgentDedicatedIntent
+                ? trim((string) ($getSlotCH($request, 'Frage') ?? ''))
+                : trim((string) ($rawUserText !== '' ? $rawUserText : $rawSlotsToText($rawSlotValues)));
+            if ($homeAgentDedicatedIntent && ($homeAgentSpokenQuestion === '' || $homeAgentSpokenQuestion === '?')) {
+                $homeAgentSpokenQuestion = trim((string) $rawUserText);
+            }
+            $homeAgentSpokenQuestion = trim(preg_replace('/\s+/u', ' ', $homeAgentSpokenQuestion) ?? '');
+            $isHomeAgentQuestion = $homeAgentDedicatedIntent
+                || preg_match('/^(?:wer|was|wann|wo|wie|wieviel|wie\s+viel|welche[rsn]?|ist|sind|hat|haben|gibt|kannst\s+du|prüfe|überprüfe|kontrolliere|zeige|sag(?:e)?\s+mir|vergleiche|zähl(?:e)?|warum)\b/ui', $homeAgentSpokenQuestion) === 1
+                || str_contains($homeAgentSpokenQuestion, '?');
+            $homeAgentSimpleCommand = preg_match('/^(?:schalte|mach|stelle|fahre|öffne|schließe|starte|stoppe|dimme)\b/ui', $homeAgentSpokenQuestion) === 1;
+            $homeAgentAllowCommands = (bool) ($propsEarly['HomeAgentVoiceRouteCommands'] ?? false);
+            $homeAgentShouldRoute = $homeAgentDedicatedIntent || ($homeAgentSpokenQuestion !== ''
+                && ($isHomeAgentQuestion || ($homeAgentAllowCommands && !$homeAgentSimpleCommand)));
+            if ($homeAgentShouldRoute) {
+                $log('info', 'HomeAgentVoice.received', [
+                    'intent' => $intentName, 'source' => $homeAgentDedicatedIntent ? 'Frage' : 'legacy',
+                    'chars' => mb_strlen($homeAgentSpokenQuestion, 'UTF-8')
+                ]);
+                $log('debug', 'HomeAgentVoice.recognized_text', ['text' => $homeAgentSpokenQuestion]);
+                if (!$homeAgentEnabled) {
+                    $log('warn', 'HomeAgentVoice.disabled');
+                    if ($homeAgentDedicatedIntent) {
+                        return TellResponse::CreatePlainText('Der KI-Hausassistent ist noch nicht aktiviert.');
+                    }
+                } elseif ($homeAgentSpokenQuestion === '' || $homeAgentSpokenQuestion === '?') {
+                    $log('warn', 'HomeAgentVoice.missing_text', ['intent' => $intentName]);
+                    if ($homeAgentDedicatedIntent) {
+                        return TellResponse::CreatePlainText('Ich habe keine Frage verstanden. Bitte versuche es erneut.');
+                    }
+                } else {
+                    $homeAgentHelpers = iah_get_child_object($instanceId, 'iahHelper', 'Alexa new devices helper');
+                    $homeAgentBridge = iah_get_child_object($homeAgentHelpers, 'homeAgentVoiceBridgeScript', 'HomeAgentVoiceBridge');
+                    if ($homeAgentBridge > 0 && function_exists('IPS_RunScriptWaitEx')) {
+                        try {
+                            $log('info', 'HomeAgentVoice.bridge.start', ['scriptId' => $homeAgentBridge]);
+                            $homeAgentJson = IPS_RunScriptWaitEx($homeAgentBridge, [
+                                'homeAgentText' => $homeAgentSpokenQuestion,
+                                'config' => [
+                                    'endpoint' => (string) ($propsEarly['HomeAgentVoiceEndpoint'] ?? ''),
+                                    'token' => (string) ($propsEarly['HomeAgentVoiceToken'] ?? ''),
+                                    'api_key' => (string) ($propsEarly['KIIntentApiKey'] ?? ''),
+                                    'model' => (string) ($propsEarly['KIIntentModel'] ?? 'gpt-4.1-mini'),
+                                    'max_words' => (int) ($propsEarly['HomeAgentVoiceMaxWords'] ?? 20),
+                                    'timeout_seconds' => (int) ($propsEarly['HomeAgentVoiceTimeoutSeconds'] ?? 6),
+                                    'allow_writes' => $homeAgentAllowCommands,
+                                ],
+                            ]);
+                            $homeAgentData = json_decode((string) $homeAgentJson, true);
+                            $homeAgentElapsed = round(microtime(true) - $homeAgentStarted, 3);
+                            if (is_array($homeAgentData) && ($homeAgentData['handled'] ?? false) === true
+                                && trim((string) ($homeAgentData['answer'] ?? '')) !== '') {
+                                $homeAgentAnswer = trim((string) $homeAgentData['answer']);
+                                $log('info', 'HomeAgentVoice.answer', ['durationSeconds' => $homeAgentElapsed, 'text' => $homeAgentAnswer]);
+                                return TellResponse::CreatePlainText($homeAgentAnswer);
+                            }
+                            $log('warn', 'HomeAgentVoice.fallback', [
+                                'durationSeconds' => $homeAgentElapsed,
+                                'reason' => (string) ($homeAgentData['error'] ?? 'Keine verwertbare Antwort')
+                            ]);
+                        } catch (Throwable $homeAgentError) {
+                            $log('warn', 'HomeAgentVoice.exception', [
+                                'durationSeconds' => round(microtime(true) - $homeAgentStarted, 3),
+                                'error' => $homeAgentError->getMessage()
+                            ]);
                         }
-                        $log('debug', 'HomeAgentVoice.fallback', ['error'=>(string)($data['error'] ?? 'Keine Antwort')]);
-                    } catch (Throwable $voiceError) {
-                        $log('warn', 'HomeAgentVoice.exception', ['error'=>$voiceError->getMessage()]);
+                    } else {
+                        $log('warn', 'HomeAgentVoice.bridge.missing', ['scriptId' => $homeAgentBridge]);
+                    }
+                    if ($homeAgentDedicatedIntent) {
+                        // Kein versehentliches Umschalten durch ein anderes Alexa-Routing.
+                        return TellResponse::CreatePlainText('Der Hausassistent ist gerade nicht erreichbar.');
                     }
                 }
+            } elseif ($homeAgentDedicatedIntent) {
+                $log('warn', 'HomeAgentVoice.not_routed', ['intent' => $intentName]);
+                return TellResponse::CreatePlainText('Bitte stelle deine Frage noch einmal.');
             }
         }
         // HOME_AGENT_VOICE_HOOK_END

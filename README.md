@@ -45,6 +45,10 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
 
 ## Alexa + Home Agent (experimentelle MCP-Sprachantworten)
 
+**Neu:** Freitext-Intent `HomeAgentFrageIntent` mit `AMAZON.SearchQuery`-Slot `Frage`, damit Alexa längere Hausfragen tatsächlich übermittelt. [Alexa-Setup und Debugging](docs/HomeAgent_Alexa_Setup.md) · [Intent-Vorlage](docs/HomeAgentFrageIntent.json). Der Intent muss in der Alexa Developer Console angelegt und das Sprachmodell neu gebaut werden.
+
+
+
 Der optionale Alexa-Sprachkanal nutzt die bestehende Custom-Skill-Instanz und leitet Hausfragen über OpenAI-Tool-Calling an den [Home Agent](https://github.com/bumaas/HomeAgent) weiter. Alexa erhält eine kurze Antwort (Standard: 20 Wörter). Normale Alexa-Schaltbefehle funktionieren weiterhin über die bisherige Logik.
 
 **Vorbereitung:** Home Agent installieren, Geräte freigeben, separaten Zugang „Alexa“ mit „Nur abfragen“ anlegen und Selbsttest ausführen. In der Alexa-Modulinstanz unter „Home Agent – kurze Alexa-Antworten (MCP)“ den Endpunkt (z. B. `http://127.0.0.1:3777/hook/homeagent/24681`) und den Zugangstoken eintragen; unter „KI Intent Parser“ einen gültigen OpenAI-API-Key und ein Modell konfigurieren. Den Token nicht ins Repository übernehmen.
