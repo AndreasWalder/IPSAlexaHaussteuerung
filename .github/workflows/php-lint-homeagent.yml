@@ -33,3 +33,5 @@ jobs:
           php -r 'json_decode(file_get_contents("docs/HomeAgentFrageIntent.json"), true, 512, JSON_THROW_ON_ERROR);'
       - name: Test RoomsCatalog KI permission checks
         run: php tests/test_ki_rooms_catalog.php
+      - name: Test RoomsCatalog form add/edit and persistent expansion
+        run: php tests/test_rooms_catalog_editor_ui.php
