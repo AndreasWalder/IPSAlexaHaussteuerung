@@ -1830,7 +1830,8 @@ function Execute($request = null)
         // Eigener Freitext-Intent hat Vorrang. GetHaus und sämtliche APL-Aktionen bleiben erhalten.
         $homeAgentDedicatedIntent = strcasecmp((string) $intentName, 'HomeAgentFrageIntent') === 0;
         $homeAgentEnabled = (bool) ($propsEarly['HomeAgentVoiceEnabled'] ?? false);
-        if (!$IS_LAUNCH && !$IS_BACK && !$wantsExit && empty($APL['args'])
+        if (!$IS_LAUNCH && !$IS_BACK && !$wantsExit
+            && ($homeAgentDedicatedIntent || empty($APL['args']))
             && ($homeAgentDedicatedIntent || $homeAgentEnabled)) {
             $homeAgentStarted = microtime(true);
             // AMAZON.SearchQuery liefert die Äußerung im Slot "Frage", nicht im Request-Text.
