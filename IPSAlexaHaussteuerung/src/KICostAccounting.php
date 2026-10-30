@@ -84,7 +84,7 @@ function iah_ki_apply_event(array &$store, array $event, array $prices, DateTime
                     'id'=>$id,'backend'=>$backend,'startedAt'=>$now->format(DATE_ATOM),
                     'model'=>(string)($event['model']??''),'status'=>'running','costUsd'=>0.0,
                     'inputTokens'=>0,'cachedInputTokens'=>0,'outputTokens'=>0,'totalTokens'=>0,
-                    'apiCalls'=>0,'callsWithoutUsage'=>0,'callsWithoutPrice'=>0,'seenCalls'=>[]
+                    'apiCalls'=>0,'callsWithoutUsage'=>0,'callsWithoutPrice'=>0,'seenCalls'=>[],'calls'=>[]
                 ];
                 iah_ki_merge_counters($s['total'],['questions'=>1]);
                 iah_ki_merge_counters($s['days'][$date],['questions'=>1]);
@@ -108,6 +108,13 @@ function iah_ki_apply_event(array &$store, array $event, array $prices, DateTime
                 elseif($scope==='day')iah_ki_merge_counters($s['days'][$date],$delta);
                 else iah_ki_merge_counters($s['months'][$month],$delta);
             }
+            $active[$id]['calls'][]=[
+                'callId'=>$callId,'model'=>$row['model'],'inputTokens'=>$row['inputTokens'],
+                'cachedInputTokens'=>$row['cachedInputTokens'],'outputTokens'=>$row['outputTokens'],
+                'totalTokens'=>$row['totalTokens'],'costUsd'=>$row['costUsd'],
+                'measured'=>$row['measured'],'priced'=>$row['priced'],'rates'=>$row['rates'],
+                'timestamp'=>$now->format(DATE_ATOM)
+            ];
             $active[$id]['model']=$row['model'] ?: $active[$id]['model'];
             $active[$id]['rateSnapshot']=$row['rates'];
             $models=&$s['models'];
