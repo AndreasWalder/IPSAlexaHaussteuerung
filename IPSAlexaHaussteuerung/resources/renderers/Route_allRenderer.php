@@ -629,7 +629,7 @@ try {
             'wfcId'=>$wfcId,
             'instanceId'=>$instanceId,
             'pageType'=>$pageType,
-            'pageValue'=>$pageValue,
+            'pageValueConfigured'=>$pageValue !== '',
             'baseUrl'=>$baseUrl !== '' ? '(set)' : '(empty)',
             'token'=>$token !== '' ? '(set)' : '(empty)'
         ]));
