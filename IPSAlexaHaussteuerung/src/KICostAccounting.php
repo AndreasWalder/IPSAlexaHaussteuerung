@@ -9,6 +9,7 @@ declare(strict_types=1);
 function iah_ki_price_table(): array
 {
     return [
+        'gpt-6-luna' => ['input' => 0.10, 'cached' => 0.01, 'output' => 0.50],
         'gpt-4.1-mini' => ['input' => 0.40, 'cached' => 0.10, 'output' => 1.60],
         'gpt-4.1-nano' => ['input' => 0.10, 'cached' => 0.025, 'output' => 0.40],
         'gpt-4.1' => ['input' => 2.00, 'cached' => 0.50, 'output' => 8.00],
