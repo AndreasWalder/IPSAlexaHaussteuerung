@@ -19,7 +19,7 @@ foreach(['zurück','Hauptmenü','Home','Zur Startseite'] as $word) {
 foreach(['Welche Lichter sind an?','Wie warm ist das Büro?','Welche sind eingeschaltet'] as $word){
     t(classify($word)['category']==='query',"read-only question [$word]");
 }
-foreach(['Schalte das Licht im Wohnzimmer ein','Fahre die Jalousie runter','Dimme die Lampe'] as $word){
+foreach(['Schalte das Licht im Wohnzimmer ein','Fahre die Jalousie runter','Dimme die Lampe','Öffne die Jalousie'] as $word){
     t(classify($word)['category']==='action',"explicit action [$word]");
 }
 foreach(['Licht aus','Jalousie auf','Schlafzimmer'] as $word){
@@ -37,6 +37,8 @@ t($x['category']==='navigation'&&$data['last']['transcript']==='Licht','spoken t
 t(!str_contains(json_encode($data),'example-echo-device-A'),'raw device ID must not be persisted');
 iah_vir_execute(['op'=>'complete','deviceId'=>'example-echo-device-A','route'=>'licht','source'=>'voice_navigation','screen'=>true],$data,$now);
 t($data['last']['category']==='ui_rendered'&&$data['counts']['ui_rendered']===1,'completed render recorded');
+$back=iah_vir_classify(['text'=>'zurück','intent'=>'HomeAgentFrageIntent'],['domain'=>'jalousie','previous'=>'licht','updatedUnix'=>time()]);
+t($back['category']==='navigation'&&$back['route']==='licht','Zurück resolves to previous per-device UI area');
 t($data['history'][1]['transcript']==='Licht','history preserves original utterance');
 $otherDevice=iah_vir_execute(['op'=>'classify','deviceId'=>'example-echo-device-B','intent'=>'HomeAgentFrageIntent','text'=>'Welche sind an?'], $data, $now);
 t($otherDevice['contextDomain']==='','context isolated per Alexa device');
