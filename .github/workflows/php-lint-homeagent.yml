@@ -5,6 +5,7 @@ on:
       - feature/home-agent-frageintent-diagnostics-20261030
       - feature/ki-roomscatalog-editor-20261030
       - feature/ki-cost-transparency-20261030
+      - security/sanitize-logs-example-catalog-20261030
   pull_request:
     paths:
       - 'IPSAlexaHaussteuerung/**'
@@ -43,3 +44,5 @@ jobs:
         run: php tests/test_ki_cost_accounting.php
       - name: Test GPT-6 Luna and GPT-4.1 mini model selection
         run: php tests/test_ki_model_selection.php
+      - name: Test public catalog and credential-safe Alexa logging
+        run: php tests/test_security_hardening.php
