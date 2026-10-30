@@ -1881,6 +1881,7 @@ function Execute($request = null)
             'op'=>'classify',
             'deviceId'=>$iahVoiceDeviceId,
             'text'=>$iahVoiceSpoken,
+            'storeTranscript'=>(bool)($propsEarly['VoiceRouterStoreTranscript']??true),
             'intent'=>$intentName,
             'requestType'=>$iahVoiceRequestType,
             'aplArgs'=>array_values((array)($APL['args']??[])),
