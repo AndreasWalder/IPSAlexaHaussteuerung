@@ -51,7 +51,7 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
 
 Der optionale Alexa-Sprachkanal nutzt die bestehende Custom-Skill-Instanz und leitet Hausfragen über OpenAI-Tool-Calling an den [Home Agent](https://github.com/bumaas/HomeAgent) weiter. Alexa erhält eine kurze Antwort (Standard: 20 Wörter). Normale Alexa-Schaltbefehle funktionieren weiterhin über die bisherige Logik.
 
-**Vorbereitung:** Home Agent installieren, Geräte freigeben, separaten Zugang „Alexa“ mit „Nur abfragen“ anlegen und Selbsttest ausführen. In der Alexa-Modulinstanz unter „Home Agent – kurze Alexa-Antworten (MCP)“ den Endpunkt (z. B. `http://127.0.0.1:3777/hook/homeagent/24681`) und den Zugangstoken eintragen; unter „KI Intent Parser“ einen gültigen OpenAI-API-Key und ein Modell konfigurieren. Den Token nicht ins Repository übernehmen.
+**Vorbereitung:** Home Agent installieren, Geräte freigeben, separaten Zugang „Alexa“ mit „Nur abfragen“ anlegen und Selbsttest ausführen. In der Alexa-Modulinstanz unter „Home Agent – kurze Alexa-Antworten (MCP)“ den Endpunkt (z. B. `http://127.0.0.1:3777/hook/homeagent/12345`, fiktive Instanz-ID) und den Zugangstoken eintragen; unter „KI Intent Parser“ einen gültigen OpenAI-API-Key und ein Modell konfigurieren. Den Token nicht ins Repository übernehmen.
 
 **Test:** Nur bei aktivierter Option wird eine erkannte Hausfrage per MCP `tools/list` und `tools/call` bearbeitet. Die neue Helferdatei `HomeAgentVoiceBridge.php` wird als Symcon-Skript angelegt. Eine vorhandene Action-Skript-Installation erhält einen gezielten Hook; vor dem Aktualisieren der Skripte bitte ein Backup erstellen.
 
