@@ -2014,6 +2014,10 @@ function Execute($request = null)
                                 && trim((string) ($homeAgentData['answer'] ?? '')) !== '') {
                                 $homeAgentAnswer = trim((string) $homeAgentData['answer']);
                                 $log('info', 'HomeAgentVoice.answer', ['durationSeconds' => $homeAgentElapsed, 'words' => count(preg_split('/\s+/u', $homeAgentAnswer, -1, PREG_SPLIT_NO_EMPTY) ?: [])]);
+                                $iahVoiceRouter(['op'=>'outcome','deviceId'=>$iahVoiceDeviceId,
+                                    'backend'=>$kiVoiceMode,'success'=>true,
+                                    'durationMs'=>(int)round($homeAgentElapsed*1000),
+                                    'model'=>(string)($propsEarly['KIModelSelection']??'gpt-6-luna')]);
                                 return $kiAlexaKeepOpen($homeAgentAnswer);
                             }
                             $log('warn', 'HomeAgentVoice.fallback', [
@@ -2029,6 +2033,10 @@ function Execute($request = null)
                     } else {
                         $log('warn', 'HomeAgentVoice.bridge.missing', ['scriptId' => $homeAgentBridge]);
                     }
+                    $iahVoiceRouter(['op'=>'outcome','deviceId'=>$iahVoiceDeviceId,
+                        'backend'=>$kiVoiceMode,'success'=>false,
+                        'durationMs'=>(int)round((microtime(true)-$homeAgentStarted)*1000),
+                        'model'=>(string)($propsEarly['KIModelSelection']??'gpt-6-luna')]);
                     if ($homeAgentDedicatedIntent) {
                         // Kein versehentliches Umschalten durch ein anderes Alexa-Routing.
                         return $kiAlexaKeepOpen('Der Hausassistent ist gerade nicht erreichbar.');
