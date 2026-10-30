@@ -41,3 +41,5 @@ jobs:
         run: php tests/test_rooms_catalog_editor_ui.php
       - name: Test OpenAI token and cost accounting
         run: php tests/test_ki_cost_accounting.php
+      - name: Test GPT-6 Luna and GPT-4.1 mini model selection
+        run: php tests/test_ki_model_selection.php
