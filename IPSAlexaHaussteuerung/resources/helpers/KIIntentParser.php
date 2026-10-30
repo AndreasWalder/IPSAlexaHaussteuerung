@@ -415,7 +415,12 @@ function ki_chat_request(array $body, array $cfg): array
     }
 
     if (!isset($body['model'])) {
-        $body['model'] = $cfg['model'] ?? 'gpt-4.1-mini';
+        $body['model'] = $cfg['model'] ?? 'gpt-6-luna';
+    }
+    // Für den Intent-Parser ebenfalls non-reasoning aktivieren.
+    // Bei GPT-4.1 mini das bisherige Request-Format unverändert lassen.
+    if ((string)$body['model'] === 'gpt-6-luna') {
+        $body['reasoning_effort'] = 'none';
     }
 
     $url = 'https://api.openai.com/v1/chat/completions';
@@ -566,7 +571,7 @@ $contextDescription
 PROMPT;
 
     $body = [
-        'model'           => $cfg['model'] ?? 'gpt-4.1-mini',
+        'model'           => $cfg['model'] ?? 'gpt-6-luna',
         'response_format' => [
             'type' => 'json_object',
         ],
