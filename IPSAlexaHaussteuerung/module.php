@@ -75,6 +75,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyInteger('HomeAgentVoiceTimeoutSeconds', 6);
         $this->RegisterPropertyFloat('KICostMonthlyWarningUSD', 5.00);
         $this->RegisterPropertyString('KICostPriceTableJson', json_encode(iah_ki_price_table()));
+        $this->RegisterPropertyBoolean('VoiceRouterStoreTranscript', true);
         $this->RegisterAttributeString('DelayedPageSwitchPayload', '');
         $this->RegisterTimer('DelayedPageSwitch', 0, 'IAH_HandleDelayedPageSwitch($_IPS["TARGET"]);');
         $this->RegisterTimer('KICostRefresh', 60000, 'IAH_RefreshKICostDisplay($_IPS["TARGET"]);');
