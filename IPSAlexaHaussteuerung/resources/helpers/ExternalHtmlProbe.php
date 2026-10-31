@@ -165,6 +165,8 @@ function iah_html_diag_analyse(array $input,?callable $http=null):array
                 || ($p['cspFrameAncestors']==='self_or_mixed' && !$sameOrigin))
                 $warnings[]='target_iframe_possible_csp_frame_ancestors_block';
         }
+        if($name==='shell' && $p['status']===200 && (int)($p['bytesRead']??0)===0)
+            $warnings[]='shell_http_200_empty_body';
         if($name==='shell' && ($p['cspFrameSrc']==='none'
             || ($p['cspFrameSrc']==='self_or_mixed' && !$sameOrigin)))
             $warnings[]='shell_csp_frame_src_may_block_iframe';
