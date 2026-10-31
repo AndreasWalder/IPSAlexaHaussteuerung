@@ -147,6 +147,21 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
         apiRequests:apiRequests,
         otherRequests:otherRequests
       };
+      // Nur aggregierte HTTP-Statusklassen/Zaehler aus dem optionalen
+      // Bootstrap; nie URLs, Cookie- oder Antwortdaten.
+      if(compat){
+        try{
+          var counts=win.__iahTileResponseCounters;
+          if(counts && typeof counts==='object'){
+            for(var field of ['response2xx','response3xx','response4xx','response5xx','responseFailed']){
+              var number=counts[field];
+              if(typeof number==='number' && number>=0 && number<=9999){
+                metrics[field]=number;
+              }
+            }
+          }
+        }catch(ignored){}
+      }
       var state=pwCount>0?'login':
         (!body || nodeCount<25?'loading':'not_empty');
       emit('tile_snapshot',state,phase,metrics);
@@ -231,6 +246,90 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
       window.__iahTileShimStatus=session?'session':'memory';
     }catch(e){window.__iahTileShimStatus='blocked';}
   }
+
+  // Nur im expliziten Kacheltest-Experiment: vor dem Original-Symcon-Script
+  // starten. Erfasst KEINE Adressen, Fehlermeldungen oder HTTP-Bodies.
+  function installTileBootstrapDiagnostics(expectedHash){
+    'use strict';
+    var count=0;
+    var counters={
+      response2xx:0,response3xx:0,response4xx:0,response5xx:0,responseFailed:0
+    };
+    window.__iahTileResponseCounters=counters;
+    function report(stage,code){
+      if(count++>20)return;
+      try{
+        parent.postMessage({
+          iahTileDiagnostics:1,stage:stage,code:code
+        },window.location.origin);
+      }catch(ignored){}
+    }
+    var wanted=(typeof expectedHash==='string' && /^#[0-9]{1,10}$/.test(expectedHash))
+      ?expectedHash:'';
+    if(wanted){
+      try{
+        // srcdoc verliert sonst das /tile/#12345 Fragment.
+        // Dies stellt nur den Hash wieder her; die Dokument-URL bleibt about:srcdoc.
+        window.location.hash=wanted;
+      }catch(e){}
+      report('tile_boot',window.location.hash===wanted?'hash_match':'hash_missing');
+    }else{
+      report('tile_boot','no_hash');
+    }
+    window.addEventListener('error',function(e){
+      if(e.target && e.target!==window){
+        var kind=(e.target.tagName||'').toLowerCase();
+        report('tile_early_error',kind==='script'?'script':
+          (kind==='link'?'stylesheet':'other'));
+      }else{
+        var name='';
+        try{name=(e.error && e.error.name)||'';}catch(ignored){}
+        report('tile_early_error',name==='SecurityError'?'security_error':
+          (name==='TypeError'?'type_error':
+          (name==='ReferenceError'?'reference_error':
+          (name==='SyntaxError'?'syntax_error':'js_error'))));
+      }
+    },true);
+    window.addEventListener('unhandledrejection',function(e){
+      var name='';
+      try{name=(e.reason && e.reason.name)||'';}catch(ignored){}
+      report('tile_early_rejection',name==='SecurityError'?'security_error':
+        (name==='TypeError'?'type_error':'other'));
+    });
+    function captureHttp(status){
+      var key=status>=200&&status<300?'response2xx':
+        (status>=300&&status<400?'response3xx':
+        (status>=400&&status<500?'response4xx':
+        (status>=500&&status<600?'response5xx':'responseFailed')));
+      counters[key]=Math.min(9999,counters[key]+1);
+    }
+    // Eingehende Antworten unveraendert an die IP-Symcon-App weiterreichen.
+    try{
+      if(typeof window.fetch==='function'){
+        var originalFetch=window.fetch;
+        window.fetch=function(){
+          return originalFetch.apply(this,arguments).then(function(response){
+            captureHttp(response.status);return response;
+          },function(error){
+            captureHttp(0);throw error;
+          });
+        };
+      }
+    }catch(ignored){}
+    try{
+      if(window.XMLHttpRequest && window.XMLHttpRequest.prototype){
+        var originalSend=window.XMLHttpRequest.prototype.send;
+        window.XMLHttpRequest.prototype.send=function(){
+          try{
+            this.addEventListener('loadend',function(){captureHttp(this.status);});
+          }catch(ignored){}
+          return originalSend.apply(this,arguments);
+        };
+      }
+    }catch(ignored){}
+    report('tile_boot','hooks_installed');
+  }
+
   function loadTileWithStorageCompatibility(){
     emit('tile_compat','ok','fetch_start');
     var target;
@@ -267,7 +366,11 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
       // srcdoc besitzt trotz <base> eine eigene about:srcdoc-URL.
       // Daher NUR experimentell, mit aufrufbarer Original-Variante.
       var base='<base href="'+target.origin+'/tile/">';
-      var code='<scr'+'ipt>('+installTileStorageShim.toString()+')();</scr'+'ipt>';
+      // Nur eine numerische ID als Hash uebertragen (keine Query/Passwortdaten).
+      var selectedHash=/^#[0-9]{1,10}$/.test(target.hash)?target.hash:'';
+      var code='<scr'+'ipt>try{('+installTileBootstrapDiagnostics.toString()+')('+
+        JSON.stringify(selectedHash)+');}catch(e){};try{('+
+        installTileStorageShim.toString()+')();}catch(e){}</scr'+'ipt>';
       var patched=html.replace(/<head(?:\s[^>]*)?>/i,function(open){
         return open+base+code;
       });
@@ -279,6 +382,22 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
     });
   }
 
+  // Nachrichten ausschliesslich von unserem iframe und derselben Origin,
+  // mit festen erlaubten Kategorien an den geschuetzten WebHook weiterleiten.
+  window.addEventListener('message',function(ev){
+    if(!compat || ev.source!==frame.contentWindow || ev.origin!==location.origin)return;
+    var data=ev.data;
+    if(!data || data.iahTileDiagnostics!==1)return;
+    if(data.stage!=='tile_boot' && data.stage!=='tile_early_error' &&
+       data.stage!=='tile_early_rejection')return;
+    var codes=[
+      'no_hash','hash_match','hash_missing','hooks_installed',
+      'security_error','type_error','reference_error','syntax_error',
+      'js_error','script','stylesheet','other'
+    ];
+    if(codes.indexOf(data.code)<0)return;
+    emit(data.stage,data.stage==='tile_boot'?'ok':'error',data.code);
+  });
   emit('shell_boot','ok');
   if(route==='kacheltest'){
     capability('websocket',function(){return typeof WebSocket!=='undefined';});
