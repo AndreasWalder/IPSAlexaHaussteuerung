@@ -859,6 +859,25 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
     return;
   }
   emit('iframe_start','ok');
+  if(route==='kacheltest'){
+    // Erkennung der echten fertig geladenen Kacheln, auch wenn das Passwort
+    // manuell eingegeben wird. Kein Eingabewert und kein DOM-Text im Log.
+    var readyPollCount=0;
+    var readyPoll=setInterval(function(){
+      if(++readyPollCount>70){clearInterval(readyPoll);return;}
+      try {
+        var doc=frame.contentDocument;
+        if(!doc || !doc.body)return;
+        var pw=doc.querySelector('input[type="password"]');
+        var n=doc.body.querySelectorAll('*').length;
+        if(!pw && n>30){
+          status.className='hidden';
+          timing('page_active');
+          clearInterval(readyPoll);
+        }
+      }catch(e){clearInterval(readyPoll);}
+    },1000);
+  }
   if(autoLoginAllowed){
     // DOM-Anmeldung erscheint teils erst NACH iframe.onload.
     var authPoll=setInterval(function(){
