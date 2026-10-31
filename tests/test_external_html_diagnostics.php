@@ -25,10 +25,11 @@ try{
         'externalKey'=>'kamera','pageType'=>'wfc_item','instanceId'=>123,
         'baseUrl'=>'https://example.org?password=SECRET1',
         'shellUrl'=>'https://example.org/hook/icons?f=alexa-shell.html&token=SECRET2',
-        'targetUrl'=>'https://example.org/target?password=SECRET3',
+        'targetUrl'=>'https://webfront.example.net/target?password=SECRET3',
         'localShell'=>$raw,'aplSupported'=>true,'htmlSupported'=>false
     ],$fake);
     hd($data['localShellPresent'] && $data['localShellHasIframe'],'Local HTML shell scanned');
+    hd($data['shellAndTargetSameOrigin']===false,'Cross-origin embed recognized without revealing host');
     hd(in_array('device_reports_no_html_support',$data['warnings'],true),'HTML support distinct from APL');
     hd(in_array('target_unauthorized',$data['warnings'],true),'HTTP 403 recognized');
     hd(in_array('target_iframe_restricted_by_xframe',$data['warnings'],true),'X-Frame-Options recognized');
@@ -47,6 +48,12 @@ try{
     ];});
     hd(in_array('shell_requires_https',$noFile['warnings'],true),'HTTP shell flagged');
     hd(in_array('local_shell_file_not_found_at_user_icons',$noFile['warnings'],true),'Missing shell flagged');
+    hd(iah_html_diag_same_origin('https://example.org/shell?a=secret',
+        'https://example.org/frame?password=secret'),'Same origin ignores query');
+    hd(!iah_html_diag_same_origin('https://example.org/shell',
+        'https://other.example.org/frame'),'Different hosts are cross-origin');
+    hd(!iah_html_diag_same_origin('https://example.org/shell',
+        'http://example.org/frame'),'HTTP and HTTPS must differ');
     hd(iah_html_diag_analyse(['externalKey'=>'licht'])['error']==='invalid_external_key',
         'HTML probe only for Kamera/Energie');
 } finally { @unlink($raw); }
