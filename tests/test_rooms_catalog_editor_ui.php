@@ -57,7 +57,11 @@ foreach ($panel['items'] as $item) {
 assertEditor(is_array($list), 'Main list missing');
 assertEditor(str_contains($list['form'], '$Entries["roomKey"]'), 'Selected row key missing in dynamic form');
 assertEditor(!str_contains($list['form'], '$id, $Entries)'), 'Whole list incorrectly passed to dynamic form');
-assertEditor(str_contains($list['onAdd'], 'ARRAY_FILTER_USE_KEY'), 'onAdd must save selected row only');
+assertEditor(str_contains($list['onAdd'], 'array_filter(['), 'onAdd must build a real array from IPSList row fields');
+assertEditor(!str_contains($list['onAdd'], 'array_filter($Entries'), 'Never pass IPSList directly to array_filter');
+assertEditor($list['onEdit'] === $list['onAdd'], 'Add and edit must use same safe callback');
+assertEditor(str_contains($list['onEdit'], "$" . 'Entries['), 'Selected IPSList row values must be accessed by string indices');
+assertEditor(str_contains(json_encode($form), 'RCC_SetVisibleSelection'), 'Bulk selection buttons must be available');
 
 $edit = json_decode($instance->GetEntryEditForm('testraum', 'licht', 'switches', 'decke'), true, 512, JSON_THROW_ON_ERROR);
 $editNames = namesInDialog($edit);
