@@ -117,6 +117,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         // Existing Alexa routes remain untouched when this mode is disabled.
         $this->RegisterPropertyBoolean('TilePreserveHtmlOnVoice', true);
         $this->RegisterPropertyBoolean('TilePerformanceDiagnostics', true);
+        // No heavy server-to-server HTTP probe when starting a Tile test.
+        $this->RegisterPropertyBoolean('TileFastBootstrapEnabled', true);
         // Dauerhaftes Alexa-Kommando "Test"; das Ziel ist spaeter erweiterbar.
         $this->RegisterPropertyString('AlexaTestTarget', 'kacheltest');
 
