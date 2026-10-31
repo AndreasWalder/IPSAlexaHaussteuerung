@@ -61,6 +61,68 @@ durch das tatsächliche Erscheinen von Passwortfeld/Kacheln bestätigt.
 Kamera, Energie, WebFront und die originale /tile/-Seite werden
 nicht verändert.
 
+## Echo-Test 31.10.2026, 23:42:17 – SPA-OK-Button wird nicht erkannt
+
+Der Test **nach der ersten OK-Korrektur** beweist anhand der Logs:
+
+```text
+tile_autologin → field_detected
+tile_autologin → filled
+tile_autologin → form_submit_requested
+tile_autologin → login_still_visible
+```
+
+Das Passwort wird weiterhin richtig eingetragen. Die automatische
+Bestätigung ging aber nur über `form.requestSubmit()`; der
+**sichtbare IP-Symcon-OK-Button wurde nicht gefunden**. Auch drei
+Sekunden danach war die Anmeldemaske noch offen. Deshalb ist es
+sinnvoller, den wirklichen Anmelde-Button zu treffen, statt den
+Formular-Submit erneut zu probieren.
+
+### Verbesserte OK-Suche
+
+- **Nativer Button:** Erkennung von `<button>`, `<input type=submit>`,
+  `[role=button]` und weiteren semantischen Steuerelementen.
+- **Individuelle Kachel-SPA:** Erkennung eines alleinstehenden „OK“,
+  „Anmelden“ oder „Login“ auch innerhalb verschachtelter
+  `<span>`-/`<div>`-Elemente, damit Klickereignisse zum
+  übergeordneten UI-Handler weitergereicht werden.
+- **Echo Web API for Games:** Ein sichtbares Element wird nicht mehr
+  allein deshalb verworfen, weil die Browser-Layout-API es mit
+  Breite/Höhe 0 meldet; wirklich verborgene/gesperrte Elemente
+  werden weiterhin ausgeschlossen.
+- **Eindeutigkeit:** Kein automatischer Klick, wenn mehrere
+  gleichartige Kandidaten vorkommen. Auch Abbrechen/Schließen
+  wird niemals automatisch gewählt.
+- **Fallback:** Ein eindeutig vorhandener `type=submit`-Button
+  wird direkt geklickt, nicht bloß via `form.requestSubmit()`.
+  Nur wenn sich kein solcher Button eindeutig identifizieren lässt,
+  bleibt das bisherige Fallback-Verhalten.
+
+Die neuen `tile_autologin`-Codes helfen, den nächsten Test
+ohne Einsicht in Passwörter, HTML oder Beschriftungen zu bewerten:
+
+- `button_control` – eindeutig bezeichnetes natives/ARIA-Element.
+- `button_text` – eindeutig beschriftetes verschachteltes Element.
+- `button_submit` – eindeutiger semantischer Submit-Button.
+- `button_not_found` – keine sichere Zuordnung gefunden.
+- `button_ambiguous` – mehrere Kandidaten, kein willkürlicher Klick.
+- `button_clicked` – `click()` wurde ausgelöst, Login-Erfolg offen.
+- `login_closed` oder `login_still_visible` – Zustand nach
+  drei Sekunden, weiterhin keine Prüfung des Authentifizierungserfolgs.
+
+Die automatisierte Prüfung enthält jetzt zusätzliche echte
+**JavaScript-Verhaltenstests** für native OK-Buttons, individuelle
+verschachtelte Textelemente, versteckte Elemente, „Abbrechen“
+und mehrdeutige Kandidaten (ohne externe Browser-Bibliotheken).
+
+**Testablauf:** Modul aktualisieren → Instanz **Übernehmen** →
+`Alexa, öffne Haussteuerung` → `Test`. Anmeldung etwa 30 Sekunden
+sichtbar lassen und die neuen `tile_autologin`-Ereignisse kopieren.
+Falls der automatische Klick erneut nicht gelingt, sollte der
+konkrete Erkennungstyp in den Logs stehen. Manuelles Antippen
+von OK bleibt weiterhin möglich.
+
 ## Diagnose 31.10.2026, 23:36:09 – Passwort wird eingetragen, „OK“ reagiert nicht
 
 Der Echo Show zeigt jetzt den normalen Anmeldedialog; nach dem Fix
