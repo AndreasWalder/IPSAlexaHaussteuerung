@@ -51,7 +51,7 @@ jobs:
           from pathlib import Path
           import re
           html = Path('IPSAlexaHaussteuerung/resources/html/alexa-diagnostic-shell.html').read_text()
-          scripts = re.findall(r'<script(?:\\s[^>]*)?>(.*?)</script>', html, re.S)
+          scripts = re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>', html, re.S)
           assert len(scripts) == 1, 'Expected one inline Alexa diagnostic script'
           Path('/tmp/iah-alexa-diagnostic.js').write_text(scripts[0])
           PY
