@@ -107,6 +107,76 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RefreshVisibleLists();
     }
 
+    /**
+     * Auswahl ausschließlich in RuntimeEntries halten, niemals in PROD speichern.
+     * Beim Markieren werden alle nicht sichtbaren Zeilen abgewählt, damit
+     * Sammelaktionen nicht versehentlich auf versteckte Geräte wirken.
+     */
+    public function SetVisibleSelection(bool $selected): void
+    {
+        $rows = $this->getRuntimeEntries();
+        $visibleKeys = [];
+        if ($selected) {
+            $visible = $this->filterByAI(
+                $this->applyFilters(
+                    $rows,
+                    $this->ReadAttributeString('FilterRoom'),
+                    $this->ReadAttributeString('FilterDomain'),
+                    $this->ReadAttributeString('FilterGroup')
+                ),
+                $this->ReadAttributeString('FilterAI')
+            );
+            foreach ($visible as $row) {
+                $key = $this->buildCompositeKey($row);
+                if ($key !== null) $visibleKeys[$key] = true;
+            }
+        }
+        foreach ($rows as &$row) {
+            if (!is_array($row)) continue;
+            $key = $this->buildCompositeKey($row);
+            $row['selected'] = $selected && $key !== null && isset($visibleKeys[$key]);
+        }
+        unset($row);
+        $this->WriteAttributeString('RuntimeEntries', json_encode($rows, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->RefreshVisibleLists();
+    }
+
+    /**
+     * Generiert den IP-Symcon-List-Callback für die gerade bearbeitete Zeile.
+     *
+     * Symcon stellt $Entries als IPSList (ArrayAccess, Iterator) bereit.
+     * $Entries["roomKey"] etc. bezeichnet die bearbeitete Zeile.
+     * array_filter($Entries, ...) verursacht dagegen einen TypeError.
+     * Eine explizit aufgebaute PHP-Array-Literal-Zeile bewahrt alle
+     * dynamisch konfigurierten Felder inklusive false/0/Leerstrings.
+     */
+    private function buildListRowSaveCallback(array $entries): string
+    {
+        $keys = [
+            'selected', 'roomKey', 'roomLabel', 'floor', 'domain', 'group',
+            'key', 'title', 'synonyms', 'entityId', 'kiEnabled', 'kiReadOnly',
+            'state', 'toggle'
+        ];
+        foreach ($entries as $row) {
+            if (!is_array($row)) continue;
+            foreach (array_keys($row) as $name) {
+                if (!is_string($name) || in_array($name, ['rowColor','kiStatus','diffKeys','editable','deletable'], true)) continue;
+                if (preg_match('/^[A-Za-z_][A-Za-z_0-9]*$/D', $name) !== 1) continue;
+                if (!in_array($name, $keys, true)) $keys[] = $name;
+            }
+        }
+        $parts = [];
+        foreach ($keys as $key) {
+            $quoted = var_export($key, true);
+            $parts[] = $quoted . ' => ($Entries[' . $quoted . '] ?? null)';
+        }
+        // Ein echtes Array wird gefiltert, NICHT die IPSList.
+        // null weglassen; false und 0 (z.B. Häkchen aus) behalten.
+        return 'RCC_SaveToEdit($id, json_encode(array_filter(['
+            . implode(', ', $parts)
+            . '], static fn($v) => $v !== null), JSON_INVALID_UTF8_SUBSTITUTE));';
+    }
+
     /** Markierte Zeilen erhalten die KI-Freigaben ausschließlich im EDIT-Katalog. */
     public function SetSelectedAI(bool $enabled, bool $readOnly): void
     {
@@ -623,6 +693,10 @@ class RoomsCatalogConfigurator extends IPSModule
         $dynamicKeys   = $this->analyzeEntriesForDynamicColumns($allForColumns);
 
         $columnsProd = $this->buildOverviewColumns();
+        // In den onEdit/onAdd-Skripten ist $Entries ein IPSList-Objekt.
+        // Nur einzelne String-Felder aus der aktuellen Zeile auslesen; niemals
+        // das gesamte Objekt direkt an array_filter() übergeben.
+        $saveSelectedRowCallback = $this->buildListRowSaveCallback($entriesEdit);
         $columnsEdit = [];
         foreach ($columnsProd as $col) {
             if (($col['name'] ?? '') === 'selected') {
@@ -725,15 +799,25 @@ class RoomsCatalogConfigurator extends IPSModule
                             'columns'  => $columnsProd,
                             'values'   => $visibleProd,
                             'rowColor' => 'rowColor',
-                            'onEdit'   => 'RCC_SaveToEdit($id, json_encode(array_filter($Entries, "is_string", ARRAY_FILTER_USE_KEY)));',
-                            'onAdd'    => 'RCC_SaveToEdit($id, json_encode(array_filter($Entries, "is_string", ARRAY_FILTER_USE_KEY)));'
+                            'onEdit'   => $saveSelectedRowCallback,
+                            'onAdd'    => $saveSelectedRowCallback
                         ],
                         [
                             'type'  => 'RowLayout',
                             'items' => [
                                 [
                                     'type'    => 'Label',
-                                    'caption' => 'Aktionen für markierte EDIT-Einträge:'
+                                    'caption' => 'Mehrfachauswahl: Häkchen in der Spalte Markiert setzen, oder alle sichtbaren markieren.'
+                                ],
+                                [
+                                    'type'=>'Button',
+                                    'caption'=>'ALLE SICHTBAREN MARKIEREN',
+                                    'onClick'=>'RCC_SetVisibleSelection($id, true);'
+                                ],
+                                [
+                                    'type'=>'Button',
+                                    'caption'=>'MARKIERUNGEN AUFHEBEN',
+                                    'onClick'=>'RCC_SetVisibleSelection($id, false);'
                                 ],
                                 [
                                     'type'    => 'Button',
