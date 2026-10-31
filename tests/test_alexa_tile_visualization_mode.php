@@ -60,4 +60,53 @@ tileTestCheck(str_contains($receiver, "'kacheltest'"), 'Receiver allowlists tile
 tileTestCheck(!str_contains($renderer, "tileTestUrl .= '?password='"),
     'Tile login password must not be embedded in URL');
 
+// Regression: Existing generated Action scripts omitted new settings from
+// their 'V' payload, so the renderer incorrectly said "deaktiviert" even
+// while the module property was enabled. The renderer must be independent
+// of whether that legacy script has already been migrated.
+tileTestCheck(str_contains($renderer,"IPS_GetProperty(\$tileTestInstanceId, 'TileTestEnabled')"),
+    'Kacheltest must read enabled flag from actual installed module');
+tileTestCheck(str_contains($renderer,"IPS_GetProperty(\$tileTestInstanceId, 'TileTestVisualizationId')"),
+    'Kacheltest must read target instance ID from actual installed module');
+tileTestCheck(str_contains($renderer,'TileTest.settings'),
+    'Settings source and enabled status must be safely logged');
+tileTestCheck(substr_count($action, "'TileTestEnabled' => (bool)(\$V['TileTestEnabled'] ?? true)") === 2,
+    'New Action template must pass property in both renderer payloads');
+tileTestCheck(str_contains($action, "\$var['TileTestEnabled'] = (bool)(\$props['TileTestEnabled'] ?? true)"),
+    'Custom SystemConfiguration must get live module flag');
+
+$begin = strpos($renderer, "    if (\$route === 'kacheltest') {");
+$end = strpos($renderer, "    // =============================\n    // EXTERNAL", $begin);
+tileTestCheck($begin !== false && $end !== false, 'Renderer test block locatable');
+$block = substr($renderer, $begin, $end - $begin);
+$GLOBALS['tileTestProps'] = ['TileTestEnabled'=>true, 'TileTestVisualizationId'=>54321];
+function IPS_InstanceExists(int $instance): bool { return $instance === 16159; }
+function IPS_GetProperty(int $instance, string $name): mixed
+{
+    return $GLOBALS['tileTestProps'][$name] ?? null;
+}
+function IPS_LogMessage(string $channel, string $message): void {}
+$execute = static function(array $v) use ($block): array {
+    $V = $v + ['InstanceID'=>16159];
+    $route = 'kacheltest';
+    $baseUrl = 'https://example.org';
+    $payload = []; $pageMappings = []; $externalPages = [];
+    $flags = []; $JSON = JSON_UNESCAPED_SLASHES;
+    $j = static fn(array $a) => json_encode($a, JSON_UNESCAPED_SLASHES);
+    $cid = 'test';
+    ob_start();
+    try { eval($block); $response = ob_get_clean(); }
+    catch(Throwable $e) { ob_end_clean(); throw $e; }
+    return compact('route', 'pageMappings', 'externalPages', 'response');
+};
+$ok = $execute(['InstanceID'=>16159]);
+tileTestCheck($ok['route']==='external', 'Existing Action missing flag must not disable enabled tile mode');
+tileTestCheck(($ok['pageMappings']['kacheltest']['value']??'')==='https://example.org/tile/#54321',
+    'Configured Kachelvisualisierungs-ID must come from module instance');
+$disabledProp = $GLOBALS['tileTestProps']; $GLOBALS['tileTestProps']['TileTestEnabled']=false;
+$off = $execute(['InstanceID'=>16159,'TileTestEnabled'=>true]);
+tileTestCheck(str_contains($off['response'],'deaktiviert'),
+    'Explicit module property false must disable test even when stale payload says true');
+$GLOBALS['tileTestProps']=$disabledProp;
+
 echo "PASS: Kacheltest voice recognition, separate /tile/ rendering, no WFC switch, setup and diagnostics\n";
