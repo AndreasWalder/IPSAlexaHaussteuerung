@@ -27,6 +27,21 @@ tileTestCheck(iah_vir_legacy_gethaus_route([
 tileTestCheck(iah_vir_classify([
     'intent' => 'GetHaus', 'legacySlots' => ['Action' => 'Kamera'], 'text' => 'Kamera'
 ])['route'] === 'kamera', 'Existing Kamera route preserved');
+// Ein stabiler Einwort-Sprachbefehl, ohne den VoiceRouter fuer spaetere
+// experimentelle Testziele erneut aendern zu muessen.
+foreach (['Action','Device'] as $slot) {
+    $decision=iah_vir_classify([
+        'intent'=>'GetHaus','legacySlots'=>[$slot=>'Test'],'text'=>'Test'
+    ]);
+    tileTestCheck(($decision['category']??'')==='navigation'
+        && ($decision['route']??'')==='test',
+        'Alexa GetHaus/' . $slot . ' must recognize the plain Test command');
+}
+tileTestCheck(iah_vir_legacy_gethaus_route([
+    'intent'=>'GetHaus',
+    'legacySlots'=>['Action'=>'Test','Room'=>'Wohnzimmer']
+],$alias)===null,'Do not steal ordinary multi-slot actions with Test');
+
 
 $base = dirname(__DIR__) . '/IPSAlexaHaussteuerung/';
 $module = file_get_contents($base . 'module.php');
@@ -47,6 +62,18 @@ tileTestCheck(str_contains($module, "RegisterPropertyBoolean('TileTestEnabled', 
 tileTestCheck(str_contains($module, "RegisterPropertyInteger('TileTestVisualizationId', 0)"), 'Visualization selector supported');
 tileTestCheck(str_contains($module, 'patchActionScriptTileTestNavigation((int) $id)'), 'Existing Action scripts migrated');
 tileTestCheck(str_contains($action, "'kacheltest'=>'kacheltest'"), 'New Action fallback has Kacheltest');
+tileTestCheck(str_contains($module, "RegisterPropertyString('AlexaTestTarget', 'kacheltest')"),
+    'Generic Alexa Test destination configured as module property');
+tileTestCheck(str_contains($module, 'patchActionScriptTileTestNavigation((int) $id)'),
+    'Existing Action must be migrated for Test');
+tileTestCheck(str_contains($module, 'str_contains($current, "\'test\'=>\'test\'")'),
+    'Action script migration checks the new Test alias, not the old Kacheltest alias');
+tileTestCheck(str_contains($action, "'test'=>'test'"), 'Direct Test alias in Action template');
+tileTestCheck(str_contains($renderer, "if (\$route === 'test')"),
+    'Renderer dispatches generic Test route first');
+tileTestCheck(str_contains($renderer, "'Test.route '"),
+    'Generic test destination observable in Alexa log');
+
 tileTestCheck(str_contains($renderer, "if (\$route === 'kacheltest')"), 'Dedicated tiletest route present');
 tileTestCheck(str_contains($renderer, "'/tile/'"), 'Tile Visualization URL used instead of old WebFront URL');
 tileTestCheck(str_contains($renderer, "['type'=>'external_url'") || str_contains($renderer, "'type' => 'external_url'"),
@@ -189,5 +216,19 @@ tileTestCheck(str_contains($receiver,"'tile_boot'")
 tileTestCheck(str_contains($receiver,"'response4xx'")
     && str_contains($receiver,"'responseFailed'"),
     'HTTP response counts are receiver-allowlisted as bounded integers');
+
+// Regressions for the white screen despite 19 successful 2xx responses.
+tileTestCheck(str_contains($shell,"report('tile_location'")
+    && str_contains($shell,"window.history.replaceState(")
+    && str_contains($shell,"'history_blocked'"),
+    'Log srcdoc context and whether path restoration is browser-blocked');
+tileTestCheck(str_contains($shell,"'responseJson'")
+    && str_contains($shell,"'responseHtml'")
+    && str_contains($shell,"'responseOther'"),
+    'Count only MIME types of fetched resources, never their body or URL');
+tileTestCheck(str_contains($receiver,"'tile_location'")
+    && str_contains($receiver,"'tile_history'")
+    && str_contains($receiver,"'responseJson'"),
+    'Allowlist Tile location diagnostic and response MIME counters');
 
 echo "PASS: Kacheltest voice recognition, separate /tile/ rendering, no WFC switch, setup and diagnostics\n";

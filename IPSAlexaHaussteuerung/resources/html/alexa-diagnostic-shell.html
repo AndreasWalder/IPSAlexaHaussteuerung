@@ -153,7 +153,10 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
         try{
           var counts=win.__iahTileResponseCounters;
           if(counts && typeof counts==='object'){
-            for(var field of ['response2xx','response3xx','response4xx','response5xx','responseFailed']){
+            for(var field of [
+              'response2xx','response3xx','response4xx','response5xx',
+              'responseFailed','responseJson','responseHtml','responseOther'
+            ]){
               var number=counts[field];
               if(typeof number==='number' && number>=0 && number<=9999){
                 metrics[field]=number;
@@ -253,7 +256,8 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
     'use strict';
     var count=0;
     var counters={
-      response2xx:0,response3xx:0,response4xx:0,response5xx:0,responseFailed:0
+      response2xx:0,response3xx:0,response4xx:0,response5xx:0,responseFailed:0,
+      responseJson:0,responseHtml:0,responseOther:0
     };
     window.__iahTileResponseCounters=counters;
     function report(stage,code){
@@ -276,6 +280,22 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
     }else{
       report('tile_boot','no_hash');
     }
+    // Der eigentliche document-Pfad ist bei srcdoc normalerweise
+    // "about:srcdoc", obwohl das numerische #ID-Fragment gesetzt ist.
+    // Versuch, vor den Symcon-Skripten den originalen /tile/-Pfad
+    // wiederherzustellen. Falls browserseitig verboten: keine Aenderung.
+    var isSrcdoc=window.location.protocol==='about:';
+    report('tile_location',isSrcdoc?'srcdoc_context':
+      (window.location.pathname==='/tile/'?'tile_context':'other_context'));
+    if(isSrcdoc){
+      try{
+        window.history.replaceState(window.history.state,'','/tile/'+wanted);
+        report('tile_history',window.location.pathname==='/tile/'?
+          'history_ok':'history_unchanged');
+      }catch(e){
+        report('tile_history','history_blocked');
+      }
+    }
     window.addEventListener('error',function(e){
       if(e.target && e.target!==window){
         var kind=(e.target.tagName||'').toLowerCase();
@@ -296,12 +316,17 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
       report('tile_early_rejection',name==='SecurityError'?'security_error':
         (name==='TypeError'?'type_error':'other'));
     });
-    function captureHttp(status){
+    function captureHttp(status,type){
       var key=status>=200&&status<300?'response2xx':
         (status>=300&&status<400?'response3xx':
         (status>=400&&status<500?'response4xx':
         (status>=500&&status<600?'response5xx':'responseFailed')));
       counters[key]=Math.min(9999,counters[key]+1);
+      // Weder URL noch Antwort-Body lesen; nur Content-Type-Kategorie.
+      var mime=String(type||'').toLowerCase();
+      var bucket=mime.indexOf('json')!==-1?'responseJson':
+        (mime.indexOf('text/html')!==-1?'responseHtml':'responseOther');
+      counters[bucket]=Math.min(9999,counters[bucket]+1);
     }
     // Eingehende Antworten unveraendert an die IP-Symcon-App weiterreichen.
     try{
@@ -309,9 +334,9 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
         var originalFetch=window.fetch;
         window.fetch=function(){
           return originalFetch.apply(this,arguments).then(function(response){
-            captureHttp(response.status);return response;
+            captureHttp(response.status,response.headers.get('content-type'));return response;
           },function(error){
-            captureHttp(0);throw error;
+            captureHttp(0,'');throw error;
           });
         };
       }
@@ -321,7 +346,11 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
         var originalSend=window.XMLHttpRequest.prototype.send;
         window.XMLHttpRequest.prototype.send=function(){
           try{
-            this.addEventListener('loadend',function(){captureHttp(this.status);});
+            this.addEventListener('loadend',function(){
+              var contentType='';
+              try{contentType=this.getResponseHeader('content-type')||'';}catch(e){}
+              captureHttp(this.status,contentType);
+            });
           }catch(ignored){}
           return originalSend.apply(this,arguments);
         };
@@ -389,11 +418,14 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
     var data=ev.data;
     if(!data || data.iahTileDiagnostics!==1)return;
     if(data.stage!=='tile_boot' && data.stage!=='tile_early_error' &&
-       data.stage!=='tile_early_rejection')return;
+       data.stage!=='tile_early_rejection' &&
+       data.stage!=='tile_location' && data.stage!=='tile_history')return;
     var codes=[
       'no_hash','hash_match','hash_missing','hooks_installed',
       'security_error','type_error','reference_error','syntax_error',
-      'js_error','script','stylesheet','other'
+      'js_error','script','stylesheet','other',
+      'srcdoc_context','tile_context','other_context',
+      'history_ok','history_unchanged','history_blocked'
     ];
     if(codes.indexOf(data.code)<0)return;
     emit(data.stage,data.stage==='tile_boot'?'ok':'error',data.code);

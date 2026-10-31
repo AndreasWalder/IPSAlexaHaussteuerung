@@ -215,7 +215,19 @@
       "items": [
         {
           "type": "Label",
-          "caption": "Nur für den Sprachbefehl „Kacheltest“. Kamera, Energie und das alte WebFront bleiben unverändert. Die neue Visualisierung wird unter /tile/ mit HTTPS in der vorhandenen Alexa-Diagnose-Shell geöffnet."
+          "caption": "Sprachbefehl „Test“ (ersetzt den schlecht verstandenen „Kacheltest“). Dauerhafter Test-Einstieg: aktuell neue Kachelvisualisierung, später andere Diagnoseziele. Bestehende Kamera-/Energie-Routen unverändert."
+        },
+        {
+          "type": "Select",
+          "name": "AlexaTestTarget",
+          "caption": "Ziel für Alexa-Sprachbefehl „Test“",
+          "value": "kacheltest",
+          "options": [
+            {
+              "caption": "Neue IP-Symcon-Kachelvisualisierung",
+              "value": "kacheltest"
+            }
+          ]
         },
         {
           "name": "TileTestEnabled",
@@ -242,11 +254,11 @@
         },
         {
           "type": "Label",
-          "caption": "Alexa sagen: „Öffne Haussteuerung“, anschließend „Kacheltest“. Bei ID 0 erscheint die Symcon-Auswahl der Kachelvisualisierungen. Ein eventuell verlangtes Passwort wird bewusst nicht als URL-Parameter übermittelt."
+          "caption": "Alexa sagen: „Öffne Haussteuerung“, danach einfach „Test“. Die alten Begriffe „Kacheltest“ und „Kachelvisualisierung“ bleiben als Aliase erhalten. Künftige Testziele lassen sich über die Auswahl erweitern."
         },
         {
           "type": "Label",
-          "caption": "Diagnose: Objektbaum → Diagnose → Web API for Games – Kamera/Energie. Auch die Kacheltest-Ereignisse erscheinen unter „Letzte 100 Browser-Ereignisse“ und im Alexa-Protokoll (letzte 500)."
+          "caption": "Diagnose: Objektbaum → Diagnose → Web API for Games – Kamera/Energie → Letzte 100 Browser-Ereignisse. Der Sprachbefehl „Test“ wird im Alexa-Protokoll als „Test.route“ dokumentiert, der aktuelle Test schreibt weiterhin route=kacheltest."
         }
       ]
     },
