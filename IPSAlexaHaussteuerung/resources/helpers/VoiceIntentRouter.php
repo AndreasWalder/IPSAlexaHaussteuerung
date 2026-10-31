@@ -52,6 +52,38 @@ function iah_vir_aliases(array $dynamic=[]): array
     }
     return $map;
 }
+/**
+ * GetHaus-Intent mit ausschließlich EINEM Navigationsslot.
+ *
+ * Alexa löst z.B. "Jalousie" als GetHaus/Device=jalousie auf.
+ * Das ist eine Kachelnavigation, keine KI-Frage. Sobald ein weiteres
+ * Slot (Action, Room, Object, Anzahl usw.) vorhanden ist, wird hier
+ * bewusst KEINE Navigationsentscheidung getroffen.
+ */
+function iah_vir_legacy_gethaus_route(array $input,array $aliases): ?string
+{
+    if (strcasecmp((string)($input['intent']??''),'GetHaus')!==0) return null;
+    if (!empty($input['aplArgs'])) return null;
+    $slots=(array)($input['legacySlots']??[]);
+    if ($slots===[]) return null;
+    $filled=[];
+    foreach ($slots as $name=>$value) {
+        if (!is_scalar($value)) continue;
+        $val=iah_vir_norm((string)$value);
+        if ($val!=='' && $val!=='?') $filled[(string)$name]=$val;
+    }
+    if (count($filled)!==1) return null;
+    $key=array_key_first($filled);
+    if (!in_array($key,['Device','Action'],true)) return null;
+    $word=$filled[$key];
+    if (!isset($aliases[$word])) return null;
+    // Wenn auch ein freier Text vorliegt, muss er genau den Slotnamen enthalten.
+    // "Jalousie runter" darf dadurch niemals wie "Jalousie" navigieren.
+    $raw=iah_vir_norm((string)($input['rawText']??''));
+    if ($raw!=='' && $raw!==$word) return null;
+    return $aliases[$word];
+}
+
 function iah_vir_classify(array $input,array $saved=[]): array
 {
     $text=iah_vir_norm((string)($input['text']??''));
@@ -78,6 +110,10 @@ function iah_vir_classify(array $input,array $saved=[]): array
         if($type==='Alexa.Presentation.APL.UserEvent')return array_replace($result,
             ['category'=>'apl_action','reason'=>'apl_other']);
     }
+    $legacyRoute=iah_vir_legacy_gethaus_route($input,$aliases);
+    if ($legacyRoute!==null) return array_replace($result,[
+        'category'=>'navigation','route'=>$legacyRoute,'reason'=>'legacy_gethaus_single_slot'
+    ]);
     if ($text==='')return $result;
     if (in_array($text,['zurueck','gehe zurueck','geh zurueck','hauptmenue','hauptmenue oeffnen',
         'startseite','zur hauptseite','zur startseite','home','hauptansicht'],true)) {
