@@ -6,7 +6,7 @@ const vm=require('node:vm');
 const assert=require('node:assert/strict');
 const html=fs.readFileSync('IPSAlexaHaussteuerung/resources/html/alexa-diagnostic-shell.html','utf8');
 const begin=html.indexOf('  function findTileLoginOkButton(');
-const finish=html.indexOf('\n\n  function tileTryAutoLogin()',begin);
+const finish=html.indexOf('\n\n  // IP-Symcon dokumentiert fuer die Kachelvisualisierung',begin);
 assert(begin>=0 && finish>begin, 'Tile finder should be present');
 const fn=vm.runInNewContext('('+html.slice(begin,finish).trim()+')');
 
