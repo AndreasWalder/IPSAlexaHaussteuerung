@@ -45,6 +45,17 @@ jobs:
           php -l IPSAlexaHaussteuerung/src/AlexaLogBuffer.php
           php -l IPSAlexaHaussteuerung/src/AlexaLogTrait.php
           php -l RoomsCatalogConfigurator/module.php
+      - name: Check Alexa HTML diagnostic JavaScript syntax
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          html = Path('IPSAlexaHaussteuerung/resources/html/alexa-diagnostic-shell.html').read_text()
+          scripts = re.findall(r'<script(?:\\s[^>]*)?>(.*?)</script>', html, re.S)
+          assert len(scripts) == 1, 'Expected one inline Alexa diagnostic script'
+          Path('/tmp/iah-alexa-diagnostic.js').write_text(scripts[0])
+          PY
+          node --check /tmp/iah-alexa-diagnostic.js
       - name: Check JSON syntax
         run: |
           php -r 'json_decode(file_get_contents("IPSAlexaHaussteuerung/form.json"), true, 512, JSON_THROW_ON_ERROR);'
