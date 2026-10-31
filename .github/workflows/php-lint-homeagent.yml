@@ -10,6 +10,7 @@ on:
       - fix/roomscatalog-ipslist-checkbox-multiselect-20261031
       - fix/gethaus-legacy-tiles-before-ki-20261031
       - feature/alexa-500-log-buffer-eur-cost-20261031
+      - fix/alexa-voice-navigation-route-priority-20261031
   pull_request:
     paths:
       - 'IPSAlexaHaussteuerung/**'
@@ -60,5 +61,7 @@ jobs:
         run: php tests/test_voice_intent_router.php
       - name: Test GetHaus Device-only legacy navigation before KI
         run: php tests/test_gethaus_legacy_navigation.php
+      - name: Test GetHaus voice route priority over welcome screen
+        run: php tests/test_voice_route_priority.php
       - name: Test copyable Alexa 500-message buffer and EUR conversion
         run: php tests/test_alexa_log_buffer_eur.php

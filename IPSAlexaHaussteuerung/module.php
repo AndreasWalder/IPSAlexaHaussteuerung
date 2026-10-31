@@ -1024,9 +1024,46 @@ PHP;
                 $updated = str_replace($oldRoute, $newRoute, $updated);
             }
         }
+        // Bestehende Action-Skripte werden beim Modulupdate absichtlich
+        // nicht komplett überschrieben. Daher den konkreten Fehler aus der
+        // Live-Diagnose (isPlainGetHaus verdrängt navForce) mit migrieren.
+        $oldPlain = "            && trim((string)\$rawUserText) === ''\n        );";
+        $newPlain = "            && trim((string)\$rawUserText) === ''\n"
+            . "            && !\$navForce // VoiceRouter: erkannte Kachel nie als leeres GetHaus-Hauptmenü behandeln\n"
+            . "        );";
+        if (strpos($updated, $oldPlain) !== false) {
+            $updated = str_replace($oldPlain, $newPlain, $updated);
+        }
+
+        // Auch die endgültige Routenzuweisung nach dem Tabellen-Router
+        // mitziehen. Dadurch wird die Kachel auch bei anderen Legacy-
+        // Fallbacks nicht fälschlich wieder zu main_launch.
+        $priorityBegin = '        // IAH_VOICE_ROUTE_PRIORITY_BEGIN';
+        $priorityEnd = '        // IAH_VOICE_ROUTE_PRIORITY_END';
+        $templateBegin = strpos($template, $priorityBegin);
+        $templateEnd = $templateBegin === false ? false : strpos($template, $priorityEnd, $templateBegin);
+        if ($templateBegin !== false && $templateEnd !== false) {
+            $priority = substr($template, $templateBegin,
+                $templateEnd + strlen($priorityEnd) - $templateBegin);
+            $oldBegin = strpos($updated, $priorityBegin);
+            $oldEnd = $oldBegin === false ? false : strpos($updated, $priorityEnd, $oldBegin);
+            if ($oldBegin !== false && $oldEnd !== false) {
+                $updated = substr_replace($updated, $priority, $oldBegin,
+                    $oldEnd + strlen($priorityEnd) - $oldBegin);
+            } else {
+                $lazy = '        // --------- Lazy rooms nur wenn benötigt ---------';
+                $lazyPos = strpos($updated, $lazy);
+                if ($lazyPos !== false) {
+                    $updated = substr_replace($updated, $priority . "\n\n", $lazyPos, 0);
+                } else {
+                    IPS_LogMessage('Alexa',
+                        'VoiceRouter.migration: Route-Prioritätsabschnitt nicht erkannt; bitte Action-Skript prüfen.');
+                }
+            }
+        }
         if ($updated !== $current) {
             IPS_SetScriptContent($scriptId, $updated);
-            IPS_LogMessage('Alexa', 'VoiceRouter.migration: UI-Navigation für bestehendes Action-Skript aktualisiert.');
+            IPS_LogMessage('Alexa', 'VoiceRouter.migration: UI-Navigation und Route-Priorität aktualisiert.');
         }
     }
 

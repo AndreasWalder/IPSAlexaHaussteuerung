@@ -2607,6 +2607,7 @@ function Execute($request = null)
             && $alles === ''
             && (($APL['a1'] ?? null) === null)
             && trim((string)$rawUserText) === ''
+            && !$navForce // VoiceRouter: erkannte Kachel nie als leeres GetHaus-Hauptmenü behandeln
         );
 
 
@@ -2664,6 +2665,22 @@ function Execute($request = null)
                 if ($cond()) { $__route = ($r==='main' || $r==='main_home') ? 'main_launch' : $r; break; }
             }
         }
+
+        // IAH_VOICE_ROUTE_PRIORITY_BEGIN
+        // Navigation hat Vorrang vor sämtlichen Legacy-Fallbacks, inklusive
+        // 'main_launch'. Ein reiner GetHaus-Kachelname öffnet seine Kachel.
+        // Externe Kacheln behalten ihren zuvor ermittelten External-Renderer.
+        if ($iahVoiceIsNavigation && $iahVoiceNavKey !== '' && $selected === null) {
+            $__route = $iahVoiceNavKey === 'einstellungen' ? 'settings' : $iahVoiceNavKey;
+        }
+        if ($iahVoiceIsNavigation) {
+            $log('info','VoiceRouter.renderRoute',[
+                'requested'=>$iahVoiceNavKey,
+                'selected'=>(string)($__route??'none'),
+                'override'=>$navForce ? 'yes' : 'no'
+            ]);
+        }
+        // IAH_VOICE_ROUTE_PRIORITY_END
 
         // --------- Lazy rooms nur wenn benötigt ---------
         $needsRooms = in_array($__route ?? '', ['main_launch','heizung','jalousie','licht','lueftung','geraete','bewaesserung'], true)
