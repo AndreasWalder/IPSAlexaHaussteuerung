@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>Alexa Kamera/Energie Diagnose</title>
+<style>
+html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-family:sans-serif;overflow:hidden}
+#screen{position:fixed;inset:0;width:100%;height:100%;border:0;background:#fff}
+#status{position:fixed;left:16px;bottom:16px;padding:9px 12px;border-radius:8px;background:#243146;color:#fff;font-size:13px;z-index:9;pointer-events:none}
+#status.hidden{display:none}
+</style>
+</head>
+<body>
+<div id="status" role="status">Kamera/Energie: Verbindung wird geprüft …</div>
+<iframe id="screen" referrerpolicy="no-referrer" title="IP-Symcon Visualisierung"></iframe>
+<script>
+(function(){
+  'use strict';
+  var params = new URLSearchParams(location.search);
+  var frame = document.getElementById('screen');
+  var status = document.getElementById('status');
+  var route = params.get('route') === 'energie' ? 'energie' : 'kamera';
+  var instanceId = Number(params.get('i') || 0);
+  var token = params.get('token') || '';
+  var src = params.get('src') || '';
+  var loaded = false;
+  var sent = 0;
+  function emit(stage,state,code){
+    if (!instanceId || !token || sent++ > 30) return;
+    var payload = JSON.stringify({
+      instanceId:instanceId, token:token,route:route,
+      stage:stage,status:state || 'unknown',code:code || 'none'
+    });
+    try {
+      if(navigator.sendBeacon) {
+        var ok = navigator.sendBeacon('/hook/alexa-html-debug',
+          new Blob([payload],{type:'application/json'}));
+        if(ok)return;
+      }
+      fetch('/hook/alexa-html-debug',{
+        method:'POST',body:payload,headers:{'Content-Type':'application/json'},
+        credentials:'omit',keepalive:true
+      }).catch(function(){});
+    } catch(e){}
+  }
+  function reportDom(){
+    try {
+      var doc=frame.contentDocument;
+      if(!doc){emit('frame_dom','cross_origin');return;}
+      var body=doc.body;
+      emit('frame_dom',body && (body.children.length || body.textContent.trim().length)?'not_empty':'empty');
+    } catch(e){emit('frame_dom','cross_origin');}
+  }
+  emit('shell_boot','ok');
+  if(!/^https:\/\//i.test(src)){
+    status.textContent='Die Visualisierungsadresse ist ungültig.';
+    emit('missing_src','invalid');
+    return;
+  }
+  emit('iframe_start','ok');
+  frame.addEventListener('load',function(){
+    loaded=true;
+    emit('iframe_load','ok');
+    reportDom();
+    status.className='hidden';
+  });
+  frame.addEventListener('error',function(){
+    emit('iframe_error','error');
+    status.textContent='Die Visualisierung konnte nicht geöffnet werden.';
+  });
+  window.addEventListener('error',function(e){
+    if(e.target && e.target !== window){
+      var type=(e.target.tagName || '').toLowerCase();
+      emit('resource_error','error',
+        type==='img'?'image':type==='script'?'script':type==='link'?'stylesheet':type==='iframe'?'iframe':'other');
+    }else{emit('js_error','error');}
+  },true);
+  window.addEventListener('unhandledrejection',function(){emit('promise_error','error');});
+  document.addEventListener('visibilitychange',function(){
+    if(document.visibilityState==='hidden')emit('visibility_hidden','hidden');
+  });
+  window.addEventListener('pagehide',function(){emit('pagehide','hidden');});
+  setTimeout(function(){
+    if(!loaded){
+      status.textContent='Webseite lädt nicht – Diagnose wurde gespeichert.';
+      emit('iframe_timeout','timeout');
+    }
+  },10000);
+  frame.src=src;
+})();
+</script>
+</body>
+</html>
