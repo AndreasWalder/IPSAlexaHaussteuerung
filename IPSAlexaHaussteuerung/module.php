@@ -142,6 +142,9 @@ class IPSAlexaHaussteuerung extends IPSModule
 
         $catDiag = $this->ensureCategory($root, 'Diagnose', 'iahDiag');
         $this->EnsureAlexaLogInfrastructure($catDiag);
+        $htmlDiag=$this->ensureCategory($catDiag,'Web API for Games – Kamera/Energie','iahExternalHtmlDiag');
+        $this->ensureVar($htmlDiag,'Letzter HTML-Diagnosebericht (JSON)','iahHtmlLast',VARIABLETYPE_STRING,'~TextBox',null);
+        $this->ensureVar($htmlDiag,'Letzte 20 HTML-Diagnosen (JSON-Zeilen)','iahHtmlHistory',VARIABLETYPE_STRING,'~TextBox',null);
         $voiceDiag = $this->ensureCategory($catDiag, 'KI-Sprachrouter und APL-Navigation', 'iahVoiceDiag');
         // Entscheidungen und UI-Kontext pro anonymisiertem Alexa-Gerät.
         $rawVoiceState = $this->ensureVar($voiceDiag, 'Router-Datenspeicher (nicht bearbeiten)', 'iahVoiceState', VARIABLETYPE_STRING, '', null);
@@ -641,6 +644,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             ['name' => 'HomeAgentVoiceBridge', 'ident' => 'homeAgentVoiceBridgeScript', 'file' => __DIR__ . '/resources/helpers/HomeAgentVoiceBridge.php'],
             ['name' => 'KIHouseController', 'ident' => 'kiHouseControllerScript', 'file' => __DIR__ . '/resources/helpers/KIHouseController.php'],
             ['name' => 'VoiceIntentRouter', 'ident' => 'voiceIntentRouterScript', 'file' => __DIR__ . '/resources/helpers/VoiceIntentRouter.php'],
+            ['name' => 'ExternalHtmlProbe', 'ident' => 'externalHtmlProbeScript', 'file' => __DIR__ . '/resources/helpers/ExternalHtmlProbe.php'],
         ];
 
         foreach ($map as $def) {
