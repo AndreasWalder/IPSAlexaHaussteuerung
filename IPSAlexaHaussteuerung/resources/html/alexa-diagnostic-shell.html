@@ -175,6 +175,65 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
     return {element:null,kind:'button_not_found'};
   }
 
+  // IP-Symcon dokumentiert fuer die Kachelvisualisierung die
+  // Passwort-Bestaetigung explizit per ENTER. Auf Alexa ist ein
+  // HTML-Submit-Button zwar vorhanden, sein .click() wurde aber beim
+  // Test 23:49 als wirkungslos bestaetigt. Daher bei einem NUR semantisch
+  // erkannten Submit-Button Enter an das Passwortfeld senden.
+  function tileSendEnter(win,input){
+    if(typeof input.focus==='function'){
+      try{input.focus({preventScroll:true});}
+      catch(e){try{input.focus();}catch(ignored){}}
+    }
+    if(typeof win.KeyboardEvent!=='function')return false;
+    ['keydown','keypress','keyup'].forEach(function(name){
+      var event=new win.KeyboardEvent(name,{
+        key:'Enter',code:'Enter',keyCode:13,which:13,charCode:name==='keypress'?13:0,
+        bubbles:true,cancelable:name!=='keyup'
+      });
+      input.dispatchEvent(event);
+    });
+    return true;
+  }
+
+  // Nach einem erfolglosen Versuch kann ein manuelles Antippen
+  // Aufschluss geben, um welchen ELEMENTTYP es sich handelt. Nur die
+  // feste Kategorie loggen, NIEMALS Text, HTML, CSS, URL oder Passwort.
+  // Listener ist auf den Anmeldedialog beschraenkt und einmalig.
+  function tileObserveManualLoginTap(doc,input){
+    if(doc.__iahTileManualTapAttached)return;
+    doc.__iahTileManualTapAttached=true;
+    var loginForm=input.form, dialog=input.closest(
+      '[role="dialog"],[aria-modal="true"],dialog'
+    );
+    doc.addEventListener('click',function(event){
+      if(!autoLoginUsed || event.isTrusted!==true)return;
+      var target=event.target;
+      if(!target || target.nodeType!==1 || target===input)return;
+      var path=typeof event.composedPath==='function'?
+        event.composedPath():[];
+      var inDialog=dialog && (dialog.contains(target) || path.indexOf(dialog)>=0);
+      var inForm=loginForm && (loginForm.contains(target) || path.indexOf(loginForm)>=0);
+      // Ohne Dialog/Form nie fremde Klicks auf der Hausvisualisierung beobachten.
+      if(!inDialog && !inForm)return;
+      var el=target,kind='manual_other';
+      for(var i=0;i<6 && el && el.nodeType===1;i++,el=el.parentElement){
+        var tag=(el.tagName||'').toLowerCase();
+        if(tag==='button' ||
+          (tag==='input' && ['submit','button'].indexOf(el.type)>=0)){
+          kind='manual_button';break;
+        }
+        if(el.getAttribute && el.getAttribute('role')==='button'){
+          kind='manual_role';break;
+        }
+      }
+      if(kind==='manual_other' && (tag==='span'||tag==='div'))
+        kind='manual_text';
+      emit('tile_autologin','ok',kind);
+      doc.__iahTileManualTapAttached=false;
+    },{capture:true,once:false});
+  }
+
   function tileTryAutoLogin(){
     if(!autoLoginAllowed || autoLoginUsed || ++autoLoginTicks>75)return;
     var doc,win,inputs;
@@ -187,6 +246,7 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
       if(inputs.length!==1 || inputs[0].disabled || !inputs[0].isConnected)return;
     }catch(e){return;}
     autoLoginUsed=true; // Niemals mehrfach Passwoerter abrufen/einloggen.
+    tileObserveManualLoginTap(doc,inputs[0]);
     emit('tile_autologin','ok','field_detected');
     fetch('/hook/iah-alexa-tile-credential',{
       method:'POST',credentials:'same-origin',
@@ -257,28 +317,19 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
               return;
             }
             var match=findTileLoginOkButton(doc,current,win);
-            if(match.element){
-              // Direkt am Framework-Element klicken, statt Form-Submit.
-              // Eine erfolgreiche Anmeldung wird ERST spaeter verifiziert.
+            if(match.element && match.kind!=='button_submit'){
+              // Nur ein wirklich mit OK/Anmelden beschriftetes UI-Element
+              // anklicken. Generisches Submit war auf dem Echo wirkungslos.
               match.element.click();
               emit('tile_autologin','ok',match.kind);
               emit('tile_autologin','ok','button_clicked');
             }else{
-              emit('tile_autologin','error',match.kind);
-              var form=current.form;
-              if(form && typeof form.requestSubmit==='function'){
-                form.requestSubmit();
-                emit('tile_autologin','ok','form_submit_requested');
-              }else{
-                // Letzter, einmaliger Fallback fuer Tastaturdialoge.
-                current.dispatchEvent(new win.KeyboardEvent('keydown',{
-                  key:'Enter',code:'Enter',keyCode:13,which:13,
-                  bubbles:true,cancelable:true
-                }));
-                current.dispatchEvent(new win.KeyboardEvent('keyup',{
-                  key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true
-                }));
+              emit('tile_autologin','ok',
+                match.element?'button_submit_skipped':match.kind);
+              if(tileSendEnter(win,current)){
                 emit('tile_autologin','ok','enter_sent');
+              }else{
+                emit('tile_autologin','error','enter_unavailable');
               }
             }
             // Die bisherige Diagnose "submitted" belegte keinen Login.
