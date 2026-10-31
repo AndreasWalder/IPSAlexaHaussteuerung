@@ -278,6 +278,16 @@
         },
         {
           "type": "CheckBox",
+          "name": "TileQuietNoFollowup",
+          "caption": "Test: automatische Alexa-Folgeaufnahme beim HTML-Start vermeiden (Mikrofon geschlossen)",
+          "value": false
+        },
+        {
+          "type": "Label",
+          "caption": "Experiment, standardmäßig AUS: Bei der HTML-Kachelvisualisierung 'Test' das Antwortfeld shouldEndSession weglassen statt false senden. Amazon lässt damit die laufende HTML-Sitzung ohne automatisches Folge-Zuhören geöffnet. Das normale Alexa-Aktivierungswort funktioniert weiter. Nur wenn die installierte PHP-Alexa-Bibliothek die Änderung nachweislich unterstützt, wird sie angewendet; andernfalls bleibt die bisherige, funktionierende Antwort bestehen. Im IP-Symcon-Log erscheint TileQuiet.ready oder TileQuiet.unsupported. Kamera/Energie, APL und normale KI-Dialoge unverändert."
+        },
+        {
+          "type": "CheckBox",
           "name": "TileFastBootstrapEnabled",
           "caption": "Schnellstart ohne zusätzliche Diagnoseprobe",
           "value": true
