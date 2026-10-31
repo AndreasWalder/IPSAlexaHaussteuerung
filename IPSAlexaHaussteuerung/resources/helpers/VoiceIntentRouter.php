@@ -38,6 +38,9 @@ function iah_vir_aliases(array $dynamic=[]): array
         'einstellungen'=>'einstellungen','einstellung'=>'einstellungen',
         'sicherheit'=>'sicherheit','listen'=>'listen','energie'=>'energie',
         'kamera'=>'kamera','kameras'=>'kamera',
+        // Stabiler Sprachbefehl fuer aktuelle und zukuenftige Experimente.
+        // Der Renderer leitet 'test' auf das konfigurierbare Testziel.
+        'test'=>'test',
         'kacheltest'=>'kacheltest','kachelvisualisierung'=>'kacheltest',
         'kachel visualisierung'=>'kacheltest','kacheln testen'=>'kacheltest',
         'info'=>'info',
