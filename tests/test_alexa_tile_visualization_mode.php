@@ -414,11 +414,11 @@ tileTestCheck(str_contains($shell, "setTimeout(function(){")
     && str_contains($shell, "match.element.click();")
     && str_contains($shell, "'button_clicked'"),
     'SPA events settle before the real login button is clicked');
-tileTestCheck(str_contains($shell, "'form_submit_requested'")
+tileTestCheck(str_contains($shell, "'enter_sent'")
     && str_contains($shell, "'input_reset'")
     && str_contains($shell, "'login_still_visible'")
     && str_contains($shell, "'login_closed'"),
-    'Form fallback and real login outcome are diagnosed separately');
+    'Enter fallback and real login outcome are diagnosed separately');
 tileTestCheck(str_contains($receiver, "'button_clicked'")
     && str_contains($receiver, "'form_submit_requested'")
     && str_contains($receiver, "'login_still_visible'"),
