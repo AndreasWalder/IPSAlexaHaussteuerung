@@ -17,7 +17,7 @@ function iah_alexalog_redact(string $line): string
     // Auch URL-Parameter und JSON-Attribute wie "token":"ABC" abfangen.
     $line=preg_replace('~((?:token|passwort|password|api[_ -]?key|client[_ -]?secret|authorization|access[_-]?token)\s*["\x27]?\s*(?:=|:)\s*["\x27]?)([^\s&,"\x27}\];]+)~iu','$1[GESCHUETZT]',$line)??$line;
     $line=preg_replace('~(?<=\?)(?:[^ \r\n]*)(?:token|passwort|password|api[_-]?key|secret|auth)=[^ \r\n]*~iu','[URL-QUERY-GESCHUETZT]',$line)??$line;
-    $line=preg_replace('~\b(?:192\.168|10)\.(?:\d{1,3}\.){2}\d{1,3}\b~','[INTERNE_IP]',$line)??$line;
+    $line=preg_replace('~\b(?:192\.168\.\d{1,3}\.\d{1,3}|10\.(?:\d{1,3}\.){2}\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})\b~','[INTERNE_IP]',$line)??$line;
     return mb_substr($line,0,2500,'UTF-8');
 }
 function iah_alexalog_is_alexa(string $line): bool
