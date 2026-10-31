@@ -70,6 +70,8 @@ $code = $allow($input['code'] ?? '', [
     'field_detected', 'filled', 'submitted', 'filled_only', 'enter_sent',
     'button_clicked', 'button_control', 'button_text', 'button_submit',
     'button_not_found', 'button_ambiguous',
+    'button_submit_skipped', 'enter_unavailable',
+    'manual_button', 'manual_role', 'manual_text', 'manual_other',
     'form_submit_requested', 'login_still_visible',
     'login_closed', 'input_reset',
     'credential_unavailable', 'dom_changed',
