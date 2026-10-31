@@ -56,6 +56,70 @@ Die Browserdiagnose kann Fehler nicht nachträglich auslesen, die innerhalb des 
 
 **Test nach Update:** Modulinstanz **Übernehmen** → Alexa-Skill starten → **„Kacheltest“** → nach mindestens 15 Sekunden die JSON-Zeilen mit `route=kacheltest` aus **Letzte 100 Browser-Ereignisse** kopieren. Zum Debuggen das bestehende Kamera- und Energie-WebFront bitte unverändert lassen.
 
+## Opt-in: Test mit localStorage-Ersatz (experimentell)
+
+Die Browser-Diagnose vom **31.10.2026 22:26** zeigte `tile_inner_storage=unsupported`, und die
+Kachel-Seite blieb nach 15 Sekunden bei **6 DOM-Elementen**, ohne
+Passwortfeld oder fertig initialisierte Oberfläche stehen. Wir wissen damit,
+dass der Alexa-Browser localStorage blockiert; **ob genau dies den
+Kachelvisualisierungs-Start verhindert, ist noch nicht bewiesen.**
+
+Ein isolierter Test versucht deshalb, *vor* den Skripten der Tile-App einen
+`localStorage`-Ersatz zu installieren, der **sessionStorage** als temporären
+Backend-Speicher verwendet (wenn das nicht möglich ist, In-Memory-Speicher).
+Ohne diesen explizit aktivierten Modus wird **gar nichts verändert**.
+
+### Einschalten und vergleichen
+
+1. Modul über GitHub/Module Store aktualisieren und Modulinstanz öffnen.
+2. Unter **Alexa – neue Kachelvisualisierung testen** die neue Checkbox
+   **„Experiment: localStorage in Alexa-Kacheltest durch sessionStorage ersetzen (nur Test)“**
+   aktivieren und **Übernehmen** klicken.
+3. Alexa-Skill starten, **„Kacheltest“** sagen, mindestens 15 Sekunden öffnen.
+4. Im Diagnose-Verlauf **Letzte 100 Browser-Ereignisse** nach
+   `route=kacheltest` filtern: `tile_compat`,
+   `tile_inner_storage`, `tile_snapshot` sowie `tile_render`.
+5. Checkbox wieder **deaktivieren** und erneut testen, um den Vergleich
+   mit der unveränderten Originalseite zu haben.
+
+### Technischer Ablauf und Einschränkungen
+
+Nur für `route=kacheltest` und `compat=1` wird die **eigene**
+`/tile/`-HTML-Seite per `fetch` unter derselben HTTPS-Origin geladen.
+Der Browser fügt einen kleinen Bootstrap-Code unmittelbar nach `<head>`
+ein, noch vor den originalen Skripten. Die veränderte Seite läuft als
+`iframe.srcdoc`; ein `<base href=".../tile/">` erhält die relativen
+Ressourcenpfade. Das ist **kein Ersatz für den Originalserver**.
+
+- `tile_compat: fetch_start` = HTML-Abfrage beginnt.
+- `tile_compat: html_injected` = HTML gepatcht und als `srcdoc` gesetzt.
+- `tile_compat: shim_session` = die Browser-Schnittstelle wurde durch
+  temporäres sessionStorage ersetzt.
+- `tile_compat: shim_memory` = nur flüchtiger Speicher verfügbar.
+- `tile_compat: shim_blocked` / `shim_missing` = Browser erlaubt den
+  Ersatz nicht oder hat das Bootstrap-Skript nicht ausgeführt.
+- `tile_inner_storage: supported` im inneren iframe = dort ist das
+  localStorage-kompatible API für den Test zugänglich.
+- `tile_snapshot` nach 3, 8 und 15 Sekunden zeigt, ob die Oberfläche
+  tatsächlich weiter aufgebaut wird.
+
+**Wichtig:** `iframe.srcdoc` verändert den `window.location`-Kontext
+(z. B. `about:srcdoc` statt `/tile/#INSTANZ`). Auch wenn die
+localStorage-Schnittstelle danach funktioniert, kann die Kachel-App wegen
+dieses Unterschieds weiterhin nicht starten oder die ausgewählte
+Kachelvisualisierungs-ID verlieren. JavaScript-Modulimport, CSP und
+Ressourcenpfade können ebenfalls inkompatibel sein.
+`shim_session` allein ist daher **kein Erfolgsnachweis**.
+
+Falls `fetch`, HTML-Prüfung oder das Einfügen fehlschlagen, wird im
+Test automatisch auf die **normale iframe-Ansicht** zurückgefallen.
+
+Es werden niemals Passwörter oder Login-Token aus der originalen
+WebFront-Konfiguration übernommen, keine URL-Passwörter angehängt und
+keine Kachelinhalte, HTML-Quellen oder Speicherwerte protokolliert.
+**Kamera, Energie, Licht, Jalousie, Heizung und das alte WebFront
+sind nicht Teil des Experiments.** Der Testmodus ist standardmäßig AUS.
+
 ## Diagnose
 
 **Objektbaum → Diagnose → Web API for Games – Kamera/Energie**. Die bekannten Variablen erfassen nun zusätzlich `route=kacheltest`.
