@@ -61,6 +61,60 @@ durch das tatsächliche Erscheinen von Passwortfeld/Kacheln bestätigt.
 Kamera, Energie, WebFront und die originale /tile/-Seite werden
 nicht verändert.
 
+## Diagnose 31.10.2026, 23:36:09 – Passwort wird eingetragen, „OK“ reagiert nicht
+
+Der Echo Show zeigt jetzt den normalen Anmeldedialog; nach dem Fix
+für `content_type_invalid` wird das korrekte Passwort eingetragen.
+Die neuen Meldungen lauten:
+
+```text
+tile_autologin → field_detected
+tile_autologin → filled
+tile_autologin → submitted
+```
+
+**Wichtig:** Das alte `submitted` belegte nur, dass ein DOM-Submit
+ausgelöst wurde, **nicht**, dass IP-Symcon den Login akzeptierte.
+Laut Echo-Beobachtung bleibt die Maske geöffnet, bis man „OK“ manuell
+antippt; danach funktioniert die Visualisierung.
+
+### Angepasste automatische Bestätigung
+
+Der Kacheltest wartet jetzt nach dem Eintragen 450 ms, damit die
+`input`- und `change`-Ereignisse der React-/Vue-Oberfläche verarbeitet
+werden. Anschließend sucht er innerhalb des Passwortdialogs
+und der umliegenden Elemente gezielt einen **eindeutigen, sichtbaren
+und aktivierten** Button mit Bezeichnung „OK“, „Anmelden“,
+„Login“ oder „Bestätigen“ und klickt diesen direkt.
+
+Dadurch wird zuerst der *tatsächliche* UI-Button der SPA angesprochen,
+statt sofort ein allgemeines `form.requestSubmit()` auszulösen.
+Ein generischer Formular-Submit oder einmaliger Enter-Tastendruck
+sind nur noch Fallbacks, wenn der Button nicht eindeutig zugeordnet
+werden kann. **Es gibt weiterhin genau einen Passwortabruf und
+maximal einen automatischen Bestätigungsversuch.**
+
+Nach dem Versuch wird das Vorhandensein des Passwortfeldes nach
+3 Sekunden überprüft. Die neuen Diagnosecodes bedeuten:
+
+- `button_clicked`: eindeutig erkannter Anmelde-/OK-Button angeklickt
+  (noch **keine** Aussage über den tatsächlichen Login-Erfolg).
+- `form_submit_requested`: Fallback über das Formular verwendet.
+- `enter_sent`: Fallback über Enter verwendet.
+- `login_closed`: Passwortfeld nicht mehr sichtbar; kann auf
+  erfolgreichen Login hindeuten, ist aber kein Authentifizierungsbeweis.
+- `login_still_visible`: Anmeldemaske bleibt sichtbar.
+- `input_reset`: Eingabefeld wurde beim SPA-Update geleert.
+
+Keine Buttons mit „Abbrechen“ werden automatisch betätigt und
+keine Beschriftungen, Passwörter oder URLs protokolliert.
+
+**Echo-Test:** Modul aktualisieren, Modulinstanz **Übernehmen**,
+localStorage-Kompatibilität/URL-Methode und AutoLogin wie bisher
+aktiviert lassen. `Alexa, öffne Haussteuerung` → `Test`.
+Die `tile_autologin`-Meldungen und die tatsächliche Anzeige prüfen.
+Kamera, Energie und das klassische WebFront bleiben unverändert.
+
 ## Diagnose 31.10.2026, 23:31:41 – genaue Ursache Content-Type
 
 **Beobachtung am Echo:** Nach dem letzten Modulupdate wird der
