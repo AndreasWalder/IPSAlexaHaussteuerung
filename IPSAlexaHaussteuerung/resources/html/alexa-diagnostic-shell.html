@@ -261,7 +261,7 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
       try{
         parent.postMessage({
           iahTileDiagnostics:1,stage:stage,code:code
-        },window.location.origin);
+        },'*'); // Only fixed status codes; parent validates source + origin.
       }catch(ignored){}
     }
     var wanted=(typeof expectedHash==='string' && /^#[0-9]{1,10}$/.test(expectedHash))
