@@ -100,6 +100,10 @@ class IPSAlexaHaussteuerung extends IPSModule
 
         // Diagnostics payload editor
         $this->RegisterPropertyString('DiagPayload', '{"route":"main_launch","aplSupported":true}');
+        // Isolierter Alexa-Kachelvisualisierungstest, WebFront bleibt unveraendert.
+        $this->RegisterPropertyBoolean('TileTestEnabled', true);
+        // 0 = Visualisierungsauswahl unter /tile/, ansonsten Instanz-ID.
+        $this->RegisterPropertyInteger('TileTestVisualizationId', 0);
 
         // Optional status variables (allow linking existing values instead of auto-created ones)
         $this->RegisterPropertyInteger('VarInformation', 0);
@@ -502,6 +506,8 @@ class IPSAlexaHaussteuerung extends IPSModule
 
         return [
             'BaseUrl'       => $this->ReadPropertyString('BaseUrl'),
+            'TileTestEnabled' => $this->ReadPropertyBoolean('TileTestEnabled'),
+            'TileTestVisualizationId' => $this->ReadPropertyInteger('TileTestVisualizationId'),
             'Source'        => $this->ReadPropertyString('Source'),
             'Token'         => $this->ReadPropertyString('Token'),
             'Passwort'      => $this->ReadPropertyString('Passwort'),
@@ -632,6 +638,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->patchActionScriptVoiceNavigation((int) $id);
         $this->patchActionScriptSafeRequestLogging((int) $id);
         $this->patchActionScriptExternalHtmlMetadata((int) $id);
+        $this->patchActionScriptTileTestNavigation((int) $id);
 
         return (int) $id;
     }
@@ -747,6 +754,27 @@ class IPSAlexaHaussteuerung extends IPSModule
             IPS_ApplyChanges($control);
             IPS_LogMessage('Alexa', 'ExternalHTML.setup dedicated_hooks_registered');
         }
+    }
+
+    /**
+     * Spezielle Sprach-Aliase in vorhandene, benutzerangepasste
+     * Action-Skripte uebernehmen; keine komplette Ueberschreibung.
+     */
+    private function patchActionScriptTileTestNavigation(int $scriptId): void
+    {
+        $current = $this->getScriptContent($scriptId);
+        if (!is_string($current) || $current === '' || str_contains($current, "'kacheltest'=>'kacheltest'")) {
+            return;
+        }
+        $old = "'listen'=>'listen','energie'=>'energie','kamera'=>'kamera',";
+        $new = "'listen'=>'listen','energie'=>'energie','kamera'=>'kamera',\n"
+            . "                     'kacheltest'=>'kacheltest','kachelvisualisierung'=>'kacheltest',";
+        if (!str_contains($current, $old)) {
+            IPS_LogMessage('Alexa', 'TileTest.migration action_alias_marker_not_found');
+            return;
+        }
+        IPS_SetScriptContent($scriptId, str_replace($old, $new, $current));
+        IPS_LogMessage('Alexa', 'TileTest.migration action_alias_added');
     }
 
     private function ensureHelperScripts(int $parent): void
@@ -1268,6 +1296,8 @@ PHP;
 
         $var = [
             'BaseUrl'       => $this->ReadPropertyString('BaseUrl'),
+            'TileTestEnabled' => $this->ReadPropertyBoolean('TileTestEnabled'),
+            'TileTestVisualizationId' => $this->ReadPropertyInteger('TileTestVisualizationId'),
             'Source'        => $this->ReadPropertyString('Source'),
             'Token'         => $this->ReadPropertyString('Token'),
             'Passwort'      => $this->ReadPropertyString('Passwort'),
