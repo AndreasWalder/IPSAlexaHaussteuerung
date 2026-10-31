@@ -35,8 +35,10 @@ Zusätzlich erscheinen im bestehenden **Alexa-Protokoll (letzte 500)** folgende 
 | `shell_not_found` / `target_not_found` | HTTP 404, Pfad oder Hook prüfen. |
 | `shell_unauthorized` / `target_unauthorized` | HTTP 401/403, Authentifizierung/Token/Zugriffsrechte prüfen. |
 | `shell_redirect_or_login` / `target_redirect_or_login` | HTTP 3xx mit Weiterleitung; kann auf Login-Redirect hindeuten. |
-| `target_iframe_restricted_by_xframe` | Header `X-Frame-Options: DENY` oder `SAMEORIGIN`; iframe sehr wahrscheinlich blockiert, falls Shell und Ziel verschiedene Origins haben. |
-| `target_iframe_possible_csp_frame_ancestors_block` | CSP kann das Einbetten verhindern. Genaue Browser-Origin ist separat zu prüfen. |
+| `target_iframe_restricted_by_xframe` | Header `X-Frame-Options: DENY` blockiert immer; `SAMEORIGIN` blockiert nur bei unterschiedlicher Origin von Shell und Ziel. |
+| `target_iframe_possible_csp_frame_ancestors_block` | CSP `frame-ancestors 'none'` oder `'self'` bei anderer Origin kann das Einbetten verhindern. |
+| `shell_csp_frame_src_may_block_iframe` | CSP `frame-src 'none'` oder `'self'` bei anderer Ziel-Origin kann das iframe sperren. |
+| `target_requires_https_iframe` | Das iframe-Ziel ist nicht HTTPS und wird in der sicheren Alexa-Web-Umgebung womöglich als Mixed Content gesperrt. |
 | `shell_requires_https` | Alexa Web API verlangt HTTPS. |
 | `shell_curl_error_...` | TLS/DNS/Timeout oder Verbindungsproblem. Nummer ist der cURL-Fehlercode. |
 | `target_not_text_html` | WebFront-Ziel liefert kein HTML, möglicherweise JSON-Fehlerseite. |
