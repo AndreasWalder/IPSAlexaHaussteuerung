@@ -654,8 +654,14 @@ try {
             'f'=>$logoFile,'token'=>$token,'v'=>time()
         ], '', '&', PHP_QUERY_RFC3986)) : null;
 
+        // Kamera/Energie verwenden eine eigenstaendige Diagnose-Shell mit
+        // Browser-Rueckmeldung. Andere externe Seiten bleiben unveraendert.
+        $shellFile = in_array($externalKey, ['kamera', 'energie'], true)
+            ? 'alexa-diagnostic-shell.html' : 'alexa-shell.html';
         $shellUrl = rtrim($baseUrl,'/').'/hook/icons?'.http_build_query([
-            'f'     => 'alexa-shell.html',
+            'f'     => $shellFile,
+            'i'     => $instanceId,
+            'route' => $externalKey,
             'token' => $token,
             'title' => $titleTxt,
             'src'   => $tileBase,
@@ -711,7 +717,7 @@ try {
             $probePayload=[
                 'instanceId'=>$instanceId,'externalKey'=>$externalKey,'pageType'=>$pageType,
                 'baseUrl'=>$baseUrl,'shellUrl'=>(string)$shellUrl,'targetUrl'=>$tileBase,
-                'localShell'=>IPS_GetKernelDir().'user'.DIRECTORY_SEPARATOR.'icons'.DIRECTORY_SEPARATOR.'alexa-shell.html',
+                'localShell'=>IPS_GetKernelDir().'user'.DIRECTORY_SEPARATOR.'icons'.DIRECTORY_SEPARATOR.$shellFile,
                 'htmlSupported'=>$payload['htmlSupported']??null,
                 'aplSupported'=>$aplSupported
             ];
