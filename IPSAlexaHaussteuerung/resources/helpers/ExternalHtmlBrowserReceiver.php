@@ -43,7 +43,8 @@ $stage = $allow($input['stage'] ?? '', [
     'iframe_timeout', 'frame_dom', 'js_error', 'promise_error',
     'resource_error', 'visibility_hidden', 'pagehide', 'missing_src',
     'tile_capability', 'tile_render', 'tile_frame_js_error', 'tile_frame_rejection',
-    'tile_frame_resource_error', 'tile_snapshot', 'tile_inner_storage', 'tile_document'
+    'tile_frame_resource_error', 'tile_snapshot', 'tile_inner_storage', 'tile_document',
+    'tile_compat'
 ]);
 $status = $allow($input['status'] ?? '', [
     'ok', 'error', 'timeout', 'empty', 'not_empty', 'cross_origin',
@@ -54,7 +55,10 @@ $code = $allow($input['code'] ?? '', [
     'none', 'image', 'script', 'stylesheet', 'iframe', 'other',
     'unavailable', 'unknown', 'local_storage', 'session_storage',
     'websocket', 'indexed_db', 'selection', 'password', 'elements',
-    'onload', 'after_3s', 'after_8s', 'after_15s', 'ready_state'
+    'onload', 'after_3s', 'after_8s', 'after_15s', 'ready_state',
+    'fetch_start', 'html_injected', 'target_rejected', 'fetch_failed',
+    'too_large', 'no_head', 'shim_session', 'shim_memory',
+    'shim_native', 'shim_blocked', 'shim_missing'
 ]);
 $event = [
     'time' => date('c'),
