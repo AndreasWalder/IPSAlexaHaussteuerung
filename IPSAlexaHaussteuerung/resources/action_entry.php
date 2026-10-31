@@ -1877,6 +1877,65 @@ function Execute($request = null)
             ? trim((string)($getSlotCH($request,'Frage') ?? ''))
             : trim((string)($rawUserText !== '' ? $rawUserText : $rawSlotsToText($rawSlotValues)));
         $iahVoiceSpoken = trim(preg_replace('/\s+/u',' ',$iahVoiceSpoken) ?? '');
+        // PRIO 1: GetHaus mit genau einem Device-/Action-Slot = UI-Kachel.
+        // Alexa meldet bei "Jalousie" typischerweise GetHaus/Device=jalousie,
+        // nicht HomeAgentFrageIntent. Das darf auch ohne KI-Helper funktionieren.
+        $iahLegacySlots = [
+            'Action' => $action1Id !== '' ? $action1Id : $action1Val,
+            'Device' => $device1Id !== '' ? $device1Id : $device1Val,
+            'Room' => $room1Id !== '' ? $room1Id : $room1Val,
+            'Object' => $object1Id !== '' ? $object1Id : $object1Val,
+            'Szene' => $szene1Id !== '' ? $szene1Id : $szene1Val,
+            'Alles' => $alles1Id !== '' ? $alles1Id : $alles1Val,
+            'Number' => $number1,
+            'Prozent' => $prozent1,
+        ];
+        $iahLegacyNavKey = '';
+        if (strcasecmp((string)$intentName,'GetHaus')===0 && empty($APL['args'])
+            && !$IS_LAUNCH && !$IS_BACK && !$wantsExit) {
+            $iahNormalizeTile = static function (string $value): string {
+                $value = mb_strtolower(trim($value),'UTF-8');
+                $value = str_replace(['ä','ö','ü','ß'],['ae','oe','ue','ss'],$value);
+                return trim(preg_replace('/\s+/u',' ',$value)??'');
+            };
+            $iahFilledSlots=[];
+            foreach ($iahLegacySlots as $slotName=>$slotValue) {
+                if (!is_scalar($slotValue)) continue;
+                $value=$iahNormalizeTile((string)$slotValue);
+                if ($value!=='' && $value!=='?') $iahFilledSlots[$slotName]=$value;
+            }
+            if (count($iahFilledSlots)===1
+                && in_array((string)array_key_first($iahFilledSlots),['Action','Device'],true)) {
+                $alias=[
+                    'licht'=>'licht','lichter'=>'licht','beleuchtung'=>'licht',
+                    'jalousie'=>'jalousie','jalousien'=>'jalousie','rollo'=>'jalousie',
+                    'rollos'=>'jalousie','rollladen'=>'jalousie',
+                    'heizung'=>'heizung','temperatur'=>'heizung',
+                    'lueftung'=>'lueftung','luefter'=>'lueftung',
+                    'geraete'=>'geraete','bewaesserung'=>'bewaesserung',
+                    'einstellungen'=>'einstellungen','sicherheit'=>'sicherheit',
+                    'listen'=>'listen','energie'=>'energie','kamera'=>'kamera',
+                    'info'=>'info','szene'=>'szene',
+                ];
+                foreach ($rendererDomainMap as $routeKey=>$routeData) {
+                    $alias[$iahNormalizeTile((string)$routeKey)]=(string)$routeKey;
+                    foreach ([(string)($routeData['title']??''),(string)($routeData['roomDomain']??'')] as $label) {
+                        $label=$iahNormalizeTile($label);
+                        if ($label!=='' && !isset($alias[$label])) $alias[$label]=(string)$routeKey;
+                    }
+                    foreach ((array)($routeData['synonyms']??[]) as $label) {
+                        if (!is_scalar($label)) continue;
+                        $label=$iahNormalizeTile((string)$label);
+                        if ($label!=='' && !isset($alias[$label])) $alias[$label]=(string)$routeKey;
+                    }
+                }
+                $tileWord=(string)reset($iahFilledSlots);
+                $rawSpeech=$iahNormalizeTile((string)$rawUserText);
+                if (isset($alias[$tileWord]) && ($rawSpeech==='' || $rawSpeech===$tileWord)) {
+                    $iahLegacyNavKey=$alias[$tileWord];
+                }
+            }
+        }
         $iahVoiceDecision = $iahVoiceRouter([
             'op'=>'classify',
             'deviceId'=>$iahVoiceDeviceId,
@@ -1885,11 +1944,31 @@ function Execute($request = null)
             'intent'=>$intentName,
             'requestType'=>$iahVoiceRequestType,
             'aplArgs'=>array_values((array)($APL['args']??[])),
+            'legacySlots'=>$iahLegacySlots,
+            'rawText'=>$rawUserText,
             'routes'=>array_values($rendererDomainMap),
             'screen'=>$iahVoiceHasScreen,
             'viewportMode'=>$iahVoiceViewportMode,
             'viewportShape'=>$iahVoiceViewportShape,
             'aplSource'=>$iahVoiceAplSource,
+        ]);
+        // Die verifizierte GetHaus-Einzelslot-Navigation ist unabhängig vom
+        // zusätzlichen Helper: selbst wenn IPS_RunScriptWaitEx ausfällt,
+        // können "Licht" und "Jalousie" nie als KI-Frage behandelt werden.
+        if ($iahLegacyNavKey !== '') {
+            $iahVoiceDecision = [
+                'category'=>'navigation','route'=>$iahLegacyNavKey,
+                'reason'=>'legacy_gethaus_single_slot',
+                'contextDomain'=>(string)($iahVoiceDecision['contextDomain']??'')
+            ];
+        }
+        $log('info','VoiceRouter.decision',[
+            'intent'=>$intentName,
+            'category'=>(string)($iahVoiceDecision['category']??'unavailable'),
+            'route'=>(string)($iahVoiceDecision['route']??''),
+            'reason'=>(string)($iahVoiceDecision['reason']??'helper_unavailable'),
+            'helperScriptId'=>$iahVoiceRouterScript,
+            'legacySingleTile'=>$iahLegacyNavKey!==''
         ]);
         // Fail-closed beim Ausfall/Timeout des Diagnose-Helpers.
         // Ein Kachelname darf NIE ohne Navigationserkennung in die KI-Schaltlogik gelangen.
@@ -1928,7 +2007,8 @@ function Execute($request = null)
             && !in_array((string)($iahVoiceDecision['category']??''), ['navigation','apl_navigation','apl_action','clarify'], true)
             && !$iahVoiceIsAplEvent
             && ($homeAgentDedicatedIntent || empty($APL['args']))
-            && ($homeAgentDedicatedIntent || $homeAgentEnabled)) {
+            && ($homeAgentDedicatedIntent || $homeAgentEnabled)
+            && ($iahLegacyNavKey === '')) {
             $homeAgentStarted = microtime(true);
             // AMAZON.SearchQuery liefert die Äußerung im Slot "Frage", nicht im Request-Text.
             $homeAgentSpokenQuestion = $homeAgentDedicatedIntent
@@ -1945,8 +2025,12 @@ function Execute($request = null)
                 || str_contains($homeAgentSpokenQuestion, '?');
             $homeAgentSimpleCommand = preg_match('/^(?:schalte|mach|stelle|fahre|öffne|schließe|starte|stoppe|dimme)\b/ui', $homeAgentSpokenQuestion) === 1;
             $homeAgentAllowCommands = (bool) ($propsEarly['HomeAgentVoiceRouteCommands'] ?? false);
-            $homeAgentShouldRoute = $homeAgentDedicatedIntent || ($homeAgentSpokenQuestion !== ''
-                && ($isHomeAgentQuestion || ($homeAgentAllowCommands && !$homeAgentSimpleCommand)));
+            // Bestehende GetHaus-Befehle niemals nur wegen des aktivierten
+            // "KI-Kommandos"-Schalters an OpenAI senden. Ein Legacy-Intent
+            // darf nur mit einer expliziten Frage zur KI gelangen; einfache
+            // Schaltbefehle verarbeitet weiterhin die klassische Steuerung.
+            $homeAgentShouldRoute = $homeAgentDedicatedIntent
+                || ($homeAgentSpokenQuestion !== '' && $isHomeAgentQuestion);
             if ($homeAgentShouldRoute) {
                 $log('info', 'HomeAgentVoice.received', [
                     'intent' => $intentName, 'source' => $homeAgentDedicatedIntent ? 'Frage' : 'legacy',
