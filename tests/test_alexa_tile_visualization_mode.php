@@ -231,4 +231,40 @@ tileTestCheck(str_contains($receiver,"'tile_location'")
     && str_contains($receiver,"'responseJson'"),
     'Allowlist Tile location diagnostic and response MIME counters');
 
+// A real same-origin HTTPS document may use history.replaceState('/tile/#ID'),
+// while about:srcdoc cannot. Compatibility remains isolated and opt-in.
+$realUrlBootstrap=file_get_contents($base.'resources/html/alexa-tile-url-bootstrap.html');
+tileTestCheck(str_contains($module, "RegisterPropertyString('TileTestBootstrapMode', 'url')"),
+    'New real URL compatibility bootstrap is default only for enabled test mode');
+tileTestCheck(str_contains($module, "'alexa-tile-url-bootstrap.html'"),
+    'Module automatically installs the new Tile compatibility HTML');
+tileTestCheck(str_contains($renderer, "'tileBootstrapMode'") &&
+    str_contains($renderer, "'boot' =>"),
+    'Renderer forwards selected bootstrap method in test-only URL');
+tileTestCheck(str_contains($shell, 'loadTileWithRealUrl()') &&
+    str_contains($shell, "bootMode==='url'") &&
+    str_contains($shell, 'loadTileWithStorageCompatibility()'),
+    'New real URL method keeps old srcdoc fallback');
+tileTestCheck(str_contains($shell, "bootstrap.searchParams.set('src',src)") &&
+    str_contains($shell, "'alexa-tile-url-bootstrap.html'"),
+    'New bootstrap uses fixed authenticated module file');
+tileTestCheck(str_contains($realUrlBootstrap, "history.replaceState(history.state,'',replacement)") &&
+    str_contains($realUrlBootstrap, "document.write(patched)") &&
+    str_contains($realUrlBootstrap, 'document.close()'),
+    'Real URL method uses same-origin history before writing patched Tile HTML');
+tileTestCheck(str_contains($realUrlBootstrap, "target.origin!==window.location.origin") &&
+    str_contains($realUrlBootstrap, "target.search!==''") &&
+    str_contains($realUrlBootstrap, '/^#[0-9]{1,10}$/'),
+    'The bootstrap only fetches a same-origin /tile/ URL and numeric ID');
+tileTestCheck(str_contains($realUrlBootstrap, "window.parent.__iahTileStorageShim") &&
+    str_contains($realUrlBootstrap, "window.parent.__iahTileBootstrapDiagnostics"),
+    'Existing early localStorage shim and error instrumentation remain reused');
+tileTestCheck(str_contains($receiver, "'tile_origin'") &&
+    str_contains($receiver, "'origin_injected'") &&
+    str_contains($receiver, "'origin_failed'"),
+    'Only fixed diagnostic status codes may leave real URL iframe');
+tileTestCheck(!str_contains($realUrlBootstrap, 'password=') &&
+    !str_contains($realUrlBootstrap, 'console.log('),
+    'No URL passwords or full request logs in compatibility HTML');
+
 echo "PASS: Kacheltest voice recognition, separate /tile/ rendering, no WFC switch, setup and diagnostics\n";
