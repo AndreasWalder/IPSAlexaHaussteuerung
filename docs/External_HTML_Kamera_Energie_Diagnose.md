@@ -2,7 +2,7 @@
 
 ## Ausgangssituation
 
-Licht, Jalousie und Lüftung verwenden APL und funktionieren. Die Kacheln **Kamera** und **Energie** verwenden dagegen die separate Schnittstelle `Alexa.Presentation.HTML.Start`, die die URL `/hook/icons?f=alexa-diagnostic-shell.html` öffnet (vorher: `alexa-shell.html`). Die erfolgreiche Antwort von `ROUTE_ALL` beweist nur, dass die HTML-Start-Anweisung erzeugt wurde – **nicht**, dass der Alexa-Browser die Webseite geladen oder das iframe angezeigt hat.
+Licht, Jalousie und Lüftung verwenden APL und funktionieren. Die Kacheln **Kamera** und **Energie** verwenden dagegen die separate Schnittstelle `Alexa.Presentation.HTML.Start`, die die URL `/hook/iah-alexa-shell?f=alexa-diagnostic-shell.html` öffnet (vorher: `alexa-shell.html`). Die erfolgreiche Antwort von `ROUTE_ALL` beweist nur, dass die HTML-Start-Anweisung erzeugt wurde – **nicht**, dass der Alexa-Browser die Webseite geladen oder das iframe angezeigt hat.
 
 Alexa unterscheidet HTML- von APL-Geräteunterstützung. Die Seite muss über **öffentlich erreichbares HTTPS und gültiges TLS-Zertifikat** geladen werden. Einbettung durch iframe kann unter anderem durch `X-Frame-Options` oder die CSP-Direktive `frame-ancestors` blockiert werden.
 
@@ -10,10 +10,18 @@ Alexa unterscheidet HTML- von APL-Geräteunterstützung. Die Seite muss über **
 
 Nach **GitHub-Modul aktualisieren** und **Modulinstanz → Übernehmen** werden folgende Ressourcen automatisch eingerichtet:
 
-- `/hook/alexa-html-debug` → geschütztes Browser-Empfängerskript (Tokenprüfung).
-- `/hook/icons` → Datei-Auslieferung, **nur falls dieser WebHook noch nicht existiert**. Bestehende WebHooks werden nicht überschrieben.
+- `/hook/iah-alexa-html-debug` → geschütztes Browser-Empfängerskript (Tokenprüfung).
+- `/hook/iah-alexa-shell` → Datei-Auslieferung, **nur falls dieser WebHook noch nicht existiert**. Bestehende WebHooks werden nicht überschrieben.
 - `user/icons/alexa-diagnostic-shell.html` → neue, eigene Diagnose-Shell. Die bisherige `alexa-shell.html` wird **nicht** geändert.
 - Zusätzliche kopierbare Variablen **Letztes Browser-Ereignis (JSON)** und **Letzte 100 Browser-Ereignisse (JSON-Zeilen)**.
+
+**Korrektur nach Logs vom 31.10.2026, 21:38 Uhr:** In der bisherigen Version meldete IP-Symcon
+`ExternalHTML.setup hook_exists_external /hook/icons` und
+`ExternalHTML.setup hook_exists_external /hook/alexa-html-debug`. Die Browser-Variable blieb leer, während die HTTP-Probe einen 200-Status mit 0 Bytes Inhalt meldete. Die neuen **eigenen** Modul-WebHooks umgehen diese vorhandenen Belegungen ohne fremde WebHooks oder alte Testskripte zu überschreiben.
+
+Neu erkennt die Serverprobe zusätzlich `shell_http_200_empty_body`. Wenn die Shell über den modulspezifischen
+WebHook tatsächlich angefordert wird, protokolliert der WebHook die Datei-Auslieferung als
+`ExternalHTML.shellDelivery` (mit `server_probe` oder `other_client`, ohne personenbezogene Inhalte).
 
 **Kein separates PHP-Installationsskript und keine manuelle WebHook-Konfiguration nötig.** Kamera und Energie nutzen vorübergehend die neue Diagnose-Shell; Licht, Jalousie, Heizung sowie andere Routen bleiben unverändert.
 
