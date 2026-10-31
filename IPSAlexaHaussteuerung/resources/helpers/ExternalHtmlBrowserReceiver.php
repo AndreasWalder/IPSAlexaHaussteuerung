@@ -67,7 +67,7 @@ $code = $allow($input['code'] ?? '', [
     'history_ok', 'history_unchanged', 'history_blocked',
     'origin_start', 'origin_injected', 'origin_invalid', 'origin_failed',
     'origin_fallback', 'url_bootstrap',
-    'field_detected', 'filled', 'submitted', 'filled_only',
+    'field_detected', 'filled', 'submitted', 'filled_only', 'enter_sent',
     'credential_unavailable', 'dom_changed'
 ]);
 $event = [
