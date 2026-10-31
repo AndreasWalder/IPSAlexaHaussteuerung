@@ -37,7 +37,10 @@ function iah_vir_aliases(array $dynamic=[]): array
         'bewaesserung'=>'bewaesserung','gartenbewaesserung'=>'bewaesserung',
         'einstellungen'=>'einstellungen','einstellung'=>'einstellungen',
         'sicherheit'=>'sicherheit','listen'=>'listen','energie'=>'energie',
-        'kamera'=>'kamera','kameras'=>'kamera','info'=>'info',
+        'kamera'=>'kamera','kameras'=>'kamera',
+        'kacheltest'=>'kacheltest','kachelvisualisierung'=>'kacheltest',
+        'kachel visualisierung'=>'kacheltest','kacheln testen'=>'kacheltest',
+        'info'=>'info',
         'informationen'=>'info','szene'=>'szene','szenen'=>'szene',
     ];
     foreach ($dynamic as $item) {
