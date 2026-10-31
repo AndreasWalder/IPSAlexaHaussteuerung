@@ -615,6 +615,8 @@ try {
         $tileVisId = max(0, (int)($V['TileTestVisualizationId'] ?? 0));
         $tileStorageCompat = false;
         $tileBootstrapMode = 'url';
+        $tileAutoLoginEnabled = false;
+        $tileAutoLoginPassword = '';
         $tileSettingsSource = 'payload';
         if ($tileTestInstanceId > 0 && function_exists('IPS_GetProperty') && IPS_InstanceExists($tileTestInstanceId)) {
             try {
@@ -624,6 +626,8 @@ try {
                 $configuredMode = (string)IPS_GetProperty($tileTestInstanceId, 'TileTestBootstrapMode');
                 $tileBootstrapMode = in_array($configuredMode, ['url', 'srcdoc'], true)
                     ? $configuredMode : 'url';
+                $tileAutoLoginEnabled = (bool)IPS_GetProperty($tileTestInstanceId, 'TileAutoLoginEnabled');
+                $tileAutoLoginPassword = (string)IPS_GetProperty($tileTestInstanceId, 'TileAutoLoginPassword');
                 $tileSettingsSource = 'instance';
             } catch (Throwable $e) {
                 IPS_LogMessage('Alexa', 'TileTest.settingsError ' . get_class($e));
@@ -634,7 +638,9 @@ try {
             'enabled' => $tileTestEnabled,
             'visualizationSelected' => $tileVisId > 0,
             'storageCompatibilityTest' => $tileStorageCompat,
-            'bootstrapMode' => $tileStorageCompat ? $tileBootstrapMode : 'off'
+            'bootstrapMode' => $tileStorageCompat ? $tileBootstrapMode : 'off',
+            'autoLoginReady' => $tileAutoLoginEnabled && $tileAutoLoginPassword !== ''
+                && $tileStorageCompat && $tileBootstrapMode === 'url' && $tileVisId > 0
         ]));
         if (!$tileTestEnabled) {
             IPS_LogMessage('Alexa', 'TileTest.disabled');
@@ -665,6 +671,23 @@ try {
         $payload['externalKey'] = 'kacheltest';
         $payload['tileStorageCompat'] = $tileStorageCompat;
         $payload['tileBootstrapMode'] = $tileBootstrapMode;
+        // Kurzlebiges, signiertes Startticket. Passwort niemals an URL,
+        // externe Payloads oder den Alexa-Logbuffer uebergeben.
+        $payload['tileAutoLoginTicket'] = '';
+        $payload['tileAutoLoginVisId'] = 0;
+        if ($tileAutoLoginEnabled && $tileAutoLoginPassword !== ''
+            && $tileStorageCompat && $tileBootstrapMode === 'url'
+            && $tileVisId > 0 && $tileTestInstanceId > 0 && $token !== '') {
+            $expires = time() + 120;
+            $nonce = bin2hex(random_bytes(16));
+            $key = hash('sha256', $tileAutoLoginPassword . "\0" . $token, true);
+            $sig = hash_hmac('sha256',
+                $tileTestInstanceId . '|' . $tileVisId . '|' . $expires . '|' . $nonce,
+                $key);
+            $payload['tileAutoLoginTicket'] = $expires . '.' . $nonce . '.' . $sig;
+            $payload['tileAutoLoginVisId'] = $tileVisId;
+        }
+        unset($tileAutoLoginPassword);
         IPS_LogMessage('Alexa', 'TileTest.start ' . $j([
             'target' => 'tile_visualization',
             'tilePath' => '/tile/',
@@ -766,6 +789,10 @@ try {
             'boot' => ($externalKey === 'kacheltest' && !empty($payload['tileStorageCompat'])
                 && ($payload['tileBootstrapMode'] ?? 'url') === 'url') ? 'url' : 'srcdoc',
             'logo'  => $logoUrl,
+            'authTicket' => $externalKey === 'kacheltest'
+                ? (string)($payload['tileAutoLoginTicket'] ?? '') : '',
+            'authVis' => $externalKey === 'kacheltest'
+                ? (int)($payload['tileAutoLoginVisId'] ?? 0) : 0,
         ], '', '&', PHP_QUERY_RFC3986);
 
         // URLs enthalten ggf. WFC-Passwort oder Hook-Token als Query-Parameter.

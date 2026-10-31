@@ -109,6 +109,10 @@ class IPSAlexaHaussteuerung extends IPSModule
         // Real-URL-Bootstrap ist nur bei explizit aktiviertem
         // localStorage-Kompatibilitaetstest aktiv; 'srcdoc' als Vergleich.
         $this->RegisterPropertyString('TileTestBootstrapMode', 'url');
+        // Opt-in: nur die eigene Tile-Testvisualisierung automatisch anmelden.
+        // Das Passwort bleibt in Symcon-Properties (nicht in GitHub/URLs/Logs).
+        $this->RegisterPropertyBoolean('TileAutoLoginEnabled', false);
+        $this->RegisterPropertyString('TileAutoLoginPassword', '');
         // Dauerhaftes Alexa-Kommando "Test"; das Ziel ist spaeter erweiterbar.
         $this->RegisterPropertyString('AlexaTestTarget', 'kacheltest');
 
@@ -684,6 +688,10 @@ class IPSAlexaHaussteuerung extends IPSModule
             $helperCategory, 'ExternalHtmlBrowserReceiver', 'iahHtmlBrowserReceiver',
             __DIR__ . '/resources/helpers/ExternalHtmlBrowserReceiver.php'
         );
+        $tileCredential = $this->ensureScriptTemplate(
+            $helperCategory, 'TileAutoLoginCredential', 'iahTileAutoLoginCredential',
+            __DIR__ . '/resources/helpers/TileAutoLoginCredential.php'
+        );
 
         $icons = $this->ensureScriptTemplate(
             $helperCategory, 'AlexaIconsHook', 'iahAlexaIconsHook',
@@ -747,7 +755,8 @@ class IPSAlexaHaussteuerung extends IPSModule
             // /hook/alexa-html-debug aus alten Tests oder anderen Modulen
             // werden nicht angeruehrt.
             '/hook/iah-alexa-shell' => $icons,
-            '/hook/iah-alexa-html-debug' => $receiver
+            '/hook/iah-alexa-html-debug' => $receiver,
+            '/hook/iah-alexa-tile-credential' => $tileCredential
         ] as $name => $target) {
             $present = false;
             foreach ($hooks as $existing) {

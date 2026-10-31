@@ -186,8 +186,9 @@ tileTestCheck(str_contains($receiver,"'tile_compat'")
     && str_contains($receiver,"'shim_session'"),
     'Compatibility telemetry is allowlisted');
 tileTestCheck(!str_contains($shell, 'prompt(')
-    && !str_contains($shell, 'password='),
-    'Compatibility bootstrap does not auto-submit a password');
+    && !str_contains($shell, "searchParams.set('password'")
+    && !str_contains($shell, "'?password='"),
+    'Compatibility bootstrap never places a login password in URLs');
 
 // Regression: the previous localStorage shim starts the spinner but the
 // Tile application can still hang, e.g. because srcdoc drops /tile/#ID.
@@ -266,5 +267,74 @@ tileTestCheck(str_contains($receiver, "'tile_origin'") &&
 tileTestCheck(!str_contains($realUrlBootstrap, 'password=') &&
     !str_contains($realUrlBootstrap, 'console.log('),
     'No URL passwords or full request logs in compatibility HTML');
+
+// Password convenience must be explicit opt-in, short-lived, and NEVER
+// embed the password in Alexa HTML.Start URL, logs, or GitHub contents.
+$credential = file_get_contents($base.'resources/helpers/TileAutoLoginCredential.php');
+tileTestCheck(str_contains($module, "RegisterPropertyBoolean('TileAutoLoginEnabled', false)")
+    && str_contains($module, "RegisterPropertyString('TileAutoLoginPassword', '')"),
+    'Tile autologin must default to disabled with no stored password');
+tileTestCheck(str_contains($module, "'/hook/iah-alexa-tile-credential' => \$tileCredential")
+    && str_contains($module, "'iahTileAutoLoginCredential'"),
+    'Secure POST credential hook must be installed by the module');
+tileTestCheck(str_contains($renderer, "'tileAutoLoginTicket'") &&
+    str_contains($renderer, "hash_hmac('sha256'") &&
+    str_contains($renderer, "random_bytes(16)"),
+    'Renderer must sign short-lived random credential tickets');
+tileTestCheck(str_contains($renderer, "time() + 120") &&
+    str_contains($renderer, "unset(\$tileAutoLoginPassword)") &&
+    !str_contains($renderer, "'authPassword'"),
+    'Credential stays server-side, never appears in Alexa request URL');
+tileTestCheck(str_contains($shell, "function tileTryAutoLogin()") &&
+    str_contains($shell, "input[type=\"password\"]") &&
+    str_contains($shell, "fetch('/hook/iah-alexa-tile-credential'") &&
+    str_contains($shell, "method:'POST'"),
+    'Tile login detects the password field and calls same-origin POST');
+tileTestCheck(str_contains($shell, 'autoLoginUsed=true') &&
+    str_contains($shell, 'autoLoginTicks>75') &&
+    str_contains($shell, "route==='kacheltest'"),
+    'Avoid multiple login attempts and preserve Kamera/Energie');
+tileTestCheck(str_contains($receiver, "'tile_autologin'") &&
+    str_contains($receiver, "'credential_unavailable'"),
+    'Diagnostic events never contain password, token, or input value');
+tileTestCheck(str_contains($credential, "hash_equals(\$expectedToken, \$token)") &&
+    str_contains($credential, "hash_equals(\$correct, \$signature)") &&
+    str_contains($credential, "(\$_SERVER['REQUEST_METHOD'] ?? '') !== 'POST'") &&
+    str_contains($credential, "Cache-Control: no-store"),
+    'Credential endpoint checks authenticated signed POST without cache');
+tileTestCheck(str_contains($credential, "TileAutoLoginEnabled") &&
+    str_contains($credential, "'TileTestBootstrapMode') === 'url'") &&
+    str_contains($credential, "\$expiry < \$now") &&
+    str_contains($credential, "TileTestVisualizationId"),
+    'Endpoint refuses disabled, expired or mismatched Tile auth requests');
+tileTestCheck(str_contains($credential, "HTTP_ORIGIN") &&
+    str_contains($credential, "HTTP_SEC_FETCH_SITE") &&
+    !str_contains($credential, "IPS_LogMessage("),
+    'Endpoint enforces same-origin browser security and never logs secrets');
+$tileAutologinPanel = null;
+foreach (($form['elements'] ?? []) as $element) {
+    if (str_contains((string)($element['caption'] ?? ''), 'Kachelvisualisierung testen')) {
+        $tileAutologinPanel = $element;
+        break;
+    }
+}
+$fields = [];
+foreach (($tileAutologinPanel['items'] ?? []) as $item) {
+    if (isset($item['name'])) $fields[$item['name']] = $item;
+}
+tileTestCheck(($fields['TileAutoLoginPassword']['type'] ?? '') === 'PasswordTextBox'
+    && ($fields['TileAutoLoginEnabled']['type'] ?? '') === 'CheckBox',
+    'Password must be masked and autofill must be opt-in in Symcon form');
+
+// Signing contract: generated ticket and provider must use identical HMAC
+// messages. A tampered ID/password changes signature and cannot authenticate.
+$id=16159; $vis=54321; $expiry=time()+90; $nonce=bin2hex(random_bytes(16));
+$secret='not-an-actual-password'; $token='not-an-actual-token';
+$key=hash('sha256',$secret . "\0" . $token,true);
+$sig=hash_hmac('sha256',$id.'|'.$vis.'|'.$expiry.'|'.$nonce,$key);
+tileTestCheck(hash_equals($sig,hash_hmac('sha256',$id.'|'.$vis.'|'.$expiry.'|'.$nonce,$key)),
+    'Valid ticket signature matches');
+tileTestCheck(!hash_equals($sig,hash_hmac('sha256',$id.'|'.($vis+1).'|'.$expiry.'|'.$nonce,$key)),
+    'Ticket cannot be used for different Tile visualization');
 
 echo "PASS: Kacheltest voice recognition, separate /tile/ rendering, no WFC switch, setup and diagnostics\n";

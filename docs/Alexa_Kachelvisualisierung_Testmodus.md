@@ -61,6 +61,83 @@ durch das tatsächliche Erscheinen von Passwortfeld/Kacheln bestätigt.
 Kamera, Energie, WebFront und die originale /tile/-Seite werden
 nicht verändert.
 
+## Optional: Passwort der Kachelvisualisierung automatisch eingeben
+
+Die Kachelvisualisierung startet mit der neuen `url`-Bootstrap-Methode
+auch auf Alexa und zeigt die reguläre Passwortabfrage. **Dies ist die
+unterstützte Anmeldung, kein Umgehen der Zugriffskontrolle.**
+
+Für den Komfort ist jetzt eine **standardmäßig deaktivierte** Funktion
+verfügbar, die das bereits gültige Passwort im tatsächlichen Login-Dialog
+einmalig eingibt und nach Möglichkeit auf „Anmelden“ klickt.
+
+**Einrichtung:** IP-Symcon-Modulinstanz →
+**Alexa – neue Kachelvisualisierung testen**:
+1. `Alexa Kacheltest erlauben`: ein.
+2. `Kachelvisualisierungs-Instanz-ID`: konkrete ID, nicht 0.
+3. `TileTestStorageCompat`: ein; **Kompatibilitätsverfahren**:
+   **Neue Methode: echte HTTPS-Dokumentadresse /tile/**.
+4. `Automatische Passwort-Anmeldung auf Alexa`: ein.
+5. In das maskierte Feld **Passwort der ausgewählten Kachelvisualisierung**
+   das Passwort *dieser* Tile-Instanz eintragen, nicht das alte
+   WebFront-Passwort. **Übernehmen** klicken.
+6. „Alexa, öffne Haussteuerung“ → „Test“ sagen.
+
+### Wie funktioniert das?
+
+- **Kein Passwort in der URL** oder in den Amazon-HTML.Start-Direktiven.
+- Der Renderer erstellt je Testaufruf ein zufälliges, mit Modul-Token
+  und Passwort signiertes **maximal 120 Sekunden** gültiges Ticket.
+  Das Ticket enthält das Passwort nicht.
+- Wenn der Browser das echte Passwortfeld sieht, ruft er **einmal**
+  den getrennten WebHook `/hook/iah-alexa-tile-credential` per
+  Same-Origin-HTTPS-**POST** auf. Das Backend prüft ID, Token,
+  Konfiguration, Ticket und Ablaufdatum.
+- Die Antwort ist `no-store`; das Passwort wird ausschließlich im
+  Browser für das Login-Feld verwendet. Die echte Tile-Anmeldung
+  prüft das Passwort weiterhin wie bei einer manuellen Eingabe.
+- Falls das Formular nicht automatisch abgeschickt werden kann,
+  wird nur das Passwortfeld gefüllt; der Benutzer kann dann
+  „Anmelden“ antippen. Es werden **keine** wiederholten Anmeldeversuche
+  unternommen, um Sperren durch Fehlversuche zu vermeiden.
+- Diagnose `tile_autologin` meldet ausschließlich feste Codes:
+  `field_detected`, `filled`, `submitted`, `enter_sent`,
+  `filled_only`, `credential_unavailable`, `dom_changed`.
+  **Niemals** Passwort, Passwortlänge, Token, Eingabewert oder Cookie.
+
+### Sicherheit und Grenzen
+
+**WICHTIG:** Eine `PasswordTextBox` maskiert nur die Anzeige in IP-Symcon.
+Modul-Properties werden in der Symcon-Konfiguration gespeichert
+und sind damit für Administratoren/Backups auslesbar; eine native
+verschlüsselte Speicherung wird durch diese Ergänzung **nicht**
+behauptet. Nutze deshalb möglichst eine eigenständige, auf die
+erforderlichen Geräte beschränkte Kachelvisualisierung mit eigenem
+Passwort, nicht das Administrationspasswort. Wer das Echo mit
+aktiviertem AutoLogin starten kann, kann die freigegebenen
+Haussteuerungsfunktionen bedienen.
+
+Die von Symcon unterstützte Alternative ohne Speicherung eines Passworts
+ist **Autostart für IP-Adresse** in den Sicherheitseinstellungen der
+Kachelvisualisierung, aber nur für ein *vertrauenswürdiges, direkt
+angeschlossenes* Gerät im lokalen Netzwerk. Bei Reverse Proxy oder
+Connect ist die IP-Bindung in der Regel nicht zuverlässig; keinesfalls
+global `0.0.0.0/0` freigeben.
+Dokumentation:
+https://www.symcon.de/de/service/dokumentation/komponenten/kachel-visualisierung/instanzkonfiguration/sicherheit/
+
+Ein Passwort als `?password=...`-URL-Parameter wird bewusst **nicht**
+verwendet: Symcon betrachtet dies bei der neuen Kachelvisualisierung als
+Sicherheitslücke und unterstützt es nicht verlässlich.
+Dokumentierte Diskussion:
+https://community.symcon.de/t/kachel-visualierung-passwort-im-get-parameter/139629
+
+Bei `TileAutoLoginEnabled=false`, fehlendem Passwort, deaktiviertem
+Kompatibilitätsmodus, `srcdoc`-Verfahren oder fehlender konkreter
+Visualisierungs-ID verhält sich der Test exakt wie bisher: **manuelle
+Anmeldung**. Kamera/Energie und das klassische WebFront sind
+vollständig unverändert.
+
 ## Neuer dauerhafter Alexa-Befehl „Test“
 
 **Ab jetzt nur „Test“ sagen** (nach „Alexa, öffne Haussteuerung“).

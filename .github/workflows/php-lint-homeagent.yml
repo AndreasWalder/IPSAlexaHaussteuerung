@@ -37,6 +37,7 @@ jobs:
           php -l IPSAlexaHaussteuerung/resources/helpers/VoiceIntentRouter.php
           php -l IPSAlexaHaussteuerung/resources/helpers/ExternalHtmlProbe.php
           php -l IPSAlexaHaussteuerung/resources/helpers/ExternalHtmlBrowserReceiver.php
+          php -l IPSAlexaHaussteuerung/resources/helpers/TileAutoLoginCredential.php
           php -l IPSAlexaHaussteuerung/resources/helpers/WebHookIcons.php
           php -l IPSAlexaHaussteuerung/resources/helpers/KIIntentParser.php
           php -l IPSAlexaHaussteuerung/src/KICostAccounting.php
