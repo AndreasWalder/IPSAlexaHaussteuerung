@@ -22,6 +22,21 @@ function iah_html_diag_uri(string $uri): array
         'hasFragment'=>isset($p['fragment'])&&$p['fragment']!=='',
     ];
 }
+/** Nur Vergleich; Host-/Pfadwerte niemals protokollieren. */
+function iah_html_diag_same_origin(string $a,string $b): bool
+{
+    $x=@parse_url($a);
+    $y=@parse_url($b);
+    if(!is_array($x)||!is_array($y))return false;
+    $sx=strtolower((string)($x['scheme']??''));
+    $sy=strtolower((string)($y['scheme']??''));
+    if($sx!==$sy||$sx==='')return false;
+    $hx=strtolower((string)($x['host']??''));
+    $hy=strtolower((string)($y['host']??''));
+    if($hx===''||$hx!==$hy)return false;
+    $portDefault=$sx==='https'?443:80;
+    return (int)($x['port']??$portDefault)===(int)($y['port']??$portDefault);
+}
 function iah_html_diag_http(string $url): array
 {
     $uri=iah_html_diag_uri($url);
@@ -109,7 +124,9 @@ function iah_html_diag_analyse(array $input,?callable $http=null):array
     $localAvailable=$local!==''&&is_file($local);
     $localBytes=$localAvailable?(int)@filesize($local):0;
     $localContent=$localAvailable?(@file_get_contents($local,false,null,0,8192)?:''):'';
+    $sameOrigin=iah_html_diag_same_origin($shell,$target);
     $doc=[
+        'shellAndTargetSameOrigin'=>$sameOrigin,
         'time'=>date('c'),
         'key'=>$key,
         'pageType'=>in_array((string)($input['pageType']??''),['wfc_item','external_url'],true)
@@ -130,6 +147,7 @@ function iah_html_diag_analyse(array $input,?callable $http=null):array
     $warnings=[];
     if($doc['htmlSupported']===false)$warnings[]='device_reports_no_html_support';
     if(!$doc['shellUri']['https'])$warnings[]='shell_requires_https';
+    if(!$doc['targetUri']['https'])$warnings[]='target_requires_https_iframe';
     if(!$localAvailable)$warnings[]='local_shell_file_not_found_at_user_icons';
     foreach(['shellHttp'=>'shell','targetHttp'=>'target'] as $f=>$name){
         $p=$doc[$f];
@@ -139,10 +157,17 @@ function iah_html_diag_analyse(array $input,?callable $http=null):array
         if($p['status']===401||$p['status']===403)$warnings[]=$name.'_unauthorized';
         if($p['status']===404)$warnings[]=$name.'_not_found';
         if($p['status']>=500)$warnings[]=$name.'_server_error';
-        if($p['xFrameOptions']==='DENY'||$p['xFrameOptions']==='SAMEORIGIN')
-            $warnings[]=$name.'_iframe_restricted_by_xframe';
-        if(in_array($p['cspFrameAncestors'],['none','self_or_mixed'],true))
-            $warnings[]=$name.'_iframe_possible_csp_frame_ancestors_block';
+        if($name==='target'){
+            if($p['xFrameOptions']==='DENY'
+                || ($p['xFrameOptions']==='SAMEORIGIN' && !$sameOrigin))
+                $warnings[]='target_iframe_restricted_by_xframe';
+            if($p['cspFrameAncestors']==='none'
+                || ($p['cspFrameAncestors']==='self_or_mixed' && !$sameOrigin))
+                $warnings[]='target_iframe_possible_csp_frame_ancestors_block';
+        }
+        if($name==='shell' && ($p['cspFrameSrc']==='none'
+            || ($p['cspFrameSrc']==='self_or_mixed' && !$sameOrigin)))
+            $warnings[]='shell_csp_frame_src_may_block_iframe';
         if($p['attempted'] && $p['status']===200 && $p['contentType']!=='text/html')
             $warnings[]=$name.'_not_text_html';
     }
