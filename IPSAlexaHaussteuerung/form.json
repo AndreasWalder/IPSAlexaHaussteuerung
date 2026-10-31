@@ -265,8 +265,24 @@
           ]
         },
         {
+          "type": "CheckBox",
+          "name": "TileAutoLoginEnabled",
+          "caption": "Automatische Passwort-Anmeldung auf Alexa (optional, standardmäßig AUS)",
+          "value": false
+        },
+        {
+          "type": "PasswordTextBox",
+          "name": "TileAutoLoginPassword",
+          "caption": "Passwort der ausgewählten Kachelvisualisierung (nicht das alte WebFront-Passwort)",
+          "value": ""
+        },
+        {
           "type": "Label",
-          "caption": "Standard AUS. Nur beim Sprachbefehl „Test“: Bei aktivierter Kompatibilität versucht die neue Methode, die Tile-App als echtes Same-Origin-Dokument statt als about:srcdoc zu laden. Im Fehlerfall Rückfall zur bisherigen srcdoc-Methode. Die Kachelvisualisierung selbst wird nicht geändert. Keine automatische Passwortübergabe. Kamera/Energie und altes WebFront bleiben unverändert."
+          "caption": "Nur für Alexa „Test“ mit aktivierter localStorage-Kompatibilität und URL-Verfahren sowie gewählter Kachelvisualisierungs-ID. Das Passwort wird in den IP-Symcon-Modul-Eigenschaften gespeichert (nicht verschlüsselt, trotz maskiertem Eingabefeld). Verwende am besten eine eigene, eingeschränkte Testvisualisierung. Der Browser erhält es nur bei eingeblendeter Anmeldung über einen zeitlich begrenzten, HTTPS-geschützten POST. Kein Passwort in URLs, Logs oder GitHub. Bei ungeeigneten Login-Formularen bleibt die manuelle Anmeldung möglich."
+        },
+        {
+          "type": "Label",
+          "caption": "Standard AUS. Nur beim Sprachbefehl „Test“: Bei aktivierter Kompatibilität versucht die neue Methode, die Tile-App als echtes Same-Origin-Dokument statt als about:srcdoc zu laden. Im Fehlerfall Rückfall zur bisherigen srcdoc-Methode. Die Kachelvisualisierung selbst wird nicht geändert. AutoLogin nur bei eigener optionaler Checkbox, sonst keine Passwortübergabe. Kamera/Energie und altes WebFront bleiben unverändert."
         },
         {
           "type": "Label",
