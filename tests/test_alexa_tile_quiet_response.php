@@ -104,7 +104,7 @@ $action=(string)file_get_contents(__DIR__.'/../IPSAlexaHaussteuerung/resources/a
 $form=json_decode((string)file_get_contents(__DIR__.'/../IPSAlexaHaussteuerung/form.json'),true);
 assertQuiet(str_contains($mod,"RegisterPropertyBoolean('TileQuietNoFollowup', false)"),
     'Quiet mode must default to OFF');
-assertQuiet(str_contains($mod,"patchActionScriptTileQuietFollowup((int) $id)"),
+assertQuiet(str_contains($mod,'patchActionScriptTileQuietFollowup((int) $id)'),
     'Action script migration must run on ApplyChanges');
 assertQuiet(str_contains($mod,"IAH_TILE_QUIET_HELPER_BEGIN"),
     'Installer must migrate helper into customized Action scripts');
