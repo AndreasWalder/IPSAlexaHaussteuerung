@@ -614,12 +614,16 @@ try {
         $tileTestEnabled = (bool)($V['TileTestEnabled'] ?? false);
         $tileVisId = max(0, (int)($V['TileTestVisualizationId'] ?? 0));
         $tileStorageCompat = false;
+        $tileBootstrapMode = 'url';
         $tileSettingsSource = 'payload';
         if ($tileTestInstanceId > 0 && function_exists('IPS_GetProperty') && IPS_InstanceExists($tileTestInstanceId)) {
             try {
                 $tileTestEnabled = (bool)IPS_GetProperty($tileTestInstanceId, 'TileTestEnabled');
                 $tileVisId = max(0, (int)IPS_GetProperty($tileTestInstanceId, 'TileTestVisualizationId'));
                 $tileStorageCompat = (bool)IPS_GetProperty($tileTestInstanceId, 'TileTestStorageCompat');
+                $configuredMode = (string)IPS_GetProperty($tileTestInstanceId, 'TileTestBootstrapMode');
+                $tileBootstrapMode = in_array($configuredMode, ['url', 'srcdoc'], true)
+                    ? $configuredMode : 'url';
                 $tileSettingsSource = 'instance';
             } catch (Throwable $e) {
                 IPS_LogMessage('Alexa', 'TileTest.settingsError ' . get_class($e));
@@ -629,7 +633,8 @@ try {
             'source' => $tileSettingsSource,
             'enabled' => $tileTestEnabled,
             'visualizationSelected' => $tileVisId > 0,
-            'storageCompatibilityTest' => $tileStorageCompat
+            'storageCompatibilityTest' => $tileStorageCompat,
+            'bootstrapMode' => $tileStorageCompat ? $tileBootstrapMode : 'off'
         ]));
         if (!$tileTestEnabled) {
             IPS_LogMessage('Alexa', 'TileTest.disabled');
@@ -659,6 +664,7 @@ try {
         ];
         $payload['externalKey'] = 'kacheltest';
         $payload['tileStorageCompat'] = $tileStorageCompat;
+        $payload['tileBootstrapMode'] = $tileBootstrapMode;
         IPS_LogMessage('Alexa', 'TileTest.start ' . $j([
             'target' => 'tile_visualization',
             'tilePath' => '/tile/',
@@ -757,6 +763,8 @@ try {
             'title' => $titleTxt,
             'src'   => $tileBase,
             'compat' => ($externalKey === 'kacheltest' && !empty($payload['tileStorageCompat'])) ? '1' : '0',
+            'boot' => ($externalKey === 'kacheltest' && !empty($payload['tileStorageCompat'])
+                && ($payload['tileBootstrapMode'] ?? 'url') === 'url') ? 'url' : 'srcdoc',
             'logo'  => $logoUrl,
         ], '', '&', PHP_QUERY_RFC3986);
 
