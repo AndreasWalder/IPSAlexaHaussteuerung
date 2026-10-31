@@ -28,6 +28,8 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
   var src = params.get('src') || '';
   // NUR bei explizitem Modul-Opt-in; Kamera/Energie unveraendert.
   var compat = route==='kacheltest' && params.get('compat')==='1';
+  var bootMode = compat && params.get('boot')==='url' ? 'url':'srcdoc';
+  var originFallback=false;
   var loaded = false;
   var sent = 0;
   function emit(stage,state,code,metrics){
@@ -411,6 +413,23 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
     });
   }
 
+  // Funktionen nur fuer das SAME-ORIGIN-Bootstrap im eigenen Test-iframe.
+  // Wird nicht fuer Kamera, Energie oder andere produktive Seiten gesetzt.
+  if(compat && bootMode==='url'){
+    window.__iahTileStorageShim=installTileStorageShim;
+    window.__iahTileBootstrapDiagnostics=installTileBootstrapDiagnostics;
+  }
+
+  function loadTileWithRealUrl(){
+    // Keine fremden Sites: nur der bestehende Modul-WebHook mit Token.
+    var bootstrap=new URL('/hook/iah-alexa-shell',location.origin);
+    bootstrap.searchParams.set('f','alexa-tile-url-bootstrap.html');
+    bootstrap.searchParams.set('token',token);
+    bootstrap.searchParams.set('src',src);
+    emit('tile_compat','ok','url_bootstrap');
+    frame.src=bootstrap.href;
+  }
+
   // Nachrichten ausschliesslich von unserem iframe und derselben Origin,
   // mit festen erlaubten Kategorien an den geschuetzten WebHook weiterleiten.
   window.addEventListener('message',function(ev){
@@ -419,16 +438,30 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
     if(!data || data.iahTileDiagnostics!==1)return;
     if(data.stage!=='tile_boot' && data.stage!=='tile_early_error' &&
        data.stage!=='tile_early_rejection' &&
-       data.stage!=='tile_location' && data.stage!=='tile_history')return;
+       data.stage!=='tile_location' && data.stage!=='tile_history' &&
+       data.stage!=='tile_origin')return;
     var codes=[
       'no_hash','hash_match','hash_missing','hooks_installed',
       'security_error','type_error','reference_error','syntax_error',
       'js_error','script','stylesheet','other',
       'srcdoc_context','tile_context','other_context',
-      'history_ok','history_unchanged','history_blocked'
+      'history_ok','history_unchanged','history_blocked',
+      'origin_start','origin_injected','origin_invalid','origin_failed'
     ];
     if(codes.indexOf(data.code)<0)return;
-    emit(data.stage,data.stage==='tile_boot'?'ok':'error',data.code);
+    emit(data.stage,
+      data.stage==='tile_boot' || data.code==='history_ok' ||
+      data.code==='tile_context' ||
+      data.code==='origin_start' || data.code==='origin_injected'
+        ? 'ok':'error',data.code);
+    if(data.stage==='tile_origin' &&
+       (data.code==='origin_invalid' || data.code==='origin_failed') &&
+       bootMode==='url' && !originFallback){
+      // Save the original (less compatible) srcdoc experiment as fallback.
+      originFallback=true;
+      emit('tile_compat','error','origin_fallback');
+      loadTileWithStorageCompatibility();
+    }
   });
   emit('shell_boot','ok');
   if(route==='kacheltest'){
@@ -496,7 +529,8 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
       emit('iframe_timeout','timeout');
     }
   },10000);
-  if(compat)loadTileWithStorageCompatibility();
+  if(compat && bootMode==='url')loadTileWithRealUrl();
+  else if(compat)loadTileWithStorageCompatibility();
   else frame.src=src;
 })();
 </script>
