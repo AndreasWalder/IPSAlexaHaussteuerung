@@ -68,6 +68,8 @@ $code = $allow($input['code'] ?? '', [
     'origin_start', 'origin_injected', 'origin_invalid', 'origin_failed',
     'origin_fallback', 'url_bootstrap',
     'field_detected', 'filled', 'submitted', 'filled_only', 'enter_sent',
+    'button_clicked', 'form_submit_requested', 'login_still_visible',
+    'login_closed', 'input_reset',
     'credential_unavailable', 'dom_changed',
     'method_invalid', 'fetch_cross_site', 'origin_invalid',
     'origin_mismatch', 'content_type_invalid', 'payload_invalid',
