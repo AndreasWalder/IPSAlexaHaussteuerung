@@ -11,6 +11,7 @@ on:
       - fix/gethaus-legacy-tiles-before-ki-20261031
       - feature/alexa-500-log-buffer-eur-cost-20261031
       - fix/alexa-voice-navigation-route-priority-20261031
+      - diagnostics/external-html-blank-screen-20261031
   pull_request:
     paths:
       - 'IPSAlexaHaussteuerung/**'
@@ -34,6 +35,7 @@ jobs:
           php -l IPSAlexaHaussteuerung/resources/helpers/HomeAgentVoiceBridge.php
           php -l IPSAlexaHaussteuerung/resources/helpers/KIHouseController.php
           php -l IPSAlexaHaussteuerung/resources/helpers/VoiceIntentRouter.php
+          php -l IPSAlexaHaussteuerung/resources/helpers/ExternalHtmlProbe.php
           php -l IPSAlexaHaussteuerung/resources/helpers/KIIntentParser.php
           php -l IPSAlexaHaussteuerung/src/KICostAccounting.php
           php -l IPSAlexaHaussteuerung/src/KICostTrait.php
@@ -65,3 +67,5 @@ jobs:
         run: php tests/test_voice_route_priority.php
       - name: Test copyable Alexa 500-message buffer and EUR conversion
         run: php tests/test_alexa_log_buffer_eur.php
+      - name: Test Web API for Games Kamera/Energie HTTPS and iframe diagnostics
+        run: php tests/test_external_html_diagnostics.php

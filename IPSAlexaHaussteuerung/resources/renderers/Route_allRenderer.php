@@ -690,6 +690,48 @@ try {
             IPS_LogMessage('Alexa', 'ROUTE_ALL['.$cid.'] external.delay skipped (missing params)');
         }
 
+        // HTML/SSL/iframe-Diagnose ASYNCHRON starten (Alexa-Antwort nicht blockieren).
+        // Ausschliesslich konfigurierten HTTPS-Endpunkt pruefen.
+        $probeId=0;
+        if ($instanceId>0 && function_exists('IPS_GetObjectIDByIdent')) {
+            $helperParent=(int)@IPS_GetObjectIDByIdent('iahHelper',$instanceId);
+            if($helperParent>0)$probeId=(int)@IPS_GetObjectIDByIdent('externalHtmlProbeScript',$helperParent);
+        }
+        IPS_LogMessage('Alexa','ExternalHTML.prepare '.$j([
+            'routeKey'=>$externalKey,'pageType'=>$pageType,
+            'mappingAvailable'=>$pageEntry!==null,
+            'shellConfigured'=>$shellUrl!=='',
+            'shellHttps'=>strtolower((string)parse_url($shellUrl,PHP_URL_SCHEME))==='https',
+            'targetHttps'=>strtolower((string)parse_url($tileBase,PHP_URL_SCHEME))==='https',
+            'diagnosticScriptFound'=>$probeId>0,
+            'htmlSupported'=>$payload['htmlSupported']??null,
+            'aplSupported'=>$aplSupported
+        ]));
+        if($probeId>0 && function_exists('IPS_RunScriptEx')) {
+            $probePayload=[
+                'instanceId'=>$instanceId,'externalKey'=>$externalKey,'pageType'=>$pageType,
+                'baseUrl'=>$baseUrl,'shellUrl'=>(string)$shellUrl,'targetUrl'=>$tileBase,
+                'localShell'=>IPS_GetKernelDir().'user'.DIRECTORY_SEPARATOR.'icons'.DIRECTORY_SEPARATOR.'alexa-shell.html',
+                'htmlSupported'=>$payload['htmlSupported']??null,
+                'aplSupported'=>$aplSupported
+            ];
+            try{
+                $started=IPS_RunScriptEx($probeId,[
+                    'iahHtmlDiagRequest'=>json_encode($probePayload,JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_SLASHES)
+                ]);
+                IPS_LogMessage('Alexa','ExternalHTML.probeQueued '.($started?'yes':'no'));
+            }catch(Throwable $e){
+                IPS_LogMessage('Alexa','ExternalHTML.probeDispatchError '.get_class($e));
+            }
+        }else{
+            IPS_LogMessage('Alexa','ExternalHTML.probeNotInstalled – Modulinstanz nach Update uebernehmen');
+        }
+        IPS_LogMessage('Alexa','ExternalHTML.directive '.$j([
+            'type'=>'Alexa.Presentation.HTML.Start',
+            'uriScheme'=>strtolower((string)parse_url($shellUrl,PHP_URL_SCHEME)),
+            'timeoutSeconds'=>300,'responseSpeechEmpty'=>true
+        ]));
+
         // HTML.Start zurückgeben
         $directives = [[
             'type'          => 'Alexa.Presentation.HTML.Start',

@@ -142,6 +142,9 @@ class IPSAlexaHaussteuerung extends IPSModule
 
         $catDiag = $this->ensureCategory($root, 'Diagnose', 'iahDiag');
         $this->EnsureAlexaLogInfrastructure($catDiag);
+        $htmlDiag=$this->ensureCategory($catDiag,'Web API for Games – Kamera/Energie','iahExternalHtmlDiag');
+        $this->ensureVar($htmlDiag,'Letzter HTML-Diagnosebericht (JSON)','iahHtmlLast',VARIABLETYPE_STRING,'~TextBox',null);
+        $this->ensureVar($htmlDiag,'Letzte 20 HTML-Diagnosen (JSON-Zeilen)','iahHtmlHistory',VARIABLETYPE_STRING,'~TextBox',null);
         $voiceDiag = $this->ensureCategory($catDiag, 'KI-Sprachrouter und APL-Navigation', 'iahVoiceDiag');
         // Entscheidungen und UI-Kontext pro anonymisiertem Alexa-Gerät.
         $rawVoiceState = $this->ensureVar($voiceDiag, 'Router-Datenspeicher (nicht bearbeiten)', 'iahVoiceState', VARIABLETYPE_STRING, '', null);
@@ -624,8 +627,31 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->patchActionScriptHomeAgentVoice((int) $id);
         $this->patchActionScriptVoiceNavigation((int) $id);
         $this->patchActionScriptSafeRequestLogging((int) $id);
+        $this->patchActionScriptExternalHtmlMetadata((int) $id);
 
         return (int) $id;
+    }
+
+    /**
+     * Alte Alexa-Action-Skripte bleiben erhalten; das Modul aktualisiert
+     * einzelne erkannte Abschnitte statt sie pauschal zu überschreiben.
+     * Die externe HTML-Diagnose benötigt die HTML-Gerätefähigkeit im
+     * Routing-Payload – APL allein ist KEIN Nachweis für HTML-Unterstützung.
+     */
+    private function patchActionScriptExternalHtmlMetadata(int $scriptId): void
+    {
+        $current=$this->getScriptContent($scriptId);
+        if(!is_string($current)||$current==='')return;
+        $needle="'aplSupported'    => (bool)(\$aplSupported ?? false),";
+        $addition="\n                'htmlSupported'   => \$iahHtmlSupport ?? null,";
+        if(strpos($current,"'htmlSupported'   =>")!==false)return;
+        if(strpos($current,$needle)===false){
+            IPS_LogMessage('Alexa','ExternalHTML.migration: Payload-Feld nicht erkannt; bitte bestehendes Action-Skript prüfen.');
+            return;
+        }
+        $new=str_replace($needle,$needle.$addition,$current);
+        IPS_SetScriptContent($scriptId,$new);
+        IPS_LogMessage('Alexa','ExternalHTML.migration: HTML-Geraetefaehigkeit in Action-Payload ergaenzt.');
     }
 
     private function ensureHelperScripts(int $parent): void
@@ -641,6 +667,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             ['name' => 'HomeAgentVoiceBridge', 'ident' => 'homeAgentVoiceBridgeScript', 'file' => __DIR__ . '/resources/helpers/HomeAgentVoiceBridge.php'],
             ['name' => 'KIHouseController', 'ident' => 'kiHouseControllerScript', 'file' => __DIR__ . '/resources/helpers/KIHouseController.php'],
             ['name' => 'VoiceIntentRouter', 'ident' => 'voiceIntentRouterScript', 'file' => __DIR__ . '/resources/helpers/VoiceIntentRouter.php'],
+            ['name' => 'ExternalHtmlProbe', 'ident' => 'externalHtmlProbeScript', 'file' => __DIR__ . '/resources/helpers/ExternalHtmlProbe.php'],
         ];
 
         foreach ($map as $def) {

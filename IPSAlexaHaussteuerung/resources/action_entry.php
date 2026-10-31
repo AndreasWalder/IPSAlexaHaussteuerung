@@ -1307,6 +1307,20 @@ function Execute($request = null)
                 'intent' => $intentSafe,
                 'received' => $request !== null
             ], JSON_UNESCAPED_UNICODE));
+            if ($kind === 'Alexa.Presentation.HTML.Message') {
+                // Nur fest definierte Diagnosefelder aus Browser-Events,
+                // niemals Inhalte, URLs, Tokens, Cookies oder Fehlertexte.
+                $htmlMessage = is_array($requestMeta['message'] ?? null)
+                    ? $requestMeta['message']
+                    : (is_object($requestMeta['message'] ?? null) ? (array)$requestMeta['message'] : []);
+                $safeHtmlEvent = [];
+                foreach (['type','stage','status','code'] as $field) {
+                    if (!is_scalar($htmlMessage[$field] ?? null)) continue;
+                    $safeHtmlEvent[$field] = substr(
+                        preg_replace('/[^a-zA-Z0-9_.-]/','',(string)$htmlMessage[$field]) ?? '',0,40);
+                }
+                IPS_LogMessage('Alexa','ExternalHTML.clientEvent ' . json_encode($safeHtmlEvent,JSON_UNESCAPED_UNICODE));
+            }
         }
         // IAH_SAFE_REQUEST_LOG_END
     } catch (Throwable $e) {
@@ -1881,6 +1895,12 @@ function Execute($request = null)
         $iahVoiceRequestType = (string)($request->type ?? '');
         $iahVoiceIsAplEvent = $iahVoiceRequestType === 'Alexa.Presentation.APL.UserEvent';
         $iahVoiceHasScreen = isset($request->context->System->device->supportedInterfaces->{'Alexa.Presentation.APL'});
+        $iahHtmlInterfaces=$request->context->System->device->supportedInterfaces ?? null;
+        $iahHtmlSupport=$iahHtmlInterfaces === null ? null :
+            (is_object($iahHtmlInterfaces)
+                ? isset($iahHtmlInterfaces->{'Alexa.Presentation.HTML'})
+                : (is_array($iahHtmlInterfaces)
+                    ? array_key_exists('Alexa.Presentation.HTML',$iahHtmlInterfaces) : null));
         $iahVoiceViewport = $request->context->Viewport ?? null;
         $iahVoiceViewportMode = (string)($iahVoiceViewport->mode ?? '');
         $iahVoiceViewportShape = (string)($iahVoiceViewport->shape ?? '');
@@ -1965,6 +1985,14 @@ function Execute($request = null)
             'viewportShape'=>$iahVoiceViewportShape,
             'aplSource'=>$iahVoiceAplSource,
         ]);
+        if (in_array((string)($iahLegacyNavKey??''),['kamera','energie'],true)) {
+            $log('info','ExternalHTML.device',[
+                'route'=>$iahLegacyNavKey,
+                'htmlSupported'=>$iahHtmlSupport,
+                'aplSupported'=>$iahVoiceHasScreen,
+                'requestType'=>$iahVoiceRequestType
+            ]);
+        }
         // Die verifizierte GetHaus-Einzelslot-Navigation ist unabhängig vom
         // zusätzlichen Helper: selbst wenn IPS_RunScriptWaitEx ausfällt,
         // können "Licht" und "Jalousie" nie als KI-Frage behandelt werden.
@@ -2746,6 +2774,7 @@ function Execute($request = null)
                 'args2v'          => $args2v,
                 'args3v'          => $APL['a3'],
                 'aplSupported'    => (bool)($aplSupported ?? false),
+                'htmlSupported'   => $iahHtmlSupport ?? null,
                 'action'          => (string)($action ?? ''),
                 'device'          => (string)($device ?? ''),
                 'room'            => (string)($room ?? ''),
@@ -2921,6 +2950,7 @@ function Execute($request = null)
                                 'args2v'          => $args2vKi,
                                 'args3v'          => $APL['a3'],
                             'aplSupported'    => (bool)($aplSupported ?? false),
+                'htmlSupported'   => $iahHtmlSupport ?? null,
                             'action'          => (string)($action ?? ''),
                             'device'          => (string)($device ?? ''),
                             'room'            => (string)($room ?? ''),
