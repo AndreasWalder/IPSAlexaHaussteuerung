@@ -1838,6 +1838,19 @@ function Execute($request = null)
 
         // ============================================================
         // HOME_AGENT_VOICE_HOOK_BEGIN
+        // Nach jeder Alexa-Anfrage den bestehenden Systemlog in die
+        // kopierbare Stringvariable übernehmen. Der 15-s-Timer erfasst
+        // zusätzlich verzögert eintreffende Nachrichten.
+        if ($instanceId > 0 && function_exists('IAH_RefreshAlexaLogBuffer')) {
+            register_shutdown_function(static function () use ($instanceId): void {
+                try {
+                    IAH_RefreshAlexaLogBuffer($instanceId);
+                } catch (Throwable $ignored) {
+                    // Diagnose darf die eigentliche Alexa-Antwort nicht stören.
+                }
+            });
+        }
+
         // AskResponse hält den Alexa-Skill nach einer KI-Antwort für die nächste Frage offen.
         // Ein Reprompt wird nur nach einer Sprechpause ausgegeben; Alexa begrenzt die Sitzungsdauer.
         $kiAlexaKeepOpen = static function (string $text) {
