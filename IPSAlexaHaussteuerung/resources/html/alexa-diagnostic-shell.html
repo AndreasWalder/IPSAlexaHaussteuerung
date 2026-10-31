@@ -137,7 +137,19 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
         if(buttons.length===1){
           buttons[0].click();emit('tile_autologin','ok','submitted');return;
         }
-        emit('tile_autologin','ok','filled_only');
+        // Einige SPA-Dialoge melden den Login nur ueber Enter auf dem
+        // Passwortfeld an. Einmalige, synthetische Eingabe versuchen.
+        try{
+          active.dispatchEvent(new win.KeyboardEvent('keydown',{
+            key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true
+          }));
+          active.dispatchEvent(new win.KeyboardEvent('keyup',{
+            key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true
+          }));
+          emit('tile_autologin','ok','enter_sent');
+        }catch(e){
+          emit('tile_autologin','ok','filled_only');
+        }
       }catch(e){emit('tile_autologin','error','dom_changed');}
     }).catch(function(){
       emit('tile_autologin','error','credential_unavailable');
