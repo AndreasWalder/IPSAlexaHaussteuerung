@@ -201,6 +201,10 @@
         {
           "type": "Label",
           "caption": "Sicherheitsregel: Eine reine Kachelangabe löst niemals eine Schaltaktion aus. Bei unklarem Freitext wird nachgefragt. APL-Buttons werden unverändert an die klassischen Renderer übergeben."
+        },
+        {
+          "type": "Label",
+          "caption": "Alexa-Meldungen ohne Serverzugang kopieren: Objektbaum → Diagnose → Alexa-Protokoll (kopieren) → Alexa-Meldungen (letzte 500). Alle 15 Sekunden und nach einem Alexa-Aufruf werden die neuesten Alexa-Zeilen aus dem bestehenden Symcon-Systemlog als Textvariable aktualisiert. Vertrauliche Zeichenfolgen werden nach Mustern maskiert."
         }
       ]
     },
@@ -211,7 +215,7 @@
       "items": [
         {
           "type": "Label",
-          "caption": "KI-Kosten werden ab Modul-Update automatisch je Backend und gesamt in der Kategorie 'KI-Kosten' unter dieser Instanz gespeichert. Es werden pro OpenAI-Aufruf die echten Tokenzahlen einschließlich Cache erfasst."
+          "caption": "Die Kostenstatistik zeigt alle Werte in EUR. Die Tokenpreisliste bleibt in USD je 1 Mio. Tokens, da OpenAI USD berechnet."
         },
         {
           "type": "Label",
@@ -224,12 +228,24 @@
           "value": "{\"gpt-4.1-mini\":{\"input\":0.4,\"cached\":0.1,\"output\":1.6},\"gpt-4.1-nano\":{\"input\":0.1,\"cached\":0.025,\"output\":0.4},\"gpt-4.1\":{\"input\":2,\"cached\":0.5,\"output\":8},\"gpt-6-luna\":{\"input\":0.1,\"cached\":0.01,\"output\":0.5}}"
         },
         {
-          "name": "KICostMonthlyWarningUSD",
           "type": "NumberSpinner",
-          "caption": "Warnung ab Monatskosten (USD; 0 = aus)",
+          "name": "KICostMonthlyWarningEUR",
+          "caption": "Warnung ab Monatskosten (EUR; 0 = aus)",
           "value": 5,
           "minimum": 0,
           "digits": 2
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "KICostManualUsdToEur",
+          "caption": "Manueller USD→EUR-Kurs (0 = EZB automatisch)",
+          "value": 0,
+          "minimum": 0,
+          "digits": 6
+        },
+        {
+          "type": "Label",
+          "caption": "OpenAI berechnet Tokenpreise in USD. Die Kostenvariablen und die Übersicht zeigen EUR. Der EUR-Wechselkurs wird automatisch von der EZB bezogen (etwa alle 12 Stunden) oder manuell festgelegt; das Datum und die Kursquelle erscheinen unter KI-Kosten. Bei Verbindungsproblemen wird der letzte bekannte Kurs verwendet."
         },
         {
           "type": "Label",

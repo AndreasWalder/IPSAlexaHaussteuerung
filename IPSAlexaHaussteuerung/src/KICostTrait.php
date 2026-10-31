@@ -13,6 +13,16 @@ trait KICostTrait
             \IPS_SetVariableProfileDigits('IAH.KICostUSD',6);
             \IPS_SetVariableProfileText('IAH.KICostUSD','$','');
         }
+        // EUR ist die sichtbare Währung, historische USD-Kosten bleiben
+        // für Audits in den ausgeblendeten Altvariablen und Rohdaten erhalten.
+        if (!\IPS_VariableProfileExists('IAH.KICostEUR')) {
+            \IPS_CreateVariableProfile('IAH.KICostEUR',VARIABLETYPE_FLOAT);
+            \IPS_SetVariableProfileDigits('IAH.KICostEUR',6);
+            \IPS_SetVariableProfileText('IAH.KICostEUR','€ ','');
+        }
+        $this->ensureVar($root,'USD nach EUR – verwendeter Kurs','kiCostFxRate',VARIABLETYPE_FLOAT,'',null);
+        $this->ensureVar($root,'Wechselkurs – Datum','kiCostFxDate',VARIABLETYPE_STRING,'',null);
+        $this->ensureVar($root,'Wechselkurs – Quelle / Status','kiCostFxSource',VARIABLETYPE_STRING,'',null);
         $raw=$this->ensureVar($root,'KI-Kosten Rohdaten (nicht bearbeiten)','kiCostData',VARIABLETYPE_STRING,'',null);
         \IPS_SetHidden($raw,true);
         $this->ensureVar($root,'KI-Kosten Übersicht','kiCostOverview',VARIABLETYPE_STRING,'~HTMLBox',null);
@@ -23,14 +33,22 @@ trait KICostTrait
             $category=$this->ensureCategory($root,$label,'iahKICost'.$ident);
             foreach ($this->KICostVariableDefinitions() as $key=>[$caption,$type,$profile])
                 $this->ensureVar($category,$caption,$key,$type,$profile,null);
+            // Frühere USD-Variablen nicht löschen (Referenzen behalten ihre
+            // eindeutige Bedeutung), aber in der Oberfläche ausblenden.
+            foreach (['costTodayUSD','costMonthUSD','costTotalUSD',
+                'costMonthForecastUSD','averageCostPerQuestionUSD','lastCostUSD'] as $ident) {
+                $old=(int)@\IPS_GetObjectIDByIdent($ident,$category);
+                if($old>0&&\IPS_VariableExists($old))\IPS_SetHidden($old,true);
+            }
         }
+        $this->UpdateKICostExchangeRate();
         $this->RefreshKICostDisplay();
     }
 
     private function KICostVariableDefinitions(): array
     {
         $i=VARIABLETYPE_INTEGER;$f=VARIABLETYPE_FLOAT;$s=VARIABLETYPE_STRING;
-        $usd='IAH.KICostUSD';
+        $eur='IAH.KICostEUR';
         return [
             'questionsToday'=>['Fragen heute',$i,''],
             'questionsMonth'=>['Fragen diesen Monat',$i,''],
@@ -45,12 +63,12 @@ trait KICostTrait
             'allTokensTotal'=>['Tokens insgesamt',$i,''],
             'inputTokensMonth'=>['Eingabe-Tokens diesen Monat',$i,''],
             'outputTokensMonth'=>['Ausgabe-Tokens diesen Monat',$i,''],
-            'costTodayUSD'=>['KI-Kosten heute (USD)',$f,$usd],
-            'costMonthUSD'=>['KI-Kosten diesen Monat (USD)',$f,$usd],
-            'costTotalUSD'=>['KI-Kosten gesamt (USD)',$f,$usd],
-            'costMonthForecastUSD'=>['Hochrechnung Monatsende (USD)',$f,$usd],
-            'averageCostPerQuestionUSD'=>['Durchschnitt pro Frage (USD)',$f,$usd],
-            'lastCostUSD'=>['Letzte Frage – Kosten (USD)',$f,$usd],
+            'costTodayEUR'=>['KI-Kosten heute (EUR)',$f,$eur],
+            'costMonthEUR'=>['KI-Kosten diesen Monat (EUR)',$f,$eur],
+            'costTotalEUR'=>['KI-Kosten gesamt (EUR)',$f,$eur],
+            'costMonthForecastEUR'=>['Hochrechnung Monatsende (EUR)',$f,$eur],
+            'averageCostPerQuestionEUR'=>['Durchschnitt pro Frage (EUR)',$f,$eur],
+            'lastCostEUR'=>['Letzte Frage – Kosten (EUR)',$f,$eur],
             'lastQuestionApiCalls'=>['Letzte Frage – API-Aufrufe',$i,''],
             'lastQuestionInputTokens'=>['Letzte Frage – Eingabe-Tokens',$i,''],
             'lastQuestionCachedTokens'=>['Letzte Frage – Cache-Tokens',$i,''],
@@ -62,6 +80,67 @@ trait KICostTrait
             'unmeasuredCalls'=>['API-Aufrufe ohne Token-Daten',$i,''],
             'detailsJSON'=>['Letzte 100 Fragen – Details (JSON)',$s,''],
         ];
+    }
+
+
+    /**
+     * Liefert den gültigen USD→EUR-Kurs; nie einen unbezeichneten
+     * Fantasie-Wert. Bei Netzwerkausfall wird der letzte bekannte ECB-Kurs
+     * benutzt und die Veraltung in der Oberfläche ausgewiesen.
+     */
+    private function GetKICostCurrency(): array
+    {
+        $manual=(float)$this->ReadPropertyFloat('KICostManualUsdToEur');
+        if($manual>0 && $manual<3) {
+            return ['rate'=>$manual,'date'=>'manuell','source'=>'Manuell konfiguriert'];
+        }
+        $cached=json_decode((string)$this->ReadAttributeString('KICostFxData'),true);
+        if(is_array($cached) && (float)($cached['eurPerUsd']??0)>0) {
+            return ['rate'=>(float)$cached['eurPerUsd'],
+                'date'=>(string)($cached['date']??''),
+                'source'=>'EZB-Referenzkurs'.(
+                    isset($cached['date'])&&$cached['date']!==(new \DateTimeImmutable('now',new \DateTimeZone('Europe/Vienna')))->format('Y-m-d')
+                        ? ' (letzter verfügbarer Banktag / ggf. veraltet)' : ''
+                )];
+        }
+        // Letzter verifizierter Referenzkurs am 30.10.2026: 1 EUR = 1,1172 USD.
+        // Falls der Server den ECB-Dienst nicht erreicht, sichtbar als Fallback.
+        return ['rate'=>1.0/1.1172,'date'=>'2026-10-30',
+            'source'=>'FALLBACK 30.10.2026 – EZB momentan nicht erreichbar'];
+    }
+
+    /**
+     * ECB veröffentlicht den Kurs USD pro 1 EUR meist einmal pro Banktag.
+     * Aus dem XML wird 1 / USD-pro-EUR berechnet. HTTPS-Zertifikate prüfen.
+     * Caching vermeidet Verzögerungen bei jedem Alexa-Sprachbefehl.
+     */
+    public function UpdateKICostExchangeRate(): bool
+    {
+        $manual=(float)$this->ReadPropertyFloat('KICostManualUsdToEur');
+        if($manual>0 && $manual<3)return true;
+        $now=time();
+        if($now<(int)$this->ReadAttributeInteger('KICostNextRateUpdate'))return true;
+        $this->WriteAttributeInteger('KICostNextRateUpdate',$now+7200); // Fehler: 2 h Pause
+        if(!function_exists('curl_init'))return false;
+        $h=curl_init('https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml');
+        if($h===false)return false;
+        try {
+            curl_setopt_array($h,[
+                CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>3, CURLOPT_CONNECTTIMEOUT=>2,
+                CURLOPT_FOLLOWLOCATION=>false, CURLOPT_SSL_VERIFYPEER=>true,
+                CURLOPT_SSL_VERIFYHOST=>2, CURLOPT_USERAGENT=>'IPSAlexaHaussteuerung/1.0'
+            ]);
+            $xml=curl_exec($h);
+            $status=(int)curl_getinfo($h,CURLINFO_RESPONSE_CODE);
+        } finally { curl_close($h); }
+        $parsed=$status===200 && is_string($xml) ? \iah_ki_ecb_parse($xml) : null;
+        if(!is_array($parsed))return false;
+        // Offiziellen Kurs niemals mit ungültiger Datumsangabe übernehmen.
+        $dt=\DateTimeImmutable::createFromFormat('!Y-m-d',(string)$parsed['date']);
+        if(!$dt || $dt->getTimestamp()>$now+86400 || $dt->getTimestamp()<$now-14*86400)return false;
+        $this->WriteAttributeString('KICostFxData',json_encode($parsed,JSON_THROW_ON_ERROR));
+        $this->WriteAttributeInteger('KICostNextRateUpdate',$now+43200); // 12 h
+        return true;
     }
 
     public function RecordKICostEvent(string $eventJson): bool
@@ -87,14 +166,16 @@ trait KICostTrait
             if (!\iah_ki_apply_event($store,$event,$prices,$now)) return false;
             \SetValueString($id,json_encode($store,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR));
             $snap=\iah_ki_section_snapshot($store,'Alle',$now);
-            $limit=$this->ReadPropertyFloat('KICostMonthlyWarningUSD');
+            $limit=$this->ReadPropertyFloat('KICostMonthlyWarningEUR');
             $month=$now->format('Y-m');
-            if ($limit>0 && (float)$snap['month']['costUsd'] >= $limit
-                && ($store['warnedMonth']??'')!==$month) {
-                $store['warnedMonth']=$month;
+            $fx=$this->GetKICostCurrency();
+            $monthEUR=\iah_ki_eur((float)$snap['month']['costUsd'],(float)$fx['rate']);
+            if ($limit>0 && $monthEUR >= $limit
+                && ($store['warnedMonthEUR']??'')!==$month) {
+                $store['warnedMonthEUR']=$month;
                 \SetValueString($id,json_encode($store,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
-                \IPS_LogMessage('Alexa',sprintf('KICost.WARNUNG: Monatsgrenze %.2f USD erreicht (%.6f USD).',
-                    $limit,(float)$snap['month']['costUsd']));
+                \IPS_LogMessage('Alexa',sprintf('KICost.WARNUNG: Monatsgrenze %.2f EUR erreicht (%.6f EUR, Wechselkurs vom %s).',
+                    $limit,$monthEUR,(string)$fx['date']));
             }
             // Nach der kompletten Frage aktualisieren, um Alexa nicht mit vielen IPS-SetValue-Aufrufen zu verzögern.
             // Bei einem harten Abbruch bleiben API-Kosten gespeichert und der 60-s-Timer aktualisiert die Ansicht.
@@ -126,6 +207,14 @@ trait KICostTrait
     {
         $root=(int)@\IPS_GetObjectIDByIdent('iahKICost',$this->InstanceID);
         if ($root<=0) return;
+        $fx=$this->GetKICostCurrency();
+        $rate=(float)$fx['rate'];
+        $rateId=(int)@\IPS_GetObjectIDByIdent('kiCostFxRate',$root);
+        if($rateId>0 && \IPS_VariableExists($rateId)) \SetValueFloat($rateId,$rate);
+        foreach (['kiCostFxDate'=>(string)$fx['date'],'kiCostFxSource'=>(string)$fx['source']] as $ident=>$value){
+            $id=(int)@\IPS_GetObjectIDByIdent($ident,$root);
+            if($id>0 && \IPS_VariableExists($id))\SetValueString($id,$value);
+        }
         foreach (['Alle','RoomsCatalog','HomeAgent','IntentParser'] as $backend) {
             $cat=(int)@\IPS_GetObjectIDByIdent('iahKICost'.$backend,$root);
             if ($cat<=0) continue;
@@ -142,12 +231,13 @@ trait KICostTrait
                 'allTokensTotal'=>(int)$all['totalTokens'],
                 'inputTokensMonth'=>(int)$month['inputTokens'],
                 'outputTokensMonth'=>(int)$month['outputTokens'],
-                'costTodayUSD'=>(float)$day['costUsd'],
-                'costMonthUSD'=>(float)$month['costUsd'],
-                'costTotalUSD'=>(float)$all['costUsd'],
-                'costMonthForecastUSD'=>(float)$this->GetKICostForecast((float)$month['costUsd'],$now),
-                'averageCostPerQuestionUSD'=>(int)$all['questions']>0 ? (float)$all['costUsd']/(int)$all['questions'] : 0.0,
-                'lastCostUSD'=>(float)($last['costUsd']??0),
+                'costTodayEUR'=>\iah_ki_eur((float)$day['costUsd'],$rate),
+                'costMonthEUR'=>\iah_ki_eur((float)$month['costUsd'],$rate),
+                'costTotalEUR'=>\iah_ki_eur((float)$all['costUsd'],$rate),
+                'costMonthForecastEUR'=>\iah_ki_eur((float)$this->GetKICostForecast((float)$month['costUsd'],$now),$rate),
+                'averageCostPerQuestionEUR'=>(int)$all['questions']>0
+                    ? \iah_ki_eur((float)$all['costUsd']/(int)$all['questions'],$rate) : 0.0,
+                'lastCostEUR'=>\iah_ki_eur((float)($last['costUsd']??0),$rate),
                 'lastQuestionApiCalls'=>(int)($last['apiCalls']??0),
                 'lastQuestionInputTokens'=>(int)($last['inputTokens']??0),
                 'lastQuestionCachedTokens'=>(int)($last['cachedInputTokens']??0),
@@ -157,7 +247,8 @@ trait KICostTrait
                 'lastQuestionTime'=>(string)($last['finishedAt']??''),
                 'unpricedCalls'=>(int)$all['callsWithoutPrice'],
                 'unmeasuredCalls'=>(int)$all['callsWithoutUsage'],
-                'detailsJSON'=>json_encode($snap['history'],JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE),
+                'detailsJSON'=>json_encode(\iah_ki_currency_breakdown($snap['history'],$rate),
+                    JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE),
             ];
             foreach ($values as $ident=>$value) {
                 $var=(int)@\IPS_GetObjectIDByIdent($ident,$cat);
@@ -183,10 +274,14 @@ trait KICostTrait
 
     private function RenderKICostOverview(array $store, \DateTimeImmutable $now): string
     {
-        $usd=static fn(float $v):string=>'$ '.number_format($v,6,'.',',');
+        $fx=$this->GetKICostCurrency();
+        $eurRate=(float)$fx['rate'];
+        $eur=static fn(float $usd):string=>'€ '.number_format(\iah_ki_eur($usd,$eurRate),6,',','.');
         $esc=static fn($v):string=>htmlspecialchars((string)$v,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
         $html='<div style="font-family:Arial,sans-serif;font-size:14px">'
-            .'<h3>KI-Kosten in USD</h3><table style="width:100%;border-collapse:collapse">'
+            .'<h3>KI-Kosten in EUR</h3><p>USD→EUR: '.number_format($eurRate,6,',','.')
+            .' ('.$esc($fx['date']).'; '.$esc($fx['source']).')</p>'
+            .'<table style="width:100%;border-collapse:collapse">'
             .'<thead><tr style="background:#eee"><th>Backend</th><th>Fragen heute</th>'
             .'<th>Fragen gesamt</th><th>Heute</th><th>Monat</th><th>Prognose Monat</th><th>Gesamt</th><th>Letzte Frage</th>'
             .'</tr></thead><tbody>';
@@ -198,9 +293,9 @@ trait KICostTrait
             $day=$snap['today'];$month=$snap['month'];$total=$snap['total'];
             $values=[
                 $label,$day['questions'],$total['questions'],
-                $usd((float)$day['costUsd']),$usd((float)$month['costUsd']),
-                $usd($this->GetKICostForecast((float)$month['costUsd'],$now)),
-                $usd((float)$total['costUsd']),$usd((float)($snap['last']['costUsd']??0))
+                $eur((float)$day['costUsd']),$eur((float)$month['costUsd']),
+                $eur($this->GetKICostForecast((float)$month['costUsd'],$now)),
+                $eur((float)$total['costUsd']),$eur((float)($snap['last']['costUsd']??0))
             ];
             $html.='<tr>';
             foreach ($values as $value) $html.='<td style="padding:7px;border-bottom:1px solid #ddd">'.$esc($value).'</td>';
@@ -221,15 +316,17 @@ trait KICostTrait
                 $item['finishedAt']??'', $item['backend']??'', $item['model']??'',
                 $item['inputTokens']??0, $item['cachedInputTokens']??0,
                 $item['outputTokens']??0, $item['apiCalls']??0,
-                $usd((float)($item['costUsd']??0)), $item['status']??''
+                $eur((float)($item['costUsd']??0)), $item['status']??''
             ];
             $html.='<tr>';
             foreach ($cells as $value) $html.='<td style="padding:6px;border-bottom:1px solid #ddd">'.$esc($value).'</td>';
             $html.='</tr>';
         }
-        return $html.'</tbody></table><small>Aus API-Tokens und hinterlegten Modellpreisen berechnete '
-            .'USD-Kostenschätzung ab Installation. Keine amtliche Abrechnung; keine fremden API-Anwendungen, '
-            .'Steuern oder EUR-Umrechnung. Unbekannte Preise werden als Warnung ausgewiesen.</small></div>';
+        return $html.'</tbody></table><small>Schätzung in EUR aus echten OpenAI-API-Tokens (ursprünglich USD)'
+            .' und dem oben angezeigten ECB-/manuellen Wechselkurs. Historische USD-Werte bleiben intern unverändert.'
+            .' Frühere EUR-Anzeigen werden beim Kurswechsel erneut umgerechnet. Keine offizielle Rechnung,'
+            .' keine Steuern, Kartengebühren oder fremde API-Projekte. Unbekannte Modellpreise erscheinen'
+            .' als Warnung.</small></div>';
     }
 
 }

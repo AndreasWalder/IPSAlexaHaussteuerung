@@ -4,6 +4,9 @@ declare(strict_types=1);
 require_once __DIR__ . '/src/Helpers.php';
 require_once __DIR__ . '/src/LogTrait.php';
 require_once __DIR__ . '/src/KICostAccounting.php';
+require_once __DIR__ . '/src/KICostCurrency.php';
+require_once __DIR__ . '/src/AlexaLogBuffer.php';
+require_once __DIR__ . '/src/AlexaLogTrait.php';
 require_once __DIR__ . '/src/KICostTrait.php';
 require_once __DIR__ . '/src/Router.php';
 require_once __DIR__ . '/src/Routes/RouteAll.php';
@@ -21,6 +24,7 @@ class IPSAlexaHaussteuerung extends IPSModule
 {
     use \IPSAlexaHaussteuerung\LogTrait;
     use \IAHKICost\KICostTrait;
+    use \IAHAlexaLog\AlexaLogTrait;
 
     /** @var bool */
     private $isApplyingChanges = false;
@@ -73,12 +77,17 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyBoolean('HomeAgentVoiceRouteCommands', false);
         $this->RegisterPropertyInteger('HomeAgentVoiceMaxWords', 20);
         $this->RegisterPropertyInteger('HomeAgentVoiceTimeoutSeconds', 6);
-        $this->RegisterPropertyFloat('KICostMonthlyWarningUSD', 5.00);
+        $this->RegisterPropertyFloat('KICostMonthlyWarningUSD', 5.00); // Historischer Konfigurationswert
+        $this->RegisterPropertyFloat('KICostMonthlyWarningEUR', 5.00);
+        $this->RegisterPropertyFloat('KICostManualUsdToEur', 0.0);
+        $this->RegisterAttributeString('KICostFxData', '');
+        $this->RegisterAttributeInteger('KICostNextRateUpdate', 0);
         $this->RegisterPropertyString('KICostPriceTableJson', json_encode(iah_ki_price_table()));
         $this->RegisterPropertyBoolean('VoiceRouterStoreTranscript', true);
         $this->RegisterAttributeString('DelayedPageSwitchPayload', '');
         $this->RegisterTimer('DelayedPageSwitch', 0, 'IAH_HandleDelayedPageSwitch($_IPS["TARGET"]);');
-        $this->RegisterTimer('KICostRefresh', 60000, 'IAH_RefreshKICostDisplay($_IPS["TARGET"]);');
+        $this->RegisterTimer('KICostRefresh', 60000, 'IAH_UpdateKICostExchangeRate($_IPS["TARGET"]); IAH_RefreshKICostDisplay($_IPS["TARGET"]);');
+        $this->RegisterTimer('AlexaLogRefresh', 15000, 'IAH_RefreshAlexaLogBuffer($_IPS["TARGET"]);');
 
         // Pages
         $this->RegisterPropertyString(
@@ -132,6 +141,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->ensureRendererScripts($catRenderers);
 
         $catDiag = $this->ensureCategory($root, 'Diagnose', 'iahDiag');
+        $this->EnsureAlexaLogInfrastructure($catDiag);
         $voiceDiag = $this->ensureCategory($catDiag, 'KI-Sprachrouter und APL-Navigation', 'iahVoiceDiag');
         // Entscheidungen und UI-Kontext pro anonymisiertem Alexa-Gerät.
         $rawVoiceState = $this->ensureVar($voiceDiag, 'Router-Datenspeicher (nicht bearbeiten)', 'iahVoiceState', VARIABLETYPE_STRING, '', null);

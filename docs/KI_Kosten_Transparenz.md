@@ -8,11 +8,13 @@ Nach dem Modul-Update und Übernehmen legt das Modul unter IPSAlexaHaussteuerung
 
 - Fragen heute / Monat / gesamt, fehlgeschlagene Fragen, API-Aufrufe heute / Monat / gesamt.
 - Eingabe-Tokens insgesamt und im Monat, gecachte Tokens, Ausgabe-Tokens insgesamt und im Monat, Token-Gesamtzahl.
-- Kosten heute, im Monat und insgesamt (USD), Kosten der letzten Frage, Modell, letzte Ausführung und Status.
+- Kosten heute, im Monat und insgesamt (EUR), Kosten der letzten Frage, Modell, letzte Ausführung und Status.
 - Prognose der Monatskosten auf Basis des bisherigen Tagesdurchschnitts und durchschnittliche Kosten pro Frage, jeweils getrennt je Backend und insgesamt. Am Monatsanfang kann die Prognose stark schwanken.
 - API-Aufrufe ohne Token-Daten oder ohne bekannten Preis werden gesondert gezählt und in der Übersicht gewarnt.
 
 ## Preisberechnung
+
+Die **Modellpreise** bleiben in USD je 1 Mio. Tokens, weil OpenAI in USD abrechnet. **Angezeigte Gesamtkosten** werden automatisch mit dem EZB-Wechselkurs in EUR umgerechnet:
 
 Offiziell belegte Modellpreise (USD je 1 Mio. Tokens):
 
@@ -26,7 +28,7 @@ Offiziell belegte Modellpreise (USD je 1 Mio. Tokens):
 Quellen: https://developers.openai.com/api/docs/pricing und https://openai.com/index/gpt-4-1/
 
 Berechnung: (Eingabe − Cache) × Eingabepreis / 1.000.000 + Cache × Cachepreis / 1.000.000 + Ausgabe × Ausgabepreis / 1.000.000.
-Die Modellpreise können in der Modulkonfiguration unter KI-Kosten & Tokenverbrauch als JSON angepasst werden. Preiswerte zum Zeitpunkt des Aufrufs werden gespeichert; historische Werte werden nicht rückwirkend umgerechnet. Unbekannte Modelle werden nicht fälschlich als kostenlos interpretiert.
+Die USD-Modellpreise können in der Modulkonfiguration unter KI-Kosten & Tokenverbrauch als JSON angepasst werden. USD-Preiswerte zum Zeitpunkt des Aufrufs werden gespeichert; historische USD-Beträge bleiben unverändert. Der sichtbare EUR-Betrag wird mit dem jeweils ausgewiesenen EZB-Referenzkurs oder einem manuellen USD→EUR-Kurs umgerechnet und kann sich dadurch bei einer Kursänderung verändern. Unbekannte Modelle werden nicht fälschlich als kostenlos interpretiert.
 
 ## GPT-6 Luna und GPT-4.1 mini umschalten
 
@@ -39,7 +41,7 @@ Nach der Auswahl in der Instanzkonfiguration **Übernehmen** klicken. Die Auswah
 
 Für Luna nutzt die Anbindung weiterhin Chat Completions, stellt bei Funktionsaufrufen jedoch `reasoning_effort: "none"` ein. Für GPT-4.1 mini bleibt das alte Chat-Completions-Format ohne diesen Parameter erhalten. Dokumentation: https://developers.openai.com/api/docs/guides/latest-model
 
-Die KI-Kostenüberwachung trennt weiterhin nach Anbindung und berücksichtigt im Rohdaten-Detail außerdem das jeweils **wirklich verwendete Modell und dessen Preis** zum Zeitpunkt des Aufrufs. Eine Modellumstellung verändert die gespeicherten historischen Kosten nicht.
+Die KI-Kostenüberwachung trennt weiterhin nach Anbindung, zeigt die Kosten in **Euro** und berücksichtigt im Rohdaten-Detail außerdem das jeweils **wirklich verwendete Modell und dessen USD-Preis** zum Zeitpunkt des Aufrufs. Eine Modellumstellung verändert die gespeicherten historischen Kosten nicht.
 
 **Wichtig:** Für beide Modelle genügt derselbe bestehende API-Schlüssel, sofern das jeweilige Modell im API-Projekt nutzbar ist. Die Kombination konnte auf GitHub automatisiert getestet werden, aber echte OpenAI-/Alexa-Sprachaufrufe sind erst nach dem Update vor Ort testbar.
 
@@ -47,16 +49,19 @@ Die KI-Kostenüberwachung trennt weiterhin nach Anbindung und berücksichtigt im
 
 Die Token-Daten werden unmittelbar nach jedem erfolgreichen OpenAI-Chat-Completions-Aufruf erfasst. Bei zwei Modellrunden einer Alexa-Frage werden beide Runden derselben Frage zugerechnet. Kosten der ersten Runde werden auch dann gezählt, wenn die zweite Runde scheitert.
 
-Der Modul-Timer aktualisiert Tages-/Monatsanzeigen im Zeitzonenbezug Europe/Vienna auch ohne neue Fragen. Die Monatswarnung ist ab 5 USD eingeschaltet, konfigurierbar auf 0 USD zum Deaktivieren. Eine Warnung ist kein hartes Ausgabenlimit.
+Der Modul-Timer aktualisiert Tages-/Monatsanzeigen im Zeitzonenbezug Europe/Vienna auch ohne neue Fragen. Die Monatswarnung ist ab 5 EUR eingeschaltet, konfigurierbar auf 0 EUR zum Deaktivieren. Eine Warnung ist kein hartes Ausgabenlimit.
 
 ## Grenzen
 
 - Erfassung beginnt erst nach Installation dieser Version: frühere Kosten nicht exakt nachträglich erfassbar.
 - Keine offiziellen Rechnungsdaten, sondern Schätzungen anhand echter API-usage-Felder, hinterlegter Preise und eventuell variierender Tarife.
-- Keine Kosten externer Apps desselben API-Schlüssels, EUR-Umrechnung oder österreichischer Umsatzsteuer.
+- Keine Kosten externer Apps desselben API-Schlüssels, keine österreichische Umsatzsteuer, Gebühren oder garantierte Übereinstimmung mit dem Wechselkurs der Karten-/Bankabrechnung. EUR wird als referenzkursbasierte Schätzung angezeigt.
 - Sollte ein Skript zwischen einer kostenpflichtigen API-Antwort und der Speicherung vollständig abstürzen, kann dieser Einzelfall fehlen.
 - Tageswerte und Monatswerte folgen Europe/Vienna. Die Historie zeigt die letzten 100 abgeschlossenen Fragen pro Backend; die Summen bleiben vollständig bestehen.
 
 ## Nach dem Merge
 
 IP-Symcon-Modul aktualisieren und Übernehmen klicken; anschließend eine Alexa-Frage stellen. Statistik unter KI-Kosten prüfen. Automatisierter Test: php tests/test_ki_cost_accounting.php. Offizielle OpenAI-Kosten: https://platform.openai.com/usage.
+## Alexa-Meldungen direkt kopieren
+
+Zusätzlich stellt die Modulinstanz die **letzten 500 Alexa-Meldungen aus dem Systemlog** unter **Diagnose → Alexa-Protokoll (kopieren)** als TextBox-Stringvariable bereit. Sie wird nach Alexa-Aufrufen und im 15-Sekunden-Intervall aktualisiert. Weitere Details stehen in `docs/Alexa_Protokoll_500_Euro_Kosten.md`.
