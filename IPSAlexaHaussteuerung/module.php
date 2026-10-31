@@ -612,6 +612,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         }
         $this->patchActionScriptTabScopedDirectCommands((int) $id);
         $this->patchActionScriptHomeAgentVoice((int) $id);
+        $this->patchActionScriptVoiceNavigation((int) $id);
         $this->patchActionScriptSafeRequestLogging((int) $id);
 
         return (int) $id;
@@ -959,6 +960,63 @@ PHP;
         if ($updated !== $content) {
             IPS_SetScriptContent($scriptId, $updated);
             IPS_LogMessage('Alexa', 'SecurityMigration: Alexa-Action-Logging ohne Zugangsdaten aktualisiert.');
+        }
+    }
+
+    /**
+     * Der KI-Sprachrouter sitzt im HOME_AGENT_VOICE_HOOK, der eigentliche
+     * UI-Override aber direkt DANACH. Ältere Installationen behalten ihre
+     * Action-Skripte. Deshalb bei Modulupdates auch den UI-Override gezielt
+     * migrieren, damit "Licht" über HomeAgentFrageIntent wirklich navigiert.
+     *
+     * Es wird nur der klar erkennbare, kleine UI-Override-Bereich ersetzt;
+     * komplette Action-Skripte und lokale andere Anpassungen bleiben erhalten.
+     */
+    private function patchActionScriptVoiceNavigation(int $scriptId): void
+    {
+        $template = @file_get_contents(__DIR__ . '/resources/action_entry.php');
+        $current = $this->getScriptContent($scriptId);
+        if (!is_string($template) || !is_string($current)) return;
+
+        $start = '        // IAH_VOICE_NAVIGATION_BEGIN';
+        $end = '        // IAH_VOICE_NAVIGATION_END';
+        $templateStart = strpos($template, $start);
+        $templateEnd = strpos($template, $end, $templateStart === false ? 0 : $templateStart);
+        if ($templateStart === false || $templateEnd === false) return;
+        $nav = substr($template, $templateStart, $templateEnd + strlen($end) - $templateStart);
+        $existingStart = strpos($current, $start);
+        $existingEnd = $existingStart === false ? false : strpos($current, $end, $existingStart);
+        if ($existingStart !== false && $existingEnd !== false) {
+            $updated = substr_replace($current, $nav, $existingStart, $existingEnd + strlen($end) - $existingStart);
+        } else {
+            $existingStart = strpos($current, '        // FRÜHER, HARTER UI-OVERRIDE');
+            $nextBlock = "        if (is_array(\$APL['args']) && count(\$APL['args']) >= 2 && (string)\$APL['args'][0] === 'GetHaus') {";
+            $existingEnd = $existingStart === false ? false : strpos($current, $nextBlock, $existingStart);
+            if ($existingStart === false || $existingEnd === false) {
+                IPS_LogMessage('Alexa', 'VoiceRouter.migration: bestehender UI-Block nicht erkannt; bitte Action-Skript prüfen.');
+                return;
+            }
+            $oldBlock = substr($current, $existingStart, $existingEnd - $existingStart);
+            if (strpos($oldBlock, '$navForce = false;') === false
+                || strpos($oldBlock, '$forcedDevice = null;') === false) {
+                IPS_LogMessage('Alexa', 'VoiceRouter.migration: unbekannter UI-Block; kein Überschreiben.');
+                return;
+            }
+            $updated = substr_replace($current, $nav . "\n", $existingStart, $existingEnd - $existingStart);
+        }
+
+        // Auch die vorherige Hauptmenü-Route aus einer älteren Installation
+        // muss den neuen VoiceRouter-Back- und Home-Kontext berücksichtigen.
+        if (strpos($updated, '$__route = $iahVoiceForceHome ?') === false) {
+            $oldRoute = '        $__route = null;';
+            $newRoute = "        \$__route = \$iahVoiceForceHome ? 'main_launch' : null;";
+            if (strpos($updated, $oldRoute) !== false) {
+                $updated = str_replace($oldRoute, $newRoute, $updated);
+            }
+        }
+        if ($updated !== $current) {
+            IPS_SetScriptContent($scriptId, $updated);
+            IPS_LogMessage('Alexa', 'VoiceRouter.migration: UI-Navigation für bestehendes Action-Skript aktualisiert.');
         }
     }
 
