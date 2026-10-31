@@ -68,7 +68,14 @@ $code = $allow($input['code'] ?? '', [
     'origin_start', 'origin_injected', 'origin_invalid', 'origin_failed',
     'origin_fallback', 'url_bootstrap',
     'field_detected', 'filled', 'submitted', 'filled_only', 'enter_sent',
-    'credential_unavailable', 'dom_changed'
+    'credential_unavailable', 'dom_changed',
+    'method_invalid', 'fetch_cross_site', 'origin_invalid',
+    'origin_mismatch', 'content_type_invalid', 'payload_invalid',
+    'request_invalid', 'settings_unavailable', 'configuration_disabled',
+    'token_invalid', 'ticket_expired', 'ticket_invalid',
+    'credential_http_401', 'credential_http_403', 'credential_http_404',
+    'credential_http_5xx', 'credential_http_other', 'credential_network',
+    'credential_invalid_response'
 ]);
 $event = [
     'time' => date('c'),
