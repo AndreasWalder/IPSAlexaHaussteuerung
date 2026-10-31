@@ -28,12 +28,17 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
   var src = params.get('src') || '';
   var loaded = false;
   var sent = 0;
-  function emit(stage,state,code){
-    if (!instanceId || !token || sent++ > 30) return;
-    var payload = JSON.stringify({
+  function emit(stage,state,code,metrics){
+    // Limit browser diagnostics even when a page is misbehaving.
+    if (!instanceId || !token || sent++ > (route==='kacheltest' ? 65 : 30)) return;
+    var event={
       instanceId:instanceId, token:token,route:route,
       stage:stage,status:state || 'unknown',code:code || 'none'
-    });
+    };
+    if(route==='kacheltest' && stage==='tile_snapshot' && metrics){
+      event.metrics=metrics;
+    }
+    var payload = JSON.stringify(event);
     try {
       if(navigator.sendBeacon) {
         var ok = navigator.sendBeacon('/hook/iah-alexa-html-debug',
@@ -86,6 +91,80 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
       }
     }catch(e){emit('tile_render','cross_origin');}
   }
+  // Kachelvisualisierung: differenzierte Momentaufnahmen statt nur
+  // iframe.onload. Ein geladenes HTML ist kein Nachweis, dass die SPA startet.
+  // Nur Zaehler und vorgegebene Statuswerte, nie HTML, URLs, Login-Details
+  // oder Fehlermeldungen aus der Kachelvisualisierung protokollieren.
+  var tileInnerStorageReported=false;
+  function countItems(query,doc){
+    try {return Math.min(9999,doc.querySelectorAll(query).length);}
+    catch(e){return 0;}
+  }
+  function tileSnapshot(phase){
+    if(route!=='kacheltest')return;
+    try {
+      var doc=frame.contentDocument;
+      var win=frame.contentWindow;
+      if(!doc || !win){
+        emit('tile_snapshot','cross_origin',phase);
+        return;
+      }
+      var body=doc.body;
+      var ready=doc.readyState;
+      emit('tile_document',ready==='complete'?'complete':
+        (ready==='interactive'?'interactive':'loading'),'ready_state');
+      var nodeCount=body?Math.min(9999,body.querySelectorAll('*').length):0;
+      var pwCount=countItems('input[type="password"]',doc);
+      var root=doc.querySelector('#root, #app, #app-root, [data-reactroot]');
+      var rootChildren=root?Math.min(9999,root.children.length):0;
+      var resources=[];
+      try {
+        if(win.performance && typeof win.performance.getEntriesByType==='function'){
+          resources=win.performance.getEntriesByType('resource') || [];
+        }
+      }catch(e){}
+      var scriptRequests=0,styleRequests=0,apiRequests=0,otherRequests=0;
+      for(var i=0;i<Math.min(resources.length,1000);i++){
+        var type=(resources[i].initiatorType || '').toLowerCase();
+        if(type==='script')scriptRequests++;
+        else if(type==='css' || type==='link')styleRequests++;
+        else if(type==='fetch' || type==='xmlhttprequest')apiRequests++;
+        else otherRequests++;
+      }
+      var metrics={
+        nodes:nodeCount,
+        bodyChildren:body?Math.min(9999,body.children.length):0,
+        scripts:countItems('script',doc),
+        stylesheets:countItems('link[rel="stylesheet"], style',doc),
+        images:countItems('img',doc),
+        frames:countItems('iframe',doc),
+        passwordInputs:pwCount,
+        rootChildren:rootChildren,
+        scriptRequests:scriptRequests,
+        styleRequests:styleRequests,
+        apiRequests:apiRequests,
+        otherRequests:otherRequests
+      };
+      var state=pwCount>0?'login':
+        (!body || nodeCount<25?'loading':'not_empty');
+      emit('tile_snapshot',state,phase,metrics);
+      if(!tileInnerStorageReported){
+        tileInnerStorageReported=true;
+        try {
+          var store=win.localStorage;
+          var k='iah_tile_diagnostic';
+          store.setItem(k,'1');
+          store.removeItem(k);
+          emit('tile_inner_storage','supported','local_storage');
+        }catch(e){
+          emit('tile_inner_storage','unsupported','local_storage');
+        }
+      }
+    }catch(e){
+      emit('tile_snapshot','cross_origin',phase);
+    }
+  }
+
   emit('shell_boot','ok');
   if(route==='kacheltest'){
     capability('websocket',function(){return typeof WebSocket!=='undefined';});
@@ -111,8 +190,10 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
     reportDom();
     tileReport();
     if(route==='kacheltest'){
-      setTimeout(tileReport,2500);
-      setTimeout(tileReport,6500);
+      tileSnapshot('onload');
+      setTimeout(function(){tileReport();tileSnapshot('after_3s');},3000);
+      setTimeout(function(){tileReport();tileSnapshot('after_8s');},8000);
+      setTimeout(function(){tileSnapshot('after_15s');},15000);
     }
     status.className='hidden';
   });
