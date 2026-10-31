@@ -237,7 +237,7 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
     try{
       target=new URL(src,location.href);
       // Kein Proxy und niemals benutzerdefinierte externe Ziel-URL laden.
-      if(target.origin!==location.origin || !/^\\/tile\\/?$/.test(target.pathname)){
+      if(target.origin!==location.origin || !/^\/tile\/?$/.test(target.pathname)){
         emit('tile_compat','error','target_rejected');frame.src=src;return;
       }
     }catch(e){
@@ -251,7 +251,7 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
     }).then(function(response){
       if(!response.ok || !response.url ||
           new URL(response.url).origin!==target.origin ||
-          !/^\\/tile\\/?$/.test(new URL(response.url).pathname)){
+          !/^\/tile\/?$/.test(new URL(response.url).pathname)){
         throw Error('unexpected_response');
       }
       var mime=(response.headers.get('content-type')||'').toLowerCase();
@@ -261,14 +261,14 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
       if(typeof html!=='string' || html.length>200000){
         emit('tile_compat','error','too_large');frame.src=src;return;
       }
-      if(!/<head(?:\\s[^>]*)?>/i.test(html)){
+      if(!/<head(?:\s[^>]*)?>/i.test(html)){
         emit('tile_compat','error','no_head');frame.src=src;return;
       }
       // srcdoc besitzt trotz <base> eine eigene about:srcdoc-URL.
       // Daher NUR experimentell, mit aufrufbarer Original-Variante.
       var base='<base href="'+target.origin+'/tile/">';
       var code='<scr'+'ipt>('+installTileStorageShim.toString()+')();</scr'+'ipt>';
-      var patched=html.replace(/<head(?:\\s[^>]*)?>/i,function(open){
+      var patched=html.replace(/<head(?:\s[^>]*)?>/i,function(open){
         return open+base+code;
       });
       emit('tile_compat','ok','html_injected');
