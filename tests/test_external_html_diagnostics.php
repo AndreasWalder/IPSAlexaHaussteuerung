@@ -70,7 +70,7 @@ hd(str_contains($module,'patchActionScriptExternalHtmlMetadata((int) $id)'),'Leg
 hd(str_contains($entry,"'htmlSupported'   =>"),'HTML capability passed');
 hd(str_contains($entry,"ExternalHTML.clientEvent"),'Sanitized HTML.Message telemetry');
 hd(str_contains($renderer,"alexa-diagnostic-shell.html"),'Kamera/Energie diagnostic shell selected');
-hd(str_contains($renderer,"'route' => $externalKey"),'Route identity forwarded to shell');
+hd(str_contains($renderer,"'route' => " . '$externalKey'),'Route identity forwarded to shell');
 hd(str_contains($module,"ensureExternalHtmlBrowserDiagnostics"),'Browser diagnostics auto-installed');
 hd(str_contains($module,"'iahHtmlBrowserHistory'"),'Copyable browser event history created');
 hd(str_contains($module,"/hook/alexa-html-debug"),'Browser callback webhook configured automatically');
@@ -81,6 +81,6 @@ $receiver=file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/resources/h
 hd(str_contains($shell,"shell_boot") && str_contains($shell,"iframe_timeout"),'Browser bootstrap and timeout telemetry');
 hd(str_contains($shell,"'/hook/alexa-html-debug'"),'Client reports to local WebHook');
 hd(str_contains($receiver,"hash_equals("),'Browser callback authenticates token');
-hd(str_contains($receiver,"array_slice($rows, -100)"),'Browser event history bounded to 100');
-hd(!str_contains($receiver,"$input['src']"),'Browser diagnostic cannot store iframe URL');
+hd(str_contains($receiver,'array_slice($rows, -100)'),'Browser event history bounded to 100');
+hd(!str_contains($receiver, '$input[' . chr(39) . 'src' . chr(39) . ']'), 'Browser diagnostic cannot store iframe URL');
 echo "PASS: asynchronous HTML probes, HTTP/TLS/frame policy flags, missing shell, safe logs, Action migration\n";
