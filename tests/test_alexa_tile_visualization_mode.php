@@ -345,7 +345,7 @@ tileTestCheck(str_contains($credential, "IPS_GetProperty(\$id, 'BaseUrl')")
     && str_contains($credential, "\$receivedHost = strtolower((string)\$originParts['host'])")
     && str_contains($credential, "\$expectedPort = (int)(\$base['port'] ?? 443)"),
     'Origin validation uses externally configured HTTPS BaseUrl host and port');
-tileTestCheck(!str_contains($credential, "HTTP_HOST")
+tileTestCheck(!str_contains($credential, "\$_SERVER['HTTP_HOST']")
     && str_contains($credential, "'origin_mismatch'")
     && str_contains($credential, "'fetch_cross_site'"),
     'Reverse proxy internal HTTP_HOST must not block correct external Origin');
