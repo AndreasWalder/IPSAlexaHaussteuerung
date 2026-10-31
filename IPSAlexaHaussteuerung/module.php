@@ -106,6 +106,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyInteger('TileTestVisualizationId', 0);
         // Opt-in: experimenteller localStorage-Ersatz nur bei Alexa Kacheltest.
         $this->RegisterPropertyBoolean('TileTestStorageCompat', false);
+        // Dauerhaftes Alexa-Kommando "Test"; das Ziel ist spaeter erweiterbar.
+        $this->RegisterPropertyString('AlexaTestTarget', 'kacheltest');
 
         // Optional status variables (allow linking existing values instead of auto-created ones)
         $this->RegisterPropertyInteger('VarInformation', 0);
@@ -765,18 +767,27 @@ class IPSAlexaHaussteuerung extends IPSModule
     private function patchActionScriptTileTestNavigation(int $scriptId): void
     {
         $current = $this->getScriptContent($scriptId);
-        if (!is_string($current) || $current === '' || str_contains($current, "'kacheltest'=>'kacheltest'")) {
+        if (!is_string($current) || $current === '' || str_contains($current, "'test'=>'test'")) {
             return;
         }
-        $old = "'listen'=>'listen','energie'=>'energie','kamera'=>'kamera',";
-        $new = "'listen'=>'listen','energie'=>'energie','kamera'=>'kamera',\n"
-            . "                     'kacheltest'=>'kacheltest','kachelvisualisierung'=>'kacheltest',";
-        if (!str_contains($current, $old)) {
-            IPS_LogMessage('Alexa', 'TileTest.migration action_alias_marker_not_found');
-            return;
+        // Bereits migrierte Bestandsinstallationen ebenfalls aktualisieren.
+        $oldAlias = "'kacheltest'=>'kacheltest','kachelvisualisierung'=>'kacheltest',";
+        if (str_contains($current, $oldAlias)) {
+            $updated = str_replace($oldAlias, "'test'=>'test',\n                     " . $oldAlias, $current);
+        } else {
+            $old = "'listen'=>'listen','energie'=>'energie','kamera'=>'kamera',";
+            if (!str_contains($current, $old)) {
+                IPS_LogMessage('Alexa', 'TileTest.migration action_alias_marker_not_found');
+                return;
+            }
+            $new = $old . "\n                     'test'=>'test',"
+                . "'kacheltest'=>'kacheltest','kachelvisualisierung'=>'kacheltest',";
+            $updated = str_replace($old, $new, $current);
         }
-        IPS_SetScriptContent($scriptId, str_replace($old, $new, $current));
-        IPS_LogMessage('Alexa', 'TileTest.migration action_alias_added');
+        if ($updated !== $current) {
+            IPS_SetScriptContent($scriptId, $updated);
+            IPS_LogMessage('Alexa', 'TileTest.migration action_alias_added');
+        }
     }
 
     private function ensureHelperScripts(int $parent): void
