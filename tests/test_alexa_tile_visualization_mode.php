@@ -396,4 +396,40 @@ tileTestCheck(str_contains($credential, "(\$_SERVER['REQUEST_METHOD'] ?? '') !==
     && str_contains($credential, "\$expiry < \$now"),
     'Removing Content-Type gate does not weaken method, origin, token or short-lived HMAC validation');
 
+// Actual Echo log, 31.10.2026 23:36:09: field_detected -> filled
+// -> submitted, but the visible OK still requires a manual tap.
+// Clicking generic submit immediately is NOT equivalent to the Tile
+// application's SPA OK button, so wait until input/change state updates.
+tileTestCheck(str_contains($shell, "function findTileLoginOkButton(doc,active,win)")
+    && str_contains($shell, "'ok','anmelden','login'")
+    && str_contains($shell, "button,[role=\"button\"],input[type=\"submit\"]"),
+    'Login chooses explicit OK/Anmelden button including non-submit SPA buttons');
+tileTestCheck(str_contains($shell, "found.length===1")
+    && str_contains($shell, "style.visibility==='hidden'")
+    && str_contains($shell, "rect.width<=0 || rect.height<=0")
+    && str_contains($shell, "el.getAttribute('aria-disabled')==='true'"),
+    'Button discovery is scoped, unique, visible and enabled');
+tileTestCheck(str_contains($shell, "setTimeout(function(){")
+    && str_contains($shell, "},450);")
+    && str_contains($shell, "okButton.click();")
+    && str_contains($shell, "'button_clicked'"),
+    'SPA events settle before the real login button is clicked');
+tileTestCheck(str_contains($shell, "'form_submit_requested'")
+    && str_contains($shell, "'input_reset'")
+    && str_contains($shell, "'login_still_visible'")
+    && str_contains($shell, "'login_closed'"),
+    'Form fallback and real login outcome are diagnosed separately');
+tileTestCheck(str_contains($receiver, "'button_clicked'")
+    && str_contains($receiver, "'form_submit_requested'")
+    && str_contains($receiver, "'login_still_visible'"),
+    'Only safe, fixed login-button diagnostic states may be logged');
+tileTestCheck(str_contains($shell, 'autoLoginUsed=true')
+    && str_contains($shell, "if(!autoLoginAllowed || autoLoginUsed")
+    && !str_contains($shell, "emit('tile_autologin','ok','submitted');"),
+    'AutoLogin remains one-shot, no unsupported successful-submit claim');
+tileTestCheck(str_contains($shell, "String(el.getAttribute('aria-label')")
+    && !str_contains($shell, "emit('tile_autologin','ok',caption")
+    && !str_contains($shell, "emit('tile_autologin','error',current.value"),
+    'Button texts and password inputs must not enter log payloads');
+
 echo "PASS: Kacheltest voice recognition, separate /tile/ rendering, no WFC switch, setup and diagnostics\n";
