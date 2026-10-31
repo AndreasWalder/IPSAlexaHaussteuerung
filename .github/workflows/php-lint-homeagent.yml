@@ -7,6 +7,7 @@ on:
       - feature/ki-cost-transparency-20261030
       - security/sanitize-logs-example-catalog-20261030
       - feature/voice-intent-navigation-apl-diagnostics-20261030
+      - fix/roomscatalog-ipslist-checkbox-multiselect-20261031
   pull_request:
     paths:
       - 'IPSAlexaHaussteuerung/**'
@@ -42,6 +43,8 @@ jobs:
         run: php tests/test_ki_rooms_catalog.php
       - name: Test RoomsCatalog form add/edit and persistent expansion
         run: php tests/test_rooms_catalog_editor_ui.php
+      - name: Test Symcon IPSList checkbox callbacks and filtered multi-selection
+        run: php tests/test_rooms_catalog_ipslist_multiselect.php
       - name: Test OpenAI token and cost accounting
         run: php tests/test_ki_cost_accounting.php
       - name: Test GPT-6 Luna and GPT-4.1 mini model selection
