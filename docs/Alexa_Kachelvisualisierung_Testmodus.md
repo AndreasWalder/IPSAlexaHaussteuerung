@@ -1,5 +1,55 @@
 # Alexa: Neue IP-Symcon-Kachelvisualisierung separat testen
 
+## Neuer dauerhafter Alexa-Befehl „Test“
+
+**Ab jetzt nur „Test“ sagen** (nach „Alexa, öffne Haussteuerung“).
+Der bisherige Begriff **„Kacheltest“** wurde in deinen Logs oft als
+**„Kaffeetest“** erkannt. Das kurze Wort „Test“ ist ab sofort ein eigener
+Sprachalias mit **direkter lokaler Navigation ohne KI-Auswertung**.
+
+- Die interne Route heißt `test` und führt zunächst über
+  `AlexaTestTarget=kacheltest` zur Kachelvisualisierung.
+- In der Modulinstanz steht die neue Auswahl **„Ziel für Alexa-Sprachbefehl
+  Test“**. Momentan ist ausschließlich die vorhandene Kachelvisualisierungs-
+  Diagnose freigegeben; weitere Testziele lassen sich zukünftig ergänzen.
+- Alte Sprachbefehle `Kacheltest` und `Kachelvisualisierung` bleiben
+  unverändert. Bestehende benutzerangepasste Action-Skripte werden beim
+  **Übernehmen** an der bestehenden Aliasliste behutsam nachgerüstet.
+- Im Alexa-Protokoll erscheint `Test.route`, im Browserdiagnoseverlauf
+  weiter `route=kacheltest`, damit die bisherigen Variablen und
+  Log-Auswertungen kompatibel bleiben.
+
+## Neue Auswertung der weißen Ansicht (31.10.2026, 22:49)
+
+Die letzten Logs zeigen bei aktivierter Kompatibilität **19 erfolgreiche
+HTTP-Antworten der Klasse 2xx**, **0 Antworten der Klassen 4xx und 5xx**,
+`shim_session`, `tile_inner_storage=supported` und
+`tile_boot=hash_match`. Dennoch gibt es **kein Passwortfeld** und nur
+**12 DOM-Elemente** nach 15 Sekunden. Ein fehlendes Passwort oder ein
+HTTP-401/403-Problem wird damit weniger wahrscheinlich; ob alle
+Antwortkörper die erwarteten Daten enthalten, ist noch nicht geklärt.
+
+Die neue Diagnose ergänzt:
+
+- `tile_location`: tatsächlicher Dokument-URL-Kontext, klassifiziert als
+  `srcdoc_context`, `tile_context` oder `other_context`.
+- `tile_history`: testet früh und einmalig, ob der Browser das
+  `about:srcdoc`-Dokument per `history.replaceState` nach `/tile/#ID`
+  umschreiben lässt: `history_ok`, `history_blocked` oder
+  `history_unchanged`. Wenn das verboten ist, bleibt die Seite
+  unverändert. **Dies ist keine bestätigte Reparatur.**
+- `tile_snapshot.metrics.responseJson`, `responseHtml` und
+  `responseOther`: Klassifikation der von der App angeforderten
+  HTTP-Antworten **nur über den Content-Type**, ohne URLs, Nutzdaten oder
+  Passwörter zu lesen.
+
+**Test:** GitHub-Modul aktualisieren, in der Modulinstanz auf
+**Übernehmen** klicken, die bestehende localStorage-Kompatibilitätsoption
+aktiviert lassen und auf Alexa **„Test“** sagen. Die Ansicht 15 Sekunden
+geöffnet lassen; anschließend die neuen Browserereignisse kopieren.
+
+
+
 Der Testmodus öffnet die **neue Kachelvisualisierung** unter `/tile/` direkt über die bewährte, instrumentierte Alexa-Web-API-for-Games-Shell. **Kamera, Energie und das alte WebFront bleiben unverändert.**
 
 ## Aufruf mit Sprache
