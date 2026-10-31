@@ -658,7 +658,7 @@ try {
         // Browser-Rueckmeldung. Andere externe Seiten bleiben unveraendert.
         $shellFile = in_array($externalKey, ['kamera', 'energie'], true)
             ? 'alexa-diagnostic-shell.html' : 'alexa-shell.html';
-        $shellUrl = rtrim($baseUrl,'/').'/hook/icons?'.http_build_query([
+        $shellUrl = rtrim($baseUrl,'/').'/hook/iah-alexa-shell?'.http_build_query([
             'f'     => $shellFile,
             'i'     => $instanceId,
             'route' => $externalKey,
