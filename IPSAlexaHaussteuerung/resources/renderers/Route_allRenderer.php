@@ -578,6 +578,47 @@ try {
     }
 
     // =============================
+    // KACHELTEST (getrennt von Kamera/Energie/WebFront)
+    // =============================
+    if ($route === 'kacheltest') {
+        if (!(bool)($V['TileTestEnabled'] ?? false)) {
+            IPS_LogMessage('Alexa', 'TileTest.disabled');
+            echo json_encode([
+                'ok' => true, 'route' => 'kacheltest',
+                'data' => ['speech' => 'Der Kachelvisualisierung-Testmodus ist deaktiviert.',
+                    'reprompt' => 'Sage zum Beispiel Kamera oder Energie.'],
+                'flags' => $flags, 'aplToken' => 'hv-tile-test'
+            ], $JSON);
+            return;
+        }
+        // IP-Symcon 7+ Kachelvisualisierung liegt beim alten
+        // WebFront-Standard unter /tile/. 0 = Visualisierungsauswahl.
+        $tileVisId = max(0, (int)($V['TileTestVisualizationId'] ?? 0));
+        $tileTestUrl = rtrim($baseUrl, '/') . '/tile/';
+        if ($tileVisId > 0) {
+            $tileTestUrl .= '#' . $tileVisId;
+        }
+        // Ausschliesslich testweise aufrufen. Keine alte WebFront-Seite
+        // umschalten, keinen gespeicherten Passwort-Parameter anhaengen.
+        $externalPages['kacheltest'] = [
+            'title' => 'IP-Symcon Kachelvisualisierung – Test',
+            'logo' => '', 'actions' => [], 'navs' => []
+        ];
+        $pageMappings['kacheltest'] = [
+            'type' => 'external_url',
+            'value' => $tileTestUrl
+        ];
+        $payload['externalKey'] = 'kacheltest';
+        IPS_LogMessage('Alexa', 'TileTest.start ' . $j([
+            'target' => 'tile_visualization',
+            'tilePath' => '/tile/',
+            'selectedInstance' => $tileVisId > 0,
+            'targetHttps' => strtolower((string)parse_url($tileTestUrl, PHP_URL_SCHEME)) === 'https'
+        ]));
+        $route = 'external';
+    }
+
+    // =============================
     // EXTERNAL
     // =============================
     if ($route === 'external') {
@@ -656,7 +697,7 @@ try {
 
         // Kamera/Energie verwenden eine eigenstaendige Diagnose-Shell mit
         // Browser-Rueckmeldung. Andere externe Seiten bleiben unveraendert.
-        $shellFile = in_array($externalKey, ['kamera', 'energie'], true)
+        $shellFile = in_array($externalKey, ['kamera', 'energie', 'kacheltest'], true)
             ? 'alexa-diagnostic-shell.html' : 'alexa-shell.html';
         $shellUrl = rtrim($baseUrl,'/').'/hook/iah-alexa-shell?'.http_build_query([
             'f'     => $shellFile,
