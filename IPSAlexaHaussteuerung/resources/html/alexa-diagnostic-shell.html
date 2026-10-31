@@ -112,7 +112,7 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
           var rect=el.getBoundingClientRect();
           if(!rect || rect.width<=0 || rect.height<=0)continue;
           var caption=String(el.getAttribute('aria-label')||
-            el.value||el.textContent||'').trim().replace(/\\s+/g,' ').toLowerCase();
+            el.value||el.textContent||'').trim().replace(/\s+/g,' ').toLowerCase();
           if(caption===labels[k])found.push(el);
         }
         if(found.length===1)return found[0];
@@ -189,7 +189,7 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
           try{
             if(doc!==frame.contentDocument ||
                win.location.origin!==location.origin ||
-               !/^\\/tile\\/?$/.test(win.location.pathname)){
+               !/^\/tile\/?$/.test(win.location.pathname)){
               emit('tile_autologin','error','dom_changed');
               return;
             }
