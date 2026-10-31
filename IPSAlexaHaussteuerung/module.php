@@ -113,6 +113,10 @@ class IPSAlexaHaussteuerung extends IPSModule
         // Das Passwort bleibt in Symcon-Properties (nicht in GitHub/URLs/Logs).
         $this->RegisterPropertyBoolean('TileAutoLoginEnabled', false);
         $this->RegisterPropertyString('TileAutoLoginPassword', '');
+        // Only same Echo device may keep its live HTML document on a voice turn.
+        // Existing Alexa routes remain untouched when this mode is disabled.
+        $this->RegisterPropertyBoolean('TilePreserveHtmlOnVoice', true);
+        $this->RegisterPropertyBoolean('TilePerformanceDiagnostics', true);
         // Dauerhaftes Alexa-Kommando "Test"; das Ziel ist spaeter erweiterbar.
         $this->RegisterPropertyString('AlexaTestTarget', 'kacheltest');
 
@@ -158,6 +162,9 @@ class IPSAlexaHaussteuerung extends IPSModule
         $catDiag = $this->ensureCategory($root, 'Diagnose', 'iahDiag');
         $this->EnsureAlexaLogInfrastructure($catDiag);
         $htmlDiag=$this->ensureCategory($catDiag,'Web API for Games – Kamera/Energie','iahExternalHtmlDiag');
+        $tileSessions=$this->ensureVar($htmlDiag,'Alexa HTML-Status je Gerät (intern)',
+            'iahTileHtmlSessions',VARIABLETYPE_STRING,'','{}');
+        IPS_SetHidden($tileSessions,true);
         $this->ensureVar($htmlDiag,'Letzter HTML-Diagnosebericht (JSON)','iahHtmlLast',VARIABLETYPE_STRING,'~TextBox',null);
         $this->ensureVar($htmlDiag,'Letzte 20 HTML-Diagnosen (JSON-Zeilen)','iahHtmlHistory',VARIABLETYPE_STRING,'~TextBox',null);
         $this->ensureVar($htmlDiag,'Letztes Browser-Ereignis (JSON)','iahHtmlBrowserLast',VARIABLETYPE_STRING,'~TextBox',null);
