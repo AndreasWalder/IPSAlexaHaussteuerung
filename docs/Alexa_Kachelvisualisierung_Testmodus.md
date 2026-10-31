@@ -20,6 +20,22 @@ Nach dem GitHub-Modulupdate einmal auf **Übernehmen** klicken, damit das vorhan
 
 Offizielle Symcon-Dokumentation: Die Kachelvisualisierung ist ab Symcon 7.0 im Browser unter `/tile/` verfügbar, wenn das WebFront als Standardvisualisierung läuft: https://www.symcon.de/de/service/dokumentation/komponenten/kachel-visualisierung/browser/
 
+## Korrektur: Alexa meldet „Kachelvisualisierung-Testmodus ist deaktiviert“
+
+Bei der ersten Version fehlten `TileTestEnabled` und `TileTestVisualizationId` im
+`V`-Payload des bereits vorhandenen Action-Skripts. Der Renderer wertete ein
+fehlendes Feld fälschlich wie `false` aus – selbst wenn die Modul-Checkbox
+aktiviert war. **Nach diesem Fix liest der Renderer die Werte unmittelbar aus
+der tatsächlichen IP-Symcon-Modulinstanz**; deshalb funktionieren auch alte
+Action- und eigene SystemConfiguration-Skripte weiter.
+
+Das Ereignis `TileTest.settings` im **Alexa-Protokoll (letzte 500)** zeigt
+anonymisiert `source=instance`, `enabled=true/false` und
+`visualizationSelected=true/false`. Nur wenn die Checkbox am Modul
+tatsächlich ausgeschaltet ist, wird der Test unterbunden.
+
+Einmal Modul aktualisieren und **Übernehmen**. „Kacheltest“ erneut sagen.
+
 ## Diagnose
 
 **Objektbaum → Diagnose → Web API for Games – Kamera/Energie**. Die bekannten Variablen erfassen nun zusätzlich `route=kacheltest`.

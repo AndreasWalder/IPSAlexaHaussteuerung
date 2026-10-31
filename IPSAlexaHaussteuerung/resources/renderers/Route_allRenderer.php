@@ -581,7 +581,29 @@ try {
     // KACHELTEST (getrennt von Kamera/Energie/WebFront)
     // =============================
     if ($route === 'kacheltest') {
-        if (!(bool)($V['TileTestEnabled'] ?? false)) {
+        // Die Bestandsinstallation laedt die Alexa-Konfiguration teils aus
+        // einem benutzerdefinierten SystemConfiguration-Skript. Dieses kann
+        // neue Modul-Properties noch NICHT im V-Payload enthalten.
+        // Daher direkt von der tatsaechlichen Modulinstanz lesen.
+        $tileTestInstanceId = (int)($V['InstanceID'] ?? 0);
+        $tileTestEnabled = (bool)($V['TileTestEnabled'] ?? false);
+        $tileVisId = max(0, (int)($V['TileTestVisualizationId'] ?? 0));
+        $tileSettingsSource = 'payload';
+        if ($tileTestInstanceId > 0 && function_exists('IPS_GetProperty') && IPS_InstanceExists($tileTestInstanceId)) {
+            try {
+                $tileTestEnabled = (bool)IPS_GetProperty($tileTestInstanceId, 'TileTestEnabled');
+                $tileVisId = max(0, (int)IPS_GetProperty($tileTestInstanceId, 'TileTestVisualizationId'));
+                $tileSettingsSource = 'instance';
+            } catch (Throwable $e) {
+                IPS_LogMessage('Alexa', 'TileTest.settingsError ' . get_class($e));
+            }
+        }
+        IPS_LogMessage('Alexa', 'TileTest.settings ' . $j([
+            'source' => $tileSettingsSource,
+            'enabled' => $tileTestEnabled,
+            'visualizationSelected' => $tileVisId > 0
+        ]));
+        if (!$tileTestEnabled) {
             IPS_LogMessage('Alexa', 'TileTest.disabled');
             echo json_encode([
                 'ok' => true, 'route' => 'kacheltest',
@@ -593,7 +615,6 @@ try {
         }
         // IP-Symcon 7+ Kachelvisualisierung liegt beim alten
         // WebFront-Standard unter /tile/. 0 = Visualisierungsauswahl.
-        $tileVisId = max(0, (int)($V['TileTestVisualizationId'] ?? 0));
         $tileTestUrl = rtrim($baseUrl, '/') . '/tile/';
         if ($tileVisId > 0) {
             $tileTestUrl .= '#' . $tileVisId;
