@@ -44,7 +44,7 @@ $stage = $allow($input['stage'] ?? '', [
     'resource_error', 'visibility_hidden', 'pagehide', 'missing_src',
     'tile_capability', 'tile_render', 'tile_frame_js_error', 'tile_frame_rejection',
     'tile_frame_resource_error', 'tile_snapshot', 'tile_inner_storage', 'tile_document',
-    'tile_compat'
+    'tile_compat', 'tile_boot', 'tile_early_error', 'tile_early_rejection'
 ]);
 $status = $allow($input['status'] ?? '', [
     'ok', 'error', 'timeout', 'empty', 'not_empty', 'cross_origin',
@@ -58,7 +58,10 @@ $code = $allow($input['code'] ?? '', [
     'onload', 'after_3s', 'after_8s', 'after_15s', 'ready_state',
     'fetch_start', 'html_injected', 'target_rejected', 'fetch_failed',
     'too_large', 'no_head', 'shim_session', 'shim_memory',
-    'shim_native', 'shim_blocked', 'shim_missing'
+    'shim_native', 'shim_blocked', 'shim_missing',
+    'no_hash', 'hash_match', 'hash_missing', 'hooks_installed',
+    'security_error', 'type_error', 'reference_error', 'syntax_error',
+    'js_error'
 ]);
 $event = [
     'time' => date('c'),
@@ -82,7 +85,8 @@ if ($key === 'kacheltest' && $stage === 'tile_snapshot' && is_array($input['metr
     foreach ([
         'nodes', 'bodyChildren', 'scripts', 'stylesheets', 'images',
         'frames', 'passwordInputs', 'rootChildren', 'scriptRequests',
-        'styleRequests', 'apiRequests', 'otherRequests'
+        'styleRequests', 'apiRequests', 'otherRequests',
+        'response2xx', 'response3xx', 'response4xx', 'response5xx', 'responseFailed'
     ] as $metric) {
         $value = $input['metrics'][$metric] ?? null;
         if (is_int($value) && $value >= 0 && $value <= 9999) {

@@ -120,6 +120,47 @@ keine Kachelinhalte, HTML-Quellen oder Speicherwerte protokolliert.
 **Kamera, Energie, Licht, Jalousie, Heizung und das alte WebFront
 sind nicht Teil des Experiments.** Der Testmodus ist standardmäßig AUS.
 
+## Neuer Befund: Mit Speicherersatz erscheint der animierte Symcon-Ring, dann weiße Seite
+
+**Gemessener Vergleich (31.10.2026):** Ohne Ersatz blieb die Anwendung bis
+15 Sekunden bei 6 HTML-Knoten und 0 API-Anfragen. Mit aktivierter Option
+`TileTestStorageCompat` wurde `shim_session` und
+`tile_inner_storage=supported` bestätigt. Nach 15 Sekunden gab es
+**11 DOM-Knoten**, **19 Fetch-/XHR-Anfragen** und den animierten Symcon-Ring.
+Das ist ein echter Fortschritt bei der Initialisierung, aber noch kein
+Nachweis einer funktionierenden Kachelvisualisierung.
+
+**Weitere Ursache möglich:** Die experimentelle `iframe.srcdoc`-Einbindung
+verliert `/tile/#<Visualisierungs-ID>` als echte Dokumentadresse
+(`window.location` wird zu `about:srcdoc`). Auch bei funktionierender
+Speicher-API könnte die App dadurch an Routing oder Anmeldung scheitern.
+
+### Verbesserte Testdiagnose nach diesem Update
+
+Im bereits aktivierten Kompatibilitätsversuch wird jetzt **vor den
+Original-Symcon-Skripten** zusätzlich eine datensparsame Startüberwachung
+installiert. Die Checkbox bleibt standardmäßig ausgeschaltet.
+
+- `tile_boot` / `hash_match`, `hash_missing` oder `no_hash`: ob das
+  numerische `#ID`-Fragment in die srcdoc-Testseite übertragen wurde.
+  **Achtung:** `hash_match` repariert nicht die `about:srcdoc`-Basisadresse.
+- `tile_boot` / `hooks_installed`: frühe Überwachung installiert.
+- `tile_early_error` und `tile_early_rejection`: JavaScript-Ausnahmen,
+  Promise-Rejections oder Script-/CSS-Ladefehler bei der Initialisierung.
+  Die Meldungen werden ausschließlich als feste Fehlerkategorien erfasst,
+  beispielsweise `security_error`, `type_error`, `reference_error`.
+  **Keine** Fehlermeldung, Stacktrace, URL oder Benutzerdaten werden gespeichert.
+- `tile_snapshot.metrics.response2xx`, `response3xx`, `response4xx`,
+  `response5xx`, `responseFailed`: Anzahlen beobachteter HTTP-Ergebnisse
+  ohne URLs oder Antwortkörper. Diese Werte erklären, ob die beobachteten
+  API-Anfragen erfolgreich sind oder z. B. durch fehlende Anmeldung scheitern.
+
+**Test:** Modul aktualisieren, Modulinstanz **Übernehmen**, bestehende
+Kompatibilitäts-Checkbox aktiviert lassen, „Alexa, öffne Haussteuerung“
+→ „Kacheltest“ sagen und nach 15 Sekunden die
+`kacheltest`-Einträge aus der Browser-Diagnosevariable kopieren.
+Kamera/Energie und das alte WebFront bleiben unverändert.
+
 ## Diagnose
 
 **Objektbaum → Diagnose → Web API for Games – Kamera/Energie**. Die bekannten Variablen erfassen nun zusätzlich `route=kacheltest`.
