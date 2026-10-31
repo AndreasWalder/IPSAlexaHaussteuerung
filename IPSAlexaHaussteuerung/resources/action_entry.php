@@ -1264,6 +1264,135 @@ function iah_build_system_configuration(int $instanceId): array
     return iah_build_system_configuration_internal($instanceId, $props, $logCfg);
 }
 
+// IAH_TILE_QUIET_HELPER_BEGIN
+/**
+ * Alexa HTML.Start: shouldEndSession must be OMITTED, not false or null.
+ * We keep the SDK response object intact as far as its type is concerned:
+ * the existing AlexaCustomSkillIntent gateway expects an SDK response.
+ * Only supported internal array representations are adapted, with a
+ * serialization self-check and automatic rollback on mismatch.
+ *
+ * If the installed Alexa Gateway uses a different SDK representation,
+ * no change is made. We intentionally DO NOT return arbitrary arrays,
+ * introduce a response wrapper or change its class.
+ */
+function iah_tile_response_body(array $data): ?array
+{
+    if (isset($data['response']) && is_array($data['response'])) {
+        return $data['response'];
+    }
+    return $data;
+}
+
+function iah_tile_html_directive(array $body): bool
+{
+    foreach (($body['directives'] ?? []) as $directive) {
+        if (is_array($directive) && in_array(
+            (string)($directive['type'] ?? ''),
+            ['Alexa.Presentation.HTML.Start', 'Alexa.Presentation.HTML.HandleMessage'],
+            true
+        )) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function iah_tile_strip_followup_field(array &$state): bool
+{
+    if (array_key_exists('shouldEndSession', $state)
+        && $state['shouldEndSession'] === false
+        && iah_tile_html_directive($state)) {
+        unset($state['shouldEndSession']);
+        unset($state['reprompt']);
+        return true;
+    }
+    if (isset($state['response']) && is_array($state['response'])) {
+        $body = $state['response'];
+        if (iah_tile_strip_followup_field($body)) {
+            $state['response'] = $body;
+            return true;
+        }
+    }
+    return false;
+}
+
+function iah_tile_quiet_html_response(object $answer, bool $enabled): object
+{
+    if (!$enabled) return $answer;
+
+    try {
+        $json = json_encode($answer, JSON_THROW_ON_ERROR);
+        $original = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+        if (!is_array($original)) {
+            IPS_LogMessage('Alexa', 'TileQuiet.unsupported response_shape');
+            return $answer;
+        }
+        $body = iah_tile_response_body($original);
+        if (!is_array($body) || !iah_tile_html_directive($body)) {
+            IPS_LogMessage('Alexa', 'TileQuiet.skipped not_html');
+            return $answer;
+        }
+        if (!array_key_exists('shouldEndSession', $body)) {
+            IPS_LogMessage('Alexa', 'TileQuiet.ready field_already_omitted');
+            return $answer;
+        }
+        if ($body['shouldEndSession'] !== false) {
+            IPS_LogMessage('Alexa', 'TileQuiet.unsupported end_session_not_false');
+            return $answer;
+        }
+
+        // An existing SDK property that contains the response envelope
+        // is the ONLY place we touch. No change to the SDK class/interface.
+        $ref = new ReflectionObject($answer);
+        do {
+            foreach ($ref->getProperties() as $property) {
+                if ($property->isStatic() || $property->isReadOnly()) continue;
+                $value = null;
+                $touched = false;
+                try {
+                    $property->setAccessible(true);
+                    if (!$property->isInitialized($answer)) continue;
+                    $value = $property->getValue($answer);
+                    if (!is_array($value)) continue;
+                    $candidate = $value;
+                    if (!iah_tile_strip_followup_field($candidate)) continue;
+
+                    $property->setValue($answer, $candidate);
+                    $touched = true;
+                    $modified = json_decode(
+                        json_encode($answer, JSON_THROW_ON_ERROR),
+                        true, 512, JSON_THROW_ON_ERROR
+                    );
+                    $newBody = is_array($modified)
+                        ? iah_tile_response_body($modified) : null;
+                    if (is_array($newBody)
+                        && iah_tile_html_directive($newBody)
+                        && !array_key_exists('shouldEndSession', $newBody)
+                        && !array_key_exists('reprompt', $newBody)
+                        && ($newBody['directives'] ?? null) === ($body['directives'] ?? null)) {
+                        IPS_LogMessage('Alexa', 'TileQuiet.ready field_omitted');
+                        return $answer;
+                    }
+                    // All-or-nothing: restore SDK object on failed validation.
+                    $property->setValue($answer, $value);
+                } catch (Throwable $ignored) {
+                    if ($touched && is_array($value)) {
+                        try { $property->setValue($answer, $value); }
+                        catch (Throwable $ignoredRestore) {}
+                    }
+                }
+            }
+            $ref = $ref->getParentClass();
+        } while ($ref !== false);
+        IPS_LogMessage('Alexa', 'TileQuiet.unsupported sdk_layout');
+    } catch (Throwable $ignored) {
+        IPS_LogMessage('Alexa', 'TileQuiet.unsupported sdk_serialization');
+    }
+    return $answer;
+}
+// IAH_TILE_QUIET_HELPER_END
+
 function Execute($request = null)
 {
     // LOG_LEVEL früh auslesen, damit die Top-Level-Logs gesteuert werden können
@@ -2007,7 +2136,8 @@ function Execute($request = null)
                 'message'=>['type'=>'iah_tile_resume']
             ]);
             IPS_LogMessage('Alexa', 'TileVoice.preserve test_resume');
-            return $resumed;
+            return iah_tile_quiet_html_response($resumed,
+                (bool)($propsEarly['TileQuietNoFollowup'] ?? false));
         }
         $iahVoiceDecision = $iahVoiceRouter([
             'op'=>'classify',
@@ -2888,7 +3018,10 @@ function Execute($request = null)
                     ]
                 ]);
                 IPS_LogMessage('Alexa', 'TileVoice.preserve voice_result');
-                return $r;
+                return iah_tile_quiet_html_response($r,
+                    (bool)($propsEarly['TileQuietNoFollowup'] ?? false)
+                    && $speech === '');
+
             }
             // IAH_TILE_VOICE_RESPONSE_END
             $makeCard($r, $data['card'] ?? []);
@@ -2899,7 +3032,13 @@ function Execute($request = null)
                     $r->AddDirective($d);
                 }
             }
-            return $r;
+            // Only the opt-in HTML mode may omit Alexa's followup field.
+            // Normal APL, question/answer, exit, camera and energy remain unchanged.
+            return iah_tile_quiet_html_response($r,
+                (bool)($propsEarly['TileQuietNoFollowup'] ?? false)
+                && (string)$__route === 'external'
+                && $speech === '');
+
         }
 
 

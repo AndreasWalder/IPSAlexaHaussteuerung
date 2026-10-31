@@ -1,3 +1,73 @@
+## Experiment: Mikrofon bei HTML-Ladephase nicht automatisch öffnen (01.11.2026)
+
+Die Amazon-Dokumentation unterscheidet bei `Alexa.Presentation.HTML.Start`
+zwischen **`shouldEndSession=false`** (Alexa öffnet das Mikrofon
+automatisch für eine Folgeeingabe) und **weggelassenem**
+`shouldEndSession` (HTML-Sitzung bleibt offen, **kein** automatisches
+Folge-Zuhören). `null` ist **keine** sichere Alternative – das Mikrofon
+kann damit ebenfalls geöffnet werden.
+
+### IP-Symcon-Schalter (standardmäßig AUS)
+
+**Alexa – neue Kachelvisualisierung testen** →
+**„Test: automatische Alexa-Folgeaufnahme beim HTML-Start vermeiden“**
+(`TileQuietNoFollowup`) aktivieren und **Übernehmen** drücken.
+
+Das Modul verändert **nur** den bestehenden Alexa-PHP-
+`AskResponse`-Datenträger, sofern dessen intern gespeicherte
+Antwort **nachweislich** (per erneuter JSON-Serialisierung) ohne
+`shouldEndSession` und `reprompt` herauskommt. Das Objekt und seine
+Klasse bleiben erhalten, `Alexa.Presentation.HTML.Start` /
+`HTML.HandleMessage` bleiben erhalten. Falls die auf dem Symcon-Server
+installierte **AlexaCustomSkillIntent-/AskResponse-Bibliothek** intern
+andere Strukturen verwendet, bleibt die bewährte Antwort **unverändert**.
+Der Effekt ist daher auf dem echten Echo noch zu bestätigen.
+
+Die neue Diagnose schreibt ausschließlich ungefährliche Zustände in
+das bestehende Alexa-Protokoll:
+
+- `TileQuiet.ready field_omitted` – `shouldEndSession` wurde im
+  tatsächlich serialisierten Antwortobjekt entfernt.
+- `TileQuiet.ready field_already_omitted` – SDK hatte das Feld
+  bereits weggelassen.
+- `TileQuiet.unsupported sdk_layout` /
+  `TileQuiet.unsupported sdk_serialization` /
+  `TileQuiet.unsupported response_shape` –
+  die sichere Anpassung ist mit dieser SDK-Variante nicht möglich,
+  **kein Eingriff** in die bisher funktionierende Antwort.
+- `TileQuiet.skipped not_html` – keine HTML.Start-/HandleMessage-
+  Direktive, keine Änderung.
+
+**Wichtig:** Das ist keine Mikrofonabschaltung. Das Echo reagiert
+weiterhin auf das Aktivierungswort **„Alexa“**; nur eine vom Skill
+automatisch angeforderte **Folgeaufnahme ohne Wakeword** soll während
+des Ladens entfallen. Bei späteren Alexa-Fragen oder normalen
+Dialogen ist Sprache weiterhin möglich. Eine neue PHP-Antwortklasse,
+ein ungetesteter Gateway-Hack oder eine globale Anpassung an
+APL/Kamera/Energie/KI wurden bewusst vermieden.
+
+### Test auf dem Echo Show
+
+1. Modul aktualisieren → Modulinstanz öffnen → neue Checkbox aktivieren
+   → **Übernehmen**.
+2. „Alexa, öffne Haussteuerung“ → **„Test“** sagen.
+3. Während die Kachelvisualisierung lädt **nichts sagen** und beobachten,
+   ob Alexa unmittelbar nach der Antwort automatisch auf weitere
+   Spracheingaben wartet. Das Aktivierungswort sollte weiter
+   funktionieren.
+4. Im IP-Symcon-Protokoll nach **`TileQuiet.`** suchen. Bei
+   `ready field_omitted` erwartet Amazon die stille HTML-Sitzung.
+   Bei `unsupported` fehlt noch die konkrete Anpassung an
+   die auf deinem Server installierte Alexa-Response-Bibliothek.
+5. Prüfen, ob der bisherige automatische Passwort- und Enter-Login
+   und die HTML-Sprachsteuerung **unverändert** funktionieren.
+   Wenn etwas unerwartet reagiert: Checkbox wieder ausschalten.
+
+**Amazon-Referenz:**
+https://developer.amazon.com/en-US/docs/alexa/web-api-for-games/alexa-games-build-your-skill.html
+
+---
+
 # Alexa Echo Show: Schnellstart, Sprachsteuerung und Sitzungszustand (01.11.2026)
 
 **Status:** Die neue Tile-Visualisierung hat auf dem echten Echo erfolgreich

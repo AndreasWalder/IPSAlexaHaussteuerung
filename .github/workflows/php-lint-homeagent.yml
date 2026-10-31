@@ -100,3 +100,5 @@ jobs:
         run: node tests/test_alexa_tile_ok_button.js
       - name: Test Alexa Tile fast-start, live HTML voice preservation and device isolation
         run: php tests/test_alexa_tile_fast_voice.php
+      - name: Test Alexa Tile silent HTML response and safe SDK fallback
+        run: php tests/test_alexa_tile_quiet_response.php
