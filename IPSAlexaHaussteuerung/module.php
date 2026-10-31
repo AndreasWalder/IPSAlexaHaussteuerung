@@ -106,6 +106,9 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyInteger('TileTestVisualizationId', 0);
         // Opt-in: experimenteller localStorage-Ersatz nur bei Alexa Kacheltest.
         $this->RegisterPropertyBoolean('TileTestStorageCompat', false);
+        // Real-URL-Bootstrap ist nur bei explizit aktiviertem
+        // localStorage-Kompatibilitaetstest aktiv; 'srcdoc' als Vergleich.
+        $this->RegisterPropertyString('TileTestBootstrapMode', 'url');
         // Dauerhaftes Alexa-Kommando "Test"; das Ziel ist spaeter erweiterbar.
         $this->RegisterPropertyString('AlexaTestTarget', 'kacheltest');
 
