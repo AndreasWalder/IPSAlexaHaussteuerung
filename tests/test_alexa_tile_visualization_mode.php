@@ -162,4 +162,32 @@ tileTestCheck(!str_contains($shell, 'prompt(')
     && !str_contains($shell, 'password='),
     'Compatibility bootstrap does not auto-submit a password');
 
+// Regression: the previous localStorage shim starts the spinner but the
+// Tile application can still hang, e.g. because srcdoc drops /tile/#ID.
+// Verify early, allowlisted errors and HTTP status counts without capturing
+// credentials, JS error messages, URLs or DOM contents.
+tileTestCheck(str_contains($shell,"installTileBootstrapDiagnostics")
+    && str_contains($shell,"window.location.hash=wanted"),
+    'Compat bootstrap preserves validated visualization fragment');
+tileTestCheck(str_contains($shell,"selectedHash=/^#[0-9]{1,10}$/")
+    && str_contains($shell,"JSON.stringify(selectedHash)"),
+    'Only numeric visualization fragments are injected into bootstrap');
+tileTestCheck(str_contains($shell,"tile_early_error")
+    && str_contains($shell,"tile_early_rejection"),
+    'First Tile JS errors observed BEFORE original page scripts execute');
+tileTestCheck(str_contains($shell,"ev.source!==frame.contentWindow")
+    && str_contains($shell,"ev.origin!==location.origin"),
+    'Only messages from target iframe and same origin accepted');
+tileTestCheck(str_contains($shell,"response4xx")
+    && str_contains($shell,"response5xx")
+    && str_contains($shell,"responseFailed"),
+    'Tile response status buckets are aggregated for the SPA');
+tileTestCheck(str_contains($receiver,"'tile_boot'")
+    && str_contains($receiver,"'hash_match'")
+    && str_contains($receiver,"'security_error'"),
+    'Early diagnostics are receiver-allowlisted');
+tileTestCheck(str_contains($receiver,"'response4xx'")
+    && str_contains($receiver,"'responseFailed'"),
+    'HTTP response counts are receiver-allowlisted as bounded integers');
+
 echo "PASS: Kacheltest voice recognition, separate /tile/ rendering, no WFC switch, setup and diagnostics\n";
