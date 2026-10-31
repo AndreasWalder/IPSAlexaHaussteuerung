@@ -109,4 +109,29 @@ tileTestCheck(str_contains($off['response'],'deaktiviert'),
     'Explicit module property false must disable test even when stale payload says true');
 $GLOBALS['tileTestProps']=$disabledProp;
 
+// SPA startup is not proven by iframe.onload: capture safe, time-scoped
+// inner-frame snapshots and storage support with strict receiver allowlists.
+tileTestCheck(str_contains($shell,"tileSnapshot('onload')")
+    && str_contains($shell,"tileSnapshot('after_3s')")
+    && str_contains($shell,"tileSnapshot('after_8s')")
+    && str_contains($shell,"tileSnapshot('after_15s')"),
+    'HTML diagnostic captures SPA progress after iframe load');
+tileTestCheck(str_contains($shell,"tile_inner_storage")
+    && str_contains($shell,'var store=win.localStorage'),
+    'Test inner iframe localStorage separately from Alexa outer shell');
+tileTestCheck(str_contains($shell,"tile_document")
+    && str_contains($shell,"doc.readyState"),
+    'Capture readiness of iframe document');
+tileTestCheck(str_contains($shell,"scriptRequests")
+    && str_contains($shell,"rootChildren")
+    && str_contains($shell,"passwordInputs"),
+    'Snapshot captures sanitized DOM, network and login counters');
+tileTestCheck(str_contains($receiver,"if (is_int(\$value) && \$value >= 0 && \$value <= 9999)"),
+    'Server must reject unbounded and non-integer diagnostic metrics');
+tileTestCheck(str_contains($receiver,"\$key === 'kacheltest' && \$stage === 'tile_snapshot'"),
+    'Only Kacheltest snapshots are allowed to contain diagnostic metrics');
+tileTestCheck(!str_contains($receiver, "\$input['metrics']['url']")
+    && !str_contains($receiver, "\$input['message']"),
+    'Browser diagnostic must not accept URLs or raw exception messages');
+
 echo "PASS: Kacheltest voice recognition, separate /tile/ rendering, no WFC switch, setup and diagnostics\n";
