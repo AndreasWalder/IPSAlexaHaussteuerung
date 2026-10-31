@@ -59,7 +59,7 @@ hd(str_contains($renderer,"IPS_RunScriptEx("),'Nonblocking probe (no Alexa-respo
 hd(str_contains($renderer,"ExternalHTML.directive"),'HTML.Start directive logged');
 hd(str_contains($module,"'externalHtmlProbeScript'"),'Helper installed');
 hd(str_contains($module,"'iahHtmlHistory'"),'Copyable HTML diagnostic history installed');
-hd(str_contains($module,"patchActionScriptExternalHtmlMetadata((int) $id)"),'Legacy Action migrated');
+hd(str_contains($module,'patchActionScriptExternalHtmlMetadata((int) $id)'),'Legacy Action migrated');
 hd(str_contains($entry,"'htmlSupported'   =>"),'HTML capability passed');
 hd(str_contains($entry,"ExternalHTML.clientEvent"),'Sanitized HTML.Message telemetry');
 echo "PASS: asynchronous HTML probes, HTTP/TLS/frame policy flags, missing shell, safe logs, Action migration\n";
