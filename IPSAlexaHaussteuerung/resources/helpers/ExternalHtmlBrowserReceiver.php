@@ -43,7 +43,7 @@ $stage = $allow($input['stage'] ?? '', [
     'iframe_timeout', 'frame_dom', 'js_error', 'promise_error',
     'resource_error', 'visibility_hidden', 'pagehide', 'missing_src',
     'tile_capability', 'tile_render', 'tile_frame_js_error', 'tile_frame_rejection',
-    'tile_frame_resource_error'
+    'tile_frame_resource_error', 'tile_snapshot', 'tile_inner_storage'
 ]);
 $status = $allow($input['status'] ?? '', [
     'ok', 'error', 'timeout', 'empty', 'not_empty', 'cross_origin',
@@ -53,7 +53,8 @@ $status = $allow($input['status'] ?? '', [
 $code = $allow($input['code'] ?? '', [
     'none', 'image', 'script', 'stylesheet', 'iframe', 'other',
     'unavailable', 'unknown', 'local_storage', 'session_storage',
-    'websocket', 'indexed_db', 'selection', 'password', 'elements'
+    'websocket', 'indexed_db', 'selection', 'password', 'elements',
+    'onload', 'after_3s', 'after_8s', 'after_15s'
 ]);
 $event = [
     'time' => date('c'),
@@ -70,6 +71,24 @@ if ($category <= 0) {
 }
 $last = (int)@IPS_GetObjectIDByIdent('iahHtmlBrowserLast', $category);
 $history = (int)@IPS_GetObjectIDByIdent('iahHtmlBrowserHistory', $category);
+// Optionales, streng begrenztes Zahlenprofil des iframe.
+ // Explizit KEINE beliebigen Strings, DOM-Inhalte, URLs oder Netzwerkpfade.
+if ($key === 'kacheltest' && $stage === 'tile_snapshot' && is_array($input['metrics'] ?? null)) {
+    $safeMetrics = [];
+    foreach ([
+        'nodes', 'bodyChildren', 'scripts', 'stylesheets', 'images',
+        'frames', 'passwordInputs', 'rootChildren', 'scriptRequests',
+        'styleRequests', 'apiRequests', 'otherRequests'
+    ] as $metric) {
+        $value = $input['metrics'][$metric] ?? null;
+        if (is_int($value) && $value >= 0 && $value <= 9999) {
+            $safeMetrics[$metric] = $value;
+        }
+    }
+    if ($safeMetrics !== []) {
+        $event['metrics'] = $safeMetrics;
+    }
+}
 $line = json_encode($event, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 if ($last > 0 && IPS_VariableExists($last)) {
     SetValueString($last, $line);
