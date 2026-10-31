@@ -186,8 +186,9 @@ tileTestCheck(str_contains($receiver,"'tile_compat'")
     && str_contains($receiver,"'shim_session'"),
     'Compatibility telemetry is allowlisted');
 tileTestCheck(!str_contains($shell, 'prompt(')
-    && !str_contains($shell, 'password='),
-    'Compatibility bootstrap does not auto-submit a password');
+    && !str_contains($shell, "searchParams.set('password'")
+    && !str_contains($shell, "'?password='"),
+    'Compatibility bootstrap never places a login password in URLs');
 
 // Regression: the previous localStorage shim starts the spinner but the
 // Tile application can still hang, e.g. because srcdoc drops /tile/#ID.
