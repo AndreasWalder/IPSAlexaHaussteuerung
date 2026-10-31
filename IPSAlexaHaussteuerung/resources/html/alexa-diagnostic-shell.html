@@ -206,7 +206,7 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
     var loginForm=input.form, dialog=input.closest(
       '[role="dialog"],[aria-modal="true"],dialog'
     );
-    doc.addEventListener('click',function(event){
+    function onManualClick(event){
       if(!autoLoginUsed || event.isTrusted!==true)return;
       var target=event.target;
       if(!target || target.nodeType!==1 || target===input)return;
@@ -217,6 +217,7 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
       // Ohne Dialog/Form nie fremde Klicks auf der Hausvisualisierung beobachten.
       if(!inDialog && !inForm)return;
       var el=target,kind='manual_other';
+      var targetTag=(target.tagName||'').toLowerCase();
       for(var i=0;i<6 && el && el.nodeType===1;i++,el=el.parentElement){
         var tag=(el.tagName||'').toLowerCase();
         if(tag==='button' ||
@@ -227,11 +228,13 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
           kind='manual_role';break;
         }
       }
-      if(kind==='manual_other' && (tag==='span'||tag==='div'))
+      if(kind==='manual_other' && (targetTag==='span'||targetTag==='div'))
         kind='manual_text';
       emit('tile_autologin','ok',kind);
       doc.__iahTileManualTapAttached=false;
-    },{capture:true,once:false});
+      doc.removeEventListener('click',onManualClick,true);
+    }
+    doc.addEventListener('click',onManualClick,true);
   }
 
   function tileTryAutoLogin(){
