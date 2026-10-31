@@ -1307,6 +1307,20 @@ function Execute($request = null)
                 'intent' => $intentSafe,
                 'received' => $request !== null
             ], JSON_UNESCAPED_UNICODE));
+            if ($kind === 'Alexa.Presentation.HTML.Message') {
+                // Nur fest definierte Diagnosefelder aus Browser-Events,
+                // niemals Inhalte, URLs, Tokens, Cookies oder Fehlertexte.
+                $htmlMessage = is_array($requestMeta['message'] ?? null)
+                    ? $requestMeta['message']
+                    : (is_object($requestMeta['message'] ?? null) ? (array)$requestMeta['message'] : []);
+                $safeHtmlEvent = [];
+                foreach (['type','stage','status','code'] as $field) {
+                    if (!is_scalar($htmlMessage[$field] ?? null)) continue;
+                    $safeHtmlEvent[$field] = substr(
+                        preg_replace('/[^a-zA-Z0-9_.-]/','',(string)$htmlMessage[$field]) ?? '',0,40);
+                }
+                IPS_LogMessage('Alexa','ExternalHTML.clientEvent ' . json_encode($safeHtmlEvent,JSON_UNESCAPED_UNICODE));
+            }
         }
         // IAH_SAFE_REQUEST_LOG_END
     } catch (Throwable $e) {
