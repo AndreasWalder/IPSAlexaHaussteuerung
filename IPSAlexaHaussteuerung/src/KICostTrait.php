@@ -13,6 +13,16 @@ trait KICostTrait
             \IPS_SetVariableProfileDigits('IAH.KICostUSD',6);
             \IPS_SetVariableProfileText('IAH.KICostUSD','$','');
         }
+        // EUR ist die sichtbare Währung, historische USD-Kosten bleiben
+        // für Audits in den ausgeblendeten Altvariablen und Rohdaten erhalten.
+        if (!\IPS_VariableProfileExists('IAH.KICostEUR')) {
+            \IPS_CreateVariableProfile('IAH.KICostEUR',VARIABLETYPE_FLOAT);
+            \IPS_SetVariableProfileDigits('IAH.KICostEUR',6);
+            \IPS_SetVariableProfileText('IAH.KICostEUR','€ ','');
+        }
+        $this->ensureVar($root,'USD nach EUR – verwendeter Kurs','kiCostFxRate',VARIABLETYPE_FLOAT,'',null);
+        $this->ensureVar($root,'Wechselkurs – Datum','kiCostFxDate',VARIABLETYPE_STRING,'',null);
+        $this->ensureVar($root,'Wechselkurs – Quelle / Status','kiCostFxSource',VARIABLETYPE_STRING,'',null);
         $raw=$this->ensureVar($root,'KI-Kosten Rohdaten (nicht bearbeiten)','kiCostData',VARIABLETYPE_STRING,'',null);
         \IPS_SetHidden($raw,true);
         $this->ensureVar($root,'KI-Kosten Übersicht','kiCostOverview',VARIABLETYPE_STRING,'~HTMLBox',null);
@@ -23,14 +33,22 @@ trait KICostTrait
             $category=$this->ensureCategory($root,$label,'iahKICost'.$ident);
             foreach ($this->KICostVariableDefinitions() as $key=>[$caption,$type,$profile])
                 $this->ensureVar($category,$caption,$key,$type,$profile,null);
+            // Frühere USD-Variablen nicht löschen (Referenzen behalten ihre
+            // eindeutige Bedeutung), aber in der Oberfläche ausblenden.
+            foreach (['costTodayUSD','costMonthUSD','costTotalUSD',
+                'costMonthForecastUSD','averageCostPerQuestionUSD','lastCostUSD'] as $ident) {
+                $old=(int)@\IPS_GetObjectIDByIdent($ident,$category);
+                if($old>0&&\IPS_VariableExists($old))\IPS_SetHidden($old,true);
+            }
         }
+        $this->UpdateKICostExchangeRate();
         $this->RefreshKICostDisplay();
     }
 
     private function KICostVariableDefinitions(): array
     {
         $i=VARIABLETYPE_INTEGER;$f=VARIABLETYPE_FLOAT;$s=VARIABLETYPE_STRING;
-        $usd='IAH.KICostUSD';
+        $eur='IAH.KICostEUR';
         return [
             'questionsToday'=>['Fragen heute',$i,''],
             'questionsMonth'=>['Fragen diesen Monat',$i,''],
@@ -45,12 +63,12 @@ trait KICostTrait
             'allTokensTotal'=>['Tokens insgesamt',$i,''],
             'inputTokensMonth'=>['Eingabe-Tokens diesen Monat',$i,''],
             'outputTokensMonth'=>['Ausgabe-Tokens diesen Monat',$i,''],
-            'costTodayUSD'=>['KI-Kosten heute (USD)',$f,$usd],
-            'costMonthUSD'=>['KI-Kosten diesen Monat (USD)',$f,$usd],
-            'costTotalUSD'=>['KI-Kosten gesamt (USD)',$f,$usd],
-            'costMonthForecastUSD'=>['Hochrechnung Monatsende (USD)',$f,$usd],
-            'averageCostPerQuestionUSD'=>['Durchschnitt pro Frage (USD)',$f,$usd],
-            'lastCostUSD'=>['Letzte Frage – Kosten (USD)',$f,$usd],
+            'costTodayEUR'=>['KI-Kosten heute (EUR)',$f,$eur],
+            'costMonthEUR'=>['KI-Kosten diesen Monat (EUR)',$f,$eur],
+            'costTotalEUR'=>['KI-Kosten gesamt (EUR)',$f,$eur],
+            'costMonthForecastEUR'=>['Hochrechnung Monatsende (EUR)',$f,$eur],
+            'averageCostPerQuestionEUR'=>['Durchschnitt pro Frage (EUR)',$f,$eur],
+            'lastCostEUR'=>['Letzte Frage – Kosten (EUR)',$f,$eur],
             'lastQuestionApiCalls'=>['Letzte Frage – API-Aufrufe',$i,''],
             'lastQuestionInputTokens'=>['Letzte Frage – Eingabe-Tokens',$i,''],
             'lastQuestionCachedTokens'=>['Letzte Frage – Cache-Tokens',$i,''],
