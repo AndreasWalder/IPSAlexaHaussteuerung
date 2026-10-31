@@ -45,7 +45,7 @@ $stage = $allow($input['stage'] ?? '', [
     'tile_capability', 'tile_render', 'tile_frame_js_error', 'tile_frame_rejection',
     'tile_frame_resource_error', 'tile_snapshot', 'tile_inner_storage', 'tile_document',
     'tile_compat', 'tile_boot', 'tile_early_error', 'tile_early_rejection',
-    'tile_location', 'tile_history', 'tile_origin'
+    'tile_location', 'tile_history', 'tile_origin', 'tile_autologin'
 ]);
 $status = $allow($input['status'] ?? '', [
     'ok', 'error', 'timeout', 'empty', 'not_empty', 'cross_origin',
@@ -66,7 +66,9 @@ $code = $allow($input['code'] ?? '', [
     'srcdoc_context', 'tile_context', 'other_context',
     'history_ok', 'history_unchanged', 'history_blocked',
     'origin_start', 'origin_injected', 'origin_invalid', 'origin_failed',
-    'origin_fallback', 'url_bootstrap'
+    'origin_fallback', 'url_bootstrap',
+    'field_detected', 'filled', 'submitted', 'filled_only',
+    'credential_unavailable', 'dom_changed'
 ]);
 $event = [
     'time' => date('c'),
