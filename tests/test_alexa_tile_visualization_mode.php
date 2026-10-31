@@ -337,4 +337,44 @@ tileTestCheck(hash_equals($sig,hash_hmac('sha256',$id.'|'.$vis.'|'.$expiry.'|'.$
 tileTestCheck(!hash_equals($sig,hash_hmac('sha256',$id.'|'.($vis+1).'|'.$expiry.'|'.$nonce,$key)),
     'Ticket cannot be used for different Tile visualization');
 
+// Regressions: Alexa sends a same-origin POST through a reverse proxy where
+// HTTP_HOST may be an INTERNAL name while HTTP_ORIGIN is the public BaseUrl.
+// Never allow an explicit foreign Origin or cross-site Fetch metadata.
+tileTestCheck(str_contains($credential, "IPS_GetProperty(\$id, 'BaseUrl')")
+    && str_contains($credential, "\$expectedHost = strtolower((string)\$base['host'])")
+    && str_contains($credential, "\$receivedHost = strtolower((string)\$originParts['host'])")
+    && str_contains($credential, "\$expectedPort = (int)(\$base['port'] ?? 443)"),
+    'Origin validation uses externally configured HTTPS BaseUrl host and port');
+tileTestCheck(!str_contains($credential, "HTTP_HOST")
+    && str_contains($credential, "'origin_mismatch'")
+    && str_contains($credential, "'fetch_cross_site'"),
+    'Reverse proxy internal HTTP_HOST must not block correct external Origin');
+tileTestCheck(str_contains($credential, "\$origin !== ''")
+    && str_contains($credential, "'origin_invalid'")
+    && str_contains($credential, "hash_equals(\$expectedHost, \$receivedHost)"),
+    'Origin mismatch or invalid HTTPS must continue to fail closed');
+tileTestCheck(str_contains($credential, "HTTP_SEC_FETCH_SITE")
+    && str_contains($credential, "request_invalid")
+    && str_contains($credential, "ticket_expired")
+    && str_contains($credential, "ticket_invalid")
+    && str_contains($credential, "hash_equals(\$correct, \$signature)"),
+    'Optional missing Alexa fetch metadata never bypasses token and signed expiry');
+tileTestCheck(str_contains($credential, "X-IAH-Tile-Auth-Reason:")
+    && str_contains($credential, "in_array(\$reason, \$allowed, true)"),
+    'Response only exposes fixed diagnostic rejection codes');
+tileTestCheck(str_contains($shell, "response.status===403")
+    && str_contains($shell, "response.status===404")
+    && str_contains($shell, "credential_invalid_response")
+    && str_contains($shell, "credential_network")
+    && str_contains($shell, "X-IAH-Tile-Auth-Reason"),
+    'Browser reports safe auth HTTP categories instead of catch-all unavailable');
+tileTestCheck(str_contains($receiver, "'origin_mismatch'")
+    && str_contains($receiver, "'credential_http_403'")
+    && str_contains($receiver, "'credential_network'"),
+    'Existing log receiver allows fixed credential failure diagnoses');
+tileTestCheck(!str_contains($credential, 'IPS_LogMessage(')
+    && !str_contains($shell, "emit('tile_autologin','error',response.text(")
+    && !str_contains($shell, "emit('tile_autologin','error',data.password"),
+    'Never send user credentials, request URL or raw response text into logs');
+
 echo "PASS: Kacheltest voice recognition, separate /tile/ rendering, no WFC switch, setup and diagnostics\n";
