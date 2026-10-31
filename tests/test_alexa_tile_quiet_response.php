@@ -110,7 +110,7 @@ assertQuiet(str_contains($mod,"IAH_TILE_QUIET_HELPER_BEGIN"),
     'Installer must migrate helper into customized Action scripts');
 assertQuiet(str_contains($action,"(string)\$__route === 'external'"),
     'Only externally rendered HTML route gets quiet start');
-assertQuiet(str_contains($action,"'TileQuietNoFollowup' ?? false"),
+assertQuiet(str_contains($action,"['TileQuietNoFollowup'] ?? false"),
     'Existing APL responses must keep standard session behavior');
 $found=false;
 foreach($form['elements']??[] as $panel)foreach($panel['items']??[] as $field){
