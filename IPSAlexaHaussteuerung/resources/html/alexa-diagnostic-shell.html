@@ -101,11 +101,32 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
         token:token,ticket:authTicket
       }),cache:'no-store'
     }).then(function(response){
-      if(!response.ok)throw Error('credential_unavailable');
+      if(!response.ok){
+        var reason=response.headers.get('X-IAH-Tile-Auth-Reason')||'';
+        var safeReasons=[
+          'method_invalid','fetch_cross_site','origin_invalid',
+          'origin_mismatch','content_type_invalid','payload_invalid',
+          'request_invalid','settings_unavailable',
+          'configuration_disabled','token_invalid',
+          'ticket_expired','ticket_invalid'
+        ];
+        var statusCode=response.status===403?'credential_http_403':
+          (response.status===404?'credential_http_404':
+          (response.status===401?'credential_http_401':
+          (response.status>=500?'credential_http_5xx':'credential_http_other')));
+        // Nur feste Codes: kein Response-Body, kein Request-URL, kein Passwort.
+        emit('tile_autologin','error',
+          safeReasons.indexOf(reason)>=0?reason:statusCode);
+        return null;
+      }
       return response.json();
     }).then(function(data){
+      if(data===null)return;
       if(!data || data.ok!==true || typeof data.password!=='string'
-         || data.password.length===0)throw Error('credential_unavailable');
+         || data.password.length===0){
+        emit('tile_autologin','error','credential_invalid_response');
+        return;
+      }
       var pw=data.password;
       data.password=null;
       try{
@@ -152,7 +173,7 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
         }
       }catch(e){emit('tile_autologin','error','dom_changed');}
     }).catch(function(){
-      emit('tile_autologin','error','credential_unavailable');
+      emit('tile_autologin','error','credential_network');
     });
   }
 

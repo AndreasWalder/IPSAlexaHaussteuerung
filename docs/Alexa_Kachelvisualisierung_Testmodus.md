@@ -61,6 +61,58 @@ durch das tatsächliche Erscheinen von Passwortfeld/Kacheln bestätigt.
 Kamera, Energie, WebFront und die originale /tile/-Seite werden
 nicht verändert.
 
+## Automatisches Passwort: „field_detected“ und danach „credential_unavailable“ (31.10.2026)
+
+Bei dem Test auf dem Echo wurde das Passwortfeld korrekt erkannt; der
+Browser konnte aber keine Zugangsdaten über den neuen POST-WebHook lesen.
+Die Modulkonfiguration zeigte `autoLoginReady=true`. Der alte
+Fehlercode `credential_unavailable` unterschied weder einen blockierten
+Serverzugriff noch einen Netzwerkfehler oder eine ungültige Antwort.
+
+Ein plausibler Grund: Der WebHook verglich `HTTP_ORIGIN` bisher
+direkt mit `HTTP_HOST`. Hinter einem Reverse Proxy / Connect-Zugang
+kann `HTTP_HOST` jedoch ein interner Servername sein, während der
+Alexa-Browser die öffentliche HTTPS-Adresse sieht.
+
+**Änderung:** Die Herkunft wird jetzt gegen `BaseUrl` der betroffenen
+IP-Symcon-Modulinstanz (inklusive HTTPS und Port) geprüft, nicht mehr
+gegen `HTTP_HOST`. Fehlen die optionalen Browserheader, ist ein
+gültiges, zufälliges und maximal 120 Sekunden gültiges signiertes
+Zugriffsticket mit Modul-Token unverändert erforderlich. Sind explizite
+Cross-Site-Werte vorhanden, wird der Abruf abgewiesen. Es werden
+weiterhin keine Passwörter per URL oder Protokoll übertragen.
+
+### Fehlermeldungen ohne Geheimnisse
+
+Bei einem erneuten „Test“ schreibt die bestehende Variable
+**Letzte 100 Browser-Ereignisse** nun z. B.:
+
+- `tile_autologin / origin_mismatch`: Origin stimmt nicht mit der
+  konfigurierten externen BaseUrl überein.
+- `tile_autologin / origin_invalid`: Keine gültige externe HTTPS-BaseUrl
+  oder ein ungültiger Origin-Header.
+- `tile_autologin / configuration_disabled`: Opt-in nicht aktiv,
+  Visualisierungs-ID oder Passwort fehlt.
+- `tile_autologin / ticket_expired` bzw. `ticket_invalid`:
+  Kurzzeit-Ticket abgelaufen oder ungültig.
+- `tile_autologin / credential_http_404`: Credential-WebHook nicht
+  erreichbar bzw. nicht korrekt registriert.
+- `tile_autologin / credential_http_403`: WebHook verweigert den Abruf,
+  ohne genaueres Fehler-Header-Signal.
+- `tile_autologin / credential_http_5xx`: Serverseitiger Fehler.
+- `tile_autologin / credential_network`: Browsernetzwerk/CORS/Transport
+  verhindert die Antwort.
+- `tile_autologin / credential_invalid_response`: Antwort unerwartet.
+
+Alle Codes sind feste Kategorien. **Es werden weder Passwort, Token,
+Ticket, vollständige URL noch die Fehlermeldung des Servers geloggt.**
+
+**Nach Installation:** Modul aktualisieren und Instanz auf
+**Übernehmen** klicken (damit der WebHook-Helper aktualisiert wird).
+Weiterhin `Test` sagen, mindestens 25 Sekunden öffnen lassen.
+Anschließend nur die Zeilen mit `tile_autologin` kopieren. Auch bei
+fehlgeschlagenem Autologin bleibt die manuelle Anmeldung möglich.
+
 ## Optional: Passwort der Kachelvisualisierung automatisch eingeben
 
 Die Kachelvisualisierung startet mit der neuen `url`-Bootstrap-Methode
