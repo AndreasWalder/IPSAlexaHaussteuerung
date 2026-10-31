@@ -72,6 +72,7 @@ $code = $allow($input['code'] ?? '', [
     'button_not_found', 'button_ambiguous',
     'button_submit_skipped', 'enter_unavailable',
     'manual_button', 'manual_role', 'manual_text', 'manual_other',
+    'manual_enter',
     'form_submit_requested', 'login_still_visible',
     'login_closed', 'input_reset',
     'credential_unavailable', 'dom_changed',
