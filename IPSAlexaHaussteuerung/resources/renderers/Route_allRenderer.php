@@ -578,6 +578,31 @@ try {
     }
 
     // =============================
+    // GENERISCHER ALEXA-TEST (auch fuer zukuenftige Experimente)
+    // =============================
+    if ($route === 'test') {
+        // Das Testziel kann spaeter ohne neues Sprachmodell erweitert werden.
+        // Stand heute ist ausschliesslich der isolierte Kacheltest erlaubt.
+        $testTarget = 'kacheltest';
+        $testModuleId = (int)($V['InstanceID'] ?? 0);
+        if ($testModuleId > 0 && function_exists('IPS_GetProperty') && IPS_InstanceExists($testModuleId)) {
+            try {
+                $configured = (string)IPS_GetProperty($testModuleId, 'AlexaTestTarget');
+                if (in_array($configured, ['kacheltest'], true)) {
+                    $testTarget = $configured;
+                }
+            } catch (Throwable $e) {
+                IPS_LogMessage('Alexa', 'Test.settingsError ' . get_class($e));
+            }
+        }
+        IPS_LogMessage('Alexa', 'Test.route ' . $j([
+            'voice' => 'test',
+            'target' => $testTarget
+        ]));
+        $route = $testTarget;
+    }
+
+    // =============================
     // KACHELTEST (getrennt von Kamera/Energie/WebFront)
     // =============================
     if ($route === 'kacheltest') {
