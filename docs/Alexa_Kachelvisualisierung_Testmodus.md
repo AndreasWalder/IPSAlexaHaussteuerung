@@ -1,5 +1,66 @@
 # Alexa: Neue IP-Symcon-Kachelvisualisierung separat testen
 
+## Auswertung 31.10.2026, 22:59 – warum der Ring weiterhin weiß wird
+
+Die neue Aufzeichnung zeigt erstmals einen **konkreten, reproduzierten
+URL-Kontextfehler**:
+
+- `tile_boot=hash_match`: das Fragment mit der Visualisierungs-ID ist gesetzt.
+- `tile_location=srcdoc_context`: der tatsächliche Dokumentpfad ist
+  `about:srcdoc`, nicht `/tile/`.
+- `tile_history=history_blocked`: der Alexa-Browser verweigert das
+  Umschreiben des srcdoc-Dokuments auf `/tile/#ID`.
+- `shim_session` und `tile_inner_storage=supported`: unser temporärer
+  localStorage-Ersatz funktioniert.
+- **19 HTTP-Antworten 2xx**, davon **1 JSON und 18 sonstige
+  Content-Types**; 0 Antworten 4xx/5xx.
+- Trotzdem nach 15 Sekunden nur **12 HTML-Elemente**, kein Passwortfeld
+  und weiterhin keine Kacheloberfläche.
+
+**Interpretation:** Der gesperrte srcdoc-Dokumentkontext ist ein
+nachgewiesener Unterschied zur echten Tile-URL und eine plausible Ursache.
+Das beweist nicht, dass kein weiterer Fehler vorliegt. HTTP 200 beweist
+außerdem nicht, dass die Antworten die erwarteten Inhalte haben.
+
+### Neuer, separat wählbarer URL-Kompatibilitätstest
+
+Unter **Alexa – neue Kachelvisualisierung testen** gibt es die neue
+Auswahl **„Kompatibilitätsverfahren“**, die nur ausgewertet wird, wenn
+`TileTestStorageCompat` aktiviert ist.
+
+- **Neue Methode: echte HTTPS-Dokumentadresse /tile/ (Standard für
+  aktivierten Test):** Das Modul installiert auf dem Server zusätzlich
+  `alexa-tile-url-bootstrap.html`. Das Alexa-iframe lädt diese
+  reguläre HTTPS-Seite über den **bestehenden, token-geschützten**
+  Modul-Hook. Die Seite ruft nur die eigene `/tile/`-URL ab,
+  testet ein gleichursprüngliches `history.replaceState('/tile/#ID')`
+  und setzt die Original-HTML-Seite mit früh installiertem localStorage-
+  Ersatz über `document.open/write/close` ein. Dieser Ansatz verwendet
+  kein `iframe.srcdoc`; das ist der entscheidende Vergleich.
+- **Vorherige Methode: iframe.srcdoc (Vergleich):** Verhält sich wie der
+  bisherige Test. Bei fehlgeschlagener neuer Bootstrap-Datei erfolgt
+  automatisch ein Rückfall auf diese Variante.
+
+Die neue Methode meldet `tile_compat=url_bootstrap`,
+`tile_origin=origin_start/origin_injected`,
+`tile_location=tile_context/other_context` und
+`tile_history=history_ok/history_blocked`. Alle Meldungen sind
+fest definierte Zustandswerte. Keine HTTP-Antwortinhalte, URLs,
+Passwortfelder oder Token werden aufgezeichnet.
+
+**Test:** Module Store aktualisieren → Modulinstanz „Übernehmen“ →
+localStorage-Test weiterhin **aktiviert** lassen → Verfahren
+**„Neue Methode: echte HTTPS-Dokumentadresse“** auswählen →
+„Alexa, öffne Haussteuerung“ → **„Test“** → 15 Sekunden offen lassen →
+`route=kacheltest` in **Letzte 100 Browser-Ereignisse** kopieren.
+
+**Grenze:** Auch diese Methode verändert testweise die Darstellung des
+HTML-Dokuments und kann an der Browser-Sandbox, Symcon-Authentifizierung
+oder anderen Anforderungen der SPA scheitern. Ein Ergebnis wird erst
+durch das tatsächliche Erscheinen von Passwortfeld/Kacheln bestätigt.
+Kamera, Energie, WebFront und die originale /tile/-Seite werden
+nicht verändert.
+
 ## Neuer dauerhafter Alexa-Befehl „Test“
 
 **Ab jetzt nur „Test“ sagen** (nach „Alexa, öffne Haussteuerung“).

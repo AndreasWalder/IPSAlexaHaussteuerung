@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Alexa Tile Kompatibilitätstest</title>
+<style>html,body{margin:0;background:#fff;color:#555;font:16px sans-serif}#status{margin:20px}</style>
+</head>
+<body>
+<div id="status">IP-Symcon wird im Testmodus geladen …</div>
+<script>
+(function(){
+  'use strict';
+  // This file is a REAL same-origin document (not iframe.srcdoc).
+  // Only fixed diagnostic codes cross the iframe boundary.
+  function report(stage,code){
+    try{
+      window.parent.postMessage({
+        iahTileDiagnostics:1,stage:stage,code:code
+      },window.location.origin);
+    }catch(ignored){}
+  }
+  function failure(code){
+    report('tile_origin',code);
+    document.getElementById('status').textContent=
+      'Kompatibilitätsversuch fehlgeschlagen. Diagnose gespeichert.';
+  }
+  var target;
+  try{
+    if(window.parent===window)throw Error('invalid_parent');
+    var params=new URLSearchParams(window.location.search);
+    target=new URL(params.get('src')||'',window.location.origin);
+    if(target.origin!==window.location.origin ||
+       !/^\/tile\/?$/.test(target.pathname) ||
+       target.search!=='' ||
+       (target.hash!=='' && !/^#[0-9]{1,10}$/.test(target.hash))){
+      throw Error('invalid_tile_target');
+    }
+    if(typeof window.parent.__iahTileStorageShim!=='function' ||
+       typeof window.parent.__iahTileBootstrapDiagnostics!=='function'){
+      throw Error('missing_bootstrap');
+    }
+  }catch(e){failure('origin_invalid');return;}
+  report('tile_origin','origin_start');
+  fetch(target.href,{
+    method:'GET',credentials:'same-origin',cache:'no-store',redirect:'follow'
+  }).then(function(response){
+    var resolved=new URL(response.url||'',window.location.origin);
+    if(!response.ok || resolved.origin!==target.origin ||
+       !/^\/tile\/?$/.test(resolved.pathname) ||
+       (response.headers.get('content-type')||'').toLowerCase().indexOf('text/html')<0){
+      throw Error('response_invalid');
+    }
+    return response.text();
+  }).then(function(html){
+    if(html.length>200000 || !/<head(?:\s[^>]*)?>/i.test(html)){
+      throw Error('html_invalid');
+    }
+    var wanted=target.hash;
+    var replacement='/tile/'+wanted;
+    // As a regular HTTPS document the URL is same-origin, so this history
+    // operation should be legal, unlike an about:srcdoc document.
+    try{
+      history.replaceState(history.state,'',replacement);
+      report('tile_history',window.location.pathname==='/tile/' ?
+        'history_ok':'history_unchanged');
+    }catch(e){report('tile_history','history_blocked');}
+    report('tile_location',window.location.pathname==='/tile/' ?
+      'tile_context':'other_context');
+    var boot=window.parent.__iahTileBootstrapDiagnostics.toString();
+    var storage=window.parent.__iahTileStorageShim.toString();
+    var prelude='<scr'+'ipt>'+
+      'try{('+boot+')('+JSON.stringify(wanted)+');}catch(e){};'+
+      'try{('+storage+')();}catch(e){}'+
+      '</scr'+'ipt>';
+    var base='<base href="'+target.origin+'/tile/">';
+    var patched=html.replace(/<head(?:\s[^>]*)?>/i,function(open){
+      return open+base+prelude;
+    });
+    report('tile_origin','origin_injected');
+    document.open('text/html','replace');
+    document.write(patched);
+    document.close();
+  }).catch(function(){
+    failure('origin_failed');
+  });
+})();
+</script>
+</body>
+</html>

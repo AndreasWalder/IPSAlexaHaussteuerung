@@ -106,6 +106,9 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyInteger('TileTestVisualizationId', 0);
         // Opt-in: experimenteller localStorage-Ersatz nur bei Alexa Kacheltest.
         $this->RegisterPropertyBoolean('TileTestStorageCompat', false);
+        // Real-URL-Bootstrap ist nur bei explizit aktiviertem
+        // localStorage-Kompatibilitaetstest aktiv; 'srcdoc' als Vergleich.
+        $this->RegisterPropertyString('TileTestBootstrapMode', 'url');
         // Dauerhaftes Alexa-Kommando "Test"; das Ziel ist spaeter erweiterbar.
         $this->RegisterPropertyString('AlexaTestTarget', 'kacheltest');
 
@@ -700,20 +703,30 @@ class IPSAlexaHaussteuerung extends IPSModule
             }
         }
 
-        $template = __DIR__ . '/resources/html/alexa-diagnostic-shell.html';
         $dir = IPS_GetKernelDir() . 'user' . DIRECTORY_SEPARATOR . 'icons';
-        $dest = $dir . DIRECTORY_SEPARATOR . 'alexa-diagnostic-shell.html';
-        if (is_file($template)) {
-            if (is_dir($dir) || @mkdir($dir, 0755, true)) {
+        if (is_dir($dir) || @mkdir($dir, 0755, true)) {
+            // Two locally hosted HTML files. Do not overwrite arbitrary
+            // user icons; both filenames are reserved for this module.
+            foreach ([
+                'alexa-diagnostic-shell.html',
+                'alexa-tile-url-bootstrap.html'
+            ] as $filename) {
+                $template = __DIR__ . '/resources/html/' . $filename;
+                $dest = $dir . DIRECTORY_SEPARATOR . $filename;
+                if (!is_file($template)) {
+                    IPS_LogMessage('Alexa', 'ExternalHTML.setup missing_template ' . $filename);
+                    continue;
+                }
                 $source = @file_get_contents($template);
-                if (is_string($source) && (!is_file($dest) || @hash_file('sha256', $dest) !== hash('sha256', $source))) {
+                if (is_string($source) && (!is_file($dest) ||
+                    @hash_file('sha256', $dest) !== hash('sha256', $source))) {
                     if (@file_put_contents($dest, $source, LOCK_EX) === false) {
-                        IPS_LogMessage('Alexa', 'ExternalHTML.setup cannot_write_shell');
+                        IPS_LogMessage('Alexa', 'ExternalHTML.setup cannot_write_shell ' . $filename);
                     }
                 }
-            } else {
-                IPS_LogMessage('Alexa', 'ExternalHTML.setup cannot_create_icons_directory');
             }
+        } else {
+            IPS_LogMessage('Alexa', 'ExternalHTML.setup cannot_create_icons_directory');
         }
 
         $controllers = function_exists('IPS_GetInstanceListByModuleID')

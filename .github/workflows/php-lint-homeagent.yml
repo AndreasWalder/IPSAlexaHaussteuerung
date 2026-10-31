@@ -56,6 +56,17 @@ jobs:
           Path('/tmp/iah-alexa-diagnostic.js').write_text(scripts[0])
           PY
           node --check /tmp/iah-alexa-diagnostic.js
+      - name: Check Alexa Tile real-URL bootstrap JavaScript syntax
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          html = Path('IPSAlexaHaussteuerung/resources/html/alexa-tile-url-bootstrap.html').read_text()
+          scripts = re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>', html, re.S)
+          assert len(scripts) == 1, 'Expected one inline Tile URL bootstrap script'
+          Path('/tmp/iah-alexa-tile-url-bootstrap.js').write_text(scripts[0])
+          PY
+          node --check /tmp/iah-alexa-tile-url-bootstrap.js
       - name: Check JSON syntax
         run: |
           php -r 'json_decode(file_get_contents("IPSAlexaHaussteuerung/form.json"), true, 512, JSON_THROW_ON_ERROR);'
