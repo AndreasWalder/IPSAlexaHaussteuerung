@@ -1348,6 +1348,8 @@ function iah_tile_quiet_html_response(object $answer, bool $enabled): object
         do {
             foreach ($ref->getProperties() as $property) {
                 if ($property->isStatic() || $property->isReadOnly()) continue;
+                $value = null;
+                $touched = false;
                 try {
                     $property->setAccessible(true);
                     if (!$property->isInitialized($answer)) continue;
@@ -1357,6 +1359,7 @@ function iah_tile_quiet_html_response(object $answer, bool $enabled): object
                     if (!iah_tile_strip_followup_field($candidate)) continue;
 
                     $property->setValue($answer, $candidate);
+                    $touched = true;
                     $modified = json_decode(
                         json_encode($answer, JSON_THROW_ON_ERROR),
                         true, 512, JSON_THROW_ON_ERROR
@@ -1374,7 +1377,7 @@ function iah_tile_quiet_html_response(object $answer, bool $enabled): object
                     // All-or-nothing: restore SDK object on failed validation.
                     $property->setValue($answer, $value);
                 } catch (Throwable $ignored) {
-                    if (isset($value) && is_array($value)) {
+                    if ($touched && is_array($value)) {
                         try { $property->setValue($answer, $value); }
                         catch (Throwable $ignoredRestore) {}
                     }
