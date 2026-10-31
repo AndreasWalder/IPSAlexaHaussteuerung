@@ -45,12 +45,14 @@ $stage = $allow($input['stage'] ?? '', [
     'tile_capability', 'tile_render', 'tile_frame_js_error', 'tile_frame_rejection',
     'tile_frame_resource_error', 'tile_snapshot', 'tile_inner_storage', 'tile_document',
     'tile_compat', 'tile_boot', 'tile_early_error', 'tile_early_rejection',
-    'tile_location', 'tile_history', 'tile_origin', 'tile_autologin'
+    'tile_location', 'tile_history', 'tile_origin', 'tile_autologin',
+    'tile_performance', 'tile_lifecycle'
 ]);
 $status = $allow($input['status'] ?? '', [
     'ok', 'error', 'timeout', 'empty', 'not_empty', 'cross_origin',
     'unknown', 'hidden', 'invalid', 'supported', 'unsupported',
-    'login', 'loading', 'rendered', 'needs_selection', 'complete', 'interactive'
+    'login', 'loading', 'rendered', 'needs_selection', 'complete', 'interactive',
+    'active', 'closed'
 ]);
 $code = $allow($input['code'] ?? '', [
     'none', 'image', 'script', 'stylesheet', 'iframe', 'other',
@@ -82,7 +84,8 @@ $code = $allow($input['code'] ?? '', [
     'token_invalid', 'ticket_expired', 'ticket_invalid',
     'credential_http_401', 'credential_http_403', 'credential_http_404',
     'credential_http_5xx', 'credential_http_other', 'credential_network',
-    'credential_invalid_response'
+    'credential_invalid_response',
+    'startup', 'tile_dom', 'login_field', 'login_end', 'page_active'
 ]);
 $event = [
     'time' => date('c'),
@@ -95,6 +98,42 @@ $diag = (int)@IPS_GetObjectIDByIdent('iahDiag', $instanceId);
 $category = $diag > 0 ? (int)@IPS_GetObjectIDByIdent('iahExternalHtmlDiag', $diag) : 0;
 if ($category <= 0) {
     http_response_code(503);
+    exit;
+}
+// Heartbeat for the SAME Echo/Skill device. Store only a salted HMAC,
+// never a raw Alexa device ID or an authentication secret. The 100-second
+// expiry prevents a stale page from hijacking later regular APL requests.
+// Heartbeats are not copied to the 100-event diagnostics buffer.
+if ($key === 'kacheltest' && $stage === 'tile_lifecycle') {
+    $deviceKey = (string)($input['deviceKey'] ?? '');
+    if (preg_match('/^[a-f0-9]{32}$/D', $deviceKey)) {
+        $stateId = (int)@IPS_GetObjectIDByIdent('iahTileHtmlSessions', $category);
+        $lock = 'IAH.TileHtmlSessions.' . $instanceId;
+        if ($stateId > 0 && IPS_VariableExists($stateId) && IPS_SemaphoreEnter($lock, 500)) {
+            try {
+                $old = json_decode((string)GetValueString($stateId), true);
+                $states = is_array($old) ? $old : [];
+                $now = time();
+                foreach ($states as $k => $expires) {
+                    if (!preg_match('/^[a-f0-9]{32}$/D', (string)$k)
+                        || !is_int($expires) || $expires < $now) {
+                        unset($states[$k]);
+                    }
+                }
+                if ($status === 'active') {
+                    $states[$deviceKey] = $now + 100;
+                } elseif ($status === 'closed') {
+                    unset($states[$deviceKey]);
+                }
+                arsort($states);
+                SetValueString($stateId, json_encode(
+                    array_slice($states, 0, 24, true), JSON_UNESCAPED_SLASHES));
+            } finally {
+                IPS_SemaphoreLeave($lock);
+            }
+        }
+    }
+    http_response_code(204);
     exit;
 }
 $last = (int)@IPS_GetObjectIDByIdent('iahHtmlBrowserLast', $category);
@@ -118,6 +157,18 @@ if ($key === 'kacheltest' && $stage === 'tile_snapshot' && is_array($input['metr
     if ($safeMetrics !== []) {
         $event['metrics'] = $safeMetrics;
     }
+}
+// Monotonic milliseconds only. NEVER timings paired with URLs,
+ // request metadata, passwords, device IDs, or login responses.
+if ($key === 'kacheltest' && $stage === 'tile_performance'
+    && is_array($input['metrics'] ?? null)) {
+    $metrics = [];
+    foreach (['elapsedMs', 'fetchMs', 'bootMs', 'loginMs', 'displayMs']
+        as $name) {
+        $v = $input['metrics'][$name] ?? null;
+        if (is_int($v) && $v >= 0 && $v <= 120000) $metrics[$name] = $v;
+    }
+    if ($metrics !== []) $event['metrics'] = $metrics;
 }
 $line = json_encode($event, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 if ($last > 0 && IPS_VariableExists($last)) {
