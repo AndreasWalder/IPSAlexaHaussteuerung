@@ -37,6 +37,45 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
     authVis>0 && /^[0-9]{10}\.[a-f0-9]{32}\.[a-f0-9]{64}$/.test(authTicket);
   var autoLoginUsed=false;
   var autoLoginTicks=0;
+  var deviceKey=params.get('deviceKey')||'';
+  var presenceAllowed=route==='kacheltest' && /^[a-f0-9]{32}$/.test(deviceKey)
+      && instanceId>0 && !!token;
+  var pagePresent=false, presenceClock=null;
+  var timingsEnabled=route==='kacheltest' && params.get('perf')==='1';
+  var timeOrigin=window.performance && performance.now ? performance.now() : Date.now();
+  function elapsed(){
+    var now=window.performance && performance.now ? performance.now() : Date.now();
+    return Math.max(0,Math.min(120000,Math.round(now-timeOrigin)));
+  }
+  function timing(code){
+    if(timingsEnabled)emit('tile_performance','ok',code,{elapsedMs:elapsed()});
+  }
+  // Dieses Echo meldet nur den LEBENDEN HTML-Dokumentzustand. Die Server-
+  // Variable wird nach 100 s ohne Heartbeat ungültig, nie global pro Haus.
+  function presence(state){
+    if(!presenceAllowed)return;
+    var body=JSON.stringify({
+      instanceId:instanceId,token:token,route:'kacheltest',
+      stage:'tile_lifecycle',status:state,code:'none',deviceKey:deviceKey
+    });
+    try{
+      if(navigator.sendBeacon && navigator.sendBeacon(
+          '/hook/iah-alexa-html-debug',
+          new Blob([body],{type:'application/json'})))return;
+      fetch('/hook/iah-alexa-html-debug',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        credentials:'omit',body:body,keepalive:true
+      }).catch(function(){});
+    }catch(e){}
+  }
+  function markHtmlActive(){
+    if(pagePresent || !presenceAllowed)return;
+    pagePresent=true;
+    presence('active');
+    presenceClock=setInterval(function(){
+      if(document.visibilityState!=='hidden')presence('active');
+    },40000);
+  }
   var loaded = false;
   var sent = 0;
   function emit(stage,state,code,metrics){
@@ -46,7 +85,8 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
       instanceId:instanceId, token:token,route:route,
       stage:stage,status:state || 'unknown',code:code || 'none'
     };
-    if(route==='kacheltest' && stage==='tile_snapshot' && metrics){
+    if(route==='kacheltest' &&
+      (stage==='tile_snapshot'||stage==='tile_performance') && metrics){
       event.metrics=metrics;
     }
     var payload = JSON.stringify(event);
@@ -262,6 +302,7 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
       if(inputs.length!==1 || inputs[0].disabled || !inputs[0].isConnected)return;
     }catch(e){return;}
     autoLoginUsed=true; // Niemals mehrfach Passwoerter abrufen/einloggen.
+    timing('login_field');
     tileObserveManualLoginTap(doc,inputs[0]);
     emit('tile_autologin','ok','field_detected');
     fetch('/hook/iah-alexa-tile-credential',{
@@ -357,6 +398,10 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
                 emit('tile_autologin','ok',
                   stillThere && stillThere.isConnected?
                     'login_still_visible':'login_closed');
+                if(!stillThere || !stillThere.isConnected){
+                  status.className='hidden';
+                  timing('login_end');
+                }
               }catch(e){emit('tile_autologin','error','dom_changed');}
             },3000);
           }catch(e){emit('tile_autologin','error','dom_changed');}
@@ -752,6 +797,10 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
       data.code==='tile_context' ||
       data.code==='origin_start' || data.code==='origin_injected'
         ? 'ok':'error',data.code);
+    if(data.stage==='tile_origin' && data.code==='origin_injected'){
+      timing('tile_dom');
+      markHtmlActive();
+    }
     if(data.stage==='tile_origin' &&
        (data.code==='origin_invalid' || data.code==='origin_failed') &&
        bootMode==='url' && !originFallback){
@@ -762,6 +811,36 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
     }
   });
   emit('shell_boot','ok');
+  timing('startup');
+  // Alexa Web API SDK nur im isolierten Kacheltest und asynchron laden:
+  // keine SDK-Netzwerkanfrage darf das eigentliche /tile/-Iframe blockieren.
+  // HTML.HandleMessage behaelt die laufende Web-App beim Sprachbefehl.
+  if(route==='kacheltest' && typeof window.Alexa==='undefined'){
+    try{
+      var sdk=document.createElement('script');
+      sdk.async=true;
+      sdk.src='https://cdn.html.games.alexa.a2z.com/alexa-html/latest/alexa-html.js';
+      sdk.onload=function(){
+        if(window.Alexa && typeof Alexa.create==='function'){
+          Alexa.create({version:'1.1'}).then(function(result){
+            if(result.alexa && result.alexa.skill &&
+               typeof result.alexa.skill.onMessage==='function'){
+              result.alexa.skill.onMessage(function(message){
+                // Kein automatischer Speech-Prompt und kein APL-Switch.
+                if(message && (message.type==='iah_tile_resume' ||
+                   message.type==='iah_tile_voice')){
+                   emit('tile_voice','ok','message_received');
+                }
+              });
+              emit('tile_voice','ok','sdk_ready');
+            }
+          }).catch(function(){emit('tile_voice','error','sdk_unavailable');});
+        }
+      };
+      sdk.onerror=function(){emit('tile_voice','error','sdk_unavailable');};
+      document.head.appendChild(sdk);
+    }catch(e){emit('tile_voice','error','sdk_unavailable');}
+  }
   if(route==='kacheltest'){
     capability('websocket',function(){return typeof WebSocket!=='undefined';});
     capability('indexed_db',function(){return !!window.indexedDB;});
@@ -810,7 +889,10 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
       setTimeout(function(){tileReport();tileSnapshot('after_8s');},8000);
       setTimeout(function(){tileSnapshot('after_15s');},15000);
     }
-    status.className='hidden';
+    if(route==='kacheltest'){
+      status.textContent='IP-Symcon lädt – Anmeldung wird vorbereitet …';
+      status.className='';
+    }else status.className='hidden';
   });
   frame.addEventListener('error',function(){
     emit('iframe_error','error');
@@ -827,7 +909,11 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
   document.addEventListener('visibilitychange',function(){
     if(document.visibilityState==='hidden')emit('visibility_hidden','hidden');
   });
-  window.addEventListener('pagehide',function(){emit('pagehide','hidden');});
+  window.addEventListener('pagehide',function(){
+    if(presenceClock)clearInterval(presenceClock);
+    if(pagePresent)presence('closed');
+    emit('pagehide','hidden');
+  });
   setTimeout(function(){
     if(!loaded){
       status.textContent='Webseite lädt nicht – Diagnose wurde gespeichert.';
