@@ -113,6 +113,12 @@ class IPSAlexaHaussteuerung extends IPSModule
         // Das Passwort bleibt in Symcon-Properties (nicht in GitHub/URLs/Logs).
         $this->RegisterPropertyBoolean('TileAutoLoginEnabled', false);
         $this->RegisterPropertyString('TileAutoLoginPassword', '');
+        // Only same Echo device may keep its live HTML document on a voice turn.
+        // Existing Alexa routes remain untouched when this mode is disabled.
+        $this->RegisterPropertyBoolean('TilePreserveHtmlOnVoice', true);
+        $this->RegisterPropertyBoolean('TilePerformanceDiagnostics', true);
+        // No heavy server-to-server HTTP probe when starting a Tile test.
+        $this->RegisterPropertyBoolean('TileFastBootstrapEnabled', true);
         // Dauerhaftes Alexa-Kommando "Test"; das Ziel ist spaeter erweiterbar.
         $this->RegisterPropertyString('AlexaTestTarget', 'kacheltest');
 
@@ -158,6 +164,9 @@ class IPSAlexaHaussteuerung extends IPSModule
         $catDiag = $this->ensureCategory($root, 'Diagnose', 'iahDiag');
         $this->EnsureAlexaLogInfrastructure($catDiag);
         $htmlDiag=$this->ensureCategory($catDiag,'Web API for Games – Kamera/Energie','iahExternalHtmlDiag');
+        $tileSessions=$this->ensureVar($htmlDiag,'Alexa HTML-Status je Gerät (intern)',
+            'iahTileHtmlSessions',VARIABLETYPE_STRING,'','{}');
+        IPS_SetHidden($tileSessions,true);
         $this->ensureVar($htmlDiag,'Letzter HTML-Diagnosebericht (JSON)','iahHtmlLast',VARIABLETYPE_STRING,'~TextBox',null);
         $this->ensureVar($htmlDiag,'Letzte 20 HTML-Diagnosen (JSON-Zeilen)','iahHtmlHistory',VARIABLETYPE_STRING,'~TextBox',null);
         $this->ensureVar($htmlDiag,'Letztes Browser-Ereignis (JSON)','iahHtmlBrowserLast',VARIABLETYPE_STRING,'~TextBox',null);
@@ -650,6 +659,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->patchActionScriptSafeRequestLogging((int) $id);
         $this->patchActionScriptExternalHtmlMetadata((int) $id);
         $this->patchActionScriptTileTestNavigation((int) $id);
+        $this->patchActionScriptTileVoiceBridge((int) $id);
 
         return (int) $id;
     }
@@ -809,6 +819,77 @@ class IPSAlexaHaussteuerung extends IPSModule
         if ($updated !== $current) {
             IPS_SetScriptContent($scriptId, $updated);
             IPS_LogMessage('Alexa', 'TileTest.migration action_alias_added');
+        }
+    }
+
+    /**
+     * Existing installations have customized Alexa Action scripts. Upgrade only
+     * the three isolated, clearly recognized HTML bridge sections; never
+     * replace the complete user's Action script.
+     */
+    private function patchActionScriptTileVoiceBridge(int $scriptId): void
+    {
+        $template = @file_get_contents(__DIR__ . '/resources/action_entry.php');
+        $current = $this->getScriptContent($scriptId);
+        if (!is_string($template) || !is_string($current) || $current === '') return;
+
+        $begin = '        // IAH_TILE_VOICE_BRIDGE_BEGIN';
+        $end = '        // IAH_TILE_VOICE_BRIDGE_END';
+        $from = strpos($template, $begin);
+        $to = $from === false ? false : strpos($template, $end, $from);
+        if ($from === false || $to === false) return;
+        $block = substr($template, $from, $to + strlen($end) - $from);
+        $oldFrom = strpos($current, $begin);
+        $oldTo = $oldFrom === false ? false : strpos($current, $end, $oldFrom);
+        if ($oldFrom !== false && $oldTo !== false) {
+            $current = substr_replace($current, $block,
+                $oldFrom, $oldTo + strlen($end) - $oldFrom);
+        } else {
+            $deviceLine = "        \$iahVoiceDeviceId = method_exists(\$request, 'GetDeviceId') ? (string)\$request->GetDeviceId() : '';";
+            if (!str_contains($current, $deviceLine)) {
+                IPS_LogMessage('Alexa','TileVoice.migration device_anchor_missing');
+                return;
+            }
+            $current = str_replace($deviceLine, $deviceLine . "\n" . $block, $current);
+        }
+        $resumeStart = '        // Bereits sichtbare Kachel: "Test" ist KEIN erneuter HTML.Start.';
+        $resumeEnd = '        $iahVoiceDecision = $iahVoiceRouter([';
+        $tf = strpos($template, $resumeStart);
+        $tt = $tf === false ? false : strpos($template, $resumeEnd, $tf);
+        if ($tf === false || $tt === false || !str_contains($current, $resumeEnd)) return;
+        $resume = substr($template, $tf, $tt - $tf);
+        if (!str_contains($current, "TileVoice.preserve test_resume")) {
+            $current = str_replace($resumeEnd, $resume . $resumeEnd, $current);
+        }
+        $payloadAnchor = "                'htmlSupported'   => \$iahHtmlSupport ?? null,";
+        $payloadAddition = "\n                'htmlDeviceKey'   => \$iahHtmlDeviceKey ?? '',";
+        if (!str_contains($current, "'htmlDeviceKey'")) {
+            $current = str_replace($payloadAnchor,
+                $payloadAnchor . $payloadAddition, $current);
+        }
+        $start = '            // IAH_TILE_VOICE_RESPONSE_BEGIN';
+        $finish = '            // IAH_TILE_VOICE_RESPONSE_END';
+        $tf = strpos($template,$start);
+        $tt = $tf === false ? false : strpos($template,$finish,$tf);
+        if ($tf === false || $tt === false) return;
+        $newBlock = substr($template,$tf,$tt + strlen($finish) - $tf);
+        $oldFrom = strpos($current,$start);
+        $oldTo = $oldFrom === false ? false : strpos($current,$finish,$oldFrom);
+        if ($oldFrom !== false && $oldTo !== false) {
+            $current = substr_replace($current,$newBlock,
+                $oldFrom,$oldTo + strlen($finish)-$oldFrom);
+        } else {
+            $needle = "            \$makeCard(\$r, \$data['card'] ?? []);";
+            if (!str_contains($current,$needle)) {
+                IPS_LogMessage('Alexa','TileVoice.migration result_anchor_missing');
+                return;
+            }
+            $current = str_replace($needle,$newBlock . "\n" . $needle,$current);
+        }
+        $old = $this->getScriptContent($scriptId);
+        if ($current !== $old) {
+            IPS_SetScriptContent($scriptId,$current);
+            IPS_LogMessage('Alexa','TileVoice.migration active');
         }
     }
 

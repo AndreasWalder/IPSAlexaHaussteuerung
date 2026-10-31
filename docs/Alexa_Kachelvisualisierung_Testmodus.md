@@ -1,3 +1,146 @@
+# Alexa Echo Show: Schnellstart, Sprachsteuerung und Sitzungszustand (01.11.2026)
+
+**Status:** Die neue Tile-Visualisierung hat auf dem echten Echo erfolgreich
+geladen und sich per **automatisch eingetragenem Passwort und Enter**
+angemeldet. Neues Log 31.10.2026 23:55:23–23:55:48:
+
+- HTML-Shell/Bootstrap startet: **23:55:23**.
+- Erster HTML-Dokumentkontext /tile/ ist nach rund **1 s** bereit.
+- Viele API-Antworten bereits nach ca. **8 s** empfangen.
+- Passwortfeld erscheint erst **23:55:44** (ungefähr **21 s**
+  nach Start!). Der größte Teil der Zeit vergeht **vor der Anmeldung**.
+- Passwort und Enter-Bestätigung: **23:55:44–23:55:45**.
+- `login_closed` nach 3 Sekunden Kontrollintervall: **23:55:48**.
+  Das ist der erste bestätigte erfolgreiche Autologin.
+
+## Was dieses Update einbaut
+
+**1. Schnellstart (TileFastBootstrapEnabled, Standard AN):** Wenn
+`Test` eine HTML-Tile-Ansicht lädt, entfällt die bisher gleichzeitig
+ausgeführte **zusätzliche serverseitige HTTP-/SSL-Diagnoseprobe** für
+Shell und Tile-Seite (2 sonst überflüssige Abrufe). Die
+Browserdiagnose bleibt vollständig erhalten. Die eigentliche
+Kachelvisualisierung, ihr HTML/JS und ihr Authentifizierungsablauf werden
+nicht verändert. Eine spürbare Beschleunigung ist noch zu messen.
+
+**2. Zeiten messen (TilePerformanceDiagnostics, Standard AN):**
+Die bestehende Browserdiagnose erhält `tile_performance` mit
+`elapsedMs` (Millisekunden seit HTML-Shell-Start) und Code:
+
+- `startup`: Shell gestartet
+- `tile_dom`: Same-Origin-Dokument übernommen
+- `login_field`: Passwortfeld erstmals erkennbar
+- `login_end`: Kontrollprüfung 3 s nach automatischer Bestätigung
+- `page_active`: Kachelelemente nach dem Login sichtbar
+
+Damit erkennen wir, ob die 21 Sekunden in der externen HTML-/JS-
+Initialisierung liegen. Es werden nur Zeitwerte, keine URLs,
+Passwörter, Cookies oder HTML-Inhalte protokolliert.
+
+**3. Lebende HTML-Anzeige pro Echo merken
+(TilePreserveHtmlOnVoice, Standard AN):** Die laufende Kachel-Shell
+schickt alle 40 s einen authentifizierten Heartbeat an den vorhandenen
+Diagnose-WebHook. Der Server merkt nur einen mit dem Modul-Token
+gebildeten HMAC des **Alexa Device-ID**, nicht die rohe Kennung.
+Ein Eintrag ist nach maximal 100 s ohne erneuten Heartbeat ungültig,
+es werden höchstens 24 Geräte gehalten; `pagehide` löscht sofort.
+
+**4. Sprachbefehle ohne Bildschirmwechsel:** Nur während der HTML-
+Dokumentstatus für **dasselbe Echo** gültig ist, ersetzt der bestehende
+Action-Renderer bei regulären Sprachnavigationsantworten
+`APL.RenderDocument` durch `Alexa.Presentation.HTML.HandleMessage`.
+Die vorhandene Routing-/Schaltlogik läuft vorher unverändert. Ein
+erneutes **„Test“** während aktivem HTML verwendet ebenfalls
+`HandleMessage` statt `HTML.Start` und **lädt die Visualisierung
+nicht erneut**. Ein absichtlicher Wechsel zu Kamera/Energie, Zurück,
+Ende oder eine neue Skill-Sitzung darf die HTML-Ansicht weiterhin
+schließen. Bei geschlossenem HTML startet `Test` erneut wie bisher.
+
+**5. HTML-SDK:** Nur die Kachel-Shell lädt das offizielle Alexa
+HTML-SDK asynchron und registriert den `skill.onMessage`-Callback.
+Keine Alexa-Sprachaufnahme oder Mikrofonberechtigung wird vom HTML
+angefordert. Kamera/Energie und das alte WebFront sind unverändert.
+
+**6. Ladeanzeige:** Bis die Kacheln sichtbar oder der Autologin
+abgeschlossen ist, bleibt eine nicht-blockierende Statusanzeige
+sichtbar. Dies verkürzt nicht die Serverladezeit, verhindert aber
+einen irreführenden weißen Zwischenbildschirm.
+
+## Welche Grenzen bleiben?
+
+- **Keine echte Hintergrund-App:** Amazon schließt den HTML-Webview,
+  sobald eine andere Präsentationsschnittstelle wie APL
+  angezeigt wird, der Skill endet oder das Gerät auf eine andere
+  App wechselt. HTML kann nur innerhalb einer **laufenden**
+  Web-API-Sitzung erhalten bleiben. Das Modul kann keine
+  2. unsichtbare, dauerhaft laufende Echo-App erzwingen.
+- **Mikrofon nicht per HTML abschaltbar:** Das HTML fordert
+  keinen weiteren Sprach-Prompt an. Die eigentliche ASK-Antwort
+  verwendet aktuell jedoch `AskResponse`, deren
+  `shouldEndSession=false` das Mikrofon für eine kurze
+  Folgeeingabe öffnen **kann**. Für eine garantierte stille
+  HTML-Ladephase muss in der installierten Alexa-PHP-Response-
+  Bibliothek das Alexa-JSON `shouldEndSession` **wegfallen**
+  (nicht `false`, nicht `null`). Ohne verifizierten
+  Bibliothekssupport wird das nicht blind geändert.
+  Alexa-Wakeword bleibt in jedem Fall aktiv.
+- **Nicht jeder Sprachpfad läuft über die zentrale APL-Route:**
+  Direkte KI-Antworten, Rückfragen, externe Skills und
+  Dialoge können weiterhin die Darstellung wechseln bzw.
+  automatische Folgeeingaben aktivieren. Der Echo-Test der
+  verschiedenen Befehle steht noch aus.
+- **Nur begrenzte HTML-Laufzeit:** Aktuell 300 Sekunden
+  `timeoutInSeconds`, der dokumentierte Höchstwert der
+  `Alexa.Presentation.HTML.Start`-Schnittstelle.
+  Hersteller-/Gerätelimits und Session-Ende gehen vor.
+- **Keine dauerhafte Anmeldung über neue Skill-Sitzungen hinweg:**
+  Der Alexa HTML Runtime setzt die Browserdaten am Ende einer
+  Sitzung zurück. Beim neuen Skill-Start wird das Passwort
+  bei Bedarf erneut automatisch mit zeitlich begrenztem
+  Ticket eingegeben.
+- **Die 21-s-Verzögerung ist nicht durch die Passwort-Eingabe
+  verursacht.** Nach neuen Zeitmessungen müssen ggf. die
+  eigentlichen IP-Symcon-JS- und Netzwerkabhängigkeiten gezielt
+  optimiert werden. Das kann nicht allein durch eine
+  Timer-Änderung garantiert werden.
+- **Alexa Web API for Games darf laut Amazon nur für Game-Apps
+  verwendet werden.** Eine reine Haussteuerungs-App ist
+  möglicherweise nicht für eine Veröffentlichung/Zertifizierung
+  über diese Schnittstelle geeignet. Eine produktive Alternative
+  muss mit Amazons Richtlinien geprüft werden.
+
+### Testplan auf dem Echo
+
+1. Modul-Store: Update installieren; **Modulinstanz „Übernehmen“**,
+   damit das bestehende individuelle Action-Skript punktuell
+   um die neue HTML-Voice-Bridge ergänzt und die zusätzliche
+   versteckte Statusvariable angelegt wird.
+2. Bestehende `Test`-/`url`-/AutoLogin-Optionen unverändert;
+   `TileFastBootstrapEnabled`, `TilePerformanceDiagnostics`,
+   `TilePreserveHtmlOnVoice` können einzeln abgeschaltet werden.
+3. „Alexa, öffne Haussteuerung“ → „Test“: prüfen, ob Passwort automatisch
+   bestätigt wird, und `tile_performance`-Einträge kopieren.
+4. **Während die Kachel sichtbar ist:** „Alexa, Test“ erneut sagen –
+   keine neue weiße Ansicht, keine Anmeldung. Danach
+   „Alexa, Licht“ oder eine vorhandene Geräteaktion ausprobieren –
+   Kachel sollte stehen bleiben. Der Sprachbefehl selbst
+   funktioniert nur, soweit er bereits im Alexa-Interaktionsmodell
+   enthalten und vom vorhandenen Backend unterstützt ist.
+5. Absichtlich „Alexa, zurück“ oder Kamera öffnen und dann „Test“:
+   Hier ist ein erneuter Start normal, weil der alte Webview
+   geschlossen wurde.
+6. Bei abweichendem Ergebnis: nur die
+   `tile_performance`-, `tile_voice`-,
+   `TileVoice.preserve`- und `tile_autologin`-Meldungen senden,
+   keine Passwörter, Tokens oder Session-IDs.
+
+**Alexa-Dokumentation:**
+https://developer.amazon.com/en-US/docs/alexa/web-api-for-games/alexa-games-build-your-skill.html
+https://developer.amazon.com/en-US/docs/alexa/web-api-for-games/add-voice-control-and-speech-to-the-web-app.html
+https://developer.amazon.com/en-US/docs/alexa/web-api-for-games/alexa-presentation-html-interface.html
+
+---
+
 # Alexa: Neue IP-Symcon-Kachelvisualisierung separat testen
 
 ## Auswertung 31.10.2026, 22:59 – warum der Ring weiterhin weiß wird

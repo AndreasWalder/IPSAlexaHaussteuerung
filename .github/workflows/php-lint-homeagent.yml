@@ -98,3 +98,5 @@ jobs:
         run: php tests/test_alexa_tile_visualization_mode.php
       - name: Test Alexa Tile actual native and custom OK-button finder
         run: node tests/test_alexa_tile_ok_button.js
+      - name: Test Alexa Tile fast-start, live HTML voice preservation and device isolation
+        run: php tests/test_alexa_tile_fast_voice.php

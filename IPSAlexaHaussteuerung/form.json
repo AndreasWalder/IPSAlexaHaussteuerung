@@ -271,6 +271,24 @@
           "value": false
         },
         {
+          "type": "CheckBox",
+          "name": "TilePreserveHtmlOnVoice",
+          "caption": "HTML-Anzeige bei Sprachbefehlen behalten",
+          "value": true
+        },
+        {
+          "type": "CheckBox",
+          "name": "TileFastBootstrapEnabled",
+          "caption": "Schnellstart ohne zusätzliche Diagnoseprobe",
+          "value": true
+        },
+        {
+          "type": "CheckBox",
+          "name": "TilePerformanceDiagnostics",
+          "caption": "Anmeldezeiten anonymisiert messen",
+          "value": true
+        },
+        {
           "type": "PasswordTextBox",
           "name": "TileAutoLoginPassword",
           "caption": "Passwort der ausgewählten Kachelvisualisierung (nicht das alte WebFront-Passwort)",

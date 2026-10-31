@@ -616,6 +616,8 @@ try {
         $tileStorageCompat = false;
         $tileBootstrapMode = 'url';
         $tileAutoLoginEnabled = false;
+        $tileFastStart = true;
+        $tileTiming = true;
         $tileAutoLoginPassword = '';
         $tileSettingsSource = 'payload';
         if ($tileTestInstanceId > 0 && function_exists('IPS_GetProperty') && IPS_InstanceExists($tileTestInstanceId)) {
@@ -627,6 +629,8 @@ try {
                 $tileBootstrapMode = in_array($configuredMode, ['url', 'srcdoc'], true)
                     ? $configuredMode : 'url';
                 $tileAutoLoginEnabled = (bool)IPS_GetProperty($tileTestInstanceId, 'TileAutoLoginEnabled');
+                $tileFastStart = (bool)IPS_GetProperty($tileTestInstanceId, 'TileFastBootstrapEnabled');
+                $tileTiming = (bool)IPS_GetProperty($tileTestInstanceId, 'TilePerformanceDiagnostics');
                 $tileAutoLoginPassword = (string)IPS_GetProperty($tileTestInstanceId, 'TileAutoLoginPassword');
                 $tileSettingsSource = 'instance';
             } catch (Throwable $e) {
@@ -639,6 +643,7 @@ try {
             'visualizationSelected' => $tileVisId > 0,
             'storageCompatibilityTest' => $tileStorageCompat,
             'bootstrapMode' => $tileStorageCompat ? $tileBootstrapMode : 'off',
+            'fastStart' => $tileFastStart, 'timing' => $tileTiming,
             'autoLoginReady' => $tileAutoLoginEnabled && $tileAutoLoginPassword !== ''
                 && $tileStorageCompat && $tileBootstrapMode === 'url' && $tileVisId > 0
         ]));
@@ -671,6 +676,8 @@ try {
         $payload['externalKey'] = 'kacheltest';
         $payload['tileStorageCompat'] = $tileStorageCompat;
         $payload['tileBootstrapMode'] = $tileBootstrapMode;
+        $payload['tileFastStart'] = $tileFastStart;
+        $payload['tileTiming'] = $tileTiming;
         // Kurzlebiges, signiertes Startticket. Passwort niemals an URL,
         // externe Payloads oder den Alexa-Logbuffer uebergeben.
         $payload['tileAutoLoginTicket'] = '';
@@ -793,6 +800,10 @@ try {
                 ? (string)($payload['tileAutoLoginTicket'] ?? '') : '',
             'authVis' => $externalKey === 'kacheltest'
                 ? (int)($payload['tileAutoLoginVisId'] ?? 0) : 0,
+            'deviceKey' => ($externalKey === 'kacheltest'
+                && preg_match('/^[a-f0-9]{32}$/D', (string)($payload['htmlDeviceKey'] ?? '')))
+                ? (string)$payload['htmlDeviceKey'] : '',
+            'perf' => ($externalKey === 'kacheltest' && !empty($payload['tileTiming'])) ? '1' : '0',
         ], '', '&', PHP_QUERY_RFC3986);
 
         // URLs enthalten ggf. WFC-Passwort oder Hook-Token als Query-Parameter.
@@ -840,7 +851,12 @@ try {
             'htmlSupported'=>$payload['htmlSupported']??null,
             'aplSupported'=>$aplSupported
         ]));
-        if($probeId>0 && function_exists('IPS_RunScriptEx')) {
+        // Bisher startete bei jedem Tile-Test gleichzeitig eine zusaetzliche
+        // externe HTTPS-Probe mit 2 HTTP-Requests. Die echten Browser-
+        // Diagnoseevents bleiben aktiv; die Probe nur im Fast-Mode weglassen.
+        $skipTileProbe = $externalKey === 'kacheltest' &&
+            !empty($payload['tileFastStart']);
+        if($probeId>0 && function_exists('IPS_RunScriptEx') && !$skipTileProbe) {
             $probePayload=[
                 'instanceId'=>$instanceId,'externalKey'=>$externalKey,'pageType'=>$pageType,
                 'baseUrl'=>$baseUrl,'shellUrl'=>(string)$shellUrl,'targetUrl'=>$tileBase,
@@ -856,6 +872,8 @@ try {
             }catch(Throwable $e){
                 IPS_LogMessage('Alexa','ExternalHTML.probeDispatchError '.get_class($e));
             }
+        }elseif($skipTileProbe){
+            IPS_LogMessage('Alexa','ExternalHTML.probeSkipped tile_fast_mode');
         }else{
             IPS_LogMessage('Alexa','ExternalHTML.probeNotInstalled – Modulinstanz nach Update uebernehmen');
         }
