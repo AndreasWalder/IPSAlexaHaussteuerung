@@ -2133,6 +2133,7 @@ function Execute($request = null)
         }
         // HOME_AGENT_VOICE_HOOK_END
 
+        // IAH_VOICE_NAVIGATION_BEGIN
         // FRÜHER, HARTER UI-OVERRIDE (Buttons aus der Main-Ansicht)
         // ============================================================
         $navForce = false;
@@ -2151,6 +2152,7 @@ function Execute($request = null)
             $log('info','VoiceRouter.navigate',['route'=>$forcedDomain,'reason'=>(string)($iahVoiceDecision['reason']??'')]);
         }
 
+        // IAH_VOICE_NAVIGATION_END
         if (is_array($APL['args']) && count($APL['args']) >= 2 && (string)$APL['args'][0] === 'GetHaus') {
             $navId  = $lc((string)($APL['a1'] ?? ''));
             $navId2 = $lc((string)($APL['a2'] ?? ''));
