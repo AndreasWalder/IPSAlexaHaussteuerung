@@ -8,6 +8,7 @@ on:
       - security/sanitize-logs-example-catalog-20261030
       - feature/voice-intent-navigation-apl-diagnostics-20261030
       - fix/roomscatalog-ipslist-checkbox-multiselect-20261031
+      - fix/gethaus-legacy-tiles-before-ki-20261031
   pull_request:
     paths:
       - 'IPSAlexaHaussteuerung/**'
@@ -53,3 +54,5 @@ jobs:
         run: php tests/test_security_hardening.php
       - name: Test Alexa UI voice/APL routing and diagnostics
         run: php tests/test_voice_intent_router.php
+      - name: Test GetHaus Device-only legacy navigation before KI
+        run: php tests/test_gethaus_legacy_navigation.php
