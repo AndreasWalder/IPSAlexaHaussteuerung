@@ -56,5 +56,5 @@ t(str_contains($module,"RegisterPropertyBoolean('VoiceRouterStoreTranscript', tr
 t(str_contains($module,'resources/helpers/VoiceIntentRouter.php'),'router installed on module update');
 $entry=file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/resources/action_entry.php');
 t(str_contains($entry,'$iahVoiceDecision')&&str_contains($entry,'$iahVoiceNavKey'),'classification used before existing UI');
-t(str_contains($entry,"'ui_context_domain' => $iahVoiceContextDomain"),'context passed to KI');
+t(str_contains($entry,"'ui_context_domain' => " . '$iahVoiceContextDomain'),'context passed to KI');
 echo "PASS: classic tiles, APL navigation, query/action separation, safe transcript, screen context, expiry and isolation\n";
