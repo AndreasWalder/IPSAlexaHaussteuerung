@@ -1948,6 +1948,7 @@ function Execute($request = null)
                     'geraete'=>'geraete','bewaesserung'=>'bewaesserung',
                     'einstellungen'=>'einstellungen','sicherheit'=>'sicherheit',
                     'listen'=>'listen','energie'=>'energie','kamera'=>'kamera',
+                     'kacheltest'=>'kacheltest','kachelvisualisierung'=>'kacheltest',
                     'info'=>'info','szene'=>'szene',
                 ];
                 foreach ($rendererDomainMap as $routeKey=>$routeData) {
