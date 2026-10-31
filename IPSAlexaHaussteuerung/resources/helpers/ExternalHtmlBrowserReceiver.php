@@ -37,19 +37,23 @@ $allow = static function ($value, array $valid): string {
     $candidate = is_string($value) ? $value : '';
     return in_array($candidate, $valid, true) ? $candidate : 'unknown';
 };
-$key = $allow($input['route'] ?? '', ['kamera', 'energie']);
+$key = $allow($input['route'] ?? '', ['kamera', 'energie', 'kacheltest']);
 $stage = $allow($input['stage'] ?? '', [
     'shell_boot', 'iframe_start', 'iframe_load', 'iframe_error',
     'iframe_timeout', 'frame_dom', 'js_error', 'promise_error',
-    'resource_error', 'visibility_hidden', 'pagehide', 'missing_src'
+    'resource_error', 'visibility_hidden', 'pagehide', 'missing_src',
+    'tile_capability', 'tile_render', 'tile_frame_js_error', 'tile_frame_rejection',
+    'tile_frame_resource_error'
 ]);
 $status = $allow($input['status'] ?? '', [
     'ok', 'error', 'timeout', 'empty', 'not_empty', 'cross_origin',
-    'unknown', 'hidden', 'invalid'
+    'unknown', 'hidden', 'invalid', 'supported', 'unsupported',
+    'login', 'loading', 'rendered', 'needs_selection'
 ]);
 $code = $allow($input['code'] ?? '', [
     'none', 'image', 'script', 'stylesheet', 'iframe', 'other',
-    'unavailable', 'unknown'
+    'unavailable', 'unknown', 'local_storage', 'session_storage',
+    'websocket', 'indexed_db', 'selection', 'password', 'elements'
 ]);
 $event = [
     'time' => date('c'),
