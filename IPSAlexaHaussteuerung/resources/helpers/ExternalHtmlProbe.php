@@ -116,7 +116,7 @@ function iah_html_diag_analyse(array $input,?callable $http=null):array
 {
     $probe=$http??'iah_html_diag_http';
     $key=(string)($input['externalKey']??'');
-    if(!in_array($key,['kamera','energie'],true))return ['error'=>'invalid_external_key'];
+    if(!in_array($key,['kamera','energie','kacheltest'],true))return ['error'=>'invalid_external_key'];
     $base=(string)($input['baseUrl']??'');
     $shell=(string)($input['shellUrl']??'');
     $target=(string)($input['targetUrl']??'');

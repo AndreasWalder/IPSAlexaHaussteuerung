@@ -71,3 +71,5 @@ jobs:
         run: php tests/test_alexa_log_buffer_eur.php
       - name: Test Web API for Games Kamera/Energie HTTPS and iframe diagnostics
         run: php tests/test_external_html_diagnostics.php
+      - name: Test Alexa Kachelvisualisierung voice command and separate diagnostic route
+        run: php tests/test_alexa_tile_visualization_mode.php

@@ -210,6 +210,38 @@
     },
     {
       "type": "ExpansionPanel",
+      "caption": "Alexa – neue Kachelvisualisierung testen (separater Testmodus)",
+      "expanded": false,
+      "items": [
+        {
+          "type": "Label",
+          "caption": "Nur für den Sprachbefehl „Kacheltest“. Kamera, Energie und das alte WebFront bleiben unverändert. Die neue Visualisierung wird unter /tile/ mit HTTPS in der vorhandenen Alexa-Diagnose-Shell geöffnet."
+        },
+        {
+          "name": "TileTestEnabled",
+          "type": "CheckBox",
+          "caption": "Alexa Kacheltest erlauben",
+          "value": true
+        },
+        {
+          "name": "TileTestVisualizationId",
+          "type": "NumberSpinner",
+          "caption": "Kachelvisualisierungs-Instanz-ID (0 = Auswahlseite)",
+          "minimum": 0,
+          "value": 0
+        },
+        {
+          "type": "Label",
+          "caption": "Alexa sagen: „Öffne Haussteuerung“, anschließend „Kacheltest“. Bei ID 0 erscheint die Symcon-Auswahl der Kachelvisualisierungen. Ein eventuell verlangtes Passwort wird bewusst nicht als URL-Parameter übermittelt."
+        },
+        {
+          "type": "Label",
+          "caption": "Diagnose: Objektbaum → Diagnose → Web API for Games – Kamera/Energie. Auch die Kacheltest-Ereignisse erscheinen unter „Letzte 100 Browser-Ereignisse“ und im Alexa-Protokoll (letzte 500)."
+        }
+      ]
+    },
+    {
+      "type": "ExpansionPanel",
       "caption": "KI-Kosten & Tokenverbrauch (RoomsCatalog / Home Agent)",
       "expanded": false,
       "items": [

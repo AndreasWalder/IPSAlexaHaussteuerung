@@ -55,7 +55,15 @@ try{
     hd(!iah_html_diag_same_origin('https://example.org/shell',
         'http://example.org/frame'),'HTTP and HTTPS must differ');
     hd(iah_html_diag_analyse(['externalKey'=>'licht'])['error']==='invalid_external_key',
-        'HTML probe only for Kamera/Energie');
+        'HTML probe is only for supported diagnostic routes');
+    $tile=iah_html_diag_analyse([
+        'externalKey'=>'kacheltest', 'pageType'=>'external_url',
+        'baseUrl'=>'https://example.org', 'shellUrl'=>'https://example.org/diagnose',
+        'targetUrl'=>'https://example.org/tile/',
+        'localShell'=>$raw
+    ], $fake);
+    hd(($tile['key']??null)==='kacheltest', 'Server probe accepts Kacheltest');
+    hd($tile['shellAndTargetSameOrigin']===true, 'Tile iframe same-origin shell');
 } finally { @unlink($raw); }
 
 $renderer=file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/resources/renderers/Route_allRenderer.php');

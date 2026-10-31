@@ -57,6 +57,12 @@ Der optionale Alexa-Sprachkanal nutzt die bestehende Custom-Skill-Instanz und le
 
 **Grenzen:** Aktuell experimentell; Home Agent und die Alexa-Intent-Übergabe des vollständigen gesprochenen Texts müssen vor Ort getestet werden. Der `RoomsCatalog` wird nicht automatisch mit Home Agent synchronisiert. Alexa-Zeitlimits können auch mit kurzer Ausgabe überschritten werden; dann greift der bisherige Weg. Schreibrechte für den Home-Agent-Zugang bleiben standardmäßig ausgeschaltet.
 
+## Alexa: Neue Kachelvisualisierung testen (ohne alte WebFront-Routen zu ändern)
+
+Neuer separater Sprachbefehl **„Kacheltest“**: „Alexa, öffne Haussteuerung“ → „Kacheltest“. Öffnet die Symcon-Kachelvisualisierung auf `/tile/` in der bereits funktionierenden Alexa-HTML-Diagnose-Shell. Optional die konkrete Visualisierungs-Instanz-ID im Modul angeben (Standard `0`: Visualisierungsauswahl). Die bestehenden Kamera-/Energie-Kacheln verwenden weiterhin das alte WebFront. Browser-Fähigkeiten und iframe-Ladeprobleme werden automatisch in der vorhandenen Diagnose protokolliert.
+
+**[Einrichtung, Sprache und Diagnose](docs/Alexa_Kachelvisualisierung_Testmodus.md)**
+
 ## 🛠️ Installation
 
 Repository in deinen IP-Symcon-Module-Ordner klonen (z. B. `/var/lib/symcon/modules/`):
