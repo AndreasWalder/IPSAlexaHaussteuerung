@@ -1129,6 +1129,8 @@ function iah_build_system_configuration_internal(int $instanceId, array $props, 
 
     $var = [
         'BaseUrl'       => (string) ($props['BaseUrl'] ?? ''),
+        'TileTestEnabled' => (bool)($props['TileTestEnabled'] ?? true),
+        'TileTestVisualizationId' => (int)($props['TileTestVisualizationId'] ?? 0),
         'Source'        => (string) ($props['Source'] ?? ''),
         'Token'         => (string) ($props['Token'] ?? ''),
         'Passwort'      => (string) ($props['Passwort'] ?? ''),
@@ -1227,6 +1229,10 @@ function iah_build_system_configuration(int $instanceId): array
             $launchCatalog = is_array($data['launchCatalog'] ?? null)
                 ? $data['launchCatalog']
                 : iah_build_launch_catalog($props);
+            // Diese zwei Einstellungen bleiben auch bei einer eigenen
+            // SystemConfiguration.php an die aktuelle Modulinstanz gebunden.
+            $var['TileTestEnabled'] = (bool)($props['TileTestEnabled'] ?? true);
+            $var['TileTestVisualizationId'] = max(0, (int)($props['TileTestVisualizationId'] ?? 0));
             if (!isset($var['pageMappings']) || !is_array($var['pageMappings'])) {
                 $var['pageMappings'] = iah_build_page_mappings($props);
             }
@@ -2760,6 +2766,8 @@ function Execute($request = null)
                     'DOMAIN_FLAG'   => $V['DOMAIN_FLAG'],
                     'SKILL_ACTIVE'  => $V['SKILL_ACTIVE'],
                     'Passwort'      => $V['Passwort'],
+                    'TileTestEnabled' => (bool)($V['TileTestEnabled'] ?? true),
+                    'TileTestVisualizationId' => (int)($V['TileTestVisualizationId'] ?? 0),
                     'StartPage'     => $V['StartPage'],
                     'WfcId'         => $V['WfcId'],
                     'EnergiePageId' => $V['EnergiePageId'],
@@ -2936,6 +2944,8 @@ function Execute($request = null)
                                 'DOMAIN_FLAG'   => $V['DOMAIN_FLAG'],
                                 'SKILL_ACTIVE'  => $V['SKILL_ACTIVE'],
                                 'Passwort'      => $V['Passwort'],
+                    'TileTestEnabled' => (bool)($V['TileTestEnabled'] ?? true),
+                    'TileTestVisualizationId' => (int)($V['TileTestVisualizationId'] ?? 0),
                                 'StartPage'     => $V['StartPage'],
                                 'WfcId'         => $V['WfcId'],
                                 'EnergiePageId' => $V['EnergiePageId'],
