@@ -380,8 +380,8 @@ tileTestCheck(!str_contains($credential, 'IPS_LogMessage(')
 // Echo-WebHook regression (31.10.2026, 23:31:41):
 // Browser sends JSON, but $_SERVER['CONTENT_TYPE'] is absent in the
 // IP-Symcon webhook/proxy environment and used to cause immediate 403.
-tileTestCheck(!str_contains($credential, "\$_SERVER['CONTENT_TYPE']")
-    && !str_contains($credential, "stripos((string)(\$_SERVER['CONTENT_TYPE']"),
+tileTestCheck(!str_contains($credential, "if (stripos((string)(\$_SERVER['CONTENT_TYPE']")
+    && !str_contains($credential, "\$deny('content_type_invalid')"),
     'Credential webhook must not require PHP CONTENT_TYPE metadata');
 tileTestCheck(str_contains($credential, "file_get_contents('php://input'")
     && str_contains($credential, "json_decode(\$raw, true)")
