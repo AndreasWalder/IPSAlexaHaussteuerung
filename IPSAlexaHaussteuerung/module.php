@@ -145,6 +145,10 @@ class IPSAlexaHaussteuerung extends IPSModule
         $htmlDiag=$this->ensureCategory($catDiag,'Web API for Games – Kamera/Energie','iahExternalHtmlDiag');
         $this->ensureVar($htmlDiag,'Letzter HTML-Diagnosebericht (JSON)','iahHtmlLast',VARIABLETYPE_STRING,'~TextBox',null);
         $this->ensureVar($htmlDiag,'Letzte 20 HTML-Diagnosen (JSON-Zeilen)','iahHtmlHistory',VARIABLETYPE_STRING,'~TextBox',null);
+        $this->ensureVar($htmlDiag,'Letztes Browser-Ereignis (JSON)','iahHtmlBrowserLast',VARIABLETYPE_STRING,'~TextBox',null);
+        $this->ensureVar($htmlDiag,'Letzte 100 Browser-Ereignisse (JSON-Zeilen)','iahHtmlBrowserHistory',VARIABLETYPE_STRING,'~TextBox',null);
+        // Einmalige Einrichtung: keine separaten Installationsskripte erforderlich.
+        $this->ensureExternalHtmlBrowserDiagnostics($catHelper);
         $voiceDiag = $this->ensureCategory($catDiag, 'KI-Sprachrouter und APL-Navigation', 'iahVoiceDiag');
         // Entscheidungen und UI-Kontext pro anonymisiertem Alexa-Gerät.
         $rawVoiceState = $this->ensureVar($voiceDiag, 'Router-Datenspeicher (nicht bearbeiten)', 'iahVoiceState', VARIABLETYPE_STRING, '', null);
@@ -652,6 +656,94 @@ class IPSAlexaHaussteuerung extends IPSModule
         $new=str_replace($needle,$needle.$addition,$current);
         IPS_SetScriptContent($scriptId,$new);
         IPS_LogMessage('Alexa','ExternalHTML.migration: HTML-Geraetefaehigkeit in Action-Payload ergaenzt.');
+    }
+
+
+    /**
+     * Diagnose-Shell und WebHooks automatisch bei Uebernehmen bereitstellen.
+     * Vorhandene Fremd-Hooks werden NIEMALS ueberschrieben.
+     * Die produktive alte alexa-shell.html wird NICHT veraendert.
+     */
+    private function ensureExternalHtmlBrowserDiagnostics(int $helperCategory): void
+    {
+        $receiver = $this->ensureScriptTemplate(
+            $helperCategory, 'ExternalHtmlBrowserReceiver', 'iahHtmlBrowserReceiver',
+            __DIR__ . '/resources/helpers/ExternalHtmlBrowserReceiver.php'
+        );
+
+        $icons = $this->ensureScriptTemplate(
+            $helperCategory, 'AlexaIconsHook', 'iahAlexaIconsHook',
+            __DIR__ . '/resources/helpers/WebHookIcons.php'
+        );
+        // WebHookIcons liest das bereits konfigurierte Modul-Token zur Laufzeit.
+        // Weder API-Schluessel noch Passwoerter ins Skript kopieren.
+        $iconsContent = $this->getScriptContent($icons);
+        if (is_string($iconsContent)) {
+            $updated = str_replace(
+                "\$SECRET = '';",
+                "\$SECRET = (string)@IPS_GetProperty(" . $this->InstanceID . ", 'Token');",
+                $iconsContent
+            );
+            if ($updated !== $iconsContent) {
+                IPS_SetScriptContent($icons, $updated);
+            }
+        }
+
+        $template = __DIR__ . '/resources/html/alexa-diagnostic-shell.html';
+        $dir = IPS_GetKernelDir() . 'user' . DIRECTORY_SEPARATOR . 'icons';
+        $dest = $dir . DIRECTORY_SEPARATOR . 'alexa-diagnostic-shell.html';
+        if (is_file($template)) {
+            if (is_dir($dir) || @mkdir($dir, 0755, true)) {
+                $source = @file_get_contents($template);
+                if (is_string($source) && (!is_file($dest) || @hash_file('sha256', $dest) !== hash('sha256', $source))) {
+                    if (@file_put_contents($dest, $source, LOCK_EX) === false) {
+                        IPS_LogMessage('Alexa', 'ExternalHTML.setup cannot_write_shell');
+                    }
+                }
+            } else {
+                IPS_LogMessage('Alexa', 'ExternalHTML.setup cannot_create_icons_directory');
+            }
+        }
+
+        $controllers = function_exists('IPS_GetInstanceListByModuleID')
+            ? IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}') : [];
+        if (!is_array($controllers) || count($controllers) === 0) {
+            IPS_LogMessage('Alexa', 'ExternalHTML.setup webhook_control_missing');
+            return;
+        }
+        $control = (int)$controllers[0];
+        $hooks = json_decode((string)IPS_GetProperty($control, 'Hooks'), true);
+        if (!is_array($hooks)) {
+            IPS_LogMessage('Alexa', 'ExternalHTML.setup invalid_webhook_configuration');
+            return;
+        }
+        $changed = false;
+        foreach ([
+            '/hook/icons' => $icons,
+            '/hook/alexa-html-debug' => $receiver
+        ] as $name => $target) {
+            $present = false;
+            foreach ($hooks as $existing) {
+                if (($existing['Hook'] ?? '') !== $name) {
+                    continue;
+                }
+                $present = true;
+                if ((int)($existing['TargetID'] ?? 0) !== (int)$target) {
+                    // Nichts von Fremdmodulen bzw. vom Benutzer ueberschreiben.
+                    IPS_LogMessage('Alexa', 'ExternalHTML.setup hook_exists_external ' . $name);
+                }
+                break;
+            }
+            if (!$present) {
+                $hooks[] = ['Hook' => $name, 'TargetID' => (int)$target];
+                $changed = true;
+            }
+        }
+        if ($changed) {
+            IPS_SetProperty($control, 'Hooks', json_encode($hooks, JSON_UNESCAPED_SLASHES));
+            IPS_ApplyChanges($control);
+            IPS_LogMessage('Alexa', 'ExternalHTML.setup hooks_registered');
+        }
     }
 
     private function ensureHelperScripts(int $parent): void
