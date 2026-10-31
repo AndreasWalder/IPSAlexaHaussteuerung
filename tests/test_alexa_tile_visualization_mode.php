@@ -404,14 +404,14 @@ tileTestCheck(str_contains($shell, "function findTileLoginOkButton(doc,active,wi
     && str_contains($shell, "'ok','anmelden','login'")
     && str_contains($shell, "button,[role=\"button\"],input[type=\"submit\"]"),
     'Login chooses explicit OK/Anmelden button including non-submit SPA buttons');
-tileTestCheck(str_contains($shell, "found.length===1")
+tileTestCheck(str_contains($shell, "nodes.length===1")
     && str_contains($shell, "style.visibility==='hidden'")
-    && str_contains($shell, "rect.width<=0 || rect.height<=0")
+    && str_contains($shell, "node.hidden")
     && str_contains($shell, "el.getAttribute('aria-disabled')==='true'"),
     'Button discovery is scoped, unique, visible and enabled');
 tileTestCheck(str_contains($shell, "setTimeout(function(){")
     && str_contains($shell, "},450);")
-    && str_contains($shell, "okButton.click();")
+    && str_contains($shell, "match.element.click();")
     && str_contains($shell, "'button_clicked'"),
     'SPA events settle before the real login button is clicked');
 tileTestCheck(str_contains($shell, "'form_submit_requested'")
@@ -427,9 +427,32 @@ tileTestCheck(str_contains($shell, 'autoLoginUsed=true')
     && str_contains($shell, "if(!autoLoginAllowed || autoLoginUsed")
     && !str_contains($shell, "emit('tile_autologin','ok','submitted');"),
     'AutoLogin remains one-shot, no unsupported successful-submit claim');
-tileTestCheck(str_contains($shell, "String(el.getAttribute('aria-label')")
+tileTestCheck(str_contains($shell, "matching(el.getAttribute('aria-label'))")
     && !str_contains($shell, "emit('tile_autologin','ok',caption")
     && !str_contains($shell, "emit('tile_autologin','error',current.value"),
     'Button texts and password inputs must not enter log payloads');
+
+// Echo 23:42:17: form_submit_requested did NOT close the login.
+// Support exact OK text inside nested SPAN/DIV and inconsistent
+// getBoundingClientRect() values from the embedded Alexa browser.
+tileTestCheck(str_contains($shell, "matching(el.textContent)")
+    && str_contains($shell, "'span,div,label,p,strong,b,small,a,button'")
+    && str_contains($shell, "firstElementChild")
+    && str_contains($shell, "match.element.click();"),
+    'Custom Tile OK text is clicked with delegated event bubbling');
+tileTestCheck(str_contains($shell, "button_control")
+    && str_contains($shell, "button_text")
+    && str_contains($shell, "button_submit")
+    && str_contains($shell, "button_not_found")
+    && str_contains($shell, "button_ambiguous"),
+    'No arbitrary button clicks; report safe matcher category');
+tileTestCheck(!str_contains($shell, "rect.width<=0")
+    && str_contains($shell, "style.display==='none'")
+    && str_contains($shell, "node.hidden"),
+    'Skip hidden controls without relying on Echo zero-sized rect');
+tileTestCheck(str_contains($receiver, "'button_text'")
+    && str_contains($receiver, "'button_not_found'")
+    && str_contains($receiver, "'button_ambiguous'"),
+    'Only allowlisted matcher codes appear in diagnostic logs');
 
 echo "PASS: Kacheltest voice recognition, separate /tile/ rendering, no WFC switch, setup and diagnostics\n";
