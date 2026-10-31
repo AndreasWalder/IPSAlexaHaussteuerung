@@ -710,7 +710,7 @@ try {
         if($probeId>0 && function_exists('IPS_RunScriptEx')) {
             $probePayload=[
                 'instanceId'=>$instanceId,'externalKey'=>$externalKey,'pageType'=>$pageType,
-                'baseUrl'=>$baseUrl,'shellUrl'=>$shellUrl,'targetUrl'=>$tileBase,
+                'baseUrl'=>$baseUrl,'shellUrl'=>(string)$shellUrl,'targetUrl'=>$tileBase,
                 'localShell'=>IPS_GetKernelDir().'user'.DIRECTORY_SEPARATOR.'icons'.DIRECTORY_SEPARATOR.'alexa-shell.html',
                 'htmlSupported'=>$payload['htmlSupported']??null,
                 'aplSupported'=>$aplSupported
