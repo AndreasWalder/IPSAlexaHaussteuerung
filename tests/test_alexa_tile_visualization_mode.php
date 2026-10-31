@@ -414,11 +414,11 @@ tileTestCheck(str_contains($shell, "setTimeout(function(){")
     && str_contains($shell, "match.element.click();")
     && str_contains($shell, "'button_clicked'"),
     'SPA events settle before the real login button is clicked');
-tileTestCheck(str_contains($shell, "'form_submit_requested'")
+tileTestCheck(str_contains($shell, "'enter_sent'")
     && str_contains($shell, "'input_reset'")
     && str_contains($shell, "'login_still_visible'")
     && str_contains($shell, "'login_closed'"),
-    'Form fallback and real login outcome are diagnosed separately');
+    'Enter fallback and real login outcome are diagnosed separately');
 tileTestCheck(str_contains($receiver, "'button_clicked'")
     && str_contains($receiver, "'form_submit_requested'")
     && str_contains($receiver, "'login_still_visible'"),
@@ -454,5 +454,30 @@ tileTestCheck(str_contains($receiver, "'button_text'")
     && str_contains($receiver, "'button_not_found'")
     && str_contains($receiver, "'button_ambiguous'"),
     'Only allowlisted matcher codes appear in diagnostic logs');
+
+// After #189 the actual Echo still logged:
+// button_submit -> button_clicked -> login_still_visible.
+// The *documented* Tile password confirmation is Enter.
+// Send Enter to the password field rather than click generic submit.
+tileTestCheck(str_contains($shell, 'function tileSendEnter(win,input)')
+    && str_contains($shell, "['keydown','keypress','keyup']")
+    && str_contains($shell, "key:'Enter',code:'Enter'")
+    && str_contains($shell, "input.dispatchEvent(event)"),
+    'Tile confirmation sends complete Enter key sequence on the input');
+tileTestCheck(str_contains($shell, "match.kind!=='button_submit'")
+    && str_contains($shell, "'button_submit_skipped'")
+    && str_contains($shell, "tileSendEnter(win,current)")
+    && str_contains($shell, "'enter_sent'"),
+    'Echo generic submit button is skipped for documented Enter route');
+tileTestCheck(str_contains($shell, "function tileObserveManualLoginTap")
+    && str_contains($shell, "event.isTrusted!==true")
+    && str_contains($shell, "removeEventListener('click',onManualClick,true)")
+    && str_contains($shell, "'manual_button'"),
+    'Observes only one real manual tap inside the auth dialog');
+tileTestCheck(!str_contains($shell, "emit('tile_autologin','ok',target.textContent")
+    && !str_contains($shell, "emit('tile_autologin','ok',target.outerHTML")
+    && str_contains($receiver, "'manual_button'")
+    && str_contains($receiver, "'manual_role'"),
+    'Manual tap diagnostic reports only fixed control categories');
 
 echo "PASS: Kacheltest voice recognition, separate /tile/ rendering, no WFC switch, setup and diagnostics\n";

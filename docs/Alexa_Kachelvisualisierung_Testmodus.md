@@ -61,6 +61,61 @@ durch das tatsächliche Erscheinen von Passwortfeld/Kacheln bestätigt.
 Kamera, Energie, WebFront und die originale /tile/-Seite werden
 nicht verändert.
 
+## Echo-Test 31.10.2026, 23:49:01 – Klick auf Submit bleibt wirkungslos
+
+Die Auswertung des neuen Logs vom Echo zeigt diesmal:
+
+```text
+23:49:01  field_detected
+23:49:01  filled
+23:49:01  button_submit
+23:49:01  button_clicked
+23:49:04  login_still_visible
+```
+
+**Der Passwortabruf ist erfolgreich.** Das Problem liegt weiterhin in
+der **Bestätigung**, nicht an der Authentifizierung oder der Einrichtung.
+Anders als bei PR #188/#189 wurde nun zwar ein HTML-Submit-Button direkt
+geklickt, die Anmeldung aber nicht abgeschlossen.
+
+Die **offizielle IP-Symcon-Dokumentation** beschreibt für die
+Kachelvisualisierung ausdrücklich die Passwort-Bestätigung mit der
+**Enter-Taste**, nicht mit einem generischen HTML-Submit:
+
+https://www.symcon.de/de/service/dokumentation/komponenten/kachel-visualisierung/browser/
+
+Deshalb priorisiert diese Version für einen **nicht eindeutig mit
+„OK“/„Anmelden“ beschrifteten Submit-Button** den Tastaturweg:
+Das Skript fokussiert das echte Passwortfeld und sendet die
+`keydown`-, `keypress`- und `keyup`-Ereignisse mit `Enter`
+(anstelle des bisher erfolglosen `button_submit.click()`).
+Eindeutig benannte, sichtbare OK-Buttons werden weiterhin direkt
+geklickt. Weiterhin **maximal ein automatischer Bestätigungsversuch**,
+kein zweiter Passwortabruf.
+
+**Grenze:** Vom Skript erzeugte KeyboardEvents gelten als
+synthetisch, nicht als echte Benutzereingabe; der Alexa-Browser
+oder die IP-Symcon-Oberfläche kann diese ignorieren. Deshalb ist es ein
+gezielter Versuch, kein garantierter Fix. Wenn die Maske weiter offen
+bleibt, kann sie wie bisher manuell bestätigt werden.
+
+Neu ist die einmalige, auf das sichtbare Login-Formular begrenzte
+Diagnose für **wirkliche Benutzerinteraktionen**: Wenn danach manuell
+OK angeklickt bzw. auf dem Passwortfeld Enter gedrückt wird, meldet
+der Browser nur einen festen Typcode
+`manual_button`, `manual_role`, `manual_text`,
+`manual_other` oder `manual_enter`.
+Das hilft, die tatsächliche Art der funktionierenden Bestätigung
+zu erkennen, ohne Beschriftungen, Passwörter, URLs oder HTML
+zu speichern.
+
+**Test:** Modul aktualisieren, Modulinstanz **Übernehmen**;
+„Alexa, öffne Haussteuerung“ → **„Test“**. Prüfen, ob
+`enter_sent` → `login_closed` erscheint. Bei ausbleibendem
+Erfolg **einmal manuell OK** bestätigen, damit
+`manual_...` die echte Eingabeart klassifiziert. Die
+`tile_autologin`-Einträge aus der bestehenden Diagnosevariable reichen.
+
 ## Echo-Test 31.10.2026, 23:42:17 – SPA-OK-Button wird nicht erkannt
 
 Der Test **nach der ersten OK-Korrektur** beweist anhand der Logs:
