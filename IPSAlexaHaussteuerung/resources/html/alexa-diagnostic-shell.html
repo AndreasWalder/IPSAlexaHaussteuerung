@@ -35,11 +35,11 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
     });
     try {
       if(navigator.sendBeacon) {
-        var ok = navigator.sendBeacon('/hook/alexa-html-debug',
+        var ok = navigator.sendBeacon('/hook/iah-alexa-html-debug',
           new Blob([payload],{type:'application/json'}));
         if(ok)return;
       }
-      fetch('/hook/alexa-html-debug',{
+      fetch('/hook/iah-alexa-html-debug',{
         method:'POST',body:payload,headers:{'Content-Type':'application/json'},
         credentials:'omit',keepalive:true
       }).catch(function(){});

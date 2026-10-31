@@ -147,7 +147,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->ensureVar($htmlDiag,'Letzte 20 HTML-Diagnosen (JSON-Zeilen)','iahHtmlHistory',VARIABLETYPE_STRING,'~TextBox',null);
         $this->ensureVar($htmlDiag,'Letztes Browser-Ereignis (JSON)','iahHtmlBrowserLast',VARIABLETYPE_STRING,'~TextBox',null);
         $this->ensureVar($htmlDiag,'Letzte 100 Browser-Ereignisse (JSON-Zeilen)','iahHtmlBrowserHistory',VARIABLETYPE_STRING,'~TextBox',null);
-        // Einmalige Einrichtung: keine separaten Installationsskripte erforderlich.
+        // Idempotente Einrichtung: keine separaten Installationsskripte erforderlich.
         $this->ensureExternalHtmlBrowserDiagnostics($catHelper);
         $voiceDiag = $this->ensureCategory($catDiag, 'KI-Sprachrouter und APL-Navigation', 'iahVoiceDiag');
         // Entscheidungen und UI-Kontext pro anonymisiertem Alexa-Gerät.
@@ -719,8 +719,11 @@ class IPSAlexaHaussteuerung extends IPSModule
         }
         $changed = false;
         foreach ([
-            '/hook/icons' => $icons,
-            '/hook/alexa-html-debug' => $receiver
+            // Neue, modulspezifische Endpunkte: bestehende /hook/icons und
+            // /hook/alexa-html-debug aus alten Tests oder anderen Modulen
+            // werden nicht angeruehrt.
+            '/hook/iah-alexa-shell' => $icons,
+            '/hook/iah-alexa-html-debug' => $receiver
         ] as $name => $target) {
             $present = false;
             foreach ($hooks as $existing) {
@@ -742,7 +745,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         if ($changed) {
             IPS_SetProperty($control, 'Hooks', json_encode($hooks, JSON_UNESCAPED_SLASHES));
             IPS_ApplyChanges($control);
-            IPS_LogMessage('Alexa', 'ExternalHTML.setup hooks_registered');
+            IPS_LogMessage('Alexa', 'ExternalHTML.setup dedicated_hooks_registered');
         }
     }
 

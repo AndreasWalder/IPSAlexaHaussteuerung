@@ -100,6 +100,16 @@ try {
         exit;
     }
 
+    // Protokolliert lediglich, ob unsere neue Diagnose-Shell ausgeliefert
+    // wird – ohne URL, Token, Cookie, IP oder Browser-Kennung.
+    if ($name === 'alexa-diagnostic-shell.html') {
+        $probe = str_contains((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 'IP-Symcon Alexa HTML Diagnostics/');
+        IPS_LogMessage('Alexa', 'ExternalHTML.shellDelivery ' . json_encode([
+            'requestClass' => $probe ? 'server_probe' : 'other_client',
+            'bytes' => (int)(@filesize($path) ?: 0),
+            'status' => 200
+        ]));
+    }
     readfile($path);
     exit;
 } catch (Throwable $e) {
