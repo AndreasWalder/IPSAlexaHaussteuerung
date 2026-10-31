@@ -249,8 +249,24 @@
           "value": false
         },
         {
+          "type": "Select",
+          "name": "TileTestBootstrapMode",
+          "caption": "Kompatibilitätsverfahren (nur bei aktivierter Checkbox)",
+          "value": "url",
+          "options": [
+            {
+              "value": "url",
+              "caption": "Neue Methode: echte HTTPS-Dokumentadresse /tile/ (empfohlen zum Test)"
+            },
+            {
+              "value": "srcdoc",
+              "caption": "Vorherige Methode: iframe.srcdoc (Vergleich)"
+            }
+          ]
+        },
+        {
           "type": "Label",
-          "caption": "Standard AUS. Nur beim Sprachbefehl Kacheltest: HTML der eigenen /tile/-Seite wird im Alexa-Browser neu geladen und vor Start ihrer Skripte mit einem temporären Speicher-Ersatz versehen. Manche Kachelfunktionen/Anmeldungen können weiterhin nicht funktionieren (srcdoc-URL-Kontext). Kein Passwort automatisch übergeben. Kamera, Energie und alte WebFront-Seiten bleiben unverändert."
+          "caption": "Standard AUS. Nur beim Sprachbefehl „Test“: Bei aktivierter Kompatibilität versucht die neue Methode, die Tile-App als echtes Same-Origin-Dokument statt als about:srcdoc zu laden. Im Fehlerfall Rückfall zur bisherigen srcdoc-Methode. Die Kachelvisualisierung selbst wird nicht geändert. Keine automatische Passwortübergabe. Kamera/Energie und altes WebFront bleiben unverändert."
         },
         {
           "type": "Label",
