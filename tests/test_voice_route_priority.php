@@ -39,6 +39,7 @@ class TestGetHausRoutingRequest {
 $simulate=function(string $voiceRoute,bool $voiceNavigation=true,
     bool $launch=false,?string $external=null,?string $explicitDomain=null)
     use($isPlainBlock,$routeBlock,$selectBlock,$priorityBlock):array {
+    $log=static function(string $level,string $message,array $ctx=[]):void{};
     $request=new TestGetHausRoutingRequest($launch);
     $intentName='GetHaus';
     $action=$device=$room=$object=$szene=$alles='';
