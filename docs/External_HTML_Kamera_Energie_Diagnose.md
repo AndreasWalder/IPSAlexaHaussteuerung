@@ -2,9 +2,34 @@
 
 ## Ausgangssituation
 
-Licht, Jalousie und Lüftung verwenden APL und funktionieren. Die Kacheln **Kamera** und **Energie** verwenden dagegen die separate Schnittstelle `Alexa.Presentation.HTML.Start`, die die URL `/hook/icons?f=alexa-shell.html` öffnet. Die erfolgreiche Antwort von `ROUTE_ALL` beweist nur, dass die HTML-Start-Anweisung erzeugt wurde – **nicht**, dass der Alexa-Browser die Webseite geladen oder das iframe angezeigt hat.
+Licht, Jalousie und Lüftung verwenden APL und funktionieren. Die Kacheln **Kamera** und **Energie** verwenden dagegen die separate Schnittstelle `Alexa.Presentation.HTML.Start`, die die URL `/hook/icons?f=alexa-diagnostic-shell.html` öffnet (vorher: `alexa-shell.html`). Die erfolgreiche Antwort von `ROUTE_ALL` beweist nur, dass die HTML-Start-Anweisung erzeugt wurde – **nicht**, dass der Alexa-Browser die Webseite geladen oder das iframe angezeigt hat.
 
 Alexa unterscheidet HTML- von APL-Geräteunterstützung. Die Seite muss über **öffentlich erreichbares HTTPS und gültiges TLS-Zertifikat** geladen werden. Einbettung durch iframe kann unter anderem durch `X-Frame-Options` oder die CSP-Direktive `frame-ancestors` blockiert werden.
+
+## Automatische Browserdiagnose (neu)
+
+Nach **GitHub-Modul aktualisieren** und **Modulinstanz → Übernehmen** werden folgende Ressourcen automatisch eingerichtet:
+
+- `/hook/alexa-html-debug` → geschütztes Browser-Empfängerskript (Tokenprüfung).
+- `/hook/icons` → Datei-Auslieferung, **nur falls dieser WebHook noch nicht existiert**. Bestehende WebHooks werden nicht überschrieben.
+- `user/icons/alexa-diagnostic-shell.html` → neue, eigene Diagnose-Shell. Die bisherige `alexa-shell.html` wird **nicht** geändert.
+- Zusätzliche kopierbare Variablen **Letztes Browser-Ereignis (JSON)** und **Letzte 100 Browser-Ereignisse (JSON-Zeilen)**.
+
+**Kein separates PHP-Installationsskript und keine manuelle WebHook-Konfiguration nötig.** Kamera und Energie nutzen vorübergehend die neue Diagnose-Shell; Licht, Jalousie, Heizung sowie andere Routen bleiben unverändert.
+
+Beim Alexa-Aufruf **„Kamera“** sollten die Ereignisse `shell_boot`, `iframe_start`, `iframe_load` / `iframe_error`, `frame_dom` und eventuell `iframe_timeout` in den neuen Variablen und in **Alexa-Meldungen (letzte 500)** erscheinen. Die HTML-Shell meldet **nur vordefinierte Statuscodes**, niemals Adressen, Tokens, Passwörter, DOM-Texte oder JavaScript-Fehlertexte.
+
+**Auswertung:**
+
+- `ExternalHTML.directive`, aber kein `ExternalHTML.browser shell_boot`: Das Echo hat die Shell möglicherweise gar nicht geladen, der WebHook ist nicht erreichbar, oder JavaScript/HTML wird auf dem Gerät nicht unterstützt. Die alleinige Abwesenheit eines Browser-Events beweist keine einzelne Ursache.
+- `shell_boot`, aber kein `iframe_load`: Browser startet, iframe-Seite wird nicht fertig geladen.
+- `iframe_load` und `frame_dom: empty`: Die Seite lädt, enthält aber keinen erkennbaren DOM-Inhalt.
+- `iframe_load` und `frame_dom: cross_origin`: Browser konnte den iframe-Inhalt nicht auslesen (kein Fehlerbeweis).
+- `js_error`/`resource_error`: JavaScript-/Ressourcenproblem, ohne vertrauliche Details zu sammeln.
+
+Der asynchrone Server-Check `ExternalHTML.probe` bleibt parallel aktiv und berichtet HTTPS/Status/Content-Type/iframe-Sicherheits-Header. `shellHttp.bytesRead: 0` ist zunächst **nur ein Messwert des Servers**, kein Beweis für eine leere Anzeige auf dem Echo.
+
+**Falls keine HTML-Ereignisse kommen:** Prüfe unter dem Modul das Protokoll auf `ExternalHTML.setup`. Bei bereits anderweitig belegten WebHooks wird nur eine Warnung ausgegeben; fremde Hooks werden aus Sicherheitsgründen nicht übernommen.
 
 ## Neue Diagnose in IP-Symcon
 
@@ -47,7 +72,7 @@ Zusätzlich erscheinen im bestehenden **Alexa-Protokoll (letzte 500)** folgende 
 
 **Die HTTP-Probe läuft auf dem IP-Symcon-Server, nicht auf dem Echo-Gerät.** Sie verwendet HTTPS mit Zertifikatsprüfung, folgt keinen Redirects und begrenzt die Zeit pro Seite auf 5 Sekunden. Sie läuft **parallel** über `IPS_RunScriptEx`; der Alexa-Aufruf muss nicht auf den Prüfabschluss warten.
 
-Die Prüfung kann daher nicht beweisen, ob das Echo-Gerät die Seite öffnen kann, und nicht automatisch Browser-JavaScript-Fehler, Cookie-/Iframe-Verhalten oder Netzwerkfehler innerhalb des Echos feststellen. Dafür müsste die vorhandene `alexa-shell.html` zusätzlich eine opt-in JavaScript-Telemetrie enthalten (diese Datei wird durch das Modul **nicht** überschrieben). Sind Shell und Zielserver erreichbar, aber das Bild bleibt weiß, ist die Browser-/Iframe-Seite der nächste Ansatzpunkt.
+Die Prüfung kann daher nicht beweisen, ob das Echo-Gerät die Seite öffnen kann, und nicht automatisch Browser-JavaScript-Fehler, Cookie-/Iframe-Verhalten oder Netzwerkfehler innerhalb des Echos feststellen. Die neue Diagnose-Shell erfasst dafür begrenzte Browser-Ereignisse und schreibt sie über den automatisch registrierten Diagnose-WebHook ins Modul. Sind Shell und Zielserver erreichbar, aber das Bild bleibt weiß, ist die Browser-/Iframe-Seite der nächste Ansatzpunkt.
 
 ## So testen
 
