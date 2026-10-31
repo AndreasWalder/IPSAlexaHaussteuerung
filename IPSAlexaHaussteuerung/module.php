@@ -119,6 +119,9 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyBoolean('TilePerformanceDiagnostics', true);
         // No heavy server-to-server HTTP probe when starting a Tile test.
         $this->RegisterPropertyBoolean('TileFastBootstrapEnabled', true);
+        // Explicit opt-in: HTML.Start without an automatic follow-up microphone.
+        // Fallback to the original response when SDK serialization cannot be verified.
+        $this->RegisterPropertyBoolean('TileQuietNoFollowup', false);
         // Dauerhaftes Alexa-Kommando "Test"; das Ziel ist spaeter erweiterbar.
         $this->RegisterPropertyString('AlexaTestTarget', 'kacheltest');
 
@@ -660,6 +663,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->patchActionScriptExternalHtmlMetadata((int) $id);
         $this->patchActionScriptTileTestNavigation((int) $id);
         $this->patchActionScriptTileVoiceBridge((int) $id);
+        $this->patchActionScriptTileQuietFollowup((int) $id);
 
         return (int) $id;
     }
@@ -890,6 +894,83 @@ class IPSAlexaHaussteuerung extends IPSModule
         if ($current !== $old) {
             IPS_SetScriptContent($scriptId,$current);
             IPS_LogMessage('Alexa','TileVoice.migration active');
+        }
+    }
+
+    /**
+     * Upgrade only the known response handling sections. Existing user
+     * customization and the AlexaCustomSkillIntent gateway are untouched.
+     * Unrecognized Action versions keep the known-good Alexa behavior.
+     */
+    private function patchActionScriptTileQuietFollowup(int $scriptId): void
+    {
+        $template = @file_get_contents(__DIR__ . '/resources/action_entry.php');
+        $current = $this->getScriptContent($scriptId);
+        if (!is_string($template) || !is_string($current) || $current === '') return;
+
+        $start = '// IAH_TILE_QUIET_HELPER_BEGIN';
+        $end = '// IAH_TILE_QUIET_HELPER_END';
+        $startPos = strpos($template, $start);
+        $endPos = $startPos === false ? false : strpos($template, $end, $startPos);
+        if ($startPos === false || $endPos === false) return;
+        $helper = substr($template, $startPos, $endPos + strlen($end) - $startPos);
+
+        if (!str_contains($current, $start)) {
+            $entry = "function Execute(\$request = null)\n{";
+            if (!str_contains($current, $entry)) {
+                IPS_LogMessage('Alexa', 'TileQuiet.migration execute_anchor_missing');
+                return;
+            }
+            $current = str_replace($entry, $helper . "\n\n" . $entry, $current);
+        } else {
+            $oldFrom = strpos($current, $start);
+            $oldTo = strpos($current, $end, $oldFrom);
+            if ($oldTo === false) return;
+            $current = substr_replace($current, $helper,
+                $oldFrom, $oldTo + strlen($end) - $oldFrom);
+        }
+
+        // Voice-resume branch inserted previously by Tile Voice Bridge.
+        $resume = "            return \$resumed;";
+        $resumeNew = "            return iah_tile_quiet_html_response(\$resumed,\n"
+            . "                (bool)(\$propsEarly['TileQuietNoFollowup'] ?? false));";
+        if (str_contains($current, $resume)) {
+            $current = str_replace($resume, $resumeNew, $current);
+        }
+
+        // HTML.Start branch returns an SDK AskResponse; never substitute
+        // an arbitrary PHP array or JSON string.
+        $oldTail = <<<'PHP'
+            if (!empty($data['directives']) && is_array($data['directives'])) {
+                foreach ($data['directives'] as $d) {
+                    $r->AddDirective($d);
+                }
+            }
+            return $r;
+PHP;
+        $newTail = <<<'PHP'
+            if (!empty($data['directives']) && is_array($data['directives'])) {
+                foreach ($data['directives'] as $d) {
+                    $r->AddDirective($d);
+                }
+            }
+            // Only the opt-in HTML mode may omit Alexa's followup field.
+            // Normal APL, question/answer, exit, camera and energy remain unchanged.
+            return iah_tile_quiet_html_response($r,
+                (bool)($propsEarly['TileQuietNoFollowup'] ?? false)
+                && (string)$__route === 'external'
+                && $speech === '');
+PHP;
+        if (str_contains($current, $oldTail)) {
+            $current = str_replace($oldTail, $newTail, $current);
+        } elseif (!str_contains($current, "&& (string)\$__route === 'external'")) {
+            IPS_LogMessage('Alexa', 'TileQuiet.migration render_anchor_missing');
+            return;
+        }
+        $existing = $this->getScriptContent($scriptId);
+        if ($current !== $existing) {
+            IPS_SetScriptContent($scriptId, $current);
+            IPS_LogMessage('Alexa', 'TileQuiet.migration installed');
         }
     }
 
