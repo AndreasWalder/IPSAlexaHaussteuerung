@@ -1898,6 +1898,26 @@ function Execute($request = null)
             }
         };
         $iahVoiceDeviceId = method_exists($request, 'GetDeviceId') ? (string)$request->GetDeviceId() : '';
+        // IAH_TILE_VOICE_BRIDGE_BEGIN
+        // Nur die aktuell geoeffnete HTML-Seite auf DEMSELBEN Echo
+        // bleibt bei Sprachbefehlen erhalten. Andere Geraete behalten APL.
+        $iahHtmlDeviceKey = $iahVoiceDeviceId !== '' && $token !== ''
+            ? substr(hash_hmac('sha256', $iahVoiceDeviceId, $token), 0, 32) : '';
+        $iahHtmlPreserve = false;
+        if ($iahHtmlDeviceKey !== '' && $instanceId > 0
+            && (bool)($propsEarly['TilePreserveHtmlOnVoice'] ?? true)) {
+            $iahDiag = (int)@IPS_GetObjectIDByIdent('iahDiag', $instanceId);
+            $iahHtmlDiag = $iahDiag > 0
+                ? (int)@IPS_GetObjectIDByIdent('iahExternalHtmlDiag', $iahDiag) : 0;
+            $iahHtmlState = $iahHtmlDiag > 0
+                ? (int)@IPS_GetObjectIDByIdent('iahTileHtmlSessions', $iahHtmlDiag) : 0;
+            if ($iahHtmlState > 0 && IPS_VariableExists($iahHtmlState)) {
+                $iahStates = json_decode((string)GetValueString($iahHtmlState), true);
+                $iahHtmlPreserve = is_array($iahStates)
+                    && (int)($iahStates[$iahHtmlDeviceKey] ?? 0) >= time();
+            }
+        }
+        // IAH_TILE_VOICE_BRIDGE_END
         $iahVoiceRequestType = (string)($request->type ?? '');
         $iahVoiceIsAplEvent = $iahVoiceRequestType === 'Alexa.Presentation.APL.UserEvent';
         $iahVoiceHasScreen = isset($request->context->System->device->supportedInterfaces->{'Alexa.Presentation.APL'});
@@ -1976,6 +1996,18 @@ function Execute($request = null)
                     $iahLegacyNavKey=$alias[$tileWord];
                 }
             }
+        }
+        // Bereits sichtbare Kachel: "Test" ist KEIN erneuter HTML.Start.
+        // Eine neue Start-Direktive wuerde die App samt Login neu laden.
+        if ($iahHtmlPreserve && $iahLegacyNavKey === 'test') {
+            $resumed = AskResponse::CreatePlainText('')
+                ->SetRepromptPlainText('');
+            $resumed->AddDirective([
+                'type'=>'Alexa.Presentation.HTML.HandleMessage',
+                'message'=>['type'=>'iah_tile_resume']
+            ]);
+            IPS_LogMessage('Alexa', 'TileVoice.preserve test_resume');
+            return $resumed;
         }
         $iahVoiceDecision = $iahVoiceRouter([
             'op'=>'classify',
@@ -2785,6 +2817,7 @@ function Execute($request = null)
                 'args3v'          => $APL['a3'],
                 'aplSupported'    => (bool)($aplSupported ?? false),
                 'htmlSupported'   => $iahHtmlSupport ?? null,
+                'htmlDeviceKey'   => $iahHtmlDeviceKey ?? '',
                 'action'          => (string)($action ?? ''),
                 'device'          => (string)($device ?? ''),
                 'room'            => (string)($room ?? ''),
@@ -2839,6 +2872,25 @@ function Execute($request = null)
             $r = $endSession
                 ? TellResponse::CreatePlainText($speech)
                 : AskResponse::CreatePlainText($speech)->SetRepromptPlainText($reprompt);
+            // IAH_TILE_VOICE_RESPONSE_BEGIN
+            // Nach einer Sprachaktion niemals APL.RenderDocument schicken,
+            // solange auf genau diesem Echo die HTML-Seite aktiv ist.
+            // Explizite "Zurueck"/"Ende"/Kamera/Energie-Navigation bleibt alt.
+            if ($iahHtmlPreserve && $iahHtmlDeviceKey !== ''
+                && !in_array((string)$__route,
+                    ['main_launch','external','test','kacheltest'], true)
+                && !$endSession) {
+                $r->AddDirective([
+                    'type'=>'Alexa.Presentation.HTML.HandleMessage',
+                    'message'=>[
+                        'type'=>'iah_tile_voice',
+                        'changed'=>'true'
+                    ]
+                ]);
+                IPS_LogMessage('Alexa', 'TileVoice.preserve voice_result');
+                return $r;
+            }
+            // IAH_TILE_VOICE_RESPONSE_END
             $makeCard($r, $data['card'] ?? []);
             $applyApl($r, $data['apl'] ?? [], $tokenApl);
 
@@ -2963,6 +3015,7 @@ function Execute($request = null)
                                 'args3v'          => $APL['a3'],
                             'aplSupported'    => (bool)($aplSupported ?? false),
                 'htmlSupported'   => $iahHtmlSupport ?? null,
+                'htmlDeviceKey'   => $iahHtmlDeviceKey ?? '',
                             'action'          => (string)($action ?? ''),
                             'device'          => (string)($device ?? ''),
                             'room'            => (string)($room ?? ''),
