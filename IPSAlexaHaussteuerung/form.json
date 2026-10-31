@@ -231,6 +231,16 @@
           "value": 0
         },
         {
+          "type": "CheckBox",
+          "name": "TileTestStorageCompat",
+          "caption": "Experiment: localStorage in Alexa-Kacheltest durch sessionStorage ersetzen (nur Test)",
+          "value": false
+        },
+        {
+          "type": "Label",
+          "caption": "Standard AUS. Nur beim Sprachbefehl Kacheltest: HTML der eigenen /tile/-Seite wird im Alexa-Browser neu geladen und vor Start ihrer Skripte mit einem temporären Speicher-Ersatz versehen. Manche Kachelfunktionen/Anmeldungen können weiterhin nicht funktionieren (srcdoc-URL-Kontext). Kein Passwort automatisch übergeben. Kamera, Energie und alte WebFront-Seiten bleiben unverändert."
+        },
+        {
           "type": "Label",
           "caption": "Alexa sagen: „Öffne Haussteuerung“, anschließend „Kacheltest“. Bei ID 0 erscheint die Symcon-Auswahl der Kachelvisualisierungen. Ein eventuell verlangtes Passwort wird bewusst nicht als URL-Parameter übermittelt."
         },

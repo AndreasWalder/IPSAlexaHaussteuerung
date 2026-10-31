@@ -104,6 +104,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyBoolean('TileTestEnabled', true);
         // 0 = Visualisierungsauswahl unter /tile/, ansonsten Instanz-ID.
         $this->RegisterPropertyInteger('TileTestVisualizationId', 0);
+        // Opt-in: experimenteller localStorage-Ersatz nur bei Alexa Kacheltest.
+        $this->RegisterPropertyBoolean('TileTestStorageCompat', false);
 
         // Optional status variables (allow linking existing values instead of auto-created ones)
         $this->RegisterPropertyInteger('VarInformation', 0);

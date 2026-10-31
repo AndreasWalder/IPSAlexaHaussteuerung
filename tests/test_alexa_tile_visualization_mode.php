@@ -134,4 +134,32 @@ tileTestCheck(!str_contains($receiver, "\$input['metrics']['url']")
     && !str_contains($receiver, "\$input['message']"),
     'Browser diagnostic must not accept URLs or raw exception messages');
 
+// Opt-in localStorage compatibility experiment: default-off and strictly
+// limited to the Kacheltest HTML route; all other routes stay unchanged.
+tileTestCheck(str_contains($module,"RegisterPropertyBoolean('TileTestStorageCompat', false)"),
+    'Compatibility experiment must default to OFF');
+tileTestCheck(str_contains($renderer,"IPS_GetProperty(\$tileTestInstanceId, 'TileTestStorageCompat')"),
+    'Compatibility setting read live from module instance');
+tileTestCheck(str_contains($renderer,"\$externalKey === 'kacheltest' && !empty(\$payload['tileStorageCompat'])"),
+    'Compatibility mode only passed to Kacheltest shell');
+tileTestCheck(str_contains($shell,"params.get('compat')==='1'")
+    && str_contains($shell,"route==='kacheltest'"),
+    'No polyfill in Kamera or Energie');
+tileTestCheck(str_contains($shell,'function installTileStorageShim()')
+    && str_contains($shell,'sessionStorage')
+    && str_contains($shell,"Object.defineProperty(window,'localStorage'"),
+    'LocalStorage shim installed early using sessionStorage only when supported');
+tileTestCheck(str_contains($shell,'frame.srcdoc=patched')
+    && str_contains($shell,"frame.src=src; // Bei Fehlern Original, ohne Shim."),
+    'Isolated srcdoc bootstrap has a normal-iframe fallback');
+tileTestCheck(str_contains($shell,"target.origin!==location.origin")
+    && str_contains($shell,"target.pathname"),
+    'Compatibility fetch restricted to same origin and tile URL');
+tileTestCheck(str_contains($receiver,"'tile_compat'")
+    && str_contains($receiver,"'shim_session'"),
+    'Compatibility telemetry is allowlisted');
+tileTestCheck(!str_contains($shell, 'prompt(')
+    && !str_contains($shell, 'password='),
+    'Compatibility bootstrap does not auto-submit a password');
+
 echo "PASS: Kacheltest voice recognition, separate /tile/ rendering, no WFC switch, setup and diagnostics\n";

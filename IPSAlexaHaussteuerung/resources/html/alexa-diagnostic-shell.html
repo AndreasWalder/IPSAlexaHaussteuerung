@@ -26,6 +26,8 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
   var instanceId = Number(params.get('i') || 0);
   var token = params.get('token') || '';
   var src = params.get('src') || '';
+  // NUR bei explizitem Modul-Opt-in; Kamera/Energie unveraendert.
+  var compat = route==='kacheltest' && params.get('compat')==='1';
   var loaded = false;
   var sent = 0;
   function emit(stage,state,code,metrics){
@@ -165,6 +167,118 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
     }
   }
 
+
+  // Test-Helfer im selben, spaeter als srcdoc geladenen Dokument.
+  // Wird vor den IP-Symcon-App-Skripten in <head> eingefuegt.
+  function installTileStorageShim(){
+    'use strict';
+    var probeKey='iahTileCompatProbe';
+    try{
+      var nativeStorage=window.localStorage;
+      nativeStorage.setItem(probeKey,'1');
+      nativeStorage.removeItem(probeKey);
+      window.__iahTileShimStatus='native';
+      return;
+    }catch(ignored){}
+    var prefix='iah_tilestorage_';
+    var session=null;
+    var memory=Object.create(null);
+    try{
+      session=window.sessionStorage;
+      session.setItem(prefix+'probe','1');
+      session.removeItem(prefix+'probe');
+    }catch(e){session=null;}
+    function keys(){
+      var all=[];
+      if(session){
+        for(var i=0;i<session.length;i++){
+          var k=session.key(i);
+          if(typeof k==='string' && k.slice(0,prefix.length)===prefix)
+            all.push(k.slice(prefix.length));
+        }
+      }else{
+        all=Object.keys(memory);
+      }
+      return all;
+    }
+    var storage={
+      getItem:function(k){
+        k=String(k);
+        return session?session.getItem(prefix+k):
+          (Object.prototype.hasOwnProperty.call(memory,k)?memory[k]:null);
+      },
+      setItem:function(k,v){
+        k=String(k);v=String(v);
+        if(session)session.setItem(prefix+k,v);else memory[k]=v;
+      },
+      removeItem:function(k){
+        k=String(k);
+        if(session)session.removeItem(prefix+k);else delete memory[k];
+      },
+      clear:function(){
+        var all=keys();
+        for(var i=0;i<all.length;i++)storage.removeItem(all[i]);
+      },
+      key:function(i){return keys()[Number(i)]||null;}
+    };
+    Object.defineProperty(storage,'length',{get:function(){return keys().length;}});
+    try{
+      Object.defineProperty(window,'localStorage',{
+        configurable:true,enumerable:true,
+        get:function(){return storage;}
+      });
+      if(window.localStorage!==storage)throw Error('shim_not_effective');
+      window.__iahTileShimStatus=session?'session':'memory';
+    }catch(e){window.__iahTileShimStatus='blocked';}
+  }
+  function loadTileWithStorageCompatibility(){
+    emit('tile_compat','ok','fetch_start');
+    var target;
+    try{
+      target=new URL(src,location.href);
+      // Kein Proxy und niemals benutzerdefinierte externe Ziel-URL laden.
+      if(target.origin!==location.origin || !/^\/tile\/?$/.test(target.pathname)){
+        emit('tile_compat','error','target_rejected');frame.src=src;return;
+      }
+    }catch(e){
+      emit('tile_compat','error','target_rejected');frame.src=src;return;
+    }
+    if(typeof fetch!=='function'){
+      emit('tile_compat','error','fetch_failed');frame.src=src;return;
+    }
+    fetch(target.href,{
+      method:'GET',credentials:'same-origin',cache:'no-store',redirect:'follow'
+    }).then(function(response){
+      if(!response.ok || !response.url ||
+          new URL(response.url).origin!==target.origin ||
+          !/^\/tile\/?$/.test(new URL(response.url).pathname)){
+        throw Error('unexpected_response');
+      }
+      var mime=(response.headers.get('content-type')||'').toLowerCase();
+      if(mime.indexOf('text/html')===-1)throw Error('not_html');
+      return response.text();
+    }).then(function(html){
+      if(typeof html!=='string' || html.length>200000){
+        emit('tile_compat','error','too_large');frame.src=src;return;
+      }
+      if(!/<head(?:\s[^>]*)?>/i.test(html)){
+        emit('tile_compat','error','no_head');frame.src=src;return;
+      }
+      // srcdoc besitzt trotz <base> eine eigene about:srcdoc-URL.
+      // Daher NUR experimentell, mit aufrufbarer Original-Variante.
+      var base='<base href="'+target.origin+'/tile/">';
+      var code='<scr'+'ipt>('+installTileStorageShim.toString()+')();</scr'+'ipt>';
+      var patched=html.replace(/<head(?:\s[^>]*)?>/i,function(open){
+        return open+base+code;
+      });
+      emit('tile_compat','ok','html_injected');
+      frame.srcdoc=patched;
+    }).catch(function(){
+      emit('tile_compat','error','fetch_failed');
+      frame.src=src; // Bei Fehlern Original, ohne Shim.
+    });
+  }
+
   emit('shell_boot','ok');
   if(route==='kacheltest'){
     capability('websocket',function(){return typeof WebSocket!=='undefined';});
@@ -189,6 +303,18 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
     emit('iframe_load','ok');
     reportDom();
     tileReport();
+    if(compat){
+      try{
+        var shimState=frame.contentWindow.__iahTileShimStatus||'missing';
+        var shimCode=shimState==='session'?'shim_session':
+          (shimState==='memory'?'shim_memory':
+          (shimState==='native'?'shim_native':
+          (shimState==='blocked'?'shim_blocked':'shim_missing')));
+        emit('tile_compat',
+          shimState==='session'||shimState==='memory'||shimState==='native'
+            ? 'supported':'unsupported',shimCode);
+      }catch(e){emit('tile_compat','unsupported','shim_missing');}
+    }
     if(route==='kacheltest'){
       tileSnapshot('onload');
       setTimeout(function(){tileReport();tileSnapshot('after_3s');},3000);
@@ -219,7 +345,8 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
       emit('iframe_timeout','timeout');
     }
   },10000);
-  frame.src=src;
+  if(compat)loadTileWithStorageCompatibility();
+  else frame.src=src;
 })();
 </script>
 </body>
