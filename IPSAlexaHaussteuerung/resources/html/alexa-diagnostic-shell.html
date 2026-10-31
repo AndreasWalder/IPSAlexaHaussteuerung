@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
-<title>Alexa Kamera/Energie Diagnose</title>
+<title>Alexa Visualisierungsdiagnose</title>
 <style>
 html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-family:sans-serif;overflow:hidden}
 #screen{position:fixed;inset:0;width:100%;height:100%;border:0;background:#fff}
@@ -13,7 +13,7 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
 </style>
 </head>
 <body>
-<div id="status" role="status">Kamera/Energie: Verbindung wird geprüft …</div>
+<div id="status" role="status">Visualisierung: Verbindung wird geprüft …</div>
 <iframe id="screen" referrerpolicy="no-referrer" title="IP-Symcon Visualisierung"></iframe>
 <script>
 (function(){
@@ -21,7 +21,8 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
   var params = new URLSearchParams(location.search);
   var frame = document.getElementById('screen');
   var status = document.getElementById('status');
-  var route = params.get('route') === 'energie' ? 'energie' : 'kamera';
+  var routeArg=params.get('route');
+  var route=routeArg==='energie' || routeArg==='kacheltest' ? routeArg : 'kamera';
   var instanceId = Number(params.get('i') || 0);
   var token = params.get('token') || '';
   var src = params.get('src') || '';
@@ -53,7 +54,51 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
       emit('frame_dom',body && (body.children.length || body.textContent.trim().length)?'not_empty':'empty');
     } catch(e){emit('frame_dom','cross_origin');}
   }
+  // Eigene, nicht-invasive Diagnose der Browser-Faehigkeiten.
+  // Es werden ausschliesslich feste Statuswerte, nie Inhalte gesendet.
+  function capability(name,probe){
+    try {emit('tile_capability',probe()?'supported':'unsupported',name);}
+    catch(e){emit('tile_capability','unsupported',name);}
+  }
+  function tileReport(){
+    if(route!=='kacheltest')return;
+    try{
+      var doc=frame.contentDocument;
+      var win=frame.contentWindow;
+      if(!doc || !win){emit('tile_render','cross_origin');return;}
+      if(doc.querySelector('input[type="password"]')){
+        emit('tile_render','login','password');
+      }else{
+        var count=doc.body?doc.body.querySelectorAll('*').length:0;
+        // Anzahl bedeutet KEIN Beweis fuer korrekte React/Vue-Darstellung.
+        emit('tile_render',count>25?'not_empty':'loading',count>25?'elements':'none');
+      }
+      if(!win.__iahTileDiagnosticsAttached){
+        win.__iahTileDiagnosticsAttached=true;
+        win.addEventListener('error',function(ev){
+          if(ev.target && ev.target !== win){
+            var tag=(ev.target.tagName||'').toLowerCase();
+            emit('tile_frame_resource_error','error',
+              tag==='script'?'script':tag==='link'?'stylesheet':tag==='img'?'image':'other');
+          }else{emit('tile_frame_js_error','error');}
+        },true);
+        win.addEventListener('unhandledrejection',function(){emit('tile_frame_rejection','error');});
+      }
+    }catch(e){emit('tile_render','cross_origin');}
+  }
   emit('shell_boot','ok');
+  if(route==='kacheltest'){
+    capability('websocket',function(){return typeof WebSocket!=='undefined';});
+    capability('indexed_db',function(){return !!window.indexedDB;});
+    capability('local_storage',function(){
+      var k='iah_tile_test';
+      localStorage.setItem(k,'1');localStorage.removeItem(k);return true;
+    });
+    capability('session_storage',function(){
+      var k='iah_tile_test';
+      sessionStorage.setItem(k,'1');sessionStorage.removeItem(k);return true;
+    });
+  }
   if(!/^https:\/\//i.test(src)){
     status.textContent='Die Visualisierungsadresse ist ungültig.';
     emit('missing_src','invalid');
@@ -64,6 +109,11 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
     loaded=true;
     emit('iframe_load','ok');
     reportDom();
+    tileReport();
+    if(route==='kacheltest'){
+      setTimeout(tileReport,2500);
+      setTimeout(tileReport,6500);
+    }
     status.className='hidden';
   });
   frame.addEventListener('error',function(){
