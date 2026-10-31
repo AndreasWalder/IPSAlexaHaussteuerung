@@ -80,6 +80,47 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
   // Automatische Anmeldung ist explizit opt-in und nur fuer /tile/ erlaubt.
   // Passwort wird bei sichtbarer Login-Maske per POST geholt, einmalig
   // im Speicher verwendet und weder in URL noch in Diagnosen geschrieben.
+  // Die IP-Symcon SPA kann ihren OK-Button ohne type="submit" oder
+  // außerhalb des eigentlichen Formulars rendern. Nur einen EINDEUTIGEN,
+  // sichtbaren Anmeldebutton mit festem Label auswählen; niemals blind
+  // Abbrechen, Schließen oder andere UI-Aktionen anklicken.
+  function findTileLoginOkButton(doc,active,win){
+    var scopes=[],scope,up=active.parentElement;
+    var dialog=active.closest('[role="dialog"],[aria-modal="true"],dialog');
+    if(dialog)scopes.push(dialog);
+    if(active.form && active.form!==dialog)scopes.push(active.form);
+    for(var level=0;up && level<5;level++,up=up.parentElement){
+      if(scopes.indexOf(up)===-1)scopes.push(up);
+      if(up===doc.body)break;
+    }
+    if(scopes.indexOf(doc.body)===-1)scopes.push(doc.body);
+    var labels=['ok','anmelden','login','bestätigen','bestaetigen',
+      'weiter','sign in','log in'];
+    for(var i=0;i<scopes.length;i++){
+      scope=scopes[i];
+      var nodes=scope.querySelectorAll(
+        'button,[role="button"],input[type="submit"],input[type="button"]'
+      );
+      for(var k=0;k<labels.length;k++){
+        var found=[];
+        for(var n=0;n<nodes.length;n++){
+          var el=nodes[n];
+          if(el.disabled || el.getAttribute('aria-disabled')==='true')continue;
+          var style=win.getComputedStyle(el);
+          if(style && (style.display==='none' ||
+             style.visibility==='hidden'))continue;
+          var rect=el.getBoundingClientRect();
+          if(!rect || rect.width<=0 || rect.height<=0)continue;
+          var caption=String(el.getAttribute('aria-label')||
+            el.value||el.textContent||'').trim().replace(/\\s+/g,' ').toLowerCase();
+          if(caption===labels[k])found.push(el);
+        }
+        if(found.length===1)return found[0];
+      }
+    }
+    return null;
+  }
+
   function tileTryAutoLogin(){
     if(!autoLoginAllowed || autoLoginUsed || ++autoLoginTicks>75)return;
     var doc,win,inputs;
@@ -141,36 +182,62 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
         active.dispatchEvent(new win.Event('change',{bubbles:true}));
         pw=''; // Kein dauerhafter Klartext im umgebenden Script halten.
         emit('tile_autologin','ok','filled');
-        var form=active.form;
-        if(form){
-          var submit=form.querySelector('button[type="submit"],input[type="submit"]');
-          if(submit && !submit.disabled){
-            submit.click();emit('tile_autologin','ok','submitted');return;
-          }
-          if(typeof form.requestSubmit==='function'){
-            form.requestSubmit();emit('tile_autologin','ok','submitted');return;
-          }
-        }
-        // Formlose Dialoge: Nur dann klicken, wenn genau ein aktiver
-        // Button innerhalb des Passwort-Containers existiert.
-        var parent=active.closest('[role="dialog"]') || active.parentElement;
-        var buttons=parent?parent.querySelectorAll('button:not([disabled])'):[];
-        if(buttons.length===1){
-          buttons[0].click();emit('tile_autologin','ok','submitted');return;
-        }
-        // Einige SPA-Dialoge melden den Login nur ueber Enter auf dem
-        // Passwortfeld an. Einmalige, synthetische Eingabe versuchen.
-        try{
-          active.dispatchEvent(new win.KeyboardEvent('keydown',{
-            key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true
-          }));
-          active.dispatchEvent(new win.KeyboardEvent('keyup',{
-            key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true
-          }));
-          emit('tile_autologin','ok','enter_sent');
-        }catch(e){
-          emit('tile_autologin','ok','filled_only');
-        }
+        // React/Vue muss die input/change-Ereignisse zuerst verarbeiten.
+        // Der alte Code rief sofort form.requestSubmit() auf und meldete
+        // "submitted", obwohl der sichtbare OK-Button nicht reagierte.
+        setTimeout(function(){
+          try{
+            if(doc!==frame.contentDocument ||
+               win.location.origin!==location.origin ||
+               !/^\\/tile\\/?$/.test(win.location.pathname)){
+              emit('tile_autologin','error','dom_changed');
+              return;
+            }
+            var current=doc.querySelector('input[type="password"]');
+            if(!current || !current.isConnected){
+              emit('tile_autologin','ok','login_closed');
+              return;
+            }
+            if(!current.value){
+              emit('tile_autologin','error','input_reset');
+              return;
+            }
+            var okButton=findTileLoginOkButton(doc,current,win);
+            if(okButton){
+              // Der wirkliche OK-/Anmelden-Button feuert SPA-onClick statt
+              // eines bloßen Formular-Submit; keine erneute Passwortanfrage.
+              okButton.click();
+              emit('tile_autologin','ok','button_clicked');
+            }else{
+              var form=current.form;
+              if(form && typeof form.requestSubmit==='function'){
+                form.requestSubmit();
+                emit('tile_autologin','ok','form_submit_requested');
+              }else{
+                // Letzter, einmaliger Fallback fuer Tastaturdialoge.
+                current.dispatchEvent(new win.KeyboardEvent('keydown',{
+                  key:'Enter',code:'Enter',keyCode:13,which:13,
+                  bubbles:true,cancelable:true
+                }));
+                current.dispatchEvent(new win.KeyboardEvent('keyup',{
+                  key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true
+                }));
+                emit('tile_autologin','ok','enter_sent');
+              }
+            }
+            // Die bisherige Diagnose "submitted" belegte keinen Login.
+            // Nach dem einmaligen Versuch wirklich prüfen, ob das
+            // Passwortfeld verschwunden ist. Keine erneute Anmeldung.
+            setTimeout(function(){
+              try{
+                var stillThere=doc.querySelector('input[type="password"]');
+                emit('tile_autologin','ok',
+                  stillThere && stillThere.isConnected?
+                    'login_still_visible':'login_closed');
+              }catch(e){emit('tile_autologin','error','dom_changed');}
+            },3000);
+          }catch(e){emit('tile_autologin','error','dom_changed');}
+        },450);
       }catch(e){emit('tile_autologin','error','dom_changed');}
     }).catch(function(){
       emit('tile_autologin','error','credential_network');
