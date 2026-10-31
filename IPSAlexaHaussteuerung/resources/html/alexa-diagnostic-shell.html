@@ -30,6 +30,13 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
   var compat = route==='kacheltest' && params.get('compat')==='1';
   var bootMode = compat && params.get('boot')==='url' ? 'url':'srcdoc';
   var originFallback=false;
+  // Nur signiertes Kurzzeit-Ticket; das Passwort steht NICHT in der HTML-URL.
+  var authTicket=params.get('authTicket')||'';
+  var authVis=Number(params.get('authVis')||0);
+  var autoLoginAllowed=compat && bootMode==='url' && instanceId>0 &&
+    authVis>0 && /^[0-9]{10}\.[a-f0-9]{32}\.[a-f0-9]{64}$/.test(authTicket);
+  var autoLoginUsed=false;
+  var autoLoginTicks=0;
   var loaded = false;
   var sent = 0;
   function emit(stage,state,code,metrics){
@@ -69,6 +76,74 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
     try {emit('tile_capability',probe()?'supported':'unsupported',name);}
     catch(e){emit('tile_capability','unsupported',name);}
   }
+
+  // Automatische Anmeldung ist explizit opt-in und nur fuer /tile/ erlaubt.
+  // Passwort wird bei sichtbarer Login-Maske per POST geholt, einmalig
+  // im Speicher verwendet und weder in URL noch in Diagnosen geschrieben.
+  function tileTryAutoLogin(){
+    if(!autoLoginAllowed || autoLoginUsed || ++autoLoginTicks>75)return;
+    var doc,win,inputs;
+    try {
+      win=frame.contentWindow;
+      doc=frame.contentDocument;
+      if(!win || !doc || win.location.origin!==location.origin ||
+         !/^\/tile\/?$/.test(win.location.pathname))return;
+      inputs=doc.querySelectorAll('input[type="password"]');
+      if(inputs.length!==1 || inputs[0].disabled || !inputs[0].isConnected)return;
+    }catch(e){return;}
+    autoLoginUsed=true; // Niemals mehrfach Passwoerter abrufen/einloggen.
+    emit('tile_autologin','ok','field_detected');
+    fetch('/hook/iah-alexa-tile-credential',{
+      method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        instanceId:instanceId,visualizationId:authVis,
+        token:token,ticket:authTicket
+      }),cache:'no-store'
+    }).then(function(response){
+      if(!response.ok)throw Error('credential_unavailable');
+      return response.json();
+    }).then(function(data){
+      if(!data || data.ok!==true || typeof data.password!=='string'
+         || data.password.length===0)throw Error('credential_unavailable');
+      var pw=data.password;
+      data.password=null;
+      try{
+        var active=doc.querySelector('input[type="password"]');
+        if(active!==inputs[0] || !active.isConnected)throw Error('dom_changed');
+        // React/Vue-kontrollierte Eingabefelder moeglichst kompatibel setzen.
+        var descriptor=Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype,'value');
+        if(descriptor && typeof descriptor.set==='function')
+          descriptor.set.call(active,pw);
+        else active.value=pw;
+        active.dispatchEvent(new win.Event('input',{bubbles:true}));
+        active.dispatchEvent(new win.Event('change',{bubbles:true}));
+        pw=''; // Kein dauerhafter Klartext im umgebenden Script halten.
+        emit('tile_autologin','ok','filled');
+        var form=active.form;
+        if(form){
+          var submit=form.querySelector('button[type="submit"],input[type="submit"]');
+          if(submit && !submit.disabled){
+            submit.click();emit('tile_autologin','ok','submitted');return;
+          }
+          if(typeof form.requestSubmit==='function'){
+            form.requestSubmit();emit('tile_autologin','ok','submitted');return;
+          }
+        }
+        // Formlose Dialoge: Nur dann klicken, wenn genau ein aktiver
+        // Button innerhalb des Passwort-Containers existiert.
+        var parent=active.closest('[role="dialog"]') || active.parentElement;
+        var buttons=parent?parent.querySelectorAll('button:not([disabled])'):[];
+        if(buttons.length===1){
+          buttons[0].click();emit('tile_autologin','ok','submitted');return;
+        }
+        emit('tile_autologin','ok','filled_only');
+      }catch(e){emit('tile_autologin','error','dom_changed');}
+    }).catch(function(){
+      emit('tile_autologin','error','credential_unavailable');
+    });
+  }
+
   function tileReport(){
     if(route!=='kacheltest')return;
     try{
@@ -482,6 +557,13 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
     return;
   }
   emit('iframe_start','ok');
+  if(autoLoginAllowed){
+    // DOM-Anmeldung erscheint teils erst NACH iframe.onload.
+    var authPoll=setInterval(function(){
+      tileTryAutoLogin();
+      if(autoLoginUsed || autoLoginTicks>75)clearInterval(authPoll);
+    },400);
+  }
   frame.addEventListener('load',function(){
     loaded=true;
     emit('iframe_load','ok');
