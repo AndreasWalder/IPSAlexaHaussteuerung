@@ -119,4 +119,32 @@ function run(candidate,formTag='form'){
   assert.equal(result.element,null);
   assert.equal(result.kind,'button_not_found');
 }
+// Verify the Enter sequence used by the new Alexa fallback. We test the
+// ACTUAL embedded function rather than only checking text in the source.
+const keyStart=html.indexOf('  function tileSendEnter(win,input){');
+const keyEnd=html.indexOf('\n\n  // Nach einem erfolglosen Versuch',keyStart);
+assert(keyStart>=0 && keyEnd>keyStart,'Enter helper must be present');
+const sendEnter=vm.runInNewContext('('+html.slice(keyStart,keyEnd).trim()+')');
+{
+  const events=[],focus=[];
+  const keyboard={
+    KeyboardEvent:class {
+      constructor(type,init){this.type=type;this.key=init.key;this.code=init.code;this.bubbles=init.bubbles;}
+    }
+  };
+  const input={
+    focus(opts){focus.push(opts);},
+    dispatchEvent(e){events.push(e);}
+  };
+  assert.equal(sendEnter(keyboard,input),true);
+  assert.deepEqual(events.map(e=>e.type),['keydown','keypress','keyup']);
+  assert(events.every(e=>e.key==='Enter' && e.code==='Enter' && e.bubbles));
+  assert.equal(focus.length,1);
+}
+{
+  const input={focus(){},dispatchEvent(){throw Error('should not dispatch');}};
+  assert.equal(sendEnter({KeyboardEvent:null},input),false);
+}
+console.log('PASS: Tile Enter key sequence dispatched to password field');
+
 console.log('PASS: Tile OK button matcher handles native/custom/hidden/ambiguous controls');
