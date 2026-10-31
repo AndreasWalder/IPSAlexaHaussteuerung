@@ -61,6 +61,37 @@ durch das tatsächliche Erscheinen von Passwortfeld/Kacheln bestätigt.
 Kamera, Energie, WebFront und die originale /tile/-Seite werden
 nicht verändert.
 
+## Diagnose 31.10.2026, 23:31:41 – genaue Ursache Content-Type
+
+**Beobachtung am Echo:** Nach dem letzten Modulupdate wird der
+Passwortdialog erkannt (`tile_autologin=field_detected`), doch die
+Serverantwort meldet unmittelbar `tile_autologin=content_type_invalid`.
+Das ist der genaue Ablehnungsgrund dieses Tests, nicht der zuvor
+vermutete Host-/Origin-Vergleich.
+
+**Ursache im WebHook:** Der PHP-Helfer verlangte
+`$_SERVER['CONTENT_TYPE'] = application/json`. Dieses PHP-Metadatenfeld
+ist bei der eingesetzten IP-Symcon-WebHook-/Proxy-Kombination
+offenbar nicht zuverlässig verfügbar. Der Browser selbst sendet
+bereits JSON per `fetch` mit `Content-Type: application/json`.
+
+**Korrektur:** Der Endpoint ignoriert die optionale PHP-Content-Type-
+Metadatenangabe und validiert stattdessen den tatsächlichen
+POST-Body streng als JSON (maximal 2.048 Bytes) mit allen bisherigen
+Pflichtdaten. Unverändert Pflicht bleiben ein gültiges Modul-Token,
+konkrete Visualisierungs-ID, aktivierter Opt-in-Modus, gleicher
+HTTPS-Ursprung und ein zeitlich begrenztes signiertes HMAC-Ticket.
+Ungültige, zu große oder nicht parsebare POST-Bodies werden weiterhin
+mit `payload_invalid` abgewiesen. **Das Passwort steht weiterhin nie
+in URLs oder Logs.**
+
+Nach Modulupdate und **Übernehmen** erneut **„Test“** auf Alexa
+sprechen. Der ideale Verlauf ist jetzt
+`field_detected → filled → submitted` (bzw. `enter_sent` für
+die alternativ unterstützte Eingabe). Bei erneuter Fehlermeldung
+nur `tile_autologin`-Einträge aus **Letzte 100 Browser-Ereignisse**
+kopieren; eine manuelle Anmeldung bleibt möglich.
+
 ## Automatisches Passwort: „field_detected“ und danach „credential_unavailable“ (31.10.2026)
 
 Bei dem Test auf dem Echo wurde das Passwortfeld korrekt erkannt; der

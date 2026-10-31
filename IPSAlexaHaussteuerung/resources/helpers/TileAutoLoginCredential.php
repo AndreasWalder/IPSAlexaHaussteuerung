@@ -44,9 +44,12 @@ if ($site !== '' && $site !== 'same-origin' && $site !== 'none') {
     $deny('fetch_cross_site');
 }
 $origin = trim((string)($_SERVER['HTTP_ORIGIN'] ?? ''));
-if (stripos((string)($_SERVER['CONTENT_TYPE'] ?? ''), 'application/json') !== 0) {
-    $deny('content_type_invalid');
-}
+// IP-Symcon-WebHooks bzw. Reverse-Proxys stellen den Request-Header
+// Content-Type nicht immer in $_SERVER['CONTENT_TYPE'] bereit.
+// Deshalb NICHT allein aufgrund dieses optionalen PHP-Metadatenfelds
+// ablehnen: der POST-Body muss darunter weiterhin gueltiges JSON mit
+// korrekter Instanz-ID, Token und zeitlich begrenztem HMAC-Ticket sein.
+// Ein fremder Origin/Sec-Fetch-Site wird weiterhin explizit verworfen.
 $raw = file_get_contents('php://input', false, null, 0, 2049);
 if (!is_string($raw) || $raw === '' || strlen($raw) > 2048) {
     $deny('payload_invalid');

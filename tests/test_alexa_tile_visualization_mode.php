@@ -377,4 +377,23 @@ tileTestCheck(!str_contains($credential, 'IPS_LogMessage(')
     && !str_contains($shell, "emit('tile_autologin','error',data.password"),
     'Never send user credentials, request URL or raw response text into logs');
 
+// Echo-WebHook regression (31.10.2026, 23:31:41):
+// Browser sends JSON, but $_SERVER['CONTENT_TYPE'] is absent in the
+// IP-Symcon webhook/proxy environment and used to cause immediate 403.
+tileTestCheck(!str_contains($credential, "if (stripos((string)(\$_SERVER['CONTENT_TYPE']")
+    && !str_contains($credential, "\$deny('content_type_invalid')"),
+    'Credential webhook must not require PHP CONTENT_TYPE metadata');
+tileTestCheck(str_contains($credential, "file_get_contents('php://input'")
+    && str_contains($credential, "json_decode(\$raw, true)")
+    && str_contains($credential, "strlen(\$raw) > 2048")
+    && str_contains($credential, "'payload_invalid'"),
+    'Credential POST still must contain bounded valid JSON');
+tileTestCheck(str_contains($credential, "(\$_SERVER['REQUEST_METHOD'] ?? '') !== 'POST'")
+    && str_contains($credential, "HTTP_ORIGIN")
+    && str_contains($credential, "HTTP_SEC_FETCH_SITE")
+    && str_contains($credential, "hash_equals(\$expectedToken, \$token)")
+    && str_contains($credential, "hash_equals(\$correct, \$signature)")
+    && str_contains($credential, "\$expiry < \$now"),
+    'Removing Content-Type gate does not weaken method, origin, token or short-lived HMAC validation');
+
 echo "PASS: Kacheltest voice recognition, separate /tile/ rendering, no WFC switch, setup and diagnostics\n";
