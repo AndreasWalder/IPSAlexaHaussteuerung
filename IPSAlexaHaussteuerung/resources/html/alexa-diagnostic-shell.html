@@ -110,6 +110,9 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
         return;
       }
       var body=doc.body;
+      var ready=doc.readyState;
+      emit('tile_document',ready==='complete'?'complete':
+        (ready==='interactive'?'interactive':'loading'),'ready_state');
       var nodeCount=body?Math.min(9999,body.querySelectorAll('*').length):0;
       var pwCount=countItems('input[type="password"]',doc);
       var root=doc.querySelector('#root, #app, #app-root, [data-reactroot]');
