@@ -8,7 +8,7 @@ function tileTestCheck(bool $ok, string $message): void
 }
 
 $alias = iah_vir_aliases();
-foreach (['Kacheltest', 'Kachelvisualisierung', 'Kachel Visualisierung', 'Kacheln testen'] as $phrase) {
+foreach (['Visu', 'Visualisierung', 'Kacheltest', 'Kachelvisualisierung', 'Kachel Visualisierung', 'Kacheln testen'] as $phrase) {
     $name = iah_vir_norm($phrase);
     tileTestCheck(($alias[$name] ?? '') === 'kacheltest', 'Missing voice alias: ' . $phrase);
     $decision = iah_vir_classify([
@@ -52,12 +52,12 @@ $receiver = file_get_contents($base . 'resources/helpers/ExternalHtmlBrowserRece
 $form = json_decode(file_get_contents($base . 'form.json'), true, 512, JSON_THROW_ON_ERROR);
 $panel = null;
 foreach ($form['elements'] ?? [] as $element) {
-    if (str_contains((string)($element['caption'] ?? ''), 'Kachelvisualisierung testen')) {
+    if (str_contains((string)($element['caption'] ?? ''), 'Visu (produktive IP-Symcon-Kachelvisualisierung)')) {
         $panel = $element;
         break;
     }
 }
-tileTestCheck(is_array($panel), 'Test setting must be visible in module form');
+tileTestCheck(is_array($panel), 'Productive Visu panel must be visible in module form');
 tileTestCheck(str_contains($module, "RegisterPropertyBoolean('TileTestEnabled', true)"), 'Enable test by default');
 tileTestCheck(str_contains($module, "RegisterPropertyInteger('TileTestVisualizationId', 0)"), 'Visualization selector supported');
 tileTestCheck(str_contains($module, 'patchActionScriptTileTestNavigation((int) $id)'), 'Existing Action scripts migrated');
@@ -69,9 +69,14 @@ tileTestCheck(str_contains($module, 'patchActionScriptTileTestNavigation((int) $
 tileTestCheck(str_contains($module, 'str_contains($current, "\'test\'=>\'test\'")'),
     'Action script migration checks the new Test alias, not the old Kacheltest alias');
 tileTestCheck(str_contains($action, "'test'=>'test'"), 'Direct Test alias in Action template');
+tileTestCheck(str_contains($action, "'visu'=>'kacheltest'"), 'Action Visu command must map to internal Tile HTML route');
+tileTestCheck(str_contains($module, 'patchActionScriptVisuVoice((int) $id)'), 'Existing Action script Visu migration needed');
+tileTestCheck(str_contains($renderer, "'route' => 'test'") && str_contains($renderer, "'hv-test'"),
+    'Test is independent from the production Visu');
+
 tileTestCheck(str_contains($renderer, "if (\$route === 'test')"),
     'Renderer dispatches generic Test route first');
-tileTestCheck(str_contains($renderer, "'Test.route '"),
+tileTestCheck(str_contains($renderer, "'Test.route reserved'"),
     'Generic test destination observable in Alexa log');
 
 tileTestCheck(str_contains($renderer, "if (\$route === 'kacheltest')"), 'Dedicated tiletest route present');
@@ -313,7 +318,7 @@ tileTestCheck(str_contains($credential, "HTTP_ORIGIN") &&
     'Endpoint enforces same-origin browser security and never logs secrets');
 $tileAutologinPanel = null;
 foreach (($form['elements'] ?? []) as $element) {
-    if (str_contains((string)($element['caption'] ?? ''), 'Kachelvisualisierung testen')) {
+    if (str_contains((string)($element['caption'] ?? ''), 'Visu (produktive IP-Symcon-Kachelvisualisierung)')) {
         $tileAutologinPanel = $element;
         break;
     }
