@@ -78,7 +78,11 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
   }
   var loaded = false;
   var sent = 0;
+  var visuDebug=route==='kacheltest' && params.get('debug')==='1';
   function emit(stage,state,code,metrics){
+    // Productive Visu remains quiet unless explicit debug is enabled.
+    // Heartbeats are independent (presence()) and continue normally.
+    if(route==='kacheltest' && !visuDebug)return;
     // Limit browser diagnostics even when a page is misbehaving.
     if (!instanceId || !token || sent++ > (route==='kacheltest' ? 65 : 30)) return;
     var event={
