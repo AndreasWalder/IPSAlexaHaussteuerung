@@ -41,6 +41,9 @@ function iah_vir_aliases(array $dynamic=[]): array
         // Stabiler Sprachbefehl fuer aktuelle und zukuenftige Experimente.
         // Der Renderer leitet 'test' auf das konfigurierbare Testziel.
         'test'=>'test',
+        // Bedienerkommando "Visu": interne technische Route bleibt kacheltest
+        // damit Bootstrap, Autologin, Heartbeats und SDK unveraendert laufen.
+        'visu'=>'kacheltest','visualisierung'=>'kacheltest',
         'kacheltest'=>'kacheltest','kachelvisualisierung'=>'kacheltest',
         'kachel visualisierung'=>'kacheltest','kacheln testen'=>'kacheltest',
         'info'=>'info',
