@@ -168,8 +168,8 @@ tileTestCheck(!str_contains($receiver, "\$input['metrics']['url']")
 
 // Opt-in localStorage compatibility experiment: default-off and strictly
 // limited to the Kacheltest HTML route; all other routes stay unchanged.
-tileTestCheck(str_contains($module,"RegisterPropertyBoolean('TileTestStorageCompat', false)"),
-    'Compatibility experiment must default to OFF');
+tileTestCheck(str_contains($module,"RegisterPropertyBoolean('TileTestStorageCompat', true)"),
+    'Proven storage compatibility must default to ON in production');
 tileTestCheck(str_contains($renderer,"IPS_GetProperty(\$tileTestInstanceId, 'TileTestStorageCompat')"),
     'Compatibility setting read live from module instance');
 tileTestCheck(str_contains($renderer,"\$externalKey === 'kacheltest' && !empty(\$payload['tileStorageCompat'])"),
@@ -276,9 +276,9 @@ tileTestCheck(!str_contains($realUrlBootstrap, 'password=') &&
 // Password convenience must be explicit opt-in, short-lived, and NEVER
 // embed the password in Alexa HTML.Start URL, logs, or GitHub contents.
 $credential = file_get_contents($base.'resources/helpers/TileAutoLoginCredential.php');
-tileTestCheck(str_contains($module, "RegisterPropertyBoolean('TileAutoLoginEnabled', false)")
+tileTestCheck(str_contains($module, "RegisterPropertyBoolean('TileAutoLoginEnabled', true)")
     && str_contains($module, "RegisterPropertyString('TileAutoLoginPassword', '')"),
-    'Tile autologin must default to disabled with no stored password');
+    'Productive Visu enables opt-in credential transfer only when non-empty password and signed ticket are present');
 tileTestCheck(str_contains($module, "'/hook/iah-alexa-tile-credential' => \$tileCredential")
     && str_contains($module, "'iahTileAutoLoginCredential'"),
     'Secure POST credential hook must be installed by the module');
@@ -328,8 +328,9 @@ foreach (($tileAutologinPanel['items'] ?? []) as $item) {
     if (isset($item['name'])) $fields[$item['name']] = $item;
 }
 tileTestCheck(($fields['TileAutoLoginPassword']['type'] ?? '') === 'PasswordTextBox'
-    && ($fields['TileAutoLoginEnabled']['type'] ?? '') === 'CheckBox',
-    'Password must be masked and autofill must be opt-in in Symcon form');
+    && ($fields['VisuDebugEnabled']['type'] ?? '') === 'CheckBox'
+    && !isset($fields['TileAutoLoginEnabled']),
+    'Production Visu shows masked password and only the runtime Debug switch');
 
 // Signing contract: generated ticket and provider must use identical HMAC
 // messages. A tampered ID/password changes signature and cannot authenticate.
