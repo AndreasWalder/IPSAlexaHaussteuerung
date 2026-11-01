@@ -2104,7 +2104,7 @@ function Execute($request = null)
                     'einstellungen'=>'einstellungen','sicherheit'=>'sicherheit',
                     'listen'=>'listen','energie'=>'energie','kamera'=>'kamera',
                      'test'=>'test',
-                     'visu'=>'kacheltest','visualisierung'=>'kacheltest',
+                     'visu'=>'kacheltest','wizo'=>'kacheltest','visualisierung'=>'kacheltest',
                      'kacheltest'=>'kacheltest','kachelvisualisierung'=>'kacheltest',
                     'info'=>'info','szene'=>'szene',
                 ];
@@ -2194,7 +2194,7 @@ function Execute($request = null)
                 'geraete'=>'geraete','bewaesserung'=>'bewaesserung',
                 'einstellungen'=>'einstellungen','sicherheit'=>'sicherheit',
                 'energie'=>'energie','kamera'=>'kamera','test'=>'test',
-                'visu'=>'kacheltest','visualisierung'=>'kacheltest','info'=>'info',
+                'visu'=>'kacheltest','wizo'=>'kacheltest','visualisierung'=>'kacheltest','info'=>'info',
                 'szene'=>'szene','listen'=>'listen',
                 'zurueck'=>'main_launch','home'=>'main_launch',
                 'hauptmenue'=>'main_launch'
