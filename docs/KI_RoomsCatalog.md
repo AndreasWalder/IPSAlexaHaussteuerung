@@ -80,6 +80,13 @@ Beim Klonen werden alte Aktions-/Status-IDs zurückgesetzt; neue Klone sind für
 
 ## Diagnose
 
+### Alexa-Fragen und Routerdiagnose
+
+Der VoiceRouter liest seine Zustandsvariablen jetzt aus dem tatsaechlichen Pfad Diagnose/iahVoiceDiag, nicht mehr direkt unter der Modulinstanz. Die falsche Suche verursachte bisher helper_unavailable. Die KI selbst konnte trotzdem funktionieren.
+
+Testfrage im Alexa-Skill: **Frage, welche Lampen sind eingeschaltet?** Der bereits vorhandene HomeAgentFrageIntent verwendet den Slot Frage. Wenn der Aufruf IP-Symcon erreicht, sieht man HomeAgentVoice.received und KIRoomsCatalog.tool mit get_states. Ein blosses GetHaus/Device=licht ist dagegen eine Navigationsanfrage und enthaelt keinen Fragetext.
+
+
 Die Protokolle erscheinen in den IP-Symcon-Meldungen unter **Alexa** mit Präfix `KIRoomsCatalog.`. Der `HomeAgentFrageIntent` bleibt der sprachliche Eingang. Der Backendwechsel wird durch `KIVoice.backend.selected` protokolliert.
 
 ## Prüfstatus
