@@ -57,11 +57,15 @@ Der optionale Alexa-Sprachkanal nutzt die bestehende Custom-Skill-Instanz und le
 
 **Grenzen:** Aktuell experimentell; Home Agent und die Alexa-Intent-Übergabe des vollständigen gesprochenen Texts müssen vor Ort getestet werden. Der `RoomsCatalog` wird nicht automatisch mit Home Agent synchronisiert. Alexa-Zeitlimits können auch mit kurzer Ausgabe überschritten werden; dann greift der bisherige Weg. Schreibrechte für den Home-Agent-Zugang bleiben standardmäßig ausgeschaltet.
 
-## Alexa: Neue Kachelvisualisierung testen (ohne alte WebFront-Routen zu ändern)
+## Alexa: Produktive Kachelvisualisierung „Visu“
 
-Dauerhafter, einfacher Sprachbefehl **„Test“**: „Alexa, öffne Haussteuerung“ → „Test“. Die neue Konfiguration „Ziel für Alexa-Sprachbefehl Test“ ist für spätere Testfunktionen erweiterbar. „Kacheltest“ bleibt als Alias bestehen. Öffnet die Symcon-Kachelvisualisierung auf `/tile/` in der bereits funktionierenden Alexa-HTML-Diagnose-Shell. Optional die konkrete Visualisierungs-Instanz-ID im Modul angeben (Standard `0`: Visualisierungsauswahl). Die bestehenden Kamera-/Energie-Kacheln verwenden weiterhin das alte WebFront. Browser-Fähigkeiten und iframe-Ladeprobleme werden automatisch in der vorhandenen Diagnose protokolliert.
+Sprachbefehl **„Visu“**: „Alexa, öffne Haussteuerung“ → „Visu“. Die erfolgreiche IP-Symcon-Kachelvisualisierung unter `/tile/` verwendet weiterhin den erprobten HTTPS-URL-Bootstrap, AutoLogin mit Passwort und Enter, die leise Alexa-HTML-Sitzung sowie die gerätebezogene Sprachsteuerung ohne neuen Bildschirm. Ihre interne technische Route bleibt für bestehende WebHooks `kacheltest` – nur der Sprachbefehl heißt jetzt „Visu“.
 
-**[Einrichtung, Sprache und Diagnose](docs/Alexa_Kachelvisualisierung_Testmodus.md)**
+**Im Modul werden nur drei produktive Einstellungen angezeigt:** Visualisierungs-Instanz-ID, Passwort und Debug ein/aus. Debug ist standardmäßig ausgeschaltet, damit Browserereignisse und zusätzliche DOM-Snapshots den normalen Betrieb nicht belasten. Bei Problemen kann man es einschalten und die Diagnosevariable kopieren. Die bestehenden Kamera-/Energie-Routen und das alte WebFront bleiben unverändert.
+
+**„Test“ öffnet keine Visualisierung mehr**, sondern bleibt als eigenständiger Kanal für spätere Tests und Erweiterungen frei.
+
+**[Details zu Einrichtung, Sprachsteuerung und Diagnose](docs/Alexa_Kachelvisualisierung_Testmodus.md)**
 
 ## 🛠️ Installation
 
