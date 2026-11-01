@@ -17,6 +17,37 @@ Bei `Klassisch` wird der neue KI-Sprachkanal deaktiviert; vorhandene normale Ale
 
 Der vorhandene Konfigurator zeigt primär den **EDIT-Katalog**. Dort stehen eine kompakte Gerätetabelle und ein Bearbeitungsdialog zur Verfügung.
 
+### IP-Symcon-IDs direkt in beiden Tabellen suchen
+
+In **„Geräte und KI-Freigaben“** und **„Vorschau: Unterschiede EDIT zu PROD“**
+gibt es jetzt zwei zusätzliche, **schreibgeschützte** und per
+**Schnellfilter durchsuchbare** Spalten:
+
+- **IPS-Objekt-IDs**: Alle konfigurierten Referenzen einer Zeile
+  (beispielsweise `state=91001` und `toggle=91002` als
+  `91001, 91002`). Die Schnellfilter-Suche nach `91002` zeigt
+  damit direkt den passenden Raum, das Gerät und die Zeile.
+- **IPS-Instanz-IDs**: Wenn die referenzierten Objekte unterhalb
+  einer existierenden IP-Symcon-Instanz liegen, wird deren
+  **tatsächliche Instanz-ID** angezeigt; mehrere Instanzen werden
+  mit Komma getrennt. Eine Suche nach dieser Instanz-ID findet
+  ebenfalls die betreffenden Einträge.
+
+**Hinweis:** IP-Symcon-Variablen-IDs sind nicht dasselbe wie
+Instanz-IDs. Ein Gerät kann mehrere Variablen und mehrere Instanzen
+referenzieren. Existiert keine zuordenbare Instanz oder ist ein Objekt
+gelöscht, bleibt die Instanz-Spalte leer; eine konfigurierte Objekt-ID
+kann trotzdem gesucht werden. Beide Spalten werden nur beim Anzeigen
+aus bestehenden Daten und dem IP-Symcon-Objektbaum berechnet.
+Sie werden **nicht** in RoomsCatalogEdit/PROD gespeichert und verändern
+die Mehrfachauswahl, die KI-Freigaben oder die DIFF-Berechnung nicht.
+
+Die Schnellfilter sind **Spalten-Suchfelder** von IP-Symcon: Sie
+filtern die angezeigten Tabellenzeilen nach dem eingegebenen Wert.
+Die gewohnten Raum-, Domain-, Gruppen- und KI-Filter funktionieren
+weiterhin und die Listen werden aktualisiert, ohne das Formular
+vollständig zu schließen.
+
 **Pro unterstütztem Gerät**:
 - `Mit KI` (`kiEnabled`): für Statusabfragen und mögliche Schaltbefehle sichtbar.
 - `Nur abfragen` (`kiReadOnly`): alle Schreibaktionen ausdrücklich sperren.
