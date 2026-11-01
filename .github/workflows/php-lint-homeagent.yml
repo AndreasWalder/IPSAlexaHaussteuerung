@@ -78,6 +78,8 @@ jobs:
         run: php tests/test_rooms_catalog_editor_ui.php
       - name: Test Symcon IPSList checkbox callbacks and filtered multi-selection
         run: php tests/test_rooms_catalog_ipslist_multiselect.php
+      - name: Test RoomsCatalog quick search for IPS object IDs and parent instance IDs
+        run: php tests/test_rooms_catalog_ips_id_search.php
       - name: Test OpenAI token and cost accounting
         run: php tests/test_ki_cost_accounting.php
       - name: Test GPT-6 Luna and GPT-4.1 mini model selection
