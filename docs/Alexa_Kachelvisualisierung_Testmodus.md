@@ -1,3 +1,9 @@
+> **Sprachbefehl „Visu“ wird als „wieso“ erkannt?** Die Echo-Logs vom
+> 01.11.2026 zeigen einen Fehler **vor** dem IP-Symcon-Router.
+> Anleitung für den GetHaus-Action-Slot in der Alexa Developer Console:
+> [Alexa Visu – Spracherkennung](Alexa_Visu_Spracherkennung.md).
+> Nicht das normale Fragewort „wieso“ als Alias für die Visu verwenden.
+
 # Produktiver Alexa-Sprachbefehl „Visu“ (Stand 01.11.2026)
 
 **Aktueller Stand (ersetzt ältere „Test“-Anleitungen weiter unten):**
