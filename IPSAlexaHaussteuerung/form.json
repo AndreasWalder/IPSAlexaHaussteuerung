@@ -210,115 +210,35 @@
     },
     {
       "type": "ExpansionPanel",
-      "caption": "Alexa – neue Kachelvisualisierung testen (separater Testmodus)",
+      "caption": "Alexa – Visu (produktive IP-Symcon-Kachelvisualisierung)",
       "expanded": false,
       "items": [
         {
           "type": "Label",
-          "caption": "Sprachbefehl „Test“ (ersetzt den schlecht verstandenen „Kacheltest“). Dauerhafter Test-Einstieg: aktuell neue Kachelvisualisierung, später andere Diagnoseziele. Bestehende Kamera-/Energie-Routen unverändert."
+          "caption": "Sprachbefehl: „Visu“. Die interne, bereits erprobte HTTPS-/AutoLogin-/Enter-Anmeldung, die leise Alexa-HTML-Sitzung und der Schnellstart bleiben automatisch aktiv. „Test“ bleibt für künftige Testfunktionen frei."
         },
         {
-          "type": "Select",
-          "name": "AlexaTestTarget",
-          "caption": "Ziel für Alexa-Sprachbefehl „Test“",
-          "value": "kacheltest",
-          "options": [
-            {
-              "caption": "Neue IP-Symcon-Kachelvisualisierung",
-              "value": "kacheltest"
-            }
-          ]
-        },
-        {
-          "name": "TileTestEnabled",
-          "type": "CheckBox",
-          "caption": "Alexa Kacheltest erlauben",
-          "value": true
-        },
-        {
-          "name": "TileTestVisualizationId",
           "type": "NumberSpinner",
-          "caption": "Kachelvisualisierungs-Instanz-ID (0 = Auswahlseite)",
+          "name": "TileTestVisualizationId",
+          "caption": "Visualisierungs-Instanz-ID",
           "minimum": 0,
           "value": 0
         },
         {
-          "type": "CheckBox",
-          "name": "TileTestStorageCompat",
-          "caption": "Experiment: localStorage in Alexa-Kacheltest durch sessionStorage ersetzen (nur Test)",
-          "value": false
-        },
-        {
-          "type": "Select",
-          "name": "TileTestBootstrapMode",
-          "caption": "Kompatibilitätsverfahren (nur bei aktivierter Checkbox)",
-          "value": "url",
-          "options": [
-            {
-              "value": "url",
-              "caption": "Neue Methode: echte HTTPS-Dokumentadresse /tile/ (empfohlen zum Test)"
-            },
-            {
-              "value": "srcdoc",
-              "caption": "Vorherige Methode: iframe.srcdoc (Vergleich)"
-            }
-          ]
-        },
-        {
-          "type": "CheckBox",
-          "name": "TileAutoLoginEnabled",
-          "caption": "Automatische Passwort-Anmeldung auf Alexa (optional, standardmäßig AUS)",
-          "value": false
-        },
-        {
-          "type": "CheckBox",
-          "name": "TilePreserveHtmlOnVoice",
-          "caption": "HTML-Anzeige bei Sprachbefehlen behalten",
-          "value": true
-        },
-        {
-          "type": "CheckBox",
-          "name": "TileQuietNoFollowup",
-          "caption": "Test: automatische Alexa-Folgeaufnahme beim HTML-Start vermeiden (Mikrofon geschlossen)",
-          "value": false
-        },
-        {
-          "type": "Label",
-          "caption": "Experiment, standardmäßig AUS: Bei der HTML-Kachelvisualisierung 'Test' das Antwortfeld shouldEndSession weglassen statt false senden. Amazon lässt damit die laufende HTML-Sitzung ohne automatisches Folge-Zuhören geöffnet. Das normale Alexa-Aktivierungswort funktioniert weiter. Nur wenn die installierte PHP-Alexa-Bibliothek die Änderung nachweislich unterstützt, wird sie angewendet; andernfalls bleibt die bisherige, funktionierende Antwort bestehen. Im IP-Symcon-Log erscheint TileQuiet.ready oder TileQuiet.unsupported. Kamera/Energie, APL und normale KI-Dialoge unverändert."
-        },
-        {
-          "type": "CheckBox",
-          "name": "TileFastBootstrapEnabled",
-          "caption": "Schnellstart ohne zusätzliche Diagnoseprobe",
-          "value": true
-        },
-        {
-          "type": "CheckBox",
-          "name": "TilePerformanceDiagnostics",
-          "caption": "Anmeldezeiten anonymisiert messen",
-          "value": true
-        },
-        {
           "type": "PasswordTextBox",
           "name": "TileAutoLoginPassword",
-          "caption": "Passwort der ausgewählten Kachelvisualisierung (nicht das alte WebFront-Passwort)",
+          "caption": "Passwort der Kachelvisualisierung",
           "value": ""
         },
         {
-          "type": "Label",
-          "caption": "Nur für Alexa „Test“ mit aktivierter localStorage-Kompatibilität und URL-Verfahren sowie gewählter Kachelvisualisierungs-ID. Das Passwort wird in den IP-Symcon-Modul-Eigenschaften gespeichert (nicht verschlüsselt, trotz maskiertem Eingabefeld). Verwende am besten eine eigene, eingeschränkte Testvisualisierung. Der Browser erhält es nur bei eingeblendeter Anmeldung über einen zeitlich begrenzten, HTTPS-geschützten POST. Kein Passwort in URLs, Logs oder GitHub. Bei ungeeigneten Login-Formularen bleibt die manuelle Anmeldung möglich."
+          "type": "CheckBox",
+          "name": "VisuDebugEnabled",
+          "caption": "Debug-Protokollierung der Visu aktivieren",
+          "value": false
         },
         {
           "type": "Label",
-          "caption": "Standard AUS. Nur beim Sprachbefehl „Test“: Bei aktivierter Kompatibilität versucht die neue Methode, die Tile-App als echtes Same-Origin-Dokument statt als about:srcdoc zu laden. Im Fehlerfall Rückfall zur bisherigen srcdoc-Methode. Die Kachelvisualisierung selbst wird nicht geändert. AutoLogin nur bei eigener optionaler Checkbox, sonst keine Passwortübergabe. Kamera/Energie und altes WebFront bleiben unverändert."
-        },
-        {
-          "type": "Label",
-          "caption": "Alexa sagen: „Öffne Haussteuerung“, danach einfach „Test“. Die alten Begriffe „Kacheltest“ und „Kachelvisualisierung“ bleiben als Aliase erhalten. Künftige Testziele lassen sich über die Auswahl erweitern."
-        },
-        {
-          "type": "Label",
-          "caption": "Diagnose: Objektbaum → Diagnose → Web API for Games – Kamera/Energie → Letzte 100 Browser-Ereignisse. Der Sprachbefehl „Test“ wird im Alexa-Protokoll als „Test.route“ dokumentiert, der aktuelle Test schreibt weiterhin route=kacheltest."
+          "caption": "Debug normalerweise AUS: unter Diagnose → Web API for Games → Letzte 100 Browser-Ereignisse bei Problemen aktivieren. Die Geräteerkennung für Sprachsteuerung bleibt auch ohne Debug aktiv. Die interne Kachelroute heißt zur Kompatibilität weiterhin kacheltest; Kamera, Energie und das klassische WebFront sind unverändert. Das Passwort wird nicht in URLs oder Logs geschrieben."
         }
       ]
     },
