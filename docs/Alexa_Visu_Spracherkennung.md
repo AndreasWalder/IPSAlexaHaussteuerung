@@ -1,5 +1,58 @@
 # Alexa versteht „Visu“ als „Wieso“ oder „Wizo“
 
+## Jetzt empfohlen: eigener Alexa-Intent „VisuIntent“ (01.11.2026)
+
+Die neuen Echo-Logs bestätigen erneut: **11:05:37 und 11:05:44**
+wurde das gesprochene `Visu` als **`wieso`** an
+`GetHaus.Action` übermittelt. Um **11:05:56** lieferte Alexa
+`wizo`; dieser Wert löste bereits korrekt `kacheltest` aus
+(`VoiceRouter.navigate` und `Alexa.Presentation.HTML.Start`).
+
+Das Problem ist **die Spracherkennung im allgemeinen Action-Slot**.
+Der PHP-Fallback für `wizo` funktioniert bereits, kann aber eine
+von Alexa als `wieso` erkannte Äußerung nicht zuverlässig korrigieren,
+ohne echte Fragen zu verwechseln.
+
+**Für die zuverlässigste Trennung jetzt einen eigenständigen,
+slotlosen Alexa-Intent anlegen:**
+
+1. Alexa Developer Console → Skill **Haussteuerung** →
+   **Build → Interaction Model → Intents → Add Intent → Create custom intent**.
+2. Name: **`VisuIntent`** (Groß-/Kleinschreibung genau so).
+3. **Keine Slots anlegen.** Als Sample Utterances beispielsweise
+   `visu`, `visualisierung`, `öffne die visu`,
+   `zeige die visu`, `starte die visu`,
+   `öffne die visualisierung`, `zeige meine haussteuerung`.
+   Alle Sample Utterances stehen auch im Dateibeispiel
+   [AlexaVisuIntent.json](AlexaVisuIntent.json). Diese JSON-Datei
+   ist **nur der neue Intent**, niemals das komplette
+   bestehende Interaction Model.
+4. **Save Model → Build Model**. Im **Test-Tab** den tatsächlichen
+   Intent prüfen. Bei der gesprochenen `Visu`-Anfrage soll
+   **`VisuIntent`** erscheinen, **ohne** `Action`-Slot.
+   Noch besser für die Aussprache: **„Öffne die Visualisierung“**
+   statt des sehr kurzen, mehrdeutigen „Visu“.
+5. GitHub-Modul aktualisieren und Modulinstanz **Übernehmen**.
+   Der vorhandene benutzerdefinierte Action-Code bekommt nur eine
+   kleine `VisuIntent`-Abzweigung. Sie öffnet die **bisherige
+   technische Route `kacheltest`**, inklusive AutoLogin,
+   Enter-Bestätigung und stiller HTML-Sitzung.
+
+**Wichtig:** Das IP-Symcon-Modul kann den Skill im Alexa Developer
+Portal **nicht selbst neu trainieren oder deployen**. Der neue
+`VisuIntent` funktioniert erst, wenn dort das Modell gebaut
+und die auf deinem Echo verwendete Skill-Version aktiv ist.
+Zudem kann die Alexa-Spracherkennung bei extrem kurzen und ähnlich
+klingenden Wörtern wie `Visu`/„wieso“ selbst mit einem eigenen
+Intent gelegentlich falsch liegen.
+
+Der bisherige **`GetHaus`-Slot**, die **`Test`-Route**
+und alle bestehenden Sprachfunktionen bleiben erhalten.
+Das normale Fragewort `wieso` bleibt weiterhin eine Frage.
+
+---
+
+
 ## Diagnose vom 1. November 2026
 
 Der Echo Show sendet an IP-Symcon beim gewünschten Befehl „Visu“

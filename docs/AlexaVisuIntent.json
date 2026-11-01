@@ -1,0 +1,16 @@
+{
+  "name": "VisuIntent",
+  "slots": [],
+  "samples": [
+    "visu",
+    "visualisierung",
+    "öffne die visu",
+    "zeige die visu",
+    "starte die visu",
+    "zeige mir die visualisierung",
+    "öffne die visualisierung",
+    "öffne meine hausvisualisierung",
+    "zeige meine haussteuerung",
+    "starte die kachelvisualisierung"
+  ]
+}

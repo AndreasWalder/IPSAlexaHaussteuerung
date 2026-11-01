@@ -36,6 +36,29 @@ pv_assert(str_contains($module,'$oldVisu')
     && str_contains($module,'$newVisu'),
     'Existing installed Action scripts must receive the Wizo fix on ApplyChanges');
 
+// No Slot, no GetHaus.Action transcription: the Alexa model itself
+// recognizes a dedicated intent. This works independently of helper state.
+$dedicated=iah_vir_classify([
+    'intent'=>'VisuIntent','requestType'=>'IntentRequest',
+    'legacySlots'=>[],'text'=>''
+]);
+pv_assert(($dedicated['route']??'')==='kacheltest'
+    && ($dedicated['category']??'')==='navigation'
+    && ($dedicated['reason']??'')==='dedicated_visu_intent',
+    'VisuIntent must open the HTML view without Action slot or transcript');
+pv_assert(str_contains($action, "// IAH_VISU_INTENT_BEGIN")
+    && str_contains($action, "strcasecmp((string)\$intentName, 'VisuIntent') === 0")
+    && str_contains($action, "\$iahLegacyNavKey = 'kacheltest';")
+    && str_contains($module, "\$visuStart = '// IAH_VISU_INTENT_BEGIN'"),
+    'Action script and ApplyChanges migration must support VisuIntent');
+$intentFile=dirname(__DIR__).'/docs/AlexaVisuIntent.json';
+$visuIntent=json_decode((string)file_get_contents($intentFile),true,512,JSON_THROW_ON_ERROR);
+pv_assert(($visuIntent['name']??'')==='VisuIntent'
+    && ($visuIntent['slots']??null)===[]
+    && in_array('visu',$visuIntent['samples']??[],true)
+    && in_array('öffne die visualisierung',$visuIntent['samples']??[],true),
+    'Provide a slotless German interaction model sample for Alexa Developer Console');
+
 $test=iah_vir_classify([
     'intent'=>'GetHaus','legacySlots'=>['Action'=>'Test'],'text'=>'Test'
 ]);

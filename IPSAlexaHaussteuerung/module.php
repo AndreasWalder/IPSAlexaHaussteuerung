@@ -1019,6 +1019,36 @@ PHP;
         if (str_contains($current, $old)) {
             $current = str_replace($old, $new, $current);
         }
+        // Update previously generated, individually customized Action scripts
+        // in place. Only inject the dedicated VisuIntent handler at its unique
+        // existing anchor. The working HTML/password/Enter code is untouched.
+        $visuStart = '// IAH_VISU_INTENT_BEGIN';
+        $visuEnd = '// IAH_VISU_INTENT_END';
+        $template = @file_get_contents(__DIR__ . '/resources/action_entry.php');
+        if (is_string($template) && str_contains($template, $visuStart)) {
+            $startPos = strpos($template, $visuStart);
+            $endPos = strpos($template, $visuEnd, $startPos);
+            if ($endPos !== false) {
+                $visuBlock = substr($template, $startPos,
+                    $endPos + strlen($visuEnd) - $startPos);
+                $existingStart = strpos($current, $visuStart);
+                $existingEnd = $existingStart === false ? false
+                    : strpos($current, $visuEnd, $existingStart);
+                if ($existingStart !== false && $existingEnd !== false) {
+                    $current = substr_replace($current, $visuBlock,
+                        $existingStart,
+                        $existingEnd + strlen($visuEnd) - $existingStart);
+                } else {
+                    $anchor = '        // Bereits sichtbare Visu:';
+                    if (str_contains($current, $anchor)) {
+                        $current = str_replace($anchor, $visuBlock . "\n" . $anchor, $current);
+                    } else {
+                        IPS_LogMessage('Alexa', 'Visu.migration dedicated_intent_anchor_missing');
+                    }
+                }
+            }
+        }
+
         $current = str_replace(
             '// Bereits sichtbare Kachel: "Test" ist KEIN erneuter HTML.Start.',
             '// Bereits sichtbare Visu: kein erneuter HTML.Start.',
