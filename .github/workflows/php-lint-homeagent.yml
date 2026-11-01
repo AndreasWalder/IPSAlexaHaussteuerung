@@ -102,3 +102,5 @@ jobs:
         run: php tests/test_alexa_tile_fast_voice.php
       - name: Test Alexa Tile silent HTML response and safe SDK fallback
         run: php tests/test_alexa_tile_quiet_response.php
+      - name: Test production Visu, separate Test channel and three settings
+        run: php tests/test_visu_production.php
