@@ -578,30 +578,25 @@ try {
     }
 
     // =============================
-    // GENERISCHER ALEXA-TEST (auch fuer zukuenftige Experimente)
+    // TESTKANAL – frei fuer kuenftige Funktionen, NICHT die Visu
     // =============================
     if ($route === 'test') {
-        // Das Testziel kann spaeter ohne neues Sprachmodell erweitert werden.
-        // Stand heute ist ausschliesslich der isolierte Kacheltest erlaubt.
-        $testTarget = 'kacheltest';
-        $testModuleId = (int)($V['InstanceID'] ?? 0);
-        if ($testModuleId > 0 && function_exists('IPS_GetProperty') && IPS_InstanceExists($testModuleId)) {
-            try {
-                $configured = (string)IPS_GetProperty($testModuleId, 'AlexaTestTarget');
-                if (in_array($configured, ['kacheltest'], true)) {
-                    $testTarget = $configured;
-                }
-            } catch (Throwable $e) {
-                IPS_LogMessage('Alexa', 'Test.settingsError ' . get_class($e));
-            }
-        }
-        IPS_LogMessage('Alexa', 'Test.route ' . $j([
-            'voice' => 'test',
-            'target' => $testTarget
-        ]));
-        $route = $testTarget;
+        IPS_LogMessage('Alexa', 'Test.route reserved');
+        echo json_encode([
+            'ok' => true,
+            'route' => 'test',
+            'data' => [
+                'speech' => 'Der Testkanal ist bereit. Die Visualisierung öffnest du mit Visu.',
+                'reprompt' => '',
+                'directives' => []
+            ],
+            'flags' => $flags,
+            'aplToken' => 'hv-test'
+        ], $JSON);
+        return;
     }
 
+    // =============================
     // =============================
     // KACHELTEST (getrennt von Kamera/Energie/WebFront)
     // =============================
@@ -617,7 +612,8 @@ try {
         $tileBootstrapMode = 'url';
         $tileAutoLoginEnabled = false;
         $tileFastStart = true;
-        $tileTiming = true;
+        $tileTiming = false;
+        $visuDebug = false;
         $tileAutoLoginPassword = '';
         $tileSettingsSource = 'payload';
         if ($tileTestInstanceId > 0 && function_exists('IPS_GetProperty') && IPS_InstanceExists($tileTestInstanceId)) {
@@ -630,7 +626,8 @@ try {
                     ? $configuredMode : 'url';
                 $tileAutoLoginEnabled = (bool)IPS_GetProperty($tileTestInstanceId, 'TileAutoLoginEnabled');
                 $tileFastStart = (bool)IPS_GetProperty($tileTestInstanceId, 'TileFastBootstrapEnabled');
-                $tileTiming = (bool)IPS_GetProperty($tileTestInstanceId, 'TilePerformanceDiagnostics');
+                $visuDebug = (bool)IPS_GetProperty($tileTestInstanceId, 'VisuDebugEnabled');
+                $tileTiming = $visuDebug;
                 $tileAutoLoginPassword = (string)IPS_GetProperty($tileTestInstanceId, 'TileAutoLoginPassword');
                 $tileSettingsSource = 'instance';
             } catch (Throwable $e) {
@@ -644,6 +641,7 @@ try {
             'storageCompatibilityTest' => $tileStorageCompat,
             'bootstrapMode' => $tileStorageCompat ? $tileBootstrapMode : 'off',
             'fastStart' => $tileFastStart, 'timing' => $tileTiming,
+            'visuDebug' => $visuDebug,
             'autoLoginReady' => $tileAutoLoginEnabled && $tileAutoLoginPassword !== ''
                 && $tileStorageCompat && $tileBootstrapMode === 'url' && $tileVisId > 0
         ]));
@@ -666,7 +664,7 @@ try {
         // Ausschliesslich testweise aufrufen. Keine alte WebFront-Seite
         // umschalten, keinen gespeicherten Passwort-Parameter anhaengen.
         $externalPages['kacheltest'] = [
-            'title' => 'IP-Symcon Kachelvisualisierung – Test',
+            'title' => 'IP-Symcon Visu',
             'logo' => '', 'actions' => [], 'navs' => []
         ];
         $pageMappings['kacheltest'] = [
@@ -678,6 +676,7 @@ try {
         $payload['tileBootstrapMode'] = $tileBootstrapMode;
         $payload['tileFastStart'] = $tileFastStart;
         $payload['tileTiming'] = $tileTiming;
+        $payload['visuDebug'] = $visuDebug;
         // Kurzlebiges, signiertes Startticket. Passwort niemals an URL,
         // externe Payloads oder den Alexa-Logbuffer uebergeben.
         $payload['tileAutoLoginTicket'] = '';
@@ -804,6 +803,7 @@ try {
                 && preg_match('/^[a-f0-9]{32}$/D', (string)($payload['htmlDeviceKey'] ?? '')))
                 ? (string)$payload['htmlDeviceKey'] : '',
             'perf' => ($externalKey === 'kacheltest' && !empty($payload['tileTiming'])) ? '1' : '0',
+            'debug' => ($externalKey === 'kacheltest' && !empty($payload['visuDebug'])) ? '1' : '0',
         ], '', '&', PHP_QUERY_RFC3986);
 
         // URLs enthalten ggf. WFC-Passwort oder Hook-Token als Query-Parameter.

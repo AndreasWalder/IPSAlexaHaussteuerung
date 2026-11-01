@@ -102,7 +102,7 @@ assertQuiet(!array_filter($logs,static fn(string $line):bool=>
 $mod=(string)file_get_contents(__DIR__.'/../IPSAlexaHaussteuerung/module.php');
 $action=(string)file_get_contents(__DIR__.'/../IPSAlexaHaussteuerung/resources/action_entry.php');
 $form=json_decode((string)file_get_contents(__DIR__.'/../IPSAlexaHaussteuerung/form.json'),true);
-assertQuiet(str_contains($mod,"RegisterPropertyBoolean('TileQuietNoFollowup', false)"),
+assertQuiet(str_contains($mod,"RegisterPropertyBoolean('TileQuietNoFollowup', true)"),
     'Quiet mode must default to OFF');
 assertQuiet(str_contains($mod,'patchActionScriptTileQuietFollowup((int) $id)'),
     'Action script migration must run on ApplyChanges');
@@ -117,6 +117,6 @@ foreach($form['elements']??[] as $panel)foreach($panel['items']??[] as $field){
     if(($field['name']??'')==='TileQuietNoFollowup' &&
        ($field['type']??'')==='CheckBox')$found=true;
 }
-assertQuiet($found,'Quiet opt-in must appear in module form');
+assertQuiet(!$found,'Productive Visu hides the proven quiet-microphone implementation detail');
 
 echo "PASS: Alexa Tile quiet HTML response omits shouldEndSession without changing SDK type, APL routes or credentials\n";

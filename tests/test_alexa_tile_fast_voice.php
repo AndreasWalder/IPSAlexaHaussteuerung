@@ -18,7 +18,7 @@ foreach(['TilePreserveHtmlOnVoice','TilePerformanceDiagnostics','TileFastBootstr
   foreach($form['elements'] as $item){
     foreach($item['items']??[] as $child){if(($child['name']??null)===$field)$present=true;}
   }
-  $verify($present,$field.' not configurable');
+  $verify(!$present,$field.' must remain internal in productive Visu');
 }
 $verify(str_contains($module,"'iahTileHtmlSessions'"),'Per-device status variable missing');
 $verify(str_contains($module,"IPS_SetHidden(\$tileSessions,true)"),'Device state must be hidden');

@@ -2104,6 +2104,7 @@ function Execute($request = null)
                     'einstellungen'=>'einstellungen','sicherheit'=>'sicherheit',
                     'listen'=>'listen','energie'=>'energie','kamera'=>'kamera',
                      'test'=>'test',
+                     'visu'=>'kacheltest','visualisierung'=>'kacheltest',
                      'kacheltest'=>'kacheltest','kachelvisualisierung'=>'kacheltest',
                     'info'=>'info','szene'=>'szene',
                 ];
@@ -2126,9 +2127,10 @@ function Execute($request = null)
                 }
             }
         }
-        // Bereits sichtbare Kachel: "Test" ist KEIN erneuter HTML.Start.
-        // Eine neue Start-Direktive wuerde die App samt Login neu laden.
-        if ($iahHtmlPreserve && $iahLegacyNavKey === 'test') {
+        // Bereits sichtbare Visu: keine zweite HTML.Start-Direktive.
+        // Die technische Route "kacheltest" bleibt fuer das bewiesene
+        // Browser-/AutoLogin-Protokoll erhalten.
+        if ($iahHtmlPreserve && $iahLegacyNavKey === 'kacheltest') {
             $resumed = AskResponse::CreatePlainText('')
                 ->SetRepromptPlainText('');
             $resumed->AddDirective([
@@ -2191,7 +2193,8 @@ function Execute($request = null)
                 'lueftung'=>'lueftung','luefter'=>'lueftung',
                 'geraete'=>'geraete','bewaesserung'=>'bewaesserung',
                 'einstellungen'=>'einstellungen','sicherheit'=>'sicherheit',
-                'energie'=>'energie','kamera'=>'kamera','test'=>'test','info'=>'info',
+                'energie'=>'energie','kamera'=>'kamera','test'=>'test',
+                'visu'=>'kacheltest','visualisierung'=>'kacheltest','info'=>'info',
                 'szene'=>'szene','listen'=>'listen',
                 'zurueck'=>'main_launch','home'=>'main_launch',
                 'hauptmenue'=>'main_launch'

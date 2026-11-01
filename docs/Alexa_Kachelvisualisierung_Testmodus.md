@@ -1,3 +1,78 @@
+# Produktiver Alexa-Sprachbefehl „Visu“ (Stand 01.11.2026)
+
+**Aktueller Stand (ersetzt ältere „Test“-Anleitungen weiter unten):**
+Mit **„Alexa, öffne Haussteuerung“ → „Visu“** startet die erfolgreich
+getestete IP-Symcon-Kachelvisualisierung. **„Test“ ist jetzt ein
+eigener, bewusst freier Kanal** und startet keine Visu mehr.
+In den älteren Diagnoseabschnitten dieses Dokuments wird teilweise noch
+„Test“ genannt; dort stattdessen **„Visu“** verwenden.
+
+## Genau drei sichtbare Einstellungen
+
+Unter **Alexa – Visu (produktive IP-Symcon-Kachelvisualisierung)**:
+
+1. **Visualisierungs-Instanz-ID** (`TileTestVisualizationId`):
+   Wähle die konkrete Kachelvisualisierungsinstanz.
+2. **Passwort der Kachelvisualisierung** (`TileAutoLoginPassword`):
+   Wird maskiert eingegeben und nur über den bestehenden
+   HTTPS-POST mit signiertem 120-Sekunden-Ticket verwendet.
+3. **Debug-Protokollierung der Visu aktivieren**
+   (`VisuDebugEnabled`, Standard AUS):
+   Schaltet Browser-Ereignisse, Zeitmessungen und zusätzliche
+   DOM-Snapshots für die Fehleranalyse ein. Im Normalbetrieb AUS
+   lassen, um unnötige Diagnosearbeit und -nachrichten zu vermeiden.
+
+Die erprobten internen Optionen sind weiterhin im Modul registriert,
+aber **nicht mehr im normalen Visu-Konfigurationsformular** sichtbar:
+echte URL `/tile/`, sessionStorage-Kompatibilität, AutoLogin per Enter,
+Schnellstart ohne zusätzliche Probe, HTML-Voice-Persistenz und
+`shouldEndSession`-Unterdrückung. Bei bestehenden Installationen
+bleiben ihre gespeicherten Werte unverändert; bei neuen Installationen
+sind die bewährten Optionen standardmäßig aktiv.
+
+**Wichtig für die Fehlerdiagnose:** Die technische Route und der
+Browser-Diagnoseschlüssel heißen weiterhin `kacheltest`. Diese
+interne Bezeichnung darf nicht als gesprochener Befehl „Test“
+verstanden werden. Die bestehenden WebHooks und
+Sicherheitsprüfungen bleiben unverändert.
+
+## Verhalten
+
+- „Visu“: einmaliger Start mit Passwort/Enter, bei bereits aktiver
+  HTML-Ansicht auf demselben Echo **keine** neue Anmeldung.
+- „Test“: eigenständiger Platzhalter („Testkanal ist bereit“), für
+  neue Funktionen frei. Er startet **keine** Kachelvisualisierung.
+- „Licht“, „Jalousie“, „Heizung“ usw.: die bestehenden Sprachrouten
+  bleiben erhalten; die laufende HTML-Anzeige kann dabei aktiv bleiben.
+- „Zurück“, Kamera und Energie: weiterhin eigene Routen.
+- Keine automatische Folgeaufnahme durch die neue Visu-HTML-Antwort;
+  das Alexa-Aktivierungswort bleibt benutzbar.
+
+## Für spätere Geschwindigkeitsoptimierung vorbereitet
+
+Debug AUS verhindert zusätzliche Browser-Probes und
+DOM-Snapshots und reduziert das Browser-Logging. Für eine
+spätere gezielte Untersuchung von rund 20–22 Sekunden bis zur
+Passwortmaske genügt es, Debug vorübergehend einzuschalten und
+`tile_performance` + `tile_snapshot` auszuwerten. Die bisher
+beobachteten ~31–33 s bis zur sichtbaren fertigen Seite sind
+damit **noch nicht automatisch schneller**; dafür müssen wir die
+IP-Symcon-Anwendungsinitialisierung analysieren. Die Anmeldung
+wird bewusst nicht verändert.
+
+### Installation / Aktualisierung
+
+Module Store → **IPSAlexaHaussteuerung** aktualisieren →
+Modulinstanz **Übernehmen** (damit die gezielten Aliasänderungen im
+vorhandenen Action-Skript und der neue VoiceIntentRouter aktiv sind).
+Visualisierungsinstanz und Passwort bleiben aus der bisherigen
+Testinstallation übernommen. Falls „Visu“ nicht erkannt wird, den
+GetHaus-Intent im Alexa Developer Portal prüfen und das Sprachmodell
+gegebenenfalls mit „Visu“ als Slotwert neu bauen. Die ursprünglichen
+„Test“-Auswertungen dürfen nicht mehr automatisch auf die Visu zeigen.
+
+---
+
 ## Experiment: Mikrofon bei HTML-Ladephase nicht automatisch öffnen (01.11.2026)
 
 Die Amazon-Dokumentation unterscheidet bei `Alexa.Presentation.HTML.Start`

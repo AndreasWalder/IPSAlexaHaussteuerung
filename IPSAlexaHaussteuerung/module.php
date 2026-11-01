@@ -105,13 +105,13 @@ class IPSAlexaHaussteuerung extends IPSModule
         // 0 = Visualisierungsauswahl unter /tile/, ansonsten Instanz-ID.
         $this->RegisterPropertyInteger('TileTestVisualizationId', 0);
         // Opt-in: experimenteller localStorage-Ersatz nur bei Alexa Kacheltest.
-        $this->RegisterPropertyBoolean('TileTestStorageCompat', false);
+        $this->RegisterPropertyBoolean('TileTestStorageCompat', true);
         // Real-URL-Bootstrap ist nur bei explizit aktiviertem
         // localStorage-Kompatibilitaetstest aktiv; 'srcdoc' als Vergleich.
         $this->RegisterPropertyString('TileTestBootstrapMode', 'url');
         // Opt-in: nur die eigene Tile-Testvisualisierung automatisch anmelden.
         // Das Passwort bleibt in Symcon-Properties (nicht in GitHub/URLs/Logs).
-        $this->RegisterPropertyBoolean('TileAutoLoginEnabled', false);
+        $this->RegisterPropertyBoolean('TileAutoLoginEnabled', true);
         $this->RegisterPropertyString('TileAutoLoginPassword', '');
         // Only same Echo device may keep its live HTML document on a voice turn.
         // Existing Alexa routes remain untouched when this mode is disabled.
@@ -121,7 +121,11 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyBoolean('TileFastBootstrapEnabled', true);
         // Explicit opt-in: HTML.Start without an automatic follow-up microphone.
         // Fallback to the original response when SDK serialization cannot be verified.
-        $this->RegisterPropertyBoolean('TileQuietNoFollowup', false);
+        $this->RegisterPropertyBoolean('TileQuietNoFollowup', true);
+        // Productive Visu is intentionally a three-field setup. Historical
+        // Tile properties remain registered so installations preserve the
+        // already proven auto-login/quiet behavior without migration loss.
+        $this->RegisterPropertyBoolean('VisuDebugEnabled', false);
         // Dauerhaftes Alexa-Kommando "Test"; das Ziel ist spaeter erweiterbar.
         $this->RegisterPropertyString('AlexaTestTarget', 'kacheltest');
 
@@ -664,6 +668,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->patchActionScriptTileTestNavigation((int) $id);
         $this->patchActionScriptTileVoiceBridge((int) $id);
         $this->patchActionScriptTileQuietFollowup((int) $id);
+        $this->patchActionScriptVisuVoice((int) $id);
 
         return (int) $id;
     }
@@ -971,6 +976,48 @@ PHP;
         if ($current !== $existing) {
             IPS_SetScriptContent($scriptId, $current);
             IPS_LogMessage('Alexa', 'TileQuiet.migration installed');
+        }
+    }
+
+    /**
+     * The user's customized Action stays intact. Replace the exact,
+     * known legacy navigation aliases and the one Visu resume condition.
+     * Route 'test' remains available for future experiments.
+     */
+    private function patchActionScriptVisuVoice(int $scriptId): void
+    {
+        $original = $this->getScriptContent($scriptId);
+        if (!is_string($original) || $original === '') return;
+        $current = $original;
+
+        // Insert Visu only beside the old, unmistakable Kacheltest alias.
+        $needle = "'kacheltest'=>'kacheltest','kachelvisualisierung'=>'kacheltest',";
+        $extra = "'visu'=>'kacheltest','visualisierung'=>'kacheltest',\n                     ";
+        if (str_contains($current, $needle) && !str_contains($current, "'visu'=>'kacheltest'")) {
+            $current = str_replace($needle, $extra . $needle, $current);
+        }
+        // Some user scripts use the fallback map in a separate section.
+        $fallback = "'kamera'=>'kamera','test'=>'test','info'=>'info',";
+        if (str_contains($current, $fallback) && !str_contains($current, "'kamera'=>'kamera','test'=>'test',\n                'visu'=>'kacheltest'")) {
+            $current = str_replace($fallback,
+                "'kamera'=>'kamera','test'=>'test',\n                'visu'=>'kacheltest','visualisierung'=>'kacheltest','info'=>'info',",
+                $current);
+        }
+
+        $old = "\$iahHtmlPreserve && \$iahLegacyNavKey === 'test'";
+        $new = "\$iahHtmlPreserve && \$iahLegacyNavKey === 'kacheltest'";
+        if (str_contains($current, $old)) {
+            $current = str_replace($old, $new, $current);
+        }
+        $current = str_replace(
+            '// Bereits sichtbare Kachel: "Test" ist KEIN erneuter HTML.Start.',
+            '// Bereits sichtbare Visu: kein erneuter HTML.Start.',
+            $current
+        );
+
+        if ($current !== $original) {
+            IPS_SetScriptContent($scriptId, $current);
+            IPS_LogMessage('Alexa','Visu.migration action_alias_active');
         }
     }
 
