@@ -46,6 +46,14 @@ pv_assert(($dedicated['route']??'')==='kacheltest'
     && ($dedicated['category']??'')==='navigation'
     && ($dedicated['reason']??'')==='dedicated_visu_intent',
     'VisuIntent must open the HTML view without Action slot or transcript');
+$dedicatedSdk=iah_vir_classify([
+    'intent'=>'VisuIntent','requestType'=>'',
+    'legacySlots'=>[],'text'=>''
+]);
+pv_assert(($dedicatedSdk['route']??'')==='kacheltest',
+    'VisuIntent must not depend on SDK property request->type');
+pv_assert(!str_contains($action, "&& $iahVoiceRequestType === 'IntentRequest'"),
+    'Action dedicated VisuIntent must not reject valid nested RequestType objects');
 pv_assert(str_contains($action, "// IAH_VISU_INTENT_BEGIN")
     && str_contains($action, "strcasecmp((string)\$intentName, 'VisuIntent') === 0")
     && str_contains($action, "\$iahLegacyNavKey = 'kacheltest';")
