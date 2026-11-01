@@ -90,6 +90,8 @@ jobs:
         run: php tests/test_voice_intent_router.php
       - name: Test GetHaus Device-only legacy navigation before KI
         run: php tests/test_gethaus_legacy_navigation.php
+      - name: Verify Alexa router diagnostics hierarchy and light status query
+        run: php tests/test_voice_router_diagnostic_path.php
       - name: Test GetHaus voice route priority over welcome screen
         run: php tests/test_voice_route_priority.php
       - name: Test copyable Alexa 500-message buffer and EUR conversion
