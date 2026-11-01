@@ -2127,6 +2127,19 @@ function Execute($request = null)
                 }
             }
         }
+        // IAH_VISU_INTENT_BEGIN
+        // Alexa hat "Visu" im freien GetHaus.Action-Slot mehrfach als
+        // "wieso" transkribiert. Ein dedizierter, SLOTLOSER Intent wird
+        // anhand seiner Sample Utterances trainiert und braucht deshalb
+        // keine erratene Worterkennung im Action-Slot.
+        // Dieser Intent kann nur vom Alexa-Skill-Interaktionsmodell kommen.
+        if (strcasecmp((string)$intentName, 'VisuIntent') === 0
+            && $iahVoiceRequestType === 'IntentRequest'
+            && empty($APL['args']) && !$IS_LAUNCH && !$IS_BACK && !$wantsExit) {
+            $iahLegacyNavKey = 'kacheltest';
+            IPS_LogMessage('Alexa', 'Visu.dedicated_intent selected');
+        }
+        // IAH_VISU_INTENT_END
         // Bereits sichtbare Visu: keine zweite HTML.Start-Direktive.
         // Die technische Route "kacheltest" bleibt fuer das bewiesene
         // Browser-/AutoLogin-Protokoll erhalten.
