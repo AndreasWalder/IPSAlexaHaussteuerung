@@ -1883,7 +1883,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 $result = $current;
                 break;
             }
-            $current = (int)($object['ParentID'] ?? $object['ObjectParentID'] ?? 0);
+            $current = (int)($object['ObjectParentID'] ?? $object['ParentID'] ?? 0);
         }
         $this->ipsInstanceLookupCache[$objectId] = $result;
         return $result;
