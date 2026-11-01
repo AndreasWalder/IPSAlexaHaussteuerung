@@ -247,9 +247,21 @@ function iah_vir_ip_symcon(array $input): array
 {
     $instanceId=(int)($input['instanceId']??0);
     if($instanceId<=0||!function_exists('IPS_GetObjectIDByIdent'))return ['ok'=>false];
-    $category=(int)@IPS_GetObjectIDByIdent('iahVoiceDiag',$instanceId);
+    // EnsureInfrastructure() erzeugt:
+    // Modulinstanz → Diagnose (iahDiag) → KI-Sprachrouter (iahVoiceDiag)
+    // → Router-Datenspeicher (iahVoiceState).
+    // Der alte direkte Lookup übersprang 'iahDiag' und gab stets
+    // ['ok'=>false] zurück, was Action als helper_unavailable meldete.
+    $diag=(int)@IPS_GetObjectIDByIdent('iahDiag',$instanceId);
+    $category=$diag>0?(int)@IPS_GetObjectIDByIdent('iahVoiceDiag',$diag):0;
+    // Rückwärtskompatibel für eventuell ältere manuelle Strukturen.
+    if($category<=0)$category=(int)@IPS_GetObjectIDByIdent('iahVoiceDiag',$instanceId);
     $storage=$category>0?(int)@IPS_GetObjectIDByIdent('iahVoiceState',$category):0;
-    if($storage<=0||!IPS_VariableExists($storage))return ['ok'=>false];
+    if($storage<=0||!IPS_VariableExists($storage)) {
+        IPS_LogMessage('Alexa','VoiceRouter.storage_missing diag='.(int)($diag>0)
+            .' category='.(int)($category>0).' state='.(int)($storage>0));
+        return ['ok'=>false,'reason'=>'storage_missing'];
+    }
     $lock='IAH.VoiceRouter.'.$instanceId;
     if(!IPS_SemaphoreEnter($lock,1000))return ['ok'=>false,'reason'=>'busy'];
     try {
