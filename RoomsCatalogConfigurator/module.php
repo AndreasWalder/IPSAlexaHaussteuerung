@@ -42,6 +42,9 @@ declare(strict_types=1);
 
 class RoomsCatalogConfigurator extends IPSModule
 {
+    /** Auflösung der übergeordneten Instanz-ID je IP-Symcon-Objekt innerhalb des PHP-Laufs. */
+    private array $ipsInstanceLookupCache = [];
+
     public function Create()
     {
         parent::Create();
@@ -160,7 +163,7 @@ class RoomsCatalogConfigurator extends IPSModule
         foreach ($entries as $row) {
             if (!is_array($row)) continue;
             foreach (array_keys($row) as $name) {
-                if (!is_string($name) || in_array($name, ['rowColor','kiStatus','diffKeys','editable','deletable'], true)) continue;
+                if (!is_string($name) || in_array($name, ['rowColor','kiStatus','diffKeys','editable','deletable','ipsObjectIds','ipsInstanceIds'], true)) continue;
                 if (preg_match('/^[A-Za-z_][A-Za-z_0-9]*$/D', $name) !== 1) continue;
                 if (!in_array($name, $keys, true)) $keys[] = $name;
             }
@@ -328,7 +331,7 @@ class RoomsCatalogConfigurator extends IPSModule
         }
 
         foreach ($entries as &$entry) {
-            if (is_array($entry)) unset($entry['rowColor'], $entry['kiStatus'], $entry['diffKeys'], $entry['editable']);
+            if (is_array($entry)) unset($entry['rowColor'], $entry['kiStatus'], $entry['diffKeys'], $entry['editable'], $entry['ipsObjectIds'], $entry['ipsInstanceIds']);
         }
         unset($entry);
         $this->logDebug('SaveToEdit: START, rows=' . count($entries));
@@ -685,6 +688,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $visibleProd    = array_map(fn(array $r): array => $this->decorateRow($r), $visibleProd);
         $diffEntriesAll = $this->buildDiffEntries($entriesProd, $entriesEdit);
         $visibleDiff    = $this->filterByAI($this->applyFilters($diffEntriesAll, $filterRoom, $filterDomain, $filterGroup), $filterAI);
+        $visibleDiff    = array_map(fn(array $r): array => $this->decorateIpsIds($r), $visibleDiff);
 
         $this->logDebug('GetConfigurationForm: sichtbare PROD-Einträge=' . count($visibleProd));
         $this->logDebug('GetConfigurationForm: sichtbare DIFF-Einträge=' . count($visibleDiff));
@@ -1584,7 +1588,7 @@ class RoomsCatalogConfigurator extends IPSModule
 
             $cfg = [];
             foreach ($row as $k => $v) {
-                if (in_array($k, ['selected', 'roomKey', 'roomLabel', 'floor', 'domain', 'group', 'key', 'rowColor','kiStatus','diffKeys','editable'], true)) {
+                if (in_array($k, ['selected', 'roomKey', 'roomLabel', 'floor', 'domain', 'group', 'key', 'rowColor','kiStatus','diffKeys','editable','ipsObjectIds','ipsInstanceIds'], true)) {
                     continue;
                 }
 
@@ -1759,6 +1763,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $visible = array_map(fn(array $row): array => $this->decorateRow($row), $visible);
         $diff = $this->buildDiffEntries($prod, $edit);
         $visibleDiff = $this->filterByAI($this->applyFilters($diff, $room, $domain, $group), $ai);
+        $visibleDiff = array_map(fn(array $row): array => $this->decorateIpsIds($row), $visibleDiff);
 
         // Das Aktualisieren der Listen lässt ExpansionPanel-/Filterzustand intakt.
         $this->UpdateFormField('Entries', 'values', json_encode($visible, JSON_INVALID_UTF8_SUBSTITUTE));
@@ -1803,7 +1808,85 @@ class RoomsCatalogConfigurator extends IPSModule
             $row['rowColor'] = '#FFCCCC';
         }
         $row['title'] = (string)($row['title'] ?? $row['key'] ?? '');
+        return $this->decorateIpsIds($row);
+    }
+
+    /**
+     * Tabellen-Hilfsfelder: alle tatsächlich konfigurierten IPS-Objekt-IDs
+     * (z.B. state/toggle/soll) und, falls auf dem Server ermittelbar,
+     * die zugehörigen IP-Symcon-Instanzen. Beide Spalten sind reine
+     * Such-/Anzeigeinformationen, niemals Teil des RoomsCatalog-JSON.
+     */
+    private function decorateIpsIds(array $row): array
+    {
+        $objectIds = [];
+        $instanceIds = [];
+        $knownIdFields = [
+            'id', 'var', 'controlId', 'statusId', 'tiltId',
+            'state', 'toggle', 'set', 'value', 'wert', 'stellung',
+            'ist', 'soll', 'eingestellt'
+        ];
+
+        foreach ($row as $name => $value) {
+            if (!is_string($name) || is_bool($value) || (!is_int($value) && !is_string($value))) {
+                continue;
+            }
+            // Zusätzliche individuelle *Id-Felder sind zulässig, aber
+            // entityId (z.B. "light.kueche") ist kein IP-Symcon-Objekt.
+            if (!in_array($name, $knownIdFields, true)
+                && ($name === 'entityId' || preg_match('/Id$/D', $name) !== 1)) {
+                continue;
+            }
+            $number = is_int($value) ? $value : (ctype_digit(trim($value)) ? (int)trim($value) : 0);
+            if ($number <= 0 || $number > 99999) {
+                continue;
+            }
+            $objectIds[$number] = $number;
+            $instance = $this->lookupIpsInstanceId($number);
+            if ($instance > 0) {
+                $instanceIds[$instance] = $instance;
+            }
+        }
+
+        $row['ipsObjectIds'] = implode(', ', array_values($objectIds));
+        $row['ipsInstanceIds'] = implode(', ', array_values($instanceIds));
         return $row;
+    }
+
+    /**
+     * Variablen liegen unterhalb einer Instanz oder einer Kategorie.
+     * Darum nur existierende IPS-Objekte entlang der Parent-Kette lesen.
+     * Wenn keine übergeordnete Instanz existiert, bewusst leer lassen.
+     */
+    private function lookupIpsInstanceId(int $objectId): int
+    {
+        if (isset($this->ipsInstanceLookupCache[$objectId])) {
+            return $this->ipsInstanceLookupCache[$objectId];
+        }
+        if (!function_exists('IPS_ObjectExists') || !function_exists('IPS_GetObject')) {
+            return 0;
+        }
+
+        $current = $objectId;
+        $visited = [];
+        $result = 0;
+        for ($depth = 0; $depth < 30 && $current > 0; $depth++) {
+            if (isset($visited[$current]) || !IPS_ObjectExists($current)) {
+                break;
+            }
+            $visited[$current] = true;
+            $object = IPS_GetObject($current);
+            if (!is_array($object)) {
+                break;
+            }
+            if ((int)($object['ObjectType'] ?? -1) === 1) {
+                $result = $current;
+                break;
+            }
+            $current = (int)($object['ObjectParentID'] ?? $object['ParentID'] ?? 0);
+        }
+        $this->ipsInstanceLookupCache[$objectId] = $result;
+        return $result;
     }
 
     private function buildOverviewColumns(): array
@@ -1815,6 +1898,8 @@ class RoomsCatalogConfigurator extends IPSModule
             ['caption'=>'Bereich','name'=>'domain','width'=>'105px','add'=>'licht','quickFilter'=>true],
             ['caption'=>'Gruppe','name'=>'group','width'=>'105px','add'=>'switches','quickFilter'=>true],
             ['caption'=>'Gerät','name'=>'title','width'=>'auto','add'=>'','quickFilter'=>true],
+            ['caption'=>'IPS-Objekt-IDs','name'=>'ipsObjectIds','width'=>'155px','save'=>false,'quickFilter'=>true],
+            ['caption'=>'IPS-Instanz-IDs','name'=>'ipsInstanceIds','width'=>'145px','save'=>false,'quickFilter'=>true],
             ['caption'=>'Key','name'=>'key','width'=>'130px','add'=>'','quickFilter'=>true],
             ['caption'=>'Mit KI','name'=>'kiEnabled','width'=>'80px','add'=>false,'edit'=>['type'=>'CheckBox']],
             ['caption'=>'Nur abfragen','name'=>'kiReadOnly','width'=>'110px','add'=>true,'edit'=>['type'=>'CheckBox']],
