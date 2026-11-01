@@ -2134,7 +2134,10 @@ function Execute($request = null)
         // keine erratene Worterkennung im Action-Slot.
         // Dieser Intent kann nur vom Alexa-Skill-Interaktionsmodell kommen.
         if (strcasecmp((string)$intentName, 'VisuIntent') === 0
-            && $iahVoiceRequestType === 'IntentRequest'
+            // The Alexa PHP gateway may expose the request type inside
+            // $request->data['request']['type'] rather than $request->type.
+            // An exact Alexa intent name is sufficient (Launch has none).
+            // Do not reject a valid VisuIntent due to an SDK representation.
             && empty($APL['args']) && !$IS_LAUNCH && !$IS_BACK && !$wantsExit) {
             $iahLegacyNavKey = 'kacheltest';
             IPS_LogMessage('Alexa', 'Visu.dedicated_intent selected');
