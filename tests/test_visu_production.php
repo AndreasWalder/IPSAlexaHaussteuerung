@@ -13,7 +13,10 @@ function pv_assert(bool $ok,string $message): void {
     if(!$ok)throw new RuntimeException($message);
 }
 require_once $root.'resources/helpers/VoiceIntentRouter.php';
-foreach(['Visu','Visualisierung'] as $word){
+// Actual 01.11.2026 Echo logs: Alexa heard "wizo" or "wieso".
+ // Only "wizo" is a safe, uncommon navigation alias. A real question
+ // "wieso" must continue to the natural-language pipeline.
+foreach(['Visu','Visualisierung','Wizo'] as $word){
     $result=iah_vir_classify([
         'intent'=>'GetHaus','legacySlots'=>['Action'=>$word],'text'=>$word
     ]);
@@ -21,6 +24,18 @@ foreach(['Visu','Visualisierung'] as $word){
         && ($result['category']??'')==='navigation',
         'Visu must navigate to the unchanged HTML internal route');
 }
+$wieso=iah_vir_classify([
+    'intent'=>'GetHaus','legacySlots'=>['Action'=>'Wieso'],'text'=>'Wieso'
+]);
+pv_assert(($wieso['route']??'')!=='kacheltest',
+    'Real question Wieso must never open the Visu');
+pv_assert(str_contains($action,"'wizo'=>'kacheltest'")
+    && !str_contains($action,"'wieso'=>'kacheltest'"),
+    'Existing Action voice maps only the observed safe Wizo transcription');
+pv_assert(str_contains($module,'$oldVisu')
+    && str_contains($module,'$newVisu'),
+    'Existing installed Action scripts must receive the Wizo fix on ApplyChanges');
+
 $test=iah_vir_classify([
     'intent'=>'GetHaus','legacySlots'=>['Action'=>'Test'],'text'=>'Test'
 ]);
