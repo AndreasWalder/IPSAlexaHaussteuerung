@@ -122,6 +122,13 @@ function iah_vir_classify(array $input,array $saved=[]): array
         if($type==='Alexa.Presentation.APL.UserEvent')return array_replace($result,
             ['category'=>'apl_action','reason'=>'apl_other']);
     }
+    // Slot-free VisuIntent routes without ASR-transcribed GetHaus.Action.
+    // The Alexa interaction model, not PHP, recognizes the utterance.
+    if (strcasecmp($intent, 'VisuIntent') === 0 && $type === 'IntentRequest') {
+        return array_replace($result, [
+            'category'=>'navigation','route'=>'kacheltest','reason'=>'dedicated_visu_intent'
+        ]);
+    }
     $legacyRoute=iah_vir_legacy_gethaus_route($input,$aliases);
     if ($legacyRoute!==null) return array_replace($result,[
         'category'=>'navigation','route'=>$legacyRoute,'reason'=>'legacy_gethaus_single_slot'
