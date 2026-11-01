@@ -990,6 +990,16 @@ PHP;
         if (!is_string($original) || $original === '') return;
         $current = $original;
 
+        // An existing installed Action script contains its own exact-match
+        // alias maps: updating the repository template alone is not enough.
+        // Add only "wizo" (the actually observed Alexa speech transcription)
+        // and NOT "wieso" (a normal German question).
+        $oldVisu = "'visu'=>'kacheltest','visualisierung'=>'kacheltest'";
+        $newVisu = "'visu'=>'kacheltest','wizo'=>'kacheltest','visualisierung'=>'kacheltest'";
+        if (str_contains($current, $oldVisu)) {
+            $current = str_replace($oldVisu, $newVisu, $current);
+        }
+
         // Insert Visu only beside the old, unmistakable Kacheltest alias.
         $needle = "'kacheltest'=>'kacheltest','kachelvisualisierung'=>'kacheltest',";
         $extra = "'visu'=>'kacheltest','visualisierung'=>'kacheltest',\n                     ";

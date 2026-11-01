@@ -43,7 +43,10 @@ function iah_vir_aliases(array $dynamic=[]): array
         'test'=>'test',
         // Bedienerkommando "Visu": interne technische Route bleibt kacheltest
         // damit Bootstrap, Autologin, Heartbeats und SDK unveraendert laufen.
-        'visu'=>'kacheltest','visualisierung'=>'kacheltest',
+        // Alexa-DE hat am 01.11.2026 "Visu" als "wizo" transkribiert.
+        // Nur diese unueblichen EXAKTEN Einzelwort-Aliase sind erlaubt.
+        // "wieso" ist eine reale Frage und darf NIE als Visu gelten.
+        'visu'=>'kacheltest','wizo'=>'kacheltest','visualisierung'=>'kacheltest',
         'kacheltest'=>'kacheltest','kachelvisualisierung'=>'kacheltest',
         'kachel visualisierung'=>'kacheltest','kacheln testen'=>'kacheltest',
         'info'=>'info',
