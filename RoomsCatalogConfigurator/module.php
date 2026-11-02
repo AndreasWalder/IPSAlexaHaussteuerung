@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /**
  * ============================================================
- * ROOMS CATALOG CONFIGURATOR — IP-Symcon Modul (V3.0)
+ * ROOMS CATALOG CONFIGURATOR — IP-Symcon Modul (V3.1)
  * ============================================================
  *
  * Änderungsverlauf
@@ -44,6 +44,11 @@ declare(strict_types=1);
  * - ai.version/type/variables/stateMapping ergänzen die unveränderten Legacy-Felder
  * - Unbekannte Geräteeigenschaften und Raum-Metadaten verlustfrei erhalten
  * - EDIT -> PROD nach Prüfung und verifiziertem Backup, keine Auto-Migration
+ *
+ * 2026-11-02: V3.1 — zentrale Raumverwaltung
+ * - Raumname, Etage und alternative Namen nur einmal pro Raum bearbeiten
+ * - Neue, leere Räume zuerst ausschließlich im EDIT-Katalog anlegen
+ * - Alias-Konflikte prüfen, unbekannte Raum-/Gerätedaten beibehalten
  */
 
 class RoomsCatalogConfigurator extends IPSModule
@@ -264,16 +269,278 @@ class RoomsCatalogConfigurator extends IPSModule
             elseif ($kind === 'removed') $removed++;
             else $changed++;
         }
-        echo sprintf('PROD: %d, EDIT: %d. Unterschiede: %d (neu %d, geaendert %d, geloescht %d).',
-            count($prod),count($edit),count($diff),$new,$changed,$removed);
+        $roomsDiff = $this->buildRoomDiffEntries(
+            $this->loadConfiguredCatalog('RoomsCatalogScriptID', 'PROD'),
+            $this->loadConfiguredCatalog('RoomsCatalogEditScriptID', 'EDIT')
+        );
+        echo sprintf('PROD: %d, EDIT: %d. Geraete-Unterschiede: %d (neu %d, geaendert %d, geloescht %d). Raum-Aenderungen: %d.',
+            count($prod),count($edit),count($diff),$new,$changed,$removed,count($roomsDiff));
     }
 
     public function ValidateCatalog(): void
     {
         $errors = $this->validateEntries($this->getRuntimeEntries());
+        $catalog = $this->loadConfiguredCatalog('RoomsCatalogEditScriptID', 'EDIT');
+        $errors = array_merge($errors, $this->validateRoomMetadata($catalog));
         echo $errors === []
             ? 'Katalogpruefung erfolgreich.'
             : count($errors) . " Problem(e):\n" . implode("\n", array_slice($errors,0,35));
+    }
+
+    /** Ein bestehender Raum wird ausschließlich auf oberster Raum-Ebene geändert. */
+    public function SaveRoomToEdit(string $roomJson): void
+    {
+        $input = json_decode($roomJson, true);
+        if (!is_array($input)) {
+            echo 'Raum nicht gespeichert: ungueltige Formularwerte.';
+            return;
+        }
+        $roomKey = trim((string)($input['roomKey'] ?? ''));
+        $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        if ($editId <= 0 || !IPS_ScriptExists($editId)) {
+            echo 'Raum nicht gespeichert: RoomsCatalogEdit fehlt.';
+            return;
+        }
+        $catalog = $this->loadRoomsCatalog($editId, 'EDIT');
+        $wrapped = isset($catalog['rooms']) && is_array($catalog['rooms']);
+        $rooms = $wrapped ? $catalog['rooms'] : $catalog;
+        if ($roomKey === 'global' || !isset($rooms[$roomKey]['domains']) || !is_array($rooms[$roomKey]['domains'])) {
+            echo 'Raum nicht gespeichert: der Raum-Key ist unbekannt oder reserviert.';
+            return;
+        }
+
+        $room = $rooms[$roomKey];
+        if (array_key_exists('display', $input) && $input['display'] !== null) {
+            $display = trim((string)$input['display']);
+            if ($display === '') {
+                echo 'Raum nicht gespeichert: Anzeigename darf nicht leer sein.';
+                return;
+            }
+            $room['display'] = $display;
+        }
+        if (array_key_exists('floor', $input) && $input['floor'] !== null) {
+            $floor = trim((string)$input['floor']);
+            if ($floor === '') unset($room['floor']);
+            else $room['floor'] = $floor;
+        }
+        if (array_key_exists('aliases', $input) && $input['aliases'] !== null) {
+            try {
+                $room['aliases'] = $this->parseRoomAliases($input['aliases']);
+            } catch (InvalidArgumentException $e) {
+                echo 'Raum nicht gespeichert: ' . $e->getMessage();
+                return;
+            }
+        }
+        $rooms[$roomKey] = $room;
+        if ($wrapped) $catalog['rooms'] = $rooms;
+        else $catalog = $rooms;
+        $errors = array_merge($this->validateRoomMetadata($catalog), $this->validateRoomAliasUniqueness($catalog, $roomKey));
+        if ($errors !== []) {
+            echo 'Raum nicht gespeichert: ' . implode('; ', array_slice($errors, 0, 3));
+            return;
+        }
+        if (IPS_SetScriptContent($editId, "<?php\nreturn " . var_export($catalog, true) . ";\n") === false) {
+            echo 'Raum nicht gespeichert: RoomsCatalogEdit konnte nicht geschrieben werden.';
+            return;
+        }
+        $this->reloadAllFromCatalog();
+        $this->RefreshVisibleLists();
+        echo 'Raum ' . $roomKey . ' in RoomsCatalogEdit gespeichert (noch nicht produktiv).';
+    }
+
+    /** Neue Räume sind zunächst leer; Geräte können danach zugeordnet werden. */
+    public function CreateRoom(string $roomJson): void
+    {
+        $input = json_decode($roomJson, true);
+        if (!is_array($input)) {
+            echo 'Raum nicht angelegt: ungueltige Formularwerte.';
+            return;
+        }
+        $roomKey = trim((string)($input['roomKey'] ?? ''));
+        $display = trim((string)($input['display'] ?? ''));
+        if (preg_match('/^[a-z][a-z0-9_-]{0,63}$/iD', $roomKey) !== 1
+            || in_array(strtolower($roomKey), ['rooms', 'global'], true) || $display === '') {
+            echo 'Raum nicht angelegt: gueltigen Raum-Key (Buchstaben/Zahlen/_/-) und Namen eingeben.';
+            return;
+        }
+        $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        if ($editId <= 0 || !IPS_ScriptExists($editId)) {
+            echo 'Raum nicht angelegt: RoomsCatalogEdit fehlt.';
+            return;
+        }
+        $catalog = $this->loadRoomsCatalog($editId, 'EDIT');
+        if ($catalog === []) {
+            echo 'Raum nicht angelegt: RoomsCatalogEdit ist leer oder nicht lesbar.';
+            return;
+        }
+        $wrapped = isset($catalog['rooms']) && is_array($catalog['rooms']);
+        $rooms = $wrapped ? $catalog['rooms'] : $catalog;
+        if (array_key_exists($roomKey, $rooms) || array_key_exists($roomKey, $catalog)) {
+            echo 'Raum nicht angelegt: Raum-Key existiert bereits.';
+            return;
+        }
+        try {
+            $aliases = $this->parseRoomAliases($input['aliases'] ?? '');
+        } catch (InvalidArgumentException $e) {
+            echo 'Raum nicht angelegt: ' . $e->getMessage();
+            return;
+        }
+        $room = ['display' => $display, 'domains' => [], 'aliases' => $aliases];
+        $floor = trim((string)($input['floor'] ?? ''));
+        if ($floor !== '') $room['floor'] = $floor;
+        $rooms[$roomKey] = $room;
+        if ($wrapped) $catalog['rooms'] = $rooms;
+        else $catalog = $rooms;
+        $errors = array_merge($this->validateRoomMetadata($catalog), $this->validateRoomAliasUniqueness($catalog, $roomKey));
+        if ($errors !== []) {
+            echo 'Raum nicht angelegt: ' . implode('; ', array_slice($errors, 0, 3));
+            return;
+        }
+        if (IPS_SetScriptContent($editId, "<?php\nreturn " . var_export($catalog, true) . ";\n") === false) {
+            echo 'Raum nicht angelegt: RoomsCatalogEdit konnte nicht geschrieben werden.';
+            return;
+        }
+        $this->reloadAllFromCatalog();
+        $this->RefreshVisibleLists();
+        echo 'Neuer Raum ' . $roomKey . ' in RoomsCatalogEdit angelegt.';
+    }
+
+    private function loadConfiguredCatalog(string $property, string $mode): array
+    {
+        $id = $this->ReadPropertyInteger($property);
+        return $id > 0 && IPS_ScriptExists($id) ? $this->loadRoomsCatalog($id, $mode) : [];
+    }
+
+    private function parseRoomAliases(mixed $input): array
+    {
+        if (is_array($input)) $parts = $input;
+        elseif (is_string($input)) $parts = preg_split('/[,;\r\n]+/u', $input) ?: [];
+        else throw new InvalidArgumentException('Aliase muessen eine Textliste sein.');
+        $seen = [];
+        $aliases = [];
+        foreach ($parts as $part) {
+            if (!is_string($part)) throw new InvalidArgumentException('Aliase muessen Texte sein.');
+            $alias = trim($part);
+            if ($alias === '') continue;
+            if (mb_strlen($alias, 'UTF-8') > 80) throw new InvalidArgumentException('Ein Alias ist laenger als 80 Zeichen.');
+            $normalized = mb_strtolower($alias, 'UTF-8');
+            if (isset($seen[$normalized])) continue;
+            $seen[$normalized] = true;
+            $aliases[] = $alias;
+        }
+        if (count($aliases) > 20) throw new InvalidArgumentException('Maximal 20 Aliase pro Raum.');
+        return $aliases;
+    }
+
+    private function roomMap(array $catalog): array
+    {
+        return isset($catalog['rooms']) && is_array($catalog['rooms']) ? $catalog['rooms'] : $catalog;
+    }
+
+    private function validateRoomMetadata(array $catalog): array
+    {
+        $errors = [];
+        foreach ($this->roomMap($catalog) as $key => $room) {
+            if ($key === 'global' || !is_array($room) || !isset($room['domains'])) continue;
+            if (!is_array($room['domains'])) {
+                $errors[] = 'Raum ' . $key . ': domains muss ein Array sein.';
+                continue;
+            }
+            if (isset($room['display']) && !is_string($room['display'])) $errors[] = 'Raum ' . $key . ': display ist kein Text.';
+            if (isset($room['floor']) && !is_string($room['floor'])) $errors[] = 'Raum ' . $key . ': floor ist kein Text.';
+            if (isset($room['aliases'])) {
+                if (!is_array($room['aliases']) && !is_string($room['aliases'])) {
+                    $errors[] = 'Raum ' . $key . ': aliases ist keine Liste.';
+                } elseif (is_array($room['aliases'])) {
+                    foreach ($room['aliases'] as $alias) {
+                        if (!is_string($alias)) {
+                            $errors[] = 'Raum ' . $key . ': aliases enthaelt einen Nicht-Textwert.';
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        return $errors;
+    }
+
+    private function validateRoomAliasUniqueness(array $catalog, string $targetRoom): array
+    {
+        $rooms = $this->roomMap($catalog);
+        $target = $rooms[$targetRoom] ?? [];
+        $targetAliases = array_merge([$targetRoom, (string)($target['display'] ?? $targetRoom)],
+            $this->parseRoomAliases($target['aliases'] ?? []));
+        $normalized = static fn(string $s): string => mb_strtolower(trim($s), 'UTF-8');
+        $own = array_fill_keys(array_map($normalized, $targetAliases), true);
+        $errors = [];
+        foreach ($rooms as $roomKey => $room) {
+            if ($roomKey === $targetRoom || $roomKey === 'global'
+                || !is_array($room) || !isset($room['domains'])) continue;
+            try {
+                $otherAliases = is_array($room['aliases'] ?? null) || is_string($room['aliases'] ?? null)
+                    ? $this->parseRoomAliases($room['aliases']) : [];
+            } catch (InvalidArgumentException $e) {
+                continue; // Der gesonderte Metadata-Validator meldet den Altbestand.
+            }
+            $others = array_merge([(string)$roomKey, (string)($room['display'] ?? $roomKey)], $otherAliases);
+            foreach ($others as $name) {
+                if (isset($own[$normalized($name)])) {
+                    $errors[] = 'Name/Alias "' . $name . '" wird auch von Raum ' . $roomKey . ' verwendet.';
+                }
+            }
+        }
+        return array_values(array_unique($errors));
+    }
+
+    private function buildRoomListRows(array $catalog): array
+    {
+        $rooms = $this->roomMap($catalog);
+        $deviceCounts = [];
+        foreach ($this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($catalog)) as $entry) {
+            $key = (string)($entry['roomKey'] ?? '');
+            $deviceCounts[$key] = ($deviceCounts[$key] ?? 0) + 1;
+        }
+        $rows = [];
+        foreach ($rooms as $key => $room) {
+            if ($key === 'global' || !is_array($room) || !isset($room['domains']) || !is_array($room['domains'])) continue;
+            $aliases = $room['aliases'] ?? [];
+            $rows[] = [
+                'roomKey' => (string)$key,
+                'display' => (string)($room['display'] ?? $key),
+                'floor' => (string)($room['floor'] ?? ''),
+                'aliases' => is_array($aliases) ? implode(', ', array_filter($aliases, 'is_string')) : (string)$aliases,
+                'devices' => $deviceCounts[(string)$key] ?? 0,
+                'domainsCount' => count($room['domains'])
+            ];
+        }
+        usort($rows, static fn($a, $b): int => strcasecmp($a['display'], $b['display']));
+        return $rows;
+    }
+
+    private function buildRoomDiffEntries(array $prod, array $edit): array
+    {
+        $diff = [];
+        $prodRooms = $this->roomMap($prod);
+        $editRooms = $this->roomMap($edit);
+        foreach (array_unique(array_merge(array_keys($prodRooms), array_keys($editRooms))) as $key) {
+            $before = $prodRooms[$key] ?? null;
+            $after = $editRooms[$key] ?? null;
+            if ($key === 'global' || ($before === null && !isset($after['domains']))
+                || ($after === null && !isset($before['domains']))) continue;
+            $oldMeta = is_array($before) ? $before : [];
+            $newMeta = is_array($after) ? $after : [];
+            unset($oldMeta['domains'], $newMeta['domains']);
+            if ($oldMeta == $newMeta) continue;
+            $room = $after ?? $before;
+            $diff[] = [
+                'roomKey' => (string)$key,
+                'display' => (string)($room['display'] ?? $key),
+                'floor' => (string)($room['floor'] ?? ''),
+                'aliases' => is_array($room['aliases'] ?? null) ? implode(', ', $room['aliases']) : (string)($room['aliases'] ?? ''),
+                'change' => $before === null ? 'Neu' : ($after === null ? 'Entfernt' : 'Geaendert')
+            ];
+        }
+        return $diff;
     }
 
     private function validateEntries(array $rows, bool $checkReadIds = true): array
@@ -612,7 +879,7 @@ class RoomsCatalogConfigurator extends IPSModule
 
         $editCatalog = $this->loadRoomsCatalog($editId, 'EDIT');
         $editEntries = $this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($editCatalog));
-        $errors = $this->validateEntries($editEntries);
+        $errors = array_merge($this->validateEntries($editEntries), $this->validateRoomMetadata($editCatalog));
         $roundTrip = $this->rebuildRoomsCatalogFromEntries($editEntries, $editCatalog);
         $this->findLostCatalogFields($editCatalog, $roundTrip, 'RoomsCatalogEdit', $errors);
         if ($errors !== []) {
@@ -839,15 +1106,19 @@ class RoomsCatalogConfigurator extends IPSModule
         $filterDomain = $this->ReadAttributeString('FilterDomain');
         $filterGroup  = $this->ReadAttributeString('FilterGroup');
 
-        $editScriptId    = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
-        $entriesEditFlat = [];
-        if ($editScriptId > 0 && IPS_ScriptExists($editScriptId)) {
-            $editCatalog     = $this->loadRoomsCatalog($editScriptId, 'EDIT');
-            $editRooms       = $this->extractRoomsFromCatalog($editCatalog);
-            $entriesEditFlat = $this->buildFlatEntriesFromRooms($editRooms);
-        }
+        $editScriptId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        $editCatalog = $this->loadConfiguredCatalog('RoomsCatalogEditScriptID', 'EDIT');
+        $prodCatalog = $this->loadConfiguredCatalog('RoomsCatalogScriptID', 'PROD');
+        $roomRows = $this->buildRoomListRows($editCatalog);
+        $roomDiffRows = $this->buildRoomDiffEntries($prodCatalog, $editCatalog);
 
         [$roomOptions, $domainOptions, $groupOptions] = $this->buildFilterOptionsFromEntries(array_merge($entriesProd, $entriesEdit));
+        $knownRooms = array_column($roomOptions, 'value');
+        foreach ($roomRows as $roomRow) {
+            if (!in_array($roomRow['roomKey'], $knownRooms, true)) {
+                $roomOptions[] = ['caption' => $roomRow['display'] . ' (' . $roomRow['roomKey'] . ')', 'value' => $roomRow['roomKey']];
+            }
+        }
 
         $visibleProd    = $this->filterByAI($this->applyFilters($entriesEdit, $filterRoom, $filterDomain, $filterGroup), $filterAI);
         $visibleProd    = array_map(fn(array $r): array => $this->decorateRow($r), $visibleProd);
@@ -903,6 +1174,50 @@ class RoomsCatalogConfigurator extends IPSModule
                             'caption' => 'RoomsCatalog Edit-Script',
                             'value'   => $editScriptId
                         ]
+                    ]
+                ],
+                [
+                    'type' => 'ExpansionPanel',
+                    'caption' => 'V3.1: Raeume, Etagen und alternative Namen',
+                    'expanded' => true,
+                    'items' => [
+                        ['type' => 'Label', 'caption' => 'Jeden Raum nur einmal bearbeiten. Raum-Key bleibt unveraendert, damit bestehende Geraetezuordnungen erhalten bleiben.'],
+                        [
+                            'type' => 'List', 'name' => 'Rooms', 'caption' => 'Raeume im RoomsCatalogEdit',
+                            'rowCount' => 12, 'loadValuesFromConfiguration' => false,
+                            'add' => false, 'delete' => false,
+                            'sort' => ['column' => 'display', 'direction' => 'ascending'],
+                            'columns' => [
+                                ['caption'=>'Raum-Key','name'=>'roomKey','width'=>'145px','save'=>false,'quickFilter'=>true],
+                                ['caption'=>'Raumname','name'=>'display','width'=>'auto','edit'=>['type'=>'ValidationTextBox'],'quickFilter'=>true],
+                                ['caption'=>'Etage','name'=>'floor','width'=>'85px','edit'=>['type'=>'ValidationTextBox'],'quickFilter'=>true],
+                                ['caption'=>'Alternative Namen (Komma getrennt)','name'=>'aliases','width'=>'260px','edit'=>['type'=>'ValidationTextBox']],
+                                ['caption'=>'Geraete','name'=>'devices','width'=>'75px','save'=>false],
+                                ['caption'=>'Bereiche','name'=>'domainsCount','width'=>'75px','save'=>false]
+                            ],
+                            'values' => $roomRows,
+                            // $Rooms ist in Symcon eine IPSList-Zeile, kein PHP-Array.
+                            'onEdit' => 'RCC_SaveRoomToEdit($id, json_encode(array_filter(['
+                                . '\'roomKey\' => ($Rooms["roomKey"] ?? null), '
+                                . '\'display\' => ($Rooms["display"] ?? null), '
+                                . '\'floor\' => ($Rooms["floor"] ?? null), '
+                                . '\'aliases\' => ($Rooms["aliases"] ?? null)'
+                                . '], static fn($v) => $v !== null), JSON_INVALID_UTF8_SUBSTITUTE));'
+                        ],
+                        ['type'=>'Label','caption'=>'Neuer Raum (wird ohne Geraete nur in RoomsCatalogEdit angelegt):'],
+                        ['type'=>'RowLayout','items'=>[
+                            ['type'=>'ValidationTextBox','name'=>'NewRoomKey','caption'=>'Neuer Raum-Key'],
+                            ['type'=>'ValidationTextBox','name'=>'NewRoomDisplay','caption'=>'Raumname'],
+                            ['type'=>'ValidationTextBox','name'=>'NewRoomFloor','caption'=>'Etage (z.B. EG, OG, KG)'],
+                            ['type'=>'ValidationTextBox','name'=>'NewRoomAliases','caption'=>'Alternative Namen']
+                        ]],
+                        ['type'=>'Button','caption'=>'NEUEN RAUM IM EDIT ANLEGEN',
+                            'onClick'=>'RCC_CreateRoom($id, json_encode(['
+                                . '\'roomKey\' => ($NewRoomKey ?? \'\'), '
+                                . '\'display\' => ($NewRoomDisplay ?? \'\'), '
+                                . '\'floor\' => ($NewRoomFloor ?? \'\'), '
+                                . '\'aliases\' => ($NewRoomAliases ?? \'\')'
+                                . '], JSON_INVALID_UTF8_SUBSTITUTE));']
                     ]
                 ],
                 [
@@ -1006,8 +1321,21 @@ class RoomsCatalogConfigurator extends IPSModule
                 [
                     'type'     => 'ExpansionPanel',
                     'caption'  => 'Vorschau: Unterschiede EDIT zu PROD',
-                    'expanded' => $diffExpanded,
+                    'expanded' => $diffExpanded || $roomDiffRows !== [],
                     'items'    => [
+                        [
+                            'type' => 'List', 'name' => 'RoomsDiff',
+                            'caption' => 'V3.1: Raum-Aenderungen EDIT zu PROD',
+                            'rowCount' => 8, 'add' => false, 'delete' => false,
+                            'columns' => [
+                                ['caption'=>'Raum-Key','name'=>'roomKey','width'=>'135px'],
+                                ['caption'=>'Raumname','name'=>'display','width'=>'auto'],
+                                ['caption'=>'Etage','name'=>'floor','width'=>'80px'],
+                                ['caption'=>'Alternative Namen','name'=>'aliases','width'=>'250px'],
+                                ['caption'=>'Aenderung','name'=>'change','width'=>'110px']
+                            ],
+                            'values' => $roomDiffRows
+                        ],
                         [
                             'type'     => 'List',
                             'name'     => 'EntriesEdit',
@@ -1990,6 +2318,21 @@ class RoomsCatalogConfigurator extends IPSModule
         // Das Aktualisieren der Listen lässt ExpansionPanel-/Filterzustand intakt.
         $this->UpdateFormField('Entries', 'values', json_encode($visible, JSON_INVALID_UTF8_SUBSTITUTE));
         $this->UpdateFormField('EntriesEdit', 'values', json_encode($visibleDiff, JSON_INVALID_UTF8_SUBSTITUTE));
+
+        $editCatalog = $this->loadConfiguredCatalog('RoomsCatalogEditScriptID', 'EDIT');
+        $prodCatalog = $this->loadConfiguredCatalog('RoomsCatalogScriptID', 'PROD');
+        $roomRows = $this->buildRoomListRows($editCatalog);
+        $roomDiffRows = $this->buildRoomDiffEntries($prodCatalog, $editCatalog);
+        $this->UpdateFormField('Rooms', 'values', json_encode($roomRows, JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->UpdateFormField('RoomsDiff', 'values', json_encode($roomDiffRows, JSON_INVALID_UTF8_SUBSTITUTE));
+        [$roomOptions] = $this->buildFilterOptionsFromEntries(array_merge($prod, $edit));
+        $knownKeys = array_column($roomOptions, 'value');
+        foreach ($roomRows as $roomRow) {
+            if (!in_array($roomRow['roomKey'], $knownKeys, true)) {
+                $roomOptions[] = ['caption'=>$roomRow['display'] . ' (' . $roomRow['roomKey'] . ')', 'value'=>$roomRow['roomKey']];
+            }
+        }
+        $this->UpdateFormField('FilterRoom', 'options', json_encode($roomOptions, JSON_INVALID_UTF8_SUBSTITUTE));
 
         $readable = count(array_filter($edit, static fn($r): bool => !empty($r['kiEnabled'])));
         $writable = count(array_filter($edit, static fn($r): bool => !empty($r['kiEnabled']) && empty($r['kiReadOnly'])));
