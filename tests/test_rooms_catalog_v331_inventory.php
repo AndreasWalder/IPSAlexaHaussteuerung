@@ -142,6 +142,13 @@ auditOk(($bySource[2009]['readiness'] ?? '') === 'Unvollstaendig',
     'Unknown generic device was treated as complete');
 auditOk(isset($mod->updates['DiscoverySummary.caption']) && str_contains($message,'Inventur'),
     'Inventory summary not updated');
+$allRows = json_decode($mod->updates['DiscoveryInventoryList.values'] ?? '[]',true,512,JSON_THROW_ON_ERROR);
+auditOk(count($allRows) === 11
+    && count(array_filter($allRows,static fn($row): bool=>$row['knownLabel'] === 'Bestand')) === 1,
+    'Full visible inventory omitted existing devices');
+$form = json_decode($mod->GetConfigurationForm(),true,512,JSON_THROW_ON_ERROR);
+auditOk(str_contains(json_encode($form,JSON_THROW_ON_ERROR),'DiscoveryInventoryList'),
+    'Full inventory table not visible in configurator');
 auditOk(IPS_GetScriptContent(41) === IPS_GetScriptContent(40),
     'Read-only inventory modified EDIT or PROD');
 
