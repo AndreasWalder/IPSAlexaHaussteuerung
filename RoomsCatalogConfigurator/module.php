@@ -854,6 +854,26 @@ class RoomsCatalogConfigurator extends IPSModule
             (int)($report['excludedGroups'] ?? 0)+(int)($report['withoutVariables'] ?? 0)+(int)($report['disabled'] ?? 0),$status);
     }
 
+    private function discoveryInventoryRows(array $report): array
+    {
+        $rows = [];
+        foreach ((array)($report['items'] ?? []) as $item) {
+            $missing = (array)($item['roleMissing'] ?? []);
+            $rows[] = [
+                'sourceId'=>(int)($item['sourceId'] ?? 0),
+                'name'=>(string)($item['name'] ?? ''),
+                'moduleName'=>(string)($item['moduleName'] ?? ''),
+                'roomKey'=>(string)($item['roomKey'] ?? ''),
+                'deviceType'=>(string)($item['deviceType'] ?? 'generic'),
+                'knownLabel'=>!empty($item['known']) ? 'Bestand' : 'Neu',
+                'variableCount'=>count((array)($item['variableIds'] ?? [])),
+                'roleMissingText'=>$missing === [] ? 'Rollen-Vorschlag vorhanden'
+                    : 'Pruefen: ' . implode(', ',$missing)
+            ];
+        }
+        return $rows;
+    }
+
     /** READ ONLY: 100%-Status erst wenn jedes gefundene Geraet bestaetigt und zugeordnet ist. */
     public function AuditDiscoveryCoverage(): void
     {
@@ -901,6 +921,10 @@ class RoomsCatalogConfigurator extends IPSModule
                 $id = (int)($device[$field] ?? 0);
                 if ($id > 0 && (!function_exists('IPS_VariableExists') || IPS_VariableExists($id))) {
                     $bound[$property] = true;
+                    if (!in_array($id,$knownIds,true)) {
+                        $unresolved[] = 'IPS ' . $candidateSource . ': ' . $property
+                            . ' (' . $id . ') liegt ausserhalb der gescannten Quelle';
+                    }
                 }
             }
             foreach ($this->minimumReadingRoles($type) as $alternatives) {
@@ -1288,6 +1312,8 @@ class RoomsCatalogConfigurator extends IPSModule
         ];
         $this->WriteAttributeString('DiscoveryCandidates', json_encode($preview, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
         $this->UpdateFormField('DiscoveredDevices','values',json_encode($candidates, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->UpdateFormField('DiscoveryInventoryList','values',json_encode(
+            $this->discoveryInventoryRows($inventoryReport),JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
         $summary = $this->discoveryInventorySummary($inventoryReport);
         $this->UpdateFormField('DiscoverySummary','caption',$summary);
         echo $summary . ' Nur explizite Uebernahme aendert EDIT.';
@@ -2552,6 +2578,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $inventoryPreview = json_decode($this->ReadAttributeString('DiscoveryInventory'),true);
         $discoverySummary = is_array($inventoryPreview) && isset($inventoryPreview['items'])
             ? $this->discoveryInventorySummary($inventoryPreview) : 'Noch keine Geraeteinventur gestartet.';
+        $inventoryRows = is_array($inventoryPreview) ? $this->discoveryInventoryRows($inventoryPreview) : [];
 
         [$roomOptions, $domainOptions, $groupOptions] = $this->buildFilterOptionsFromEntries(array_merge($entriesProd, $entriesEdit));
         $knownRooms = array_column($roomOptions, 'value');
@@ -2807,6 +2834,26 @@ class RoomsCatalogConfigurator extends IPSModule
                             'onClick'=>'RCC_ExportDiscoveryInventory($id);'],
                         ['type'=>'Label','name'=>'DiscoveryAudit',
                             'caption'=>$this->ReadAttributeString('DiscoveryAuditReport')],
+                        [
+                            'type'=>'List','name'=>'DiscoveryInventoryList',
+                            'caption'=>'Inventar aller gefundenen Geraete, inklusive Bestand (IPS-ID anklicken fuer Details)',
+                            'rowCount'=>12,'loadValuesFromConfiguration'=>false,
+                            'add'=>false,'delete'=>false,
+                            'sort'=>['column'=>'name','direction'=>'ascending'],
+                            'columns'=>[
+                                ['caption'=>'IPS-ID / Details','name'=>'sourceId','width'=>'110px','save'=>false,
+                                    'quickFilter'=>true,
+                                    'onClick'=>'RCC_ShowDiscoveryDetails($id, (int)($DiscoveryInventoryList["sourceId"] ?? 0));'],
+                                ['caption'=>'Geraet','name'=>'name','width'=>'175px','save'=>false,'quickFilter'=>true],
+                                ['caption'=>'Modul','name'=>'moduleName','width'=>'125px','save'=>false,'quickFilter'=>true],
+                                ['caption'=>'Raum','name'=>'roomKey','width'=>'100px','save'=>false],
+                                ['caption'=>'Typ','name'=>'deviceType','width'=>'105px','save'=>false],
+                                ['caption'=>'Bestand / Neu','name'=>'knownLabel','width'=>'95px','save'=>false],
+                                ['caption'=>'Variablen','name'=>'variableCount','width'=>'80px','save'=>false],
+                                ['caption'=>'Hinweis (Scan-Vorschlag)','name'=>'roleMissingText','width'=>'auto','save'=>false]
+                            ],
+                            'values'=>$inventoryRows
+                        ],
                         [
                             'type'=>'List','name'=>'DiscoveredDevices','caption'=>'Neue Geraete: pruefen und zur Uebernahme markieren',
                             'rowCount'=>15,'loadValuesFromConfiguration'=>false,
@@ -3908,6 +3955,10 @@ class RoomsCatalogConfigurator extends IPSModule
         $discoveryRows = is_array($discoveryPreview) && is_array($discoveryPreview['rows'] ?? null)
             ? $discoveryPreview['rows'] : [];
         $this->UpdateFormField('DiscoveredDevices', 'values', json_encode($discoveryRows, JSON_INVALID_UTF8_SUBSTITUTE));
+        $inventory = json_decode($this->ReadAttributeString('DiscoveryInventory'),true);
+        $this->UpdateFormField('DiscoveryInventoryList','values',json_encode(
+            is_array($inventory) ? $this->discoveryInventoryRows($inventory) : [],
+            JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
         $legacyPreview = json_decode($this->ReadAttributeString('LegacyMigrationPreview'),true);
         $legacyRows = is_array($legacyPreview) && is_array($legacyPreview['rows'] ?? null)
             ? $legacyPreview['rows'] : [];
