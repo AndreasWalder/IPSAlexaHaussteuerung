@@ -76,6 +76,8 @@ jobs:
         run: php tests/test_ki_rooms_catalog.php
       - name: Test RoomsCatalog form add/edit and persistent expansion
         run: php tests/test_rooms_catalog_editor_ui.php
+      - name: Test RoomsCatalog V3.0 typed device model, lossless saves and verified backup
+        run: php tests/test_rooms_catalog_v3_model.php
       - name: Test Symcon IPSList checkbox callbacks and filtered multi-selection
         run: php tests/test_rooms_catalog_ipslist_multiselect.php
       - name: Test RoomsCatalog quick search for IPS object IDs and parent instance IDs
