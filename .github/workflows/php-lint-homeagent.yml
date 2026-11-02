@@ -82,6 +82,8 @@ jobs:
         run: php tests/test_rooms_catalog_v31_rooms.php
       - name: Test RoomsCatalog V3.2 safe instance-scoped variable suggestions
         run: php tests/test_rooms_catalog_v32_suggestions.php
+      - name: Test RoomsCatalog V3.3 scoped device discovery and EDIT-only import
+        run: php tests/test_rooms_catalog_v33_discovery.php
       - name: Test Symcon IPSList checkbox callbacks and filtered multi-selection
         run: php tests/test_rooms_catalog_ipslist_multiselect.php
       - name: Test RoomsCatalog quick search for IPS object IDs and parent instance IDs

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /**
  * ============================================================
- * ROOMS CATALOG CONFIGURATOR — IP-Symcon Modul (V3.2)
+ * ROOMS CATALOG CONFIGURATOR — IP-Symcon Modul (V3.3)
  * ============================================================
  *
  * Änderungsverlauf
@@ -54,6 +54,11 @@ declare(strict_types=1);
  * - Analysiert nur die Instanz/Kategorie bereits zugeordneter Gerätevariablen
  * - Bewertet Namen, Ident, Profile, Typ und Schaltaktion; zeigt Konflikte an
  * - Übernimmt nur eindeutige Treffer nach expliziter Bestätigung nach EDIT
+ *
+ * 2026-11-02: V3.3 — Gerätesuche in ausgewählten IP-Symcon-Wurzeln
+ * - Schlägt neue Instanzen mit Raum, Gerätetyp und Variablen vor
+ * - Verhindert doppelte Geräte, lässt unsichere Funde zur Prüfung stehen
+ * - Übernimmt nur bestätigte Geräte ohne KI-Schreibfreigaben nach EDIT
  */
 
 class RoomsCatalogConfigurator extends IPSModule
@@ -119,6 +124,8 @@ class RoomsCatalogConfigurator extends IPSModule
 
         $this->RegisterPropertyInteger('RoomsCatalogScriptID', 0);
         $this->RegisterPropertyInteger('RoomsCatalogEditScriptID', 0);
+        $this->RegisterPropertyInteger('DiscoveryRootId', 0);
+        $this->RegisterPropertyString('DiscoveryExtraRootIds', '');
 
         $this->RegisterAttributeString('RuntimeEntries', '[]');
         $this->RegisterAttributeString('FilterRoom', '');
@@ -126,6 +133,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('FilterGroup', '');
         $this->RegisterAttributeString('FilterAI', 'all');
         $this->RegisterAttributeString('SuggestionPreview', '{}');
+        $this->RegisterAttributeString('DiscoveryCandidates', '{}');
     }
 
     public function ApplyChanges()
@@ -368,6 +376,14 @@ class RoomsCatalogConfigurator extends IPSModule
         if ($scopeCounts === []) return [];
         arsort($scopeCounts, SORT_NUMERIC);
         $scope = (int)array_key_first($scopeCounts);
+        return $this->getIpsVariablesUnderScope($scope);
+    }
+
+    /** Gemeinsamer begrenzter Scanner für V3.2 und V3.3. */
+    private function getIpsVariablesUnderScope(int $scope): array
+    {
+        if ($scope <= 0 || !function_exists('IPS_GetObject') || !function_exists('IPS_GetChildrenIDs')
+            || !function_exists('IPS_GetVariable') || !function_exists('IPS_VariableExists')) return [];
         $queue = [[$scope, 0]];
         $visited = [];
         $found = [];
@@ -498,6 +514,313 @@ class RoomsCatalogConfigurator extends IPSModule
             ];
         }
         return $suggestions;
+    }
+
+    /** V3.3: bewusst nur explizit konfigurierte Kategorien/Instanzen durchsuchen. */
+    private function discoveryRoots(): array
+    {
+        $raw = [$this->ReadPropertyInteger('DiscoveryRootId')];
+        foreach (preg_split('/[,;\s]+/', $this->ReadPropertyString('DiscoveryExtraRootIds')) ?: [] as $part) {
+            if ($part !== '' && ctype_digit($part)) $raw[] = (int)$part;
+        }
+        $roots = [];
+        if (!function_exists('IPS_GetObject') || !function_exists('IPS_ObjectExists')) return [];
+        foreach (array_unique($raw) as $id) {
+            $id = (int)$id;
+            if ($id <= 0 || !IPS_ObjectExists($id)) continue;
+            $object = IPS_GetObject($id);
+            if (in_array((int)($object['ObjectType'] ?? -1), [0,1], true)) $roots[] = $id;
+        }
+        return $roots;
+    }
+
+    private function knownDiscoveryIds(array $catalog): array
+    {
+        $known = [];
+        foreach ($this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($catalog)) as $row) {
+            $source = (int)($row['discoverySourceId'] ?? 0);
+            if ($source > 0) $known['source:' . $source] = true;
+            foreach (array_merge(
+                ['state','toggle','value','set','wert','stellung','ist','soll','eingestellt','statusId','controlId','tiltId','id','var'],
+                array_values(self::AI_VARIABLE_FIELDS)
+            ) as $field) {
+                $id = (int)($row[$field] ?? 0);
+                if ($id > 0) $known['var:' . $id] = true;
+            }
+        }
+        return $known;
+    }
+
+    private function matchDiscoveryRoom(int $sourceId, array $catalog): string
+    {
+        $rooms = $this->roomMap($catalog);
+        $names = [];
+        foreach ($rooms as $roomKey => $room) {
+            if ($roomKey === 'global' || !is_array($room) || !isset($room['domains'])) continue;
+            $aliases = [$roomKey, (string)($room['display'] ?? $roomKey)];
+            if (is_array($room['aliases'] ?? null)) $aliases = array_merge($aliases, $room['aliases']);
+            elseif (is_string($room['aliases'] ?? null)) $aliases = array_merge($aliases, $this->parseRoomAliases($room['aliases']));
+            foreach ($aliases as $alias) {
+                $normalized = $this->normalizeSuggestionText((string)$alias);
+                if ($normalized !== '') $names[$normalized][(string)$roomKey] = true;
+            }
+        }
+        $visited = [];
+        $current = $sourceId;
+        for ($depth=0; $depth<12 && $current>0 && !isset($visited[$current]); $depth++) {
+            $visited[$current] = true;
+            $object = IPS_GetObject($current);
+            if (!is_array($object)) break;
+            $candidateNames = [(string)($object['ObjectName'] ?? ''), (string)($object['ObjectIdent'] ?? '')];
+            $matched = [];
+            foreach ($candidateNames as $candidateName) {
+                $normalized = $this->normalizeSuggestionText($candidateName);
+                foreach (array_keys($names[$normalized] ?? []) as $roomKey) $matched[$roomKey] = true;
+            }
+            if (count($matched) === 1) return (string)array_key_first($matched);
+            if (count($matched) > 1) return ''; // Mehrdeutig: keine automatische Zuordnung.
+            $current = (int)($object['ParentID'] ?? $object['ObjectParentID'] ?? 0);
+        }
+        return '';
+    }
+
+    private function discoverHighProperties(array $variables): array
+    {
+        $high = [];
+        foreach (self::AI_VARIABLE_FIELDS as $property => $field) {
+            $ranked = [];
+            foreach ($variables as $variable) {
+                $score = $this->suggestionScore($variable, $property);
+                if ($score > 0) $ranked[] = $score;
+            }
+            rsort($ranked, SORT_NUMERIC);
+            if (($ranked[0] ?? 0) >= 105 && ($ranked[0] - ($ranked[1] ?? 0)) >= 25) $high[$property] = true;
+        }
+        return $high;
+    }
+
+    private function inferDiscoveredType(array $variables): string
+    {
+        $high = $this->discoverHighProperties($variables);
+        if (isset($high['position']) || isset($high['tilt'])) return 'blind';
+        if (isset($high['temperature']) || isset($high['targetTemperature'])) return 'heating';
+        if (isset($high['brightness'])) return 'dimmer';
+        if (isset($high['open'])) return 'window';
+        if (isset($high['motion'])) return 'motion';
+        if (isset($high['powerWatts']) || isset($high['energy'])) {
+            return isset($high['power']) || isset($high['control']) ? 'switch' : 'energy';
+        }
+        if (isset($high['power']) || isset($high['control'])) return 'light';
+        return 'generic';
+    }
+
+    private function discoveryTypeLocation(string $type): array
+    {
+        return match ($type) {
+            'light' => ['licht','switches'], 'dimmer' => ['licht','dimmers'],
+            'blind' => ['jalousie','jalousie'], 'heating' => ['heizung','heizung'],
+            'fan' => ['lueftung','fans'], 'window' => ['sensoren','fenster'],
+            'motion' => ['sensoren','bewegung'], 'energy' => ['energie','zaehler'],
+            'switch' => ['geraete','switches'], default => ['geraete','other']
+        };
+    }
+
+    private function discoveryDeviceKey(string $title, int $sourceId): string
+    {
+        $base = substr($this->normalizeSuggestionText($title), 0, 36);
+        return ($base !== '' ? $base : 'geraet') . '_' . $sourceId;
+    }
+
+    public function ScanNewDevices(): void
+    {
+        $roots = $this->discoveryRoots();
+        $edit = $this->loadConfiguredCatalog('RoomsCatalogEditScriptID', 'EDIT');
+        if ($roots === [] || $edit === []) {
+            echo 'Bitte mindestens eine gueltige Suchwurzel und RoomsCatalogEdit konfigurieren.';
+            return;
+        }
+        if (!function_exists('IPS_GetChildrenIDs') || !function_exists('IPS_GetVariable')) {
+            echo 'IP-Symcon-Objektfunktionen nicht verfuegbar.';
+            return;
+        }
+        $known = $this->knownDiscoveryIds($edit);
+        $queue = array_map(static fn($id): array => [$id,0], $roots);
+        $visited = [];
+        $candidates = [];
+        $skipped = 0;
+        while ($queue !== [] && count($visited) < 2500 && count($candidates) < 200) {
+            [$id,$depth] = array_shift($queue);
+            if ($id <= 0 || isset($visited[$id]) || !IPS_ObjectExists($id)) continue;
+            $visited[$id] = true;
+            $object = IPS_GetObject($id);
+            if (!is_array($object) || !in_array((int)($object['ObjectType'] ?? -1), [0,1], true)
+                || !empty($object['ObjectIsDisabled'])) continue;
+            $kind = (int)$object['ObjectType'];
+            $children = IPS_GetChildrenIDs($id);
+            $childContainers = 0;
+            $directVariables = 0;
+            foreach (is_array($children) ? $children : [] as $childId) {
+                $child = IPS_GetObject((int)$childId);
+                $childType = (int)($child['ObjectType'] ?? -1);
+                if ($childType === 2) $directVariables++;
+                if ($childType === 0 || $childType === 1) {
+                    $childContainers++;
+                    if ($kind === 0 && $depth < 12) $queue[] = [(int)$childId,$depth+1];
+                }
+            }
+            // Instanzen sind Geräte; Kategorien nur als kleine Blatt-Gruppe zulassen.
+            if ($kind === 0 && ($childContainers > 0 || $directVariables === 0 || $directVariables > 12)) continue;
+            if ($kind === 1 && $directVariables === 0 && $childContainers === 0) continue;
+            $variables = $this->getIpsVariablesUnderScope($id);
+            if ($variables === []) continue;
+            $ids = array_column($variables, 'id');
+            if (isset($known['source:' . $id]) || array_filter($ids, static fn($v): bool => isset($known['var:' . $v])) !== []) {
+                $skipped++;
+                continue;
+            }
+            $type = $this->inferDiscoveredType($variables);
+            $roomKey = $this->matchDiscoveryRoom($id, $edit);
+            $high = count($this->discoverHighProperties($variables));
+            $confidence = $roomKey !== '' && $type !== 'generic' && $high > 0 ? 'Hoch' : 'Pruefen';
+            $title = trim((string)($object['ObjectName'] ?? ''));
+            $candidates[] = [
+                'selected'=>false, 'sourceId'=>$id, 'sourceType'=>$kind === 1 ? 'instance' : 'category',
+                'title'=>$title !== '' ? $title : 'Geraet ' . $id,
+                'roomKey'=>$roomKey, 'deviceType'=>$type,
+                'variableCount'=>count($variables), 'confidence'=>$confidence,
+                'reason'=>($roomKey === '' ? 'Raum zuordnen; ' : '') .
+                    ($type === 'generic' ? 'Geraetetyp pruefen; ' : '') . $high . ' eindeutige Variablen',
+                'variableIds'=>$ids
+            ];
+        }
+        $preview = [
+            'time'=>time(), 'roots'=>$roots,
+            'editHash'=>hash('sha256', IPS_GetScriptContent($this->ReadPropertyInteger('RoomsCatalogEditScriptID'))),
+            'rows'=>$candidates
+        ];
+        $this->WriteAttributeString('DiscoveryCandidates', json_encode($preview, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->UpdateFormField('DiscoveredDevices','values',json_encode($candidates, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+        echo sprintf('%d neue Kandidaten gefunden, %d bereits bekannte Geraete uebersprungen. Nur explizite Uebernahme aendert EDIT.', count($candidates),$skipped);
+    }
+
+    public function UpdateDiscoveryCandidate(string $rowJson): void
+    {
+        $row = json_decode($rowJson, true);
+        $preview = json_decode($this->ReadAttributeString('DiscoveryCandidates'), true);
+        if (!is_array($row) || !is_array($preview) || !is_array($preview['rows'] ?? null)) return;
+        $sourceId = (int)($row['sourceId'] ?? 0);
+        foreach ($preview['rows'] as &$candidate) {
+            if ((int)($candidate['sourceId'] ?? 0) !== $sourceId) continue;
+            if (isset($row['selected'])) $candidate['selected'] = (bool)$row['selected'];
+            if (isset($row['roomKey'])) $candidate['roomKey'] = trim((string)$row['roomKey']);
+            if (isset($row['title'])) $candidate['title'] = trim((string)$row['title']);
+            $type = (string)($row['deviceType'] ?? '');
+            if (array_key_exists($type,self::AI_TYPE_FIELDS)) $candidate['deviceType'] = $type;
+            break;
+        }
+        unset($candidate);
+        $this->WriteAttributeString('DiscoveryCandidates', json_encode($preview, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->UpdateFormField('DiscoveredDevices','values',json_encode($preview['rows'], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+    }
+
+    public function SelectDiscoveredDevices(bool $select): void
+    {
+        $preview = json_decode($this->ReadAttributeString('DiscoveryCandidates'), true);
+        if (!is_array($preview) || !is_array($preview['rows'] ?? null)) return;
+        foreach ($preview['rows'] as &$row) {
+            $row['selected'] = $select && ($row['confidence'] ?? '') === 'Hoch';
+        }
+        unset($row);
+        $this->WriteAttributeString('DiscoveryCandidates', json_encode($preview, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->UpdateFormField('DiscoveredDevices','values',json_encode($preview['rows'], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+    }
+
+    public function ApplyDiscoveredDevices(): void
+    {
+        $preview = json_decode($this->ReadAttributeString('DiscoveryCandidates'), true);
+        $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        if (!is_array($preview) || !is_array($preview['rows'] ?? null) || $editId <= 0 || !IPS_ScriptExists($editId)
+            || ($preview['roots'] ?? []) !== $this->discoveryRoots()
+            || time() - (int)($preview['time'] ?? 0) > 600
+            || ($preview['editHash'] ?? '') !== hash('sha256', IPS_GetScriptContent($editId))) {
+            echo 'Geraetesuche veraltet oder EDIT geaendert. Bitte erneut scannen.';
+            return;
+        }
+        $original = $this->loadRoomsCatalog($editId,'EDIT');
+        $rooms = $this->roomMap($original);
+        $rows = $this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($original));
+        $known = $this->knownDiscoveryIds($original);
+        $added = 0;
+        $errors = [];
+        foreach ($preview['rows'] as $candidate) {
+            if (empty($candidate['selected'])) continue;
+            $sourceId = (int)($candidate['sourceId'] ?? 0);
+            $roomKey = (string)($candidate['roomKey'] ?? '');
+            $type = (string)($candidate['deviceType'] ?? '');
+            $title = trim((string)($candidate['title'] ?? ''));
+            if ($sourceId <= 0 || !IPS_ObjectExists($sourceId) || !isset($rooms[$roomKey]['domains'])
+                || !array_key_exists($type,self::AI_TYPE_FIELDS) || $title === '') {
+                $errors[] = 'Geraet ' . $sourceId . ': Raum, Typ oder Name ungueltig.';
+                continue;
+            }
+            $variables = $this->getIpsVariablesUnderScope($sourceId);
+            $ids = array_column($variables, 'id');
+            if (isset($known['source:' . $sourceId]) || $ids === []
+                || array_filter($ids, static fn($v): bool => isset($known['var:' . $v])) !== []) {
+                $errors[] = 'Geraet ' . $sourceId . ': bereits bekannt oder keine gueltigen Variablen.';
+                continue;
+            }
+            [$domain,$group] = $this->discoveryTypeLocation($type);
+            $key = $this->discoveryDeviceKey($title,$sourceId);
+            $entry = [
+                'selected'=>false,'roomKey'=>$roomKey,'roomLabel'=>(string)($rooms[$roomKey]['display'] ?? $roomKey),
+                'floor'=>(string)($rooms[$roomKey]['floor'] ?? ''),'domain'=>$domain,'group'=>$group,'key'=>$key,
+                'title'=>$title,'kiEnabled'=>false,'kiReadOnly'=>true,'aiType'=>$type,
+                'discoverySourceId'=>$sourceId,'discoverySourceType'=>(string)($candidate['sourceType'] ?? 'instance')
+            ];
+            $used = [];
+            foreach ($this->suggestAIFields($entry,$type,$variables) as $suggestion) {
+                $id = (int)$suggestion['candidateId'];
+                if ($suggestion['confidence'] !== 'Hoch' || $id <= 0 || isset($used[$id])) continue;
+                $entry[self::AI_VARIABLE_FIELDS[$suggestion['property']]] = $id;
+                $used[$id] = true;
+            }
+            // Legacy-Felder ergänzen nur bekannte, eindeutige Mappings.
+            $legacy = match ($type) {
+                'light','dimmer','fan','switch' => ['power'=>'state','control'=>'toggle','brightness'=>'value'],
+                'blind' => ['position'=>'wert'], 'heating' => ['temperature'=>'ist','targetTemperature'=>'soll'],
+                'window' => ['open'=>'state'], 'motion' => ['motion'=>'state'], default => []
+            };
+            foreach ($legacy as $property => $field) {
+                $id = (int)($entry[self::AI_VARIABLE_FIELDS[$property]] ?? 0);
+                if ($id > 0) $entry[$field] = $id;
+            }
+            $exists = false;
+            foreach ($rows as $row) if ($this->buildCompositeKey($row) === $this->buildCompositeKey($entry)) $exists = true;
+            if ($exists) continue;
+            $rows[] = $entry;
+            foreach ($ids as $id) $known['var:' . $id] = true;
+            $known['source:' . $sourceId] = true;
+            $added++;
+        }
+        if ($errors !== []) {
+            echo 'Uebernahme abgebrochen: ' . implode('; ', array_slice($errors,0,4));
+            return;
+        }
+        if ($added === 0) { echo 'Keine markierten neuen Geraete zum Uebernehmen.'; return; }
+        $updated = $this->rebuildRoomsCatalogFromEntries($rows,$original);
+        $loss = [];
+        $this->findLostCatalogFields($original,$updated,'RoomsCatalogEdit',$loss);
+        if ($loss !== []) { echo 'Uebernahme abgebrochen: ' . implode('; ',array_slice($loss,0,3)); return; }
+        if (IPS_SetScriptContent($editId,"<?php\nreturn " . var_export($updated,true) . ";\n") === false) {
+            echo 'RoomsCatalogEdit konnte nicht geschrieben werden.';
+            return;
+        }
+        $this->WriteAttributeString('DiscoveryCandidates','{}');
+        $this->UpdateFormField('DiscoveredDevices','values','[]');
+        $this->reloadAllFromCatalog();
+        $this->RefreshVisibleLists();
+        echo $added . ' neue Geraete ausschliesslich in RoomsCatalogEdit gespeichert (KI-Schalten aus, PROD unveraendert).';
     }
 
     /**
@@ -1428,6 +1751,9 @@ class RoomsCatalogConfigurator extends IPSModule
         $suggestionPreview = json_decode($this->ReadAttributeString('SuggestionPreview'), true);
         $suggestionRows = is_array($suggestionPreview) && is_array($suggestionPreview['suggestions'] ?? null)
             ? $suggestionPreview['suggestions'] : [];
+        $discoveryPreview = json_decode($this->ReadAttributeString('DiscoveryCandidates'), true);
+        $discoveryRows = is_array($discoveryPreview) && is_array($discoveryPreview['rows'] ?? null)
+            ? $discoveryPreview['rows'] : [];
 
         [$roomOptions, $domainOptions, $groupOptions] = $this->buildFilterOptionsFromEntries(array_merge($entriesProd, $entriesEdit));
         $knownRooms = array_column($roomOptions, 'value');
@@ -1663,6 +1989,58 @@ class RoomsCatalogConfigurator extends IPSModule
                             'values'=>$suggestionRows
                         ],
                         ['type'=>'Label','caption'=>'Nur eindeutige Treffer werden uebernommen. Unklare Treffer bitte im V3.0-Geraeteeditor manuell auswaehlen. Offen/Geschlossen-Statuswerte werden nie geraten.']
+                    ]
+                ],
+                [
+                    'type' => 'ExpansionPanel',
+                    'caption' => 'V3.3: Neue IP-Symcon-Geraete erkennen',
+                    'expanded' => true,
+                    'items' => [
+                        ['type'=>'Label','caption'=>'Nur die hier ausgewaehlten Kategorien/Instanzen werden durchsucht. Gefundene Geraete sind erst Vorschlaege; keine automatische KI- oder Schreibfreigabe. Suchwurzeln nach dem Aendern mit Uebernehmen speichern.'],
+                        ['type'=>'RowLayout','items'=>[
+                            ['type'=>'SelectObject','name'=>'DiscoveryRootId','caption'=>'Suchwurzel (Kategorie oder Instanz)'],
+                            ['type'=>'ValidationTextBox','name'=>'DiscoveryExtraRootIds','caption'=>'Weitere Suchwurzeln (IPS-IDs, Komma getrennt)']
+                        ]],
+                        ['type'=>'Button','caption'=>'NEUE GERAETE SUCHEN','onClick'=>'RCC_ScanNewDevices($id);'],
+                        [
+                            'type'=>'List','name'=>'DiscoveredDevices','caption'=>'Neue Geraete: pruefen und zur Uebernahme markieren',
+                            'rowCount'=>15,'loadValuesFromConfiguration'=>false,
+                            'add'=>false,'delete'=>false,
+                            'sort'=>['column'=>'title','direction'=>'ascending'],
+                            'columns'=>[
+                                ['caption'=>'Uebernehmen','name'=>'selected','width'=>'95px','edit'=>['type'=>'CheckBox']],
+                                ['caption'=>'IPS-ID','name'=>'sourceId','width'=>'85px','save'=>false,'quickFilter'=>true],
+                                ['caption'=>'Quelle','name'=>'sourceType','width'=>'85px','save'=>false],
+                                ['caption'=>'Geraetename','name'=>'title','width'=>'165px','edit'=>['type'=>'ValidationTextBox'],'quickFilter'=>true],
+                                ['caption'=>'Raum','name'=>'roomKey','width'=>'125px','edit'=>['type'=>'Select','options'=>$roomOptions]],
+                                ['caption'=>'Geraetetyp','name'=>'deviceType','width'=>'115px','edit'=>['type'=>'Select','options'=>[
+                                    ['caption'=>'Licht','value'=>'light'],['caption'=>'Dimmer','value'=>'dimmer'],
+                                    ['caption'=>'Jalousie','value'=>'blind'],['caption'=>'Heizung','value'=>'heating'],
+                                    ['caption'=>'Fensterkontakt','value'=>'window'],['caption'=>'Steckdose/Schalter','value'=>'switch'],
+                                    ['caption'=>'Energiezaehler','value'=>'energy'],['caption'=>'Bewegung','value'=>'motion'],
+                                    ['caption'=>'Lueftung','value'=>'fan'],['caption'=>'Sonstiges','value'=>'generic']
+                                ]]],
+                                ['caption'=>'Variablen','name'=>'variableCount','width'=>'80px','save'=>false],
+                                ['caption'=>'Bewertung','name'=>'confidence','width'=>'90px','save'=>false],
+                                ['caption'=>'Hinweis','name'=>'reason','width'=>'auto','save'=>false]
+                            ],
+                            'values'=>$discoveryRows,
+                            'onEdit'=>'RCC_UpdateDiscoveryCandidate($id, json_encode(array_filter(['
+                                . '\'sourceId\' => ($DiscoveredDevices["sourceId"] ?? null), '
+                                . '\'selected\' => ($DiscoveredDevices["selected"] ?? null), '
+                                . '\'roomKey\' => ($DiscoveredDevices["roomKey"] ?? null), '
+                                . '\'title\' => ($DiscoveredDevices["title"] ?? null), '
+                                . '\'deviceType\' => ($DiscoveredDevices["deviceType"] ?? null)'
+                                . '], static fn($v) => $v !== null), JSON_INVALID_UTF8_SUBSTITUTE));'
+                        ],
+                        ['type'=>'RowLayout','items'=>[
+                            ['type'=>'Button','caption'=>'EINDEUTIGE MARKIEREN','onClick'=>'RCC_SelectDiscoveredDevices($id, true);'],
+                            ['type'=>'Button','caption'=>'ALLE MARKIERUNGEN AUFHEBEN','onClick'=>'RCC_SelectDiscoveredDevices($id, false);'],
+                            ['type'=>'Button','caption'=>'MARKIERTE GERAETE NACH EDIT UEBERNEHMEN',
+                                'confirm'=>'Markierte neue Geraete ausschliesslich nach RoomsCatalogEdit importieren? KI bleibt deaktiviert und PROD unveraendert.',
+                                'onClick'=>'RCC_ApplyDiscoveredDevices($id);']
+                        ]],
+                        ['type'=>'Label','caption'=>'Unklare Zuordnungen bitte vor der Uebernahme korrigieren. Neue Geraete starten immer mit Mit KI = aus und Nur abfragen = an.']
                     ]
                 ],
                 [
@@ -2672,6 +3050,10 @@ class RoomsCatalogConfigurator extends IPSModule
         $roomDiffRows = $this->buildRoomDiffEntries($prodCatalog, $editCatalog);
         $this->UpdateFormField('Rooms', 'values', json_encode($roomRows, JSON_INVALID_UTF8_SUBSTITUTE));
         $this->UpdateFormField('RoomsDiff', 'values', json_encode($roomDiffRows, JSON_INVALID_UTF8_SUBSTITUTE));
+        $discoveryPreview = json_decode($this->ReadAttributeString('DiscoveryCandidates'), true);
+        $discoveryRows = is_array($discoveryPreview) && is_array($discoveryPreview['rows'] ?? null)
+            ? $discoveryPreview['rows'] : [];
+        $this->UpdateFormField('DiscoveredDevices', 'values', json_encode($discoveryRows, JSON_INVALID_UTF8_SUBSTITUTE));
         [$roomOptions] = $this->buildFilterOptionsFromEntries(array_merge($prod, $edit));
         $knownKeys = array_column($roomOptions, 'value');
         foreach ($roomRows as $roomRow) {
