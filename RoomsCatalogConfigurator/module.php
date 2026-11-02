@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /**
  * ============================================================
- * ROOMS CATALOG CONFIGURATOR — IP-Symcon Modul (V2, dynamisch)
+ * ROOMS CATALOG CONFIGURATOR — IP-Symcon Modul (V3.0)
  * ============================================================
  *
  * Änderungsverlauf
@@ -38,10 +38,51 @@ declare(strict_types=1);
  * - Zahlenspalten mit überwiegend 5-stelligen Werten werden als SelectObject editierbar
  * - Speichern-Button: aktualisiert/legt Einträge im RoomsCatalogEdit-Script an
  *   (Struktur: [roomKey].display/domains[domain][group][key] = cfg)
+ *
+ * 2026-11-02: V3.0 — additive AI-Gerätebeschreibung
+ * - Typabhängiger Dialog mit mehreren IP-Symcon-Variablen und Zustandszuordnung
+ * - ai.version/type/variables/stateMapping ergänzen die unveränderten Legacy-Felder
+ * - Unbekannte Geräteeigenschaften und Raum-Metadaten verlustfrei erhalten
+ * - EDIT -> PROD nach Prüfung und verifiziertem Backup, keine Auto-Migration
  */
 
 class RoomsCatalogConfigurator extends IPSModule
 {
+    /** Die Editor-Felder gehören nicht zum Katalog, sondern werden in ai.variables gespeichert. */
+    private const AI_VARIABLE_FIELDS = [
+        'power' => 'aiPowerId',
+        'brightness' => 'aiBrightnessId',
+        'position' => 'aiPositionId',
+        'targetPosition' => 'aiTargetPositionId',
+        'tilt' => 'aiTiltId',
+        'moving' => 'aiMovingId',
+        'control' => 'aiControlId',
+        'temperature' => 'aiTemperatureId',
+        'targetTemperature' => 'aiTargetTemperatureId',
+        'open' => 'aiOpenId',
+        'powerWatts' => 'aiWattsId',
+        'energy' => 'aiEnergyId',
+        'motion' => 'aiMotionId'
+    ];
+
+    private const AI_STATE_FIELDS = [
+        'on' => 'aiOnValue', 'off' => 'aiOffValue',
+        'open' => 'aiOpenValue', 'closed' => 'aiClosedValue'
+    ];
+
+    private const AI_TYPE_FIELDS = [
+        'light' => ['power', 'control'],
+        'dimmer' => ['power', 'brightness', 'control'],
+        'blind' => ['position', 'targetPosition', 'tilt', 'moving', 'control'],
+        'heating' => ['temperature', 'targetTemperature', 'control'],
+        'window' => ['open'],
+        'switch' => ['power', 'powerWatts', 'energy', 'control'],
+        'energy' => ['powerWatts', 'energy'],
+        'motion' => ['motion'],
+        'fan' => ['power', 'control'],
+        'generic' => ['power', 'control']
+    ];
+
     /** Auflösung der übergeordneten Instanz-ID je IP-Symcon-Objekt innerhalb des PHP-Laufs. */
     private array $ipsInstanceLookupCache = [];
 
@@ -160,6 +201,7 @@ class RoomsCatalogConfigurator extends IPSModule
             'key', 'title', 'synonyms', 'entityId', 'kiEnabled', 'kiReadOnly',
             'state', 'toggle'
         ];
+        $keys = array_merge($keys, ['aiType'], array_values(self::AI_VARIABLE_FIELDS), array_values(self::AI_STATE_FIELDS));
         foreach ($entries as $row) {
             if (!is_array($row)) continue;
             foreach (array_keys($row) as $name) {
@@ -247,6 +289,28 @@ class RoomsCatalogConfigurator extends IPSModule
             }
             if (isset($seen[$key])) $errors[] = 'Doppelter Key: ' . $key;
             $seen[$key] = true;
+
+            $aiType = trim((string)($row['aiType'] ?? ''));
+            if ($aiType !== '') {
+                if (!array_key_exists($aiType, self::AI_TYPE_FIELDS)) {
+                    $errors[] = $key . ': unbekannter KI-Geraetetyp ' . $aiType;
+                } else {
+                    foreach (self::AI_TYPE_FIELDS[$aiType] as $property) {
+                        $field = self::AI_VARIABLE_FIELDS[$property];
+                        $id = (int)($row[$field] ?? 0);
+                        if ($id < 0 || ($id > 0 && !IPS_VariableExists($id))) {
+                            $errors[] = $key . ': ungueltige KI-Variable ' . $property . ' (' . $id . ')';
+                        }
+                    }
+                    if ($aiType === 'blind' && !empty($row['kiEnabled'])) {
+                        $open = trim((string)($row['aiOpenValue'] ?? ''));
+                        $closed = trim((string)($row['aiClosedValue'] ?? ''));
+                        if ($open === '' || $closed === '' || $this->parseAIStateValue($open) === $this->parseAIStateValue($closed)) {
+                            $errors[] = $key . ': Offen/Geschlossen-Werte der Jalousie fehlen oder sind gleich.';
+                        }
+                    }
+                }
+            }
             if (empty($row['kiEnabled'])) continue;
             if (!$this->isSupportedAIEntry($row)) {
                 $errors[] = $key . ': kein unterstuetztes KI-Geraet.';
@@ -299,6 +363,106 @@ class RoomsCatalogConfigurator extends IPSModule
             || ($domain === 'heizung' && $group === 'heizung')
             || ($domain === 'jalousie' && $group === 'jalousie')
             || ($domain === 'lueftung' && $group === 'fans');
+    }
+
+    private function inferredAIType(array $row): string
+    {
+        return match ((string)($row['domain'] ?? '')) {
+            'jalousie' => 'blind',
+            'heizung' => 'heating',
+            'lueftung' => 'fan',
+            'licht' => (string)($row['group'] ?? '') === 'dimmers' ? 'dimmer' : 'light',
+            'energie' => 'energy',
+            default => 'generic'
+        };
+    }
+
+    /** Vorschläge aus bisherigen Feldern, ohne die bestehende Konfiguration zu verändern. */
+    private function legacyAIVariable(array $row, string $property): int
+    {
+        $candidates = match ($property) {
+            'power' => ['state', 'value'],
+            'brightness' => ['value'],
+            'position' => ['wert', 'stellung', 'value'],
+            'targetPosition' => ['set'],
+            'tilt' => ['tiltId'],
+            'moving' => ['moving'],
+            'control' => ['toggle', 'set', 'controlId', 'soll', 'eingestellt'],
+            'temperature' => ['ist'],
+            'targetTemperature' => ['soll', 'eingestellt'],
+            'open' => ['state', 'value'],
+            'powerWatts' => ['leistung'],
+            'energy' => ['verbrauch'],
+            'motion' => ['state'],
+            default => []
+        };
+        foreach ($candidates as $candidate) {
+            $value = $row[$candidate] ?? null;
+            if ((is_int($value) || (is_string($value) && ctype_digit($value))) && (int)$value > 0) {
+                return (int)$value;
+            }
+        }
+        return 0;
+    }
+
+    /** Zusatzfelder sind virtuelle Editorwerte; ai bleibt die einzige persistente Quelle. */
+    private function withAIEditorFields(array $row, array $cfg): array
+    {
+        $ai = isset($cfg['ai']) && is_array($cfg['ai']) ? $cfg['ai'] : [];
+        $row['aiType'] = is_string($ai['type'] ?? null) ? $ai['type'] : '';
+        $variables = isset($ai['variables']) && is_array($ai['variables']) ? $ai['variables'] : [];
+        foreach (self::AI_VARIABLE_FIELDS as $property => $field) {
+            $configured = $variables[$property] ?? null;
+            $row[$field] = is_numeric($configured) ? (int)$configured
+                : $this->legacyAIVariable($row, $property);
+        }
+        $mapping = isset($ai['stateMapping']) && is_array($ai['stateMapping']) ? $ai['stateMapping'] : [];
+        foreach (self::AI_STATE_FIELDS as $property => $field) {
+            $value = $mapping[$property] ?? null;
+            $row[$field] = $value === null ? '' : (is_bool($value) ? ($value ? 'true' : 'false') : (string)$value);
+        }
+        return $row;
+    }
+
+    private function parseAIStateValue(string $value): mixed
+    {
+        $value = trim($value);
+        if (strcasecmp($value, 'true') === 0) return true;
+        if (strcasecmp($value, 'false') === 0) return false;
+        if (preg_match('/^-?\d+$/D', $value) === 1) return (int)$value;
+        if (is_numeric($value)) return (float)$value;
+        return $value;
+    }
+
+    private function mergeAIEditorFields(array $row, array $cfg): array
+    {
+        $type = trim((string)($row['aiType'] ?? ''));
+        // Ohne explizite Typwahl bleibt ein Legacy-Gerät ein Legacy-Gerät.
+        if ($type === '' || !array_key_exists($type, self::AI_TYPE_FIELDS)) return $cfg;
+
+        $ai = isset($cfg['ai']) && is_array($cfg['ai']) ? $cfg['ai'] : [];
+        $ai['version'] = max(1, (int)($ai['version'] ?? 1));
+        $ai['type'] = $type;
+        $variables = isset($ai['variables']) && is_array($ai['variables']) ? $ai['variables'] : [];
+        foreach (self::AI_VARIABLE_FIELDS as $property => $field) {
+            if (!in_array($property, self::AI_TYPE_FIELDS[$type], true)) continue;
+            if (!array_key_exists($field, $row)) continue;
+            $value = (int)$row[$field];
+            if ($value > 0 || array_key_exists($property, $variables)) {
+                $variables[$property] = $value;
+            }
+        }
+        if ($variables !== [] || array_key_exists('variables', $ai)) $ai['variables'] = $variables;
+
+        $mapping = isset($ai['stateMapping']) && is_array($ai['stateMapping']) ? $ai['stateMapping'] : [];
+        foreach (self::AI_STATE_FIELDS as $property => $field) {
+            if (!array_key_exists($field, $row)) continue;
+            $value = trim((string)$row[$field]);
+            if ($value !== '') $mapping[$property] = $this->parseAIStateValue($value);
+        }
+        if ($mapping !== [] || array_key_exists('stateMapping', $ai)) $ai['stateMapping'] = $mapping;
+        $cfg['ai'] = $ai;
+        return $cfg;
     }
 
     /**
@@ -371,20 +535,6 @@ class RoomsCatalogConfigurator extends IPSModule
                     }
 
                     if (!$changedNonSelection) {
-                        foreach ($orig as $k => $ov) {
-                            if (in_array($k, ['selected', 'rowColor', 'kiStatus', 'diffKeys'], true)) {
-                                continue;
-                            }
-                            if (!array_key_exists($k, $row)) {
-                                if ($ov !== null && $ov !== '' && $ov !== 0 && $ov !== 0.0) {
-                                    $changedNonSelection = true;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    if (!$changedNonSelection) {
                         $all[$i]['selected'] = !empty($row['selected']);
                         $this->WriteAttributeString('RuntimeEntries', json_encode($all));
                         $this->logDebug('SaveToEdit: nur Markierung geändert, kein Write nach RoomsCatalogEdit, kein Reload');
@@ -417,7 +567,9 @@ class RoomsCatalogConfigurator extends IPSModule
                 continue;
             }
             if (isset($index[$rk])) {
-                $all[$index[$rk]] = $row;
+                // IPSList liefert je nach Symcon-Version nur sichtbare Felder.
+                // Unbekannte Metadaten (insbesondere verschachteltes ai) nie löschen.
+                $all[$index[$rk]] = array_replace($all[$index[$rk]], $row);
             } else {
                 $all[]      = $row;
                 $index[$rk] = count($all) - 1;
@@ -459,7 +611,10 @@ class RoomsCatalogConfigurator extends IPSModule
         }
 
         $editCatalog = $this->loadRoomsCatalog($editId, 'EDIT');
-        $errors = $this->validateEntries($this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($editCatalog)), false);
+        $editEntries = $this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($editCatalog));
+        $errors = $this->validateEntries($editEntries);
+        $roundTrip = $this->rebuildRoomsCatalogFromEntries($editEntries, $editCatalog);
+        $this->findLostCatalogFields($editCatalog, $roundTrip, 'RoomsCatalogEdit', $errors);
         if ($errors !== []) {
             echo 'Veröffentlichung abgebrochen: ' . implode('; ',array_slice($errors,0,4));
             return;
@@ -469,11 +624,21 @@ class RoomsCatalogConfigurator extends IPSModule
             return;
         }
 
+        // Keine Migration: die geprüfte EDIT-Quelle wird unverändert in PROD geschrieben.
         $php = "<?php\nreturn " . var_export($editCatalog, true) . ";\n";
+        $originalProd = IPS_GetScriptContent($prodId);
         $backup = IPS_CreateScript(0);
+        if (!is_int($backup) || $backup <= 0) {
+            echo 'Veröffentlichung abgebrochen: Backup konnte nicht angelegt werden.';
+            return;
+        }
         IPS_SetParent($backup, IPS_GetParent($prodId));
         IPS_SetName($backup, 'RoomsCatalog_Backup_' . date('Ymd_His') . '_' . $backup);
-        IPS_SetScriptContent($backup, IPS_GetScriptContent($prodId));
+        IPS_SetScriptContent($backup, $originalProd);
+        if (IPS_GetScriptContent($backup) !== $originalProd) {
+            echo 'Veröffentlichung abgebrochen: Backup konnte nicht verifiziert werden.';
+            return;
+        }
         IPS_SetScriptContent($prodId, $php);
         echo 'Produktiver Katalog aktualisiert; Backup-Skript ' . $backup . '.';
 
@@ -1104,9 +1269,6 @@ class RoomsCatalogConfigurator extends IPSModule
             if (in_array($k, $forceIdKeys, true)) {
                 if (is_string($v)) {
                     $trim = trim($v);
-                    if ($trim === '' || $trim === '.') {
-                        continue;
-                    }
                     if (ctype_digit($trim)) {
                         $v = (int)$trim;
                     }
@@ -1114,9 +1276,6 @@ class RoomsCatalogConfigurator extends IPSModule
             }
 
             if (is_array($v)) {
-                if ($v === []) {
-                    continue;
-                }
                 $enc = json_encode($v, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                 $row[$k] = $enc !== false ? $enc : '';
             } elseif (is_bool($v) || is_int($v) || is_float($v) || is_string($v)) {
@@ -1124,7 +1283,7 @@ class RoomsCatalogConfigurator extends IPSModule
             }
         }
 
-        return $row;
+        return $this->withAIEditorFields($row, $cfg);
     }
 
     private function getRuntimeEntries(): array
@@ -1549,12 +1708,17 @@ class RoomsCatalogConfigurator extends IPSModule
     }
 
     /**
-     * Wichtig: schreibt KEIN 'rooms'-Key mehr.
-     * Räume werden als Top-Level-Keys im Katalog angelegt.
+     * Erhält die vorhandene Root-Form: normale Raum-Keys oder bestehenden
+     * 'rooms'-Wrapper. Es findet keine automatische Konvertierung statt.
      */
     private function rebuildRoomsCatalogFromEntries(array $entries, array $existingCatalog): array
     {
         $rooms = [];
+        $hasRoomsWrapper = isset($existingCatalog['rooms']) && is_array($existingCatalog['rooms']);
+        $existingRoomsMap = $hasRoomsWrapper ? $existingCatalog['rooms'] : $existingCatalog;
+        $virtualAIFields = array_merge(
+            ['aiType'], array_values(self::AI_VARIABLE_FIELDS), array_values(self::AI_STATE_FIELDS)
+        );
 
         foreach ($entries as $row) {
             if (!is_array($row)) {
@@ -1577,7 +1741,11 @@ class RoomsCatalogConfigurator extends IPSModule
                     'display' => $roomLabel !== '' ? $roomLabel : $roomKey,
                     'domains' => []
                 ];
-                if ($roomFloor !== '') {
+                if (isset($existingRoomsMap[$roomKey]['floor'])) {
+                    // Etagenpflege kommt in V3.1; gerätespezifisches 'floor'
+                    // darf die Raum-Etage in V3.0 nicht überschreiben.
+                    $rooms[$roomKey]['floor'] = $existingRoomsMap[$roomKey]['floor'];
+                } elseif ($roomFloor !== '') {
                     $rooms[$roomKey]['floor'] = $roomFloor;
                 }
             }
@@ -1586,15 +1754,27 @@ class RoomsCatalogConfigurator extends IPSModule
                 $rooms[$roomKey]['domains'][$domain] = [];
             }
 
-            $cfg = [];
+            // Mit dem ursprünglichen Leaf starten: ein List-Callback darf Felder
+            // ausblenden, aber dadurch niemals aus der Konfiguration entfernen.
+            $baseDomain = $existingRoomsMap[$roomKey]['domains'][$domain] ?? [];
+            $baseCfg = ($domain === 'heizung' || $domain === 'jalousie')
+                ? ($baseDomain[$key] ?? [])
+                : ($baseDomain[$group][$key] ?? []);
+            $cfg = is_array($baseCfg) ? $baseCfg : [];
             foreach ($row as $k => $v) {
-                if (in_array($k, ['selected', 'roomKey', 'roomLabel', 'floor', 'domain', 'group', 'key', 'rowColor','kiStatus','diffKeys','editable','ipsObjectIds','ipsInstanceIds'], true)) {
+                if (in_array($k, ['selected', 'roomKey', 'roomLabel', 'floor', 'domain', 'group', 'key', 'rowColor','kiStatus','diffKeys','editable','deletable','ipsObjectIds','ipsInstanceIds'], true)
+                    || in_array($k, $virtualAIFields, true)) {
+                    continue;
+                }
+
+                if (array_key_exists($k, $cfg) && $this->editorValueMatchesOriginal($v, $cfg[$k])) {
                     continue;
                 }
 
                 if (is_string($v)) {
                     $tv = trim($v);
-                    if ($tv !== '' && ($tv[0] === '{' || $tv[0] === '[')) {
+                    // Strings, die zufällig mit '['/'{' beginnen, bleiben Strings.
+                    if (!is_string($cfg[$k] ?? null) && $tv !== '' && ($tv[0] === '{' || $tv[0] === '[')) {
                         $decoded = json_decode($tv, true);
                         if (is_array($decoded)) {
                             $v = $decoded;
@@ -1604,6 +1784,7 @@ class RoomsCatalogConfigurator extends IPSModule
 
                 $cfg[$k] = $v;
             }
+            $cfg = $this->mergeAIEditorFields($row, $cfg);
 
             if ($domain === 'heizung' || $domain === 'jalousie') {
                 $rooms[$roomKey]['domains'][$domain][$key] = $cfg;
@@ -1614,10 +1795,6 @@ class RoomsCatalogConfigurator extends IPSModule
                 $rooms[$roomKey]['domains'][$domain][$group][$key] = $cfg;
             }
         }
-
-        $existingRoomsMap = (isset($existingCatalog['rooms']) && is_array($existingCatalog['rooms']))
-            ? $existingCatalog['rooms']
-            : $existingCatalog;
 
         foreach ($rooms as $roomKey => $roomCfg) {
             $base = (isset($existingRoomsMap[$roomKey]) && is_array($existingRoomsMap[$roomKey]))
@@ -1670,13 +1847,23 @@ class RoomsCatalogConfigurator extends IPSModule
             }
         }
 
+        if ($hasRoomsWrapper) {
+            $newCatalog = $existingCatalog;
+            $newCatalog['rooms'] = $rooms;
+            // Bestehende Metadaten im Wrapper einschließlich leerer Räume bewahren.
+            foreach ($existingRoomsMap as $roomKey => $roomCfg) {
+                if (!array_key_exists($roomKey, $newCatalog['rooms'])
+                    && (!is_array($roomCfg) || !isset($roomCfg['domains']) || $roomCfg['domains'] === [])) {
+                    $newCatalog['rooms'][$roomKey] = $roomCfg;
+                }
+            }
+            return $newCatalog;
+        }
+
         $roomKeys  = array_keys($rooms);
         $newCatalog = [];
 
         foreach ($existingCatalog as $k => $v) {
-            if ($k === 'rooms') {
-                continue;
-            }
             if (in_array((string)$k, $roomKeys, true)) {
                 continue;
             }
@@ -1688,6 +1875,41 @@ class RoomsCatalogConfigurator extends IPSModule
         }
 
         return $newCatalog;
+    }
+
+    private function editorValueMatchesOriginal(mixed $value, mixed $original): bool
+    {
+        if ($value === $original) return true;
+        if (is_array($original) && is_string($value)) {
+            return json_decode($value, true) === $original;
+        }
+        if (is_string($original) && is_numeric($original) && (is_int($value) || is_float($value))) {
+            return (string)$value === $original;
+        }
+        return false;
+    }
+
+    /** Erlaubt additive Felder, verbietet aber jeden Verlust aus dem EDIT-Katalog. */
+    private function findLostCatalogFields(mixed $source, mixed $roundTrip, string $path, array &$errors): void
+    {
+        if (count($errors) >= 40) return;
+        if (is_array($source)) {
+            if (!is_array($roundTrip)) {
+                $errors[] = $path . ': Array beim Speichern verloren.';
+                return;
+            }
+            foreach ($source as $key => $value) {
+                $childPath = $path . '.' . (string)$key;
+                if (!array_key_exists($key, $roundTrip)) {
+                    $errors[] = $childPath . ': Feld beim Speichern verloren.';
+                } else {
+                    $this->findLostCatalogFields($value, $roundTrip[$key], $childPath, $errors);
+                }
+                if (count($errors) >= 40) return;
+            }
+        } elseif ($source !== $roundTrip) {
+            $errors[] = $path . ': Wert oder Datentyp beim Speichern veraendert.';
+        }
     }
 
     private function arrayHasNestedArray(array $a): bool
@@ -1969,8 +2191,61 @@ class RoomsCatalogConfigurator extends IPSModule
                 ]
             ]
         ];
-        $hidden = ['selected','roomKey','roomLabel','floor','domain','group','key','title',
-            'synonyms','entityId','kiEnabled','kiReadOnly','rowColor','kiStatus','diffKeys','editable'];
+        $type = (string)($row['aiType'] ?? '');
+        $editorType = array_key_exists($type, self::AI_TYPE_FIELDS) ? $type : $this->inferredAIType($row);
+        $typeCaptions = [
+            '' => 'Bisheriges Datenmodell (unveraendert)',
+            'light' => 'Licht', 'dimmer' => 'Dimmer', 'blind' => 'Jalousie',
+            'heating' => 'Heizung', 'window' => 'Fensterkontakt',
+            'switch' => 'Steckdose/Schalter', 'energy' => 'Energiezaehler',
+            'motion' => 'Bewegungsmelder', 'fan' => 'Lueftung', 'generic' => 'Sonstiges'
+        ];
+        $variableCaptions = [
+            'power' => 'Ein/Aus (Rueckmeldung)', 'brightness' => 'Helligkeit',
+            'position' => 'Istposition', 'targetPosition' => 'Sollposition',
+            'tilt' => 'Lamellenwinkel', 'moving' => 'Fahrstatus',
+            'control' => 'Steuerungsvariable', 'temperature' => 'Isttemperatur',
+            'targetTemperature' => 'Solltemperatur', 'open' => 'Fensterstatus',
+            'powerWatts' => 'Leistung (W)', 'energy' => 'Verbrauch/Zaehlerstand',
+            'motion' => 'Bewegung'
+        ];
+        $aiItems = [
+            ['type'=>'Select','name'=>'aiType','caption'=>'Geraetetyp (V3.0)',
+                'options'=>array_map(
+                    static fn($value, $caption): array => ['value'=>$value,'caption'=>$caption],
+                    array_keys($typeCaptions), array_values($typeCaptions)
+                )],
+            ['type'=>'Label','caption'=>'Legacy-Felder bleiben bestehen. Die Auswahl eines Typs aktiviert ein zusaetzliches ai-Modell; nach Typwechsel den Dialog erneut oeffnen, um die passenden Felder zu sehen.']
+        ];
+        $fields = self::AI_TYPE_FIELDS[$editorType] ?? [];
+        foreach (array_chunk($fields, 2) as $pair) {
+            $controls = [];
+            foreach ($pair as $property) {
+                $controls[] = ['type'=>'SelectVariable','name'=>self::AI_VARIABLE_FIELDS[$property],
+                    'caption'=>$variableCaptions[$property]];
+            }
+            $aiItems[] = ['type'=>'RowLayout','items'=>$controls];
+        }
+        $stateFields = $editorType === 'blind' || $editorType === 'window'
+            ? ['open'=>'Offen ist', 'closed'=>'Geschlossen ist']
+            : (in_array($editorType, ['light','dimmer','switch','fan','motion'], true)
+                ? ['on'=>'Aktiv/Ein ist', 'off'=>'Inaktiv/Aus ist'] : []);
+        if ($stateFields !== []) {
+            $controls = [];
+            foreach ($stateFields as $property => $caption) {
+                $controls[] = ['type'=>'ValidationTextBox','name'=>self::AI_STATE_FIELDS[$property],
+                    'caption'=>$caption . ' (z.B. true/false, 0/100)'];
+            }
+            $aiItems[] = ['type'=>'RowLayout','items'=>$controls];
+            $aiItems[] = ['type'=>'Label','caption'=>'Statuswerte nicht raten: bei unklarer Bedeutung erst in IP-Symcon pruefen.'];
+        }
+        $items[] = ['type'=>'ExpansionPanel','caption'=>'V3.0: Geraetetyp und KI-Variablen',
+            'expanded'=>true,'items'=>$aiItems];
+
+        $hidden = array_merge(['selected','roomKey','roomLabel','floor','domain','group','key','title',
+            'synonyms','entityId','kiEnabled','kiReadOnly','rowColor','kiStatus','diffKeys','editable',
+            'deletable','ipsObjectIds','ipsInstanceIds','ai','aiType'],
+            array_values(self::AI_VARIABLE_FIELDS), array_values(self::AI_STATE_FIELDS));
         $idFields = ['id','controlId','statusId','tiltId','set','state','ist','soll','eingestellt',
             'stellung','toggle','value','wert','var'];
         $extra = [];
