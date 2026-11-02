@@ -415,6 +415,12 @@ class RoomsCatalogConfigurator extends IPSModule
                 echo 'Sammelbearbeitung wegen einer unzulaessigen KI-Freigabe abgebrochen.';
                 return;
             }
+            // Die flache IPSList serialisiert verschachtelte ai-Arrays als JSON-String.
+            // Vor dem Ergaenzen von review/source wieder in die Originalform bringen.
+            if (array_key_exists('ai',$row) && !is_array($row['ai'])) {
+                $decoded = json_decode((string)($row['ai'] ?? ''),true);
+                $row['ai'] = is_array($decoded) ? $decoded : [];
+            }
             $processed++;
             $oldType = (string)($row['aiType'] ?? '');
             $type = $options['type']==='keep' ? $oldType : (string)$options['type'];
