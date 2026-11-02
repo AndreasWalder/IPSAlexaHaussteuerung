@@ -3192,8 +3192,10 @@ class RoomsCatalogConfigurator extends IPSModule
             ['caption'=>'Bereich','name'=>'domain','width'=>'105px','add'=>'licht','quickFilter'=>true],
             ['caption'=>'Gruppe','name'=>'group','width'=>'105px','add'=>'switches','quickFilter'=>true],
             ['caption'=>'Gerät','name'=>'title','width'=>'auto','add'=>'','quickFilter'=>true],
-            ['caption'=>'IPS-Objekt-IDs','name'=>'ipsObjectIds','width'=>'155px','save'=>false,'quickFilter'=>true],
-            ['caption'=>'IPS-Instanz-IDs','name'=>'ipsInstanceIds','width'=>'145px','save'=>false,'quickFilter'=>true],
+            // Auch reine Anzeigespalten brauchen einen add-Default, sonst
+            // verweigert die IP-Symcon-Liste das Oeffnen von "Hinzufuegen".
+            ['caption'=>'IPS-Objekt-IDs','name'=>'ipsObjectIds','width'=>'155px','add'=>'','save'=>false,'quickFilter'=>true],
+            ['caption'=>'IPS-Instanz-IDs','name'=>'ipsInstanceIds','width'=>'145px','add'=>'','save'=>false,'quickFilter'=>true],
             ['caption'=>'Key','name'=>'key','width'=>'130px','add'=>'','quickFilter'=>true],
             ['caption'=>'Mit KI','name'=>'kiEnabled','width'=>'80px','add'=>false,'edit'=>['type'=>'CheckBox']],
             ['caption'=>'Nur abfragen','name'=>'kiReadOnly','width'=>'110px','add'=>true,'edit'=>['type'=>'CheckBox']],
