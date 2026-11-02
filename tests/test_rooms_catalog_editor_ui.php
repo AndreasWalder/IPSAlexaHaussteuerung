@@ -55,6 +55,17 @@ foreach ($panel['items'] as $item) {
     if (($item['name'] ?? '') === 'Entries') { $list = $item; break; }
 }
 assertEditor(is_array($list), 'Main list missing');
+foreach ($list['columns'] as $column) {
+    assertEditor(array_key_exists('add', $column),
+        'Every Entries column needs an add default, including read-only columns: ' . ($column['name'] ?? '?'));
+}
+foreach (['ipsObjectIds', 'ipsInstanceIds'] as $computedColumn) {
+    $matching = array_values(array_filter($list['columns'],
+        static fn($column): bool => ($column['name'] ?? '') === $computedColumn));
+    assertEditor(count($matching) === 1 && ($matching[0]['add'] ?? null) === ''
+        && ($matching[0]['save'] ?? null) === false,
+        'Computed IPS ID column needs an empty add default without being persisted: ' . $computedColumn);
+}
 assertEditor(str_contains($list['form'], '$Entries["roomKey"]'), 'Selected row key missing in dynamic form');
 assertEditor(!str_contains($list['form'], '$id, $Entries)'), 'Whole list incorrectly passed to dynamic form');
 assertEditor(str_contains($list['onAdd'], 'array_filter(['), 'onAdd must build a real array from IPSList row fields');
