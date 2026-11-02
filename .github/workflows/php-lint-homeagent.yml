@@ -88,6 +88,8 @@ jobs:
         run: php tests/test_rooms_catalog_v33_discovery.php
       - name: Test RoomsCatalog V3.3.1 full type inventory and reviewed module templates
         run: php tests/test_rooms_catalog_v331_inventory.php
+      - name: Test RoomsCatalog V3.3.2 selected-device bulk typing and safe EDIT updates
+        run: php tests/test_rooms_catalog_v332_bulk.php
       - name: Test Symcon IPSList checkbox callbacks and filtered multi-selection
         run: php tests/test_rooms_catalog_ipslist_multiselect.php
       - name: Test RoomsCatalog quick search for IPS object IDs and parent instance IDs

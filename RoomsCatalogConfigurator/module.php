@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /**
  * ============================================================
- * ROOMS CATALOG CONFIGURATOR — IP-Symcon Modul (V3.3.1)
+ * ROOMS CATALOG CONFIGURATOR — IP-Symcon Modul (V3.3.2)
  * ============================================================
  *
  * Änderungsverlauf
@@ -65,6 +65,11 @@ declare(strict_types=1);
  * - Status und Fahraktion als eigenstaendige Eigenschaften speichern
  * - Vollstaendigkeit/Restaufwand inkl. Scan-Limits transparent ausweisen
  * - Vorlagen aus bestaetigten EDIT-Geraeten ohne zweiten Datenbestand ableiten
+ *
+ * 2026-11-02: V3.3.2 — sichere Sammelbearbeitung und Gesamtauswahl
+ * - Alle sichtbaren oder ausdruecklich alle Geraete markieren
+ * - Geraetetyp, KI-Berechtigung und offene Pruefung auf markierte Geraete anwenden
+ * - Eindeutige fehlende Variablen pro Geraet ergaenzen, Vorschau + EDIT-Hash-Schutz
  */
 
 class RoomsCatalogConfigurator extends IPSModule
@@ -148,6 +153,11 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('DiscoveryInventory', '{}');
         $this->RegisterAttributeString('DiscoveryAuditReport', 'Noch keine Vollstaendigkeitspruefung.');
         $this->RegisterAttributeString('LegacyMigrationPreview', '{}');
+        $this->RegisterAttributeString('BulkDeviceType', 'keep');
+        $this->RegisterAttributeString('BulkAIMode', 'keep');
+        $this->RegisterAttributeString('BulkSuggestions', 'yes');
+        $this->RegisterAttributeString('BulkReview', 'keep');
+        $this->RegisterAttributeString('BulkPreview', '{}');
     }
 
     public function ApplyChanges()
@@ -233,7 +243,258 @@ class RoomsCatalogConfigurator extends IPSModule
         }
         unset($row);
         $this->WriteAttributeString('RuntimeEntries', json_encode($rows, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->WriteAttributeString('BulkPreview','{}');
         $this->RefreshVisibleLists();
+    }
+
+    /** Bewusste Auswahl auch ausserhalb des aktuellen Raum-/Bereichsfilters. */
+    public function SetAllSelection(bool $selected): void
+    {
+        $rows = $this->getRuntimeEntries();
+        foreach ($rows as &$row) if (is_array($row)) $row['selected'] = $selected;
+        unset($row);
+        $this->WriteAttributeString('RuntimeEntries',json_encode($rows,JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->WriteAttributeString('BulkPreview','{}');
+        $this->RefreshVisibleLists();
+    }
+
+    private function bulkSelectionSummary(array $rows): string
+    {
+        $selected = array_values(array_filter($rows,static fn($row): bool=>is_array($row) && !empty($row['selected'])));
+        if ($selected === []) return 'Keine Geraete markiert. Zuerst in der Tabelle markieren oder die Auswahlbuttons benutzen.';
+        $common = [];
+        foreach (['roomKey'=>'Raum','domain'=>'Bereich','group'=>'Gruppe','aiType'=>'Geraetetyp',
+            'kiEnabled'=>'Mit KI','kiReadOnly'=>'Nur abfragen'] as $field=>$label) {
+            $values = array_unique(array_map(static fn($row): string=>
+                is_bool($row[$field] ?? null) ? (!empty($row[$field]) ? 'Ja' : 'Nein')
+                    : (string)($row[$field] ?? ''),$selected));
+            if (count($values)===1 && (string)$values[0]!=='') $common[] = $label . '=' . $values[0];
+        }
+        return count($selected) . ' Geraete markiert (auch ausserhalb des sichtbaren Filters moeglich). '
+            . ($common!==[] ? 'Gemeinsam: ' . implode(', ',$common) . '.' : 'Gemischte Eigenschaften.');
+    }
+
+    public function SetBulkOption(string $field,string $value): void
+    {
+        $allowed = match ($field) {
+            'BulkDeviceType'=>array_merge(['keep'],array_keys(self::AI_TYPE_FIELDS)),
+            'BulkAIMode'=>['keep','disabled','read','write'],
+            'BulkSuggestions'=>['yes','no'],
+            'BulkReview'=>['keep','pending'],
+            default=>[]
+        };
+        if (!in_array($value,$allowed,true)) return;
+        $this->WriteAttributeString($field,$value);
+        $this->WriteAttributeString('BulkPreview','{}');
+        $this->UpdateFormField('BulkPreviewSummary','caption','Einstellungen geaendert: bitte Vorschau neu erstellen.');
+    }
+
+    private function bulkOptions(): array
+    {
+        $type = $this->ReadAttributeString('BulkDeviceType');
+        $aiMode = $this->ReadAttributeString('BulkAIMode');
+        $suggest = $this->ReadAttributeString('BulkSuggestions');
+        $review = $this->ReadAttributeString('BulkReview');
+        return [
+            'type'=>array_key_exists($type,self::AI_TYPE_FIELDS) ? $type : 'keep',
+            'aiMode'=>in_array($aiMode,['disabled','read','write'],true) ? $aiMode : 'keep',
+            'suggest'=>$suggest !== 'no',
+            'review'=>$review === 'pending' ? 'pending' : 'keep'
+        ];
+    }
+
+    private function bulkSelectionKeys(): array
+    {
+        $keys = [];
+        foreach ($this->getRuntimeEntries() as $row) {
+            if (!is_array($row) || empty($row['selected'])) continue;
+            $key = $this->buildCompositeKey($row);
+            if ($key !== null) $keys[$key] = true;
+        }
+        $keys = array_keys($keys);
+        sort($keys,SORT_STRING);
+        return $keys;
+    }
+
+    /** Nur ausdruecklich gewaehlte Aenderungen vom Verlustcheck ausnehmen. */
+    private function isAuthorizedBulkChange(string $problem,array $keys,array $options): bool
+    {
+        foreach ($keys as $key) {
+            $parts = explode('|',$key,4);
+            if (count($parts)!==4) continue;
+            [$room,$domain,$group,$device]=$parts;
+            $base = 'RoomsCatalogEdit.' . $room . '.domains.' . $domain . '.'
+                . (in_array($domain,['heizung','jalousie'],true) ? '' : $group . '.') . $device;
+            if ($options['aiMode']!=='keep'
+                && (str_starts_with($problem,$base . '.kiEnabled:')
+                    || str_starts_with($problem,$base . '.kiReadOnly:'))) return true;
+            if ($options['type']!=='keep' || $options['review']==='pending') {
+                if (str_starts_with($problem,$base . '.ai.')) return true;
+            }
+        }
+        return false;
+    }
+
+    /** Reine Vorschau: Auswahl, Einstellungen und EDIT-Inhalt werden festgeschrieben. */
+    public function PreviewBulkEdit(): void
+    {
+        $keys = $this->bulkSelectionKeys();
+        $options = $this->bulkOptions();
+        $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        if ($keys === [] || $editId<=0 || !IPS_ScriptExists($editId)) {
+            echo 'Keine Geraete markiert oder RoomsCatalogEdit fehlt.';
+            return;
+        }
+        if ($options['type']==='keep' && $options['aiMode']==='keep' && $options['review']==='keep') {
+            echo 'Bitte mindestens Geraetetyp, KI-Freigabe oder Pruefstatus fuer die Sammelbearbeitung waehlen.';
+            return;
+        }
+        $original = $this->loadRoomsCatalog($editId,'EDIT');
+        $flat = $this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($original));
+        $existing = [];
+        $unsupported = [];
+        foreach ($flat as $row) {
+            $key = $this->buildCompositeKey($row);
+            if ($key !== null) {
+                $existing[$key] = true;
+                if (in_array($options['aiMode'],['read','write'],true)
+                    && in_array($key,$keys,true) && !$this->isSupportedAIEntry($row)) {
+                    $unsupported[]=$key;
+                }
+            }
+        }
+        if (array_diff($keys,array_keys($existing))!==[]) {
+            echo 'Ein markiertes Geraet ist nicht mehr in EDIT vorhanden. Bitte neu laden.';
+            return;
+        }
+        if ($unsupported!==[]) {
+            echo 'KI-Freigabe fuer diesen bisherigen Bereich noch nicht unterstuetzt: '
+                . implode(', ',array_slice($unsupported,0,3)) . '. Bitte ohne KI-Freigabe typisieren.';
+            return;
+        }
+        $preview = ['time'=>time(),'editHash'=>hash('sha256',IPS_GetScriptContent($editId)),
+            'keys'=>$keys,'options'=>$options];
+        $parts = [];
+        if ($options['type']!=='keep') $parts[] = 'Geraetetyp=' . $options['type'];
+        if ($options['aiMode']!=='keep') $parts[] = 'KI=' . $options['aiMode'];
+        if ($options['review']==='pending') $parts[] = 'Pruefung zuruecksetzen';
+        if ($options['type']!=='keep' && $options['suggest']) $parts[] = 'eindeutige fehlende Variablen ergaenzen';
+        $message = sprintf('Vorschau: %d ausgewaehlte Geraete; %s. Nur EDIT, keine Aenderung an Namen, IDs, Raum oder Legacy-Pfaden. Auswahl: %s%s',
+            count($keys),implode('; ',$parts),implode(', ',array_slice($keys,0,10)),
+            count($keys)>10 ? ' ...' : '');
+        $preview['message']=$message;
+        $this->WriteAttributeString('BulkPreview',json_encode($preview,JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->UpdateFormField('BulkPreviewSummary','caption',$message);
+        echo $message;
+    }
+
+    public function ApplyBulkEdit(): void
+    {
+        $preview = json_decode($this->ReadAttributeString('BulkPreview'),true);
+        $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        if (!is_array($preview) || !is_array($preview['keys'] ?? null)
+            || !is_array($preview['options'] ?? null) || ($preview['keys'] ?? []) === []
+            || $editId<=0 || !IPS_ScriptExists($editId)
+            || time()-(int)($preview['time'] ?? 0)>600
+            || ($preview['editHash'] ?? '')!==hash('sha256',IPS_GetScriptContent($editId))
+            || $preview['keys']!==$this->bulkSelectionKeys()
+            || $preview['options']!==$this->bulkOptions()) {
+            echo 'Sammel-Vorschau veraltet: Auswahl/Optionen/EDIT haben sich geaendert. Bitte neu pruefen.';
+            return;
+        }
+        $options = $preview['options'];
+        $original = $this->loadRoomsCatalog($editId,'EDIT');
+        $rows = $this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($original));
+        $targetKeys = array_fill_keys($preview['keys'],true);
+        $processed = 0;
+        $suggested = 0;
+        foreach ($rows as &$row) {
+            $key = $this->buildCompositeKey($row);
+            if ($key===null || !isset($targetKeys[$key])) continue;
+            if (in_array($options['aiMode'],['read','write'],true) && !$this->isSupportedAIEntry($row)) {
+                echo 'Sammelbearbeitung wegen einer unzulaessigen KI-Freigabe abgebrochen.';
+                return;
+            }
+            // Die flache IPSList serialisiert verschachtelte ai-Arrays als JSON-String.
+            // Vor dem Ergaenzen von review/source wieder in die Originalform bringen.
+            if (array_key_exists('ai',$row) && !is_array($row['ai'])) {
+                $decoded = json_decode((string)($row['ai'] ?? ''),true);
+                $row['ai'] = is_array($decoded) ? $decoded : [];
+            }
+            $processed++;
+            $oldType = (string)($row['aiType'] ?? '');
+            $type = $options['type']==='keep' ? $oldType : (string)$options['type'];
+            if ($options['type']!=='keep') {
+                $row['aiType'] = $type;
+                if ($oldType!==$type) {
+                    $row['aiReviewed'] = false;
+                    $row['ai']['review'] = ['status'=>'pending',
+                        'note'=>'Geraetetyp nach Sammelbearbeitung am Geraet pruefen'];
+                }
+            }
+            if ($options['type']!=='keep' && $options['suggest'] && $type!=='generic') {
+                $variables = $this->getScopedIpsVariables($row);
+                $used = [];
+                foreach (self::AI_VARIABLE_FIELDS as $field) {
+                    if ((int)($row[$field] ?? 0)>0) $used[(int)$row[$field]]=true;
+                }
+                foreach ($this->suggestAIFields($row,$type,$variables) as $suggestion) {
+                    $id = (int)($suggestion['candidateId'] ?? 0);
+                    if ($suggestion['confidence']!=='Hoch' || $id<=0 || isset($used[$id])) continue;
+                    $row[self::AI_VARIABLE_FIELDS[$suggestion['property']]]=$id;
+                    $used[$id]=true;
+                    $suggested++;
+                    $row['aiReviewed']=false;
+                }
+                $statusId = (int)($row['aiStatusId'] ?? $row['aiOpenId'] ?? $row['aiPowerId'] ?? 0);
+                foreach ($this->inferStateMapping($variables,$statusId,$type) as $meaning=>$value) {
+                    $field = self::AI_STATE_FIELDS[$meaning] ?? null;
+                    if ($field===null || trim((string)($row[$field] ?? ''))!=='') continue;
+                    $row[$field]=is_bool($value) ? ($value ? 'true' : 'false') : (string)$value;
+                    $row['aiReviewed']=false;
+                }
+            }
+            if ($options['aiMode']!=='keep') {
+                $row['kiEnabled'] = $options['aiMode']!=='disabled';
+                $row['kiReadOnly'] = $options['aiMode']!=='write';
+            }
+            if ($options['review']==='pending' || empty($row['aiReviewed'])) {
+                $row['aiReviewed']=false;
+                if ($type!=='' && array_key_exists($type,self::AI_TYPE_FIELDS)) {
+                    $review = is_array($row['ai']['review'] ?? null) ? $row['ai']['review'] : [];
+                    $review['status']='pending';
+                    unset($review['confirmedAt']);
+                    $row['ai']['review']=$review;
+                }
+            }
+            $row['selected']=false;
+            unset($targetKeys[$key]);
+        }
+        unset($row);
+        if ($targetKeys!==[] || $processed!==count($preview['keys'])) {
+            echo 'Sammelbearbeitung abgebrochen: Eintraege fehlen oder sind nicht eindeutig.';
+            return;
+        }
+        $updated = $this->rebuildRoomsCatalogFromEntries($rows,$original);
+        $loss = [];
+        $this->findLostCatalogFields($original,$updated,'RoomsCatalogEdit',$loss);
+        $loss = array_values(array_filter($loss,fn(string $problem): bool=>
+            !$this->isAuthorizedBulkChange($problem,$preview['keys'],$options)));
+        if ($loss!==[]) {
+            echo 'Sammelbearbeitung abgebrochen: Datenverlust erkannt: ' . implode('; ',array_slice($loss,0,3));
+            return;
+        }
+        if (IPS_SetScriptContent($editId,"<?php\nreturn " . var_export($updated,true) . ";\n")===false) {
+            echo 'RoomsCatalogEdit konnte nicht gespeichert werden.';
+            return;
+        }
+        $this->WriteAttributeString('BulkPreview','{}');
+        $this->reloadAllFromCatalog();
+        $this->RefreshVisibleLists();
+        $this->UpdateFormField('BulkPreviewSummary','caption',
+            $processed . ' Geraete in EDIT aktualisiert, ' . $suggested . ' eindeutige Variablen ergaenzt. PROD unveraendert.');
+        echo $processed . ' Geraete in EDIT aktualisiert, ' . $suggested
+            . ' eindeutige Variablen ergaenzt. Bitte in EDIT pruefen; PROD unveraendert.';
     }
 
     /** Ein Gerät markieren; Analyse verändert weder EDIT noch PROD. */
@@ -2579,6 +2840,8 @@ class RoomsCatalogConfigurator extends IPSModule
         $discoverySummary = is_array($inventoryPreview) && isset($inventoryPreview['items'])
             ? $this->discoveryInventorySummary($inventoryPreview) : 'Noch keine Geraeteinventur gestartet.';
         $inventoryRows = is_array($inventoryPreview) ? $this->discoveryInventoryRows($inventoryPreview) : [];
+        $bulkOptions = $this->bulkOptions();
+        $bulkPreview = json_decode($this->ReadAttributeString('BulkPreview'),true);
 
         [$roomOptions, $domainOptions, $groupOptions] = $this->buildFilterOptionsFromEntries(array_merge($entriesProd, $entriesEdit));
         $knownRooms = array_column($roomOptions, 'value');
@@ -2768,6 +3031,11 @@ class RoomsCatalogConfigurator extends IPSModule
                                 ],
                                 [
                                     'type'=>'Button',
+                                    'caption'=>'ALLE GERAETE MARKIEREN (AUCH GEFILTERTE)',
+                                    'onClick'=>'RCC_SetAllSelection($id, true);'
+                                ],
+                                [
+                                    'type'=>'Button',
                                     'caption'=>'MARKIERUNGEN AUFHEBEN',
                                     'onClick'=>'RCC_SetVisibleSelection($id, false);'
                                 ],
@@ -2784,6 +3052,61 @@ class RoomsCatalogConfigurator extends IPSModule
                                 ]
                             ]
                         ]
+                    ]
+                ],
+                [
+                    'type'=>'ExpansionPanel',
+                    'caption'=>'V3.3.2: Markierte Geraete gemeinsam bearbeiten',
+                    'expanded'=>true,
+                    'items'=>[
+                        ['type'=>'Label','name'=>'BulkSelectionSummary',
+                            'caption'=>$this->bulkSelectionSummary($entriesEdit)],
+                        ['type'=>'Label','caption'=>'Nur ausgewaehlte Eigenschaften werden geaendert. Unterschiedliche Geraetenamen, IDs, Raeume, bisherige Bereiche/Gruppen und sonstige Legacy-Felder bleiben unveraendert. Mehrfachaenderungen immer zuerst in EDIT pruefen.'],
+                        ['type'=>'RowLayout','items'=>[
+                            ['type'=>'Select','name'=>'BulkDeviceType','caption'=>'Geraetetyp fuer alle Markierten',
+                                'options'=>[
+                                    ['caption'=>'Nicht aendern','value'=>'keep'],
+                                    ['caption'=>'Licht','value'=>'light'],['caption'=>'Dimmer','value'=>'dimmer'],
+                                    ['caption'=>'Jalousie','value'=>'blind'],['caption'=>'Heizung','value'=>'heating'],
+                                    ['caption'=>'Fensterkontakt','value'=>'window'],['caption'=>'Steckdose/Schalter','value'=>'switch'],
+                                    ['caption'=>'Energiezaehler','value'=>'energy'],['caption'=>'Bewegung','value'=>'motion'],
+                                    ['caption'=>'Lueftung','value'=>'fan'],['caption'=>'Sonstiges (ungeklaert)','value'=>'generic']
+                                ],
+                                'value'=>$bulkOptions['type'],
+                                'onChange'=>'RCC_SetBulkOption($id, "BulkDeviceType", $BulkDeviceType);'],
+                            ['type'=>'Select','name'=>'BulkAIMode','caption'=>'KI-Freigabe',
+                                'options'=>[
+                                    ['caption'=>'Nicht aendern','value'=>'keep'],
+                                    ['caption'=>'Ohne KI','value'=>'disabled'],
+                                    ['caption'=>'Mit KI – nur abfragen','value'=>'read'],
+                                    ['caption'=>'Mit KI – Schalten erlauben','value'=>'write']
+                                ],
+                                'value'=>$bulkOptions['aiMode'],
+                                'onChange'=>'RCC_SetBulkOption($id, "BulkAIMode", $BulkAIMode);']
+                        ]],
+                        ['type'=>'RowLayout','items'=>[
+                            ['type'=>'Select','name'=>'BulkSuggestions','caption'=>'Fehlende Variablen pro Geraet',
+                                'options'=>[
+                                    ['caption'=>'Nur eindeutige Vorschlaege uebernehmen','value'=>'yes'],
+                                    ['caption'=>'Bestehende Zuordnungen unveraendert lassen','value'=>'no']
+                                ],
+                                'value'=>$bulkOptions['suggest'] ? 'yes' : 'no',
+                                'onChange'=>'RCC_SetBulkOption($id, "BulkSuggestions", $BulkSuggestions);'],
+                            ['type'=>'Select','name'=>'BulkReview','caption'=>'Pruefstatus',
+                                'options'=>[
+                                    ['caption'=>'Unveraendert','value'=>'keep'],
+                                    ['caption'=>'Bei allen auf offen setzen','value'=>'pending']
+                                ],
+                                'value'=>$bulkOptions['review'],
+                                'onChange'=>'RCC_SetBulkOption($id, "BulkReview", $BulkReview);']
+                        ]],
+                        ['type'=>'Button','caption'=>'SAMMELBEARBEITUNG VORSCHAU',
+                            'onClick'=>'RCC_PreviewBulkEdit($id);'],
+                        ['type'=>'Label','name'=>'BulkPreviewSummary',
+                            'caption'=>(string)($bulkPreview['message'] ?? 'Noch keine gueltige Vorschau. Auswahl und Einstellungen festlegen.')],
+                        ['type'=>'Button','caption'=>'VORSCHAU NACH ROOMSCATALOG EDIT UEBERNEHMEN',
+                            'confirm'=>'Die angezeigten Eigenschaften bei ALLEN markierten Geraeten im EDIT-Katalog aendern? Eine KI-Schreibfreigabe ist nur bei expliziter Auswahl erlaubt. PROD bleibt unveraendert.',
+                            'onClick'=>'RCC_ApplyBulkEdit($id);']
                     ]
                 ],
                 [
@@ -3944,6 +4267,7 @@ class RoomsCatalogConfigurator extends IPSModule
         // Das Aktualisieren der Listen lässt ExpansionPanel-/Filterzustand intakt.
         $this->UpdateFormField('Entries', 'values', json_encode($visible, JSON_INVALID_UTF8_SUBSTITUTE));
         $this->UpdateFormField('EntriesEdit', 'values', json_encode($visibleDiff, JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->UpdateFormField('BulkSelectionSummary','caption',$this->bulkSelectionSummary($edit));
 
         $editCatalog = $this->loadConfiguredCatalog('RoomsCatalogEditScriptID', 'EDIT');
         $prodCatalog = $this->loadConfiguredCatalog('RoomsCatalogScriptID', 'PROD');
