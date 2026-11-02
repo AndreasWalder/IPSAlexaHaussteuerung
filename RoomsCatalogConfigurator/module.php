@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /**
  * ============================================================
- * ROOMS CATALOG CONFIGURATOR — IP-Symcon Modul (V3.3)
+ * ROOMS CATALOG CONFIGURATOR — IP-Symcon Modul (V3.3.1)
  * ============================================================
  *
  * Änderungsverlauf
@@ -59,6 +59,12 @@ declare(strict_types=1);
  * - Schlägt neue Instanzen mit Raum, Gerätetyp und Variablen vor
  * - Verhindert doppelte Geräte, lässt unsichere Funde zur Prüfung stehen
  * - Übernimmt nur bestätigte Geräte ohne KI-Schreibfreigaben nach EDIT
+ *
+ * 2026-11-02: V3.3.1 — Vollstaendige Geraeteinventur vor KI V3.4
+ * - Modultyp, Variablenprofile, Assoziationen und Aktionen auswerten
+ * - Status und Fahraktion als eigenstaendige Eigenschaften speichern
+ * - Vollstaendigkeit/Restaufwand inkl. Scan-Limits transparent ausweisen
+ * - Vorlagen aus bestaetigten EDIT-Geraeten ohne zweiten Datenbestand ableiten
  */
 
 class RoomsCatalogConfigurator extends IPSModule
@@ -77,7 +83,9 @@ class RoomsCatalogConfigurator extends IPSModule
         'open' => 'aiOpenId',
         'powerWatts' => 'aiWattsId',
         'energy' => 'aiEnergyId',
-        'motion' => 'aiMotionId'
+        'motion' => 'aiMotionId',
+        'status' => 'aiStatusId',
+        'action' => 'aiActionId'
     ];
 
     private const AI_STATE_FIELDS = [
@@ -86,16 +94,16 @@ class RoomsCatalogConfigurator extends IPSModule
     ];
 
     private const AI_TYPE_FIELDS = [
-        'light' => ['power', 'control'],
-        'dimmer' => ['power', 'brightness', 'control'],
-        'blind' => ['position', 'targetPosition', 'tilt', 'moving', 'control'],
-        'heating' => ['temperature', 'targetTemperature', 'control'],
-        'window' => ['open'],
-        'switch' => ['power', 'powerWatts', 'energy', 'control'],
-        'energy' => ['powerWatts', 'energy'],
-        'motion' => ['motion'],
-        'fan' => ['power', 'control'],
-        'generic' => ['power', 'control']
+        'light' => ['power', 'status', 'control'],
+        'dimmer' => ['power', 'brightness', 'status', 'control'],
+        'blind' => ['position', 'targetPosition', 'tilt', 'status', 'moving', 'action', 'control'],
+        'heating' => ['temperature', 'targetTemperature', 'status', 'control'],
+        'window' => ['open', 'status'],
+        'switch' => ['power', 'powerWatts', 'energy', 'status', 'control'],
+        'energy' => ['powerWatts', 'energy', 'status'],
+        'motion' => ['motion', 'status'],
+        'fan' => ['power', 'status', 'control'],
+        'generic' => ['power', 'status', 'action', 'control']
     ];
 
     /** Normalisierte Namen/Ident-Beispiele. Mehrdeutige Treffer werden nicht übernommen. */
@@ -104,7 +112,7 @@ class RoomsCatalogConfigurator extends IPSModule
         'brightness' => ['helligkeit','brightness','dimmwert','dimmerlevel','dimming'],
         'position' => ['position','istposition','behangposition','rollladenposition','actualposition'],
         'targetPosition' => ['sollposition','targetposition','positionvorgabe','positiontarget'],
-        'tilt' => ['lamellen','lamellenwinkel','lamellenposition','tilt','slatposition'],
+        'tilt' => ['lamelle','lamellen','positionlamelle','lamellenwinkel','lamellenposition','tilt','slatposition'],
         'moving' => ['fahrstatus','fahrrichtung','moving','bewegungstatus','ismoving'],
         'control' => ['schalten','schaltbefehl','steuern','steuerung','switch','command','control'],
         'temperature' => ['isttemperatur','temperaturist','raumtemperatur','actualtemperature','temperature'],
@@ -112,11 +120,14 @@ class RoomsCatalogConfigurator extends IPSModule
         'open' => ['fensterkontakt','fensterstatus','kontakt','contact','openstate'],
         'powerWatts' => ['leistung','wirkleistung','powerw','powerwatts','currentpower'],
         'energy' => ['energie','energieverbrauch','zaehlerstand','energy','consumption','kwh'],
-        'motion' => ['bewegung','bewegungsmelder','motion','presence','praesenz']
+        'motion' => ['bewegung','bewegungsmelder','motion','presence','praesenz'],
+        'status' => ['status','devicestatus','geraetestatus','rollladenstatus','shutterstatus','blindenstatus'],
+        'action' => ['aktion','fahrbefehl','fahraktion','action','direction','fahrtrichtung','befehl']
     ];
 
     /** Auflösung der übergeordneten Instanz-ID je IP-Symcon-Objekt innerhalb des PHP-Laufs. */
     private array $ipsInstanceLookupCache = [];
+    private array $learnedModuleTemplateCache = [];
 
     public function Create()
     {
@@ -134,6 +145,9 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('FilterAI', 'all');
         $this->RegisterAttributeString('SuggestionPreview', '{}');
         $this->RegisterAttributeString('DiscoveryCandidates', '{}');
+        $this->RegisterAttributeString('DiscoveryInventory', '{}');
+        $this->RegisterAttributeString('DiscoveryAuditReport', 'Noch keine Vollstaendigkeitspruefung.');
+        $this->RegisterAttributeString('LegacyMigrationPreview', '{}');
     }
 
     public function ApplyChanges()
@@ -412,13 +426,38 @@ class RoomsCatalogConfigurator extends IPSModule
                 $profile = $customProfile !== '' ? $customProfile : (string)($variable['VariableProfile'] ?? '');
                 $customAction = (int)($variable['VariableCustomAction'] ?? 0);
                 $action = $customAction !== 1 && ($customAction > 1 || (int)($variable['VariableAction'] ?? 0) > 0);
+                $associations = [];
+                $profileInfo = [];
+                if ($profile !== '' && function_exists('IPS_GetVariableProfile')) {
+                    try {
+                        $profileInfo = IPS_GetVariableProfile($profile);
+                        if (!is_array($profileInfo)) $profileInfo = [];
+                        foreach (array_slice((array)($profileInfo['Associations'] ?? []), 0, 32) as $association) {
+                            if (!is_array($association)) continue;
+                            $associations[] = [
+                                'value' => $association['Value'] ?? null,
+                                'name' => mb_substr((string)($association['Name'] ?? ''), 0, 80)
+                            ];
+                        }
+                    } catch (Throwable $ignored) {
+                        // Fehlende/alte Profile blockieren keine Geraeteinventur.
+                    }
+                }
                 $found[$childId] = [
                     'id' => $childId,
                     'name' => (string)($object['ObjectName'] ?? ''),
                     'ident' => (string)($object['ObjectIdent'] ?? ''),
                     'profile' => $profile,
                     'type' => isset($variable['VariableType']) ? (int)$variable['VariableType'] : -1,
-                    'action' => $action
+                    'action' => $action,
+                    'updated' => (int)($variable['VariableUpdated'] ?? 0),
+                    'changed' => (int)($variable['VariableChanged'] ?? 0),
+                    'associations' => $associations,
+                    'unit' => mb_substr((string)($profileInfo['Suffix'] ?? ''), 0, 20),
+                    'minimum' => isset($profileInfo['MinValue']) ? (float)$profileInfo['MinValue'] : null,
+                    'maximum' => isset($profileInfo['MaxValue']) ? (float)$profileInfo['MaxValue'] : null,
+                    'hasPresentation' => !empty($variable['VariableCustomPresentation'])
+                        || !empty($variable['VariablePresentation'])
                 ];
             }
         }
@@ -456,6 +495,8 @@ class RoomsCatalogConfigurator extends IPSModule
             'powerWatts' => ['watt','power'],
             'energy' => ['energy','electricity','kwh'],
             'motion','moving' => ['motion','boolean'],
+            'status' => ['status','shutter','blind'],
+            'action' => ['action','direction','blind','shutter'],
             default => []
         };
         foreach ($profileHint as $hint) {
@@ -464,18 +505,29 @@ class RoomsCatalogConfigurator extends IPSModule
                 break;
             }
         }
+        $associations = array_map(fn(array $assoc): string =>
+            $this->normalizeSuggestionText((string)($assoc['name'] ?? '')),
+            (array)($variable['associations'] ?? []));
+        if ($property === 'status' && count(array_intersect($associations,
+            ['offen','geschlossen','open','closed','opening','closing'])) >= 2) $score += 25;
+        if ($property === 'action' && count(array_intersect($associations,
+            ['auf','ab','stop','open','close','up','down'])) >= 2) $score += 25;
         $type = (int)($variable['type'] ?? -1);
         $compatible = match ($property) {
             'power','open','motion','moving' => in_array($type, [0,1], true),
             'brightness','position','targetPosition','tilt','temperature','targetTemperature','powerWatts','energy' => in_array($type, [1,2], true),
-            'control' => in_array($type, [0,1,2], true),
+            'control','action' => in_array($type, [0,1,2], true),
+            'status' => in_array($type, [0,1,2,3], true),
             default => false
         };
         if (!$compatible) return 0;
         $score += 10;
-        if ($property === 'control') {
+        if (in_array($property,['control','action'],true)) {
             if (empty($variable['action'])) return 0;
             $score += 20;
+        }
+        if (in_array($property,(array)($variable['templateRoles'] ?? []),true)) {
+            $score = max($score,170);
         }
         return $score;
     }
@@ -614,6 +666,157 @@ class RoomsCatalogConfigurator extends IPSModule
         return 'generic';
     }
 
+    /** Typvorschlaege fuer alle Standardklassen; Modulinformation vor Namensraten. */
+    private function inferDeviceTypeFromMetadata(array $variables, string $moduleName, string $instanceName): array
+    {
+        $patterns = [
+            'blind'=>['rollladen','rolladen','jalousie','raffstore','shutter','blind','markise'],
+            'heating'=>['heizung','thermostat','radiator','heating','climate','heizkreis'],
+            'dimmer'=>['dimmer','dimming','dimmaktor'],
+            'window'=>['fensterkontakt','tuerkontakt','doorcontact','windowcontact','reedkontakt'],
+            'motion'=>['bewegungsmelder','praesenzmelder','motion','presence','pir'],
+            'fan'=>['lueftung','ventilator','fan','ventilation','airhandling'],
+            'energy'=>['energiezaehler','stromzaehler','powermeter','energymeter','smartmeter'],
+            'switch'=>['steckdose','switchingactor','schaltaktor','relay','socket','plug'],
+            'light'=>['licht','beleuchtung','lampe','leuchte','lighting','light']
+        ];
+        $module = $this->normalizeSuggestionText($moduleName);
+        $instance = $this->normalizeSuggestionText($instanceName);
+        foreach ([$module,$instance] as $step=>$name) {
+            if ($name === '') continue;
+            foreach ($patterns as $type=>$words) {
+                foreach ($words as $word) {
+                    if (str_contains($name,$word)) {
+                        return ['type'=>$type,'confidence'=>$step===0 ? 'Hoch' : 'Pruefen',
+                            'reason'=>($step===0 ? 'Modultyp ' : 'Geraetename ') . $word];
+                    }
+                }
+            }
+        }
+        $fallback = $this->inferDiscoveredType($variables);
+        return ['type'=>$fallback,'confidence'=>'Pruefen',
+            'reason'=>$fallback==='generic' ? 'Typ noch unklar' : 'Variablenmuster'];
+    }
+
+    /** Nur explizit bestaetigte Rollen als lernbare Signatur desselben ModuleID. */
+    private function learnedModuleTemplate(array $catalog, string $moduleId): array
+    {
+        if ($moduleId === '' || !function_exists('IPS_GetInstance') || !function_exists('IPS_GetObject')) return [];
+        if (isset($this->learnedModuleTemplateCache[$moduleId])) return $this->learnedModuleTemplateCache[$moduleId];
+        $types = [];
+        $signatures = [];
+        foreach ($this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($catalog)) as $row) {
+            if (empty($row['aiReviewed']) || !array_key_exists((string)($row['aiType'] ?? ''),self::AI_TYPE_FIELDS)) continue;
+            $sourceId = (int)($row['discoverySourceId'] ?? 0);
+            if ($sourceId <= 0) {
+                foreach (array_values(self::AI_VARIABLE_FIELDS) as $field) {
+                    $variableId = (int)($row[$field] ?? 0);
+                    if ($variableId > 0) { $sourceId = $this->lookupIpsInstanceId($variableId); break; }
+                }
+            }
+            if ($sourceId <= 0) continue;
+            try {
+                $instance = IPS_GetInstance($sourceId);
+                $seenId = (string)($instance['ModuleInfo']['ModuleID'] ?? '');
+                if ($seenId !== $moduleId) continue;
+            } catch (Throwable $ignored) { continue; }
+            $type = (string)$row['aiType'];
+            $types[$type] = true;
+            foreach (self::AI_VARIABLE_FIELDS as $property=>$field) {
+                $variableId = (int)($row[$field] ?? 0);
+                if ($variableId <= 0) continue;
+                $object = IPS_GetObject($variableId);
+                if (!is_array($object)) continue;
+                $ident = $this->normalizeSuggestionText((string)($object['ObjectIdent'] ?? ''));
+                $name = $this->normalizeSuggestionText((string)($object['ObjectName'] ?? ''));
+                $signature = $ident !== '' ? 'i:' . $ident : 'n:' . $name;
+                if ($signature !== 'n:') $signatures[$property][$signature] = true;
+            }
+        }
+        if (count($types) !== 1) return $this->learnedModuleTemplateCache[$moduleId] = [];
+        $roles = [];
+        foreach ($signatures as $property=>$values) {
+            if (count($values) === 1) $roles[$property] = (string)array_key_first($values);
+        }
+        return $this->learnedModuleTemplateCache[$moduleId] = [
+            'type'=>(string)array_key_first($types),'roles'=>$roles
+        ];
+    }
+
+    private function withLearnedRoleHints(array $variables, array $template): array
+    {
+        if (($template['roles'] ?? []) === []) return $variables;
+        foreach ($variables as &$variable) {
+            $ident = $this->normalizeSuggestionText((string)($variable['ident'] ?? ''));
+            $name = $this->normalizeSuggestionText((string)($variable['name'] ?? ''));
+            $signature = $ident !== '' ? 'i:' . $ident : 'n:' . $name;
+            foreach ($template['roles'] as $role=>$expected) {
+                if ($signature === $expected) $variable['templateRoles'][] = $role;
+            }
+        }
+        unset($variable);
+        return $variables;
+    }
+
+    /** Assoziationen sind die einzige Quelle fuer sichere boolesche/Enum-Bedeutungen. */
+    private function inferStateMapping(array $variables, int $statusId, string $type): array
+    {
+        $variable = null;
+        foreach ($variables as $candidate) {
+            if ((int)$candidate['id'] === $statusId) { $variable = $candidate; break; }
+        }
+        if ($variable === null) return [];
+        $labels = in_array($type,['blind','window'],true)
+            ? ['open'=>['offen','open','geoeffnet'],'closed'=>['geschlossen','closed']]
+            : ['on'=>['ein','an','on','aktiv'],'off'=>['aus','off','inaktiv']];
+        $mapped = [];
+        foreach ($variable['associations'] ?? [] as $association) {
+            $label = $this->normalizeSuggestionText((string)($association['name'] ?? ''));
+            foreach ($labels as $role=>$names) {
+                if (!in_array($label,$names,true) || array_key_exists($role,$mapped)) continue;
+                $value = $association['value'] ?? null;
+                if (is_int($value) || is_float($value) || is_bool($value)) $mapped[$role] = $value;
+            }
+        }
+        return count($mapped) === 2 ? $mapped : [];
+    }
+
+    /** Fuer jede Geräteklasse: minimal notwendige Rueckmeldung, keine Schreibpflicht. */
+    private function minimumReadingRoles(string $type): array
+    {
+        return match ($type) {
+            'light','switch','fan' => [['power','status']],
+            'dimmer' => [['brightness']],
+            'blind' => [['position','status']],
+            'heating' => [['temperature']],
+            'window' => [['open','status']],
+            'energy' => [['energy','powerWatts']],
+            'motion' => [['motion']],
+            default => []
+        };
+    }
+
+    private function roleCoverage(string $type, array $suggestions): array
+    {
+        $high = [];
+        $pending = [];
+        foreach ($suggestions as $suggestion) {
+            if ($suggestion['confidence'] === 'Hoch' || $suggestion['confidence'] === 'Bereits belegt') {
+                $high[$suggestion['property']] = true;
+            } elseif ($suggestion['candidateId'] > 0) {
+                $pending[] = $suggestion['property'];
+            }
+        }
+        $missing = [];
+        foreach ($this->minimumReadingRoles($type) as $alternatives) {
+            if (!array_intersect($alternatives,array_keys($high))) {
+                $missing[] = implode(' oder ',$alternatives);
+            }
+        }
+        if ($type === 'generic') $missing[] = 'Geraetetyp manuell bestimmen';
+        return ['assigned'=>count($high),'pending'=>$pending,'missing'=>$missing];
+    }
+
     private function discoveryTypeLocation(string $type): array
     {
         return match ($type) {
@@ -629,6 +832,344 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         $base = substr($this->normalizeSuggestionText($title), 0, 36);
         return ($base !== '' ? $base : 'geraet') . '_' . $sourceId;
+    }
+
+    private function discoveryInventorySummary(array $report): string
+    {
+        $incomplete = 0;
+        $unknownRooms = 0;
+        $unknownTypes = 0;
+        foreach ($report['items'] ?? [] as $item) {
+            if (($item['roleMissing'] ?? []) !== []) $incomplete++;
+            if (($item['roomKey'] ?? '') === '' && empty($item['known'])) $unknownRooms++;
+            if (($item['deviceType'] ?? '') === 'generic') $unknownTypes++;
+        }
+        $status = !empty($report['truncated'])
+            ? 'ACHTUNG: Suchgrenze erreicht, Bestand NICHT vollstaendig!'
+            : 'Suchbereich vollstaendig durchlaufen (nicht gleichbedeutend mit vollstaendig konfiguriert).';
+        return sprintf('V3.3.1 Inventur: %d Geraete im Suchbereich, %d bereits bekannt, %d neue Kandidaten, '
+            . '%d Rollen unvollstaendig, %d neue ohne Raum, %d Typen ungeklart, %d unbehandelte Gruppen/Instanzen. %s',
+            (int)($report['devices'] ?? 0),(int)($report['known'] ?? 0),(int)($report['new'] ?? 0),
+            $incomplete,$unknownRooms,$unknownTypes,
+            (int)($report['excludedGroups'] ?? 0)+(int)($report['withoutVariables'] ?? 0)+(int)($report['disabled'] ?? 0),$status);
+    }
+
+    private function discoveryInventoryRows(array $report): array
+    {
+        $rows = [];
+        foreach ((array)($report['items'] ?? []) as $item) {
+            $missing = (array)($item['roleMissing'] ?? []);
+            $rows[] = [
+                'sourceId'=>(int)($item['sourceId'] ?? 0),
+                'name'=>(string)($item['name'] ?? ''),
+                'moduleName'=>(string)($item['moduleName'] ?? ''),
+                'roomKey'=>(string)($item['roomKey'] ?? ''),
+                'deviceType'=>(string)($item['deviceType'] ?? 'generic'),
+                'knownLabel'=>!empty($item['known']) ? 'Bestand' : 'Neu',
+                'variableCount'=>count((array)($item['variableIds'] ?? [])),
+                'roleMissingText'=>$missing === [] ? 'Rollen-Vorschlag vorhanden'
+                    : 'Pruefen: ' . implode(', ',$missing)
+            ];
+        }
+        return $rows;
+    }
+
+    /** READ ONLY: 100%-Status erst wenn jedes gefundene Geraet bestaetigt und zugeordnet ist. */
+    public function AuditDiscoveryCoverage(): void
+    {
+        $inventory = json_decode($this->ReadAttributeString('DiscoveryInventory'),true);
+        if (!is_array($inventory) || !is_array($inventory['items'] ?? null)
+            || ($inventory['roots'] ?? []) !== $this->discoveryRoots()) {
+            echo 'Zuerst eine vollstaendige Suche in V3.3.1 starten.';
+            return;
+        }
+        $catalog = $this->loadConfiguredCatalog('RoomsCatalogEditScriptID','EDIT');
+        $flat = $this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($catalog));
+        $unresolved = [];
+        $checked = 0;
+        foreach ($inventory['items'] as $item) {
+            $candidateSource = (int)($item['sourceId'] ?? 0);
+            $device = null;
+            $knownIds = array_map('intval',(array)($item['variableIds'] ?? []));
+            foreach ($flat as $row) {
+                if ((int)($row['discoverySourceId'] ?? 0) === $candidateSource) {
+                    $device = $row;
+                    break;
+                }
+                foreach (array_merge(['state','toggle','value','set','wert','stellung','ist','soll','statusId','controlId'],
+                    array_values(self::AI_VARIABLE_FIELDS)) as $field) {
+                    $id = (int)($row[$field] ?? 0);
+                    if ($id > 0 && in_array($id,$knownIds,true)) { $device = $row; break 2; }
+                }
+                if ($device !== null) break;
+            }
+            if ($device === null) {
+                $unresolved[] = 'IPS ' . $candidateSource . ': nicht im EDIT-Katalog';
+                continue;
+            }
+            $checked++;
+            $type = (string)($device['aiType'] ?? '');
+            if (!array_key_exists($type,self::AI_TYPE_FIELDS) || $type === 'generic') {
+                $unresolved[] = 'IPS ' . $candidateSource . ': Geraetetyp noch nicht bestaetigt';
+                continue;
+            }
+            if (empty($device['aiReviewed'])) {
+                $unresolved[] = 'IPS ' . $candidateSource . ': Zuordnungen noch nicht am Geraet bestaetigt';
+            }
+            $bound = [];
+            foreach (self::AI_VARIABLE_FIELDS as $property=>$field) {
+                $id = (int)($device[$field] ?? 0);
+                if ($id > 0 && (!function_exists('IPS_VariableExists') || IPS_VariableExists($id))) {
+                    $bound[$property] = true;
+                    if (!in_array($id,$knownIds,true)) {
+                        $unresolved[] = 'IPS ' . $candidateSource . ': ' . $property
+                            . ' (' . $id . ') liegt ausserhalb der gescannten Quelle';
+                    }
+                }
+            }
+            foreach ($this->minimumReadingRoles($type) as $alternatives) {
+                if (array_intersect($alternatives,array_keys($bound)) === []) {
+                    $unresolved[] = 'IPS ' . $candidateSource . ': Rueckmeldung '
+                        . implode('/',$alternatives) . ' fehlt';
+                }
+            }
+            // Position alleine belegt nicht die Bedeutung 0/100; die KI darf nicht raten.
+            if (in_array($type,['blind','window'],true)) {
+                $mapping = $device['aiOpenValue'] ?? null;
+                $closed = $device['aiClosedValue'] ?? null;
+                $statusId = (int)($device['aiStatusId'] ?? 0);
+                if ($statusId <= 0) $statusId = (int)($device['aiOpenId'] ?? 0);
+                $profileMapping = $this->inferStateMapping(
+                    $this->getIpsVariablesUnderScope($candidateSource),$statusId,$type);
+                if (($mapping === null || $mapping === '' || $closed === null || $closed === '')
+                    && $profileMapping === []) {
+                    $unresolved[] = 'IPS ' . $candidateSource . ': Offen/Geschlossen-Bedeutung pruefen';
+                }
+            }
+        }
+        if (!empty($inventory['truncated'])) $unresolved[] = 'Geraetesuche unvollstaendig (Scan-Limit erreicht)';
+        if ((int)($inventory['excludedGroups'] ?? 0) > 0) $unresolved[] = 'Grosse Variablengruppen noch nicht klassifiziert';
+        if ((int)($inventory['withoutVariables'] ?? 0) > 0) $unresolved[] = 'Geraeteinstanzen ohne lesbare Variablen';
+        if ((int)($inventory['disabled'] ?? 0) > 0) $unresolved[] = 'Deaktivierte Instanzen wurden uebersprungen';
+        $unresolved = array_values(array_unique($unresolved));
+        $total = (int)($inventory['devices'] ?? 0);
+        $message = sprintf('Datenstands-Pruefung: %d/%d gefundene Geraete im EDIT-Katalog, %d offene Punkte. ',
+            $checked,$total,count($unresolved));
+        $message .= $unresolved === []
+            ? 'Alle Pruefregeln bestanden; Live-Zustaende und Steuerungen vor V3.4 am System testen.'
+            : 'Nicht 100% bereit: ' . implode(' | ',array_slice($unresolved,0,20));
+        $this->WriteAttributeString('DiscoveryAuditReport',$message);
+        $this->UpdateFormField('DiscoveryAudit','caption',$message);
+        echo $message;
+    }
+
+    /** Ausfuehrliche Vorschau ohne Livewerte, damit die Feldbedeutungen kontrolliert werden koennen. */
+    public function ShowDiscoveryDetails(int $sourceId): void
+    {
+        $snapshot = json_decode($this->ReadAttributeString('DiscoveryInventory'),true);
+        foreach ((array)($snapshot['items'] ?? []) as $item) {
+            if ((int)($item['sourceId'] ?? 0) !== $sourceId) continue;
+            $lines = [sprintf('IPS-Instanz %d: %s; Modul %s (%s); Typ %s; Raum %s',
+                $sourceId,$item['name'],$item['moduleName'],$item['moduleId'],
+                $item['deviceType'],$item['roomKey'])];
+            foreach ($item['variables'] as $variable) {
+                $roles = [];
+                foreach ($item['roles'] as $role=>$id) {
+                    if ((int)$id === (int)$variable['id']) $roles[] = $role;
+                }
+                $associations = [];
+                foreach ($variable['associations'] as $assoc) {
+                    $associations[] = (string)$assoc['value'] . '=' . $assoc['name'];
+                }
+                $lines[] = sprintf('%d %s [%s], Typ %d, Profil %s, Aktion %s, Rolle %s, Assoziationen %s',
+                    $variable['id'],$variable['name'],$variable['ident'],$variable['type'],
+                    $variable['profile'],$variable['action'] ? 'ja' : 'nein',
+                    implode(',',$roles),implode('/',$associations));
+            }
+            echo implode("\n",$lines);
+            return;
+        }
+        echo 'Keine Inventurdaten zu IPS ' . $sourceId . ' vorhanden. Bitte neu scannen.';
+    }
+
+    /** Kopierbarer, datensparsamer Inventarbericht fuer die gemeinsame Analyse. */
+    public function ExportDiscoveryInventory(): void
+    {
+        $snapshot = json_decode($this->ReadAttributeString('DiscoveryInventory'),true);
+        if (!is_array($snapshot) || !isset($snapshot['items'])) {
+            echo 'Bitte zuerst eine Geraeteinventur starten.';
+            return;
+        }
+        echo json_encode($snapshot,JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    }
+
+    /** Alte Eintraege kontrolliert typisieren: Analyse schreibt keine Katalogdaten. */
+    public function AnalyzeLegacyDevices(): void
+    {
+        $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        if ($editId <= 0 || !IPS_ScriptExists($editId)) {
+            echo 'RoomsCatalogEdit ist nicht konfiguriert.';
+            return;
+        }
+        $catalog = $this->loadRoomsCatalog($editId,'EDIT');
+        $rows = $this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($catalog));
+        $candidates = [];
+        $totalLegacy = 0;
+        foreach ($rows as $row) {
+            if ((string)($row['aiType'] ?? '') !== '') continue;
+            $totalLegacy++;
+            if (count($candidates) >= 500) continue;
+            $variables = $this->getScopedIpsVariables($row);
+            $sourceId = 0;
+            foreach ($variables as $variable) {
+                $sourceId = $this->lookupIpsInstanceId((int)$variable['id']);
+                if ($sourceId > 0) break;
+            }
+            $moduleName = '';
+            if ($sourceId > 0 && function_exists('IPS_GetInstance')) {
+                try {
+                    $instance = IPS_GetInstance($sourceId);
+                    $moduleName = (string)($instance['ModuleInfo']['ModuleName'] ?? '');
+                } catch (Throwable $ignored) {}
+            }
+            $typed = $this->inferDeviceTypeFromMetadata($variables,$moduleName,(string)($row['title'] ?? ''));
+            $legacyType = $this->inferredAIType($row);
+            // Vorhandene Raum-/Bereichssemantik hat Vorrang vor beliebigen Namensfunden.
+            $type = $legacyType !== 'generic' ? $legacyType : $typed['type'];
+            $scores = $this->suggestAIFields($row,$type,$variables);
+            $coverage = $this->roleCoverage($type,$scores);
+            $safe = $type !== 'generic' && $coverage['missing'] === [];
+            $candidates[] = [
+                'selected'=>false,'composite'=>$this->buildCompositeKey($row),
+                'title'=>(string)($row['title'] ?? $row['key'] ?? ''),
+                'roomKey'=>(string)($row['roomKey'] ?? ''),
+                'deviceType'=>$type,'sourceId'=>$sourceId,
+                'confidence'=>$safe ? 'Hoch' : 'Pruefen',
+                'reason'=>$safe ? 'Mindestens notwendige Rueckmeldung vorhanden' :
+                    ($coverage['missing'] !== [] ? 'Offen: ' . implode(', ',$coverage['missing']) : 'Typ/IDs pruefen')
+            ];
+        }
+        $preview = [
+            'time'=>time(),'editHash'=>hash('sha256',IPS_GetScriptContent($editId)),
+            'truncated'=>$totalLegacy > count($candidates),'totalLegacy'=>$totalLegacy,'rows'=>$candidates
+        ];
+        $this->WriteAttributeString('LegacyMigrationPreview',json_encode($preview,JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->UpdateFormField('LegacyDevices','values',json_encode($candidates,JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+        echo sprintf('Legacy-Analyse: %d Geraete, %d angezeigt, %d eindeutige. %s',
+            $totalLegacy,count($candidates),count(array_filter($candidates,static fn($r): bool=>$r['confidence']==='Hoch')),
+            $preview['truncated'] ? 'Suchgrenze: nicht vollstaendig!' : 'Keine Aenderung an EDIT/PROD.');
+    }
+
+    public function UpdateLegacyCandidate(string $rowJson): void
+    {
+        $row = json_decode($rowJson,true);
+        $preview = json_decode($this->ReadAttributeString('LegacyMigrationPreview'),true);
+        if (!is_array($row) || !is_array($preview['rows'] ?? null)) return;
+        foreach ($preview['rows'] as &$candidate) {
+            if ($candidate['composite'] !== (string)($row['composite'] ?? '')) continue;
+            if (array_key_exists('selected',$row)) $candidate['selected'] = (bool)$row['selected'];
+            $type = (string)($row['deviceType'] ?? '');
+            if (array_key_exists($type,self::AI_TYPE_FIELDS)) $candidate['deviceType'] = $type;
+            break;
+        }
+        unset($candidate);
+        $this->WriteAttributeString('LegacyMigrationPreview',json_encode($preview,JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->UpdateFormField('LegacyDevices','values',json_encode($preview['rows'],JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+    }
+
+    public function SelectLegacyCandidates(bool $select): void
+    {
+        $preview = json_decode($this->ReadAttributeString('LegacyMigrationPreview'),true);
+        if (!is_array($preview['rows'] ?? null)) return;
+        foreach ($preview['rows'] as &$row) $row['selected'] = $select && $row['confidence'] === 'Hoch';
+        unset($row);
+        $this->WriteAttributeString('LegacyMigrationPreview',json_encode($preview,JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->UpdateFormField('LegacyDevices','values',json_encode($preview['rows'],JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+    }
+
+    public function ApplyLegacyCandidates(): void
+    {
+        $preview = json_decode($this->ReadAttributeString('LegacyMigrationPreview'),true);
+        $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        if (!is_array($preview['rows'] ?? null) || $editId <= 0 || !IPS_ScriptExists($editId)
+            || time()-(int)($preview['time'] ?? 0) > 600
+            || ($preview['editHash'] ?? '') !== hash('sha256',IPS_GetScriptContent($editId))) {
+            echo 'Legacy-Vorschau veraltet: bitte erneut analysieren.';
+            return;
+        }
+        $original = $this->loadRoomsCatalog($editId,'EDIT');
+        $rows = $this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($original));
+        $indexes = [];
+        foreach ($rows as $index=>$row) $indexes[$this->buildCompositeKey($row) ?? ''] = $index;
+        $count = 0;
+        foreach ($preview['rows'] as $candidate) {
+            if (empty($candidate['selected'])) continue;
+            $identity = (string)($candidate['composite'] ?? '');
+            $type = (string)($candidate['deviceType'] ?? '');
+            if (!isset($indexes[$identity]) || !array_key_exists($type,self::AI_TYPE_FIELDS)
+                || (string)($rows[$indexes[$identity]]['aiType'] ?? '') !== '') {
+                echo 'Legacy-Uebernahme abgebrochen: Eintrag/Typ ungueltig. Bitte neu analysieren.';
+                return;
+            }
+            $index = $indexes[$identity];
+            $row = $rows[$index];
+            $variables = $this->getScopedIpsVariables($row);
+            $used = [];
+            foreach (self::AI_VARIABLE_FIELDS as $property=>$field) {
+                if ((int)($row[$field] ?? 0) > 0) $used[(int)$row[$field]] = true;
+            }
+            foreach ($this->suggestAIFields($row,$type,$variables) as $suggestion) {
+                $id = (int)$suggestion['candidateId'];
+                if ($suggestion['confidence'] !== 'Hoch' || $id <= 0 || isset($used[$id])) continue;
+                $row[self::AI_VARIABLE_FIELDS[$suggestion['property']]] = $id;
+                $used[$id] = true;
+            }
+            $stateId = (int)($row['aiStatusId'] ?? $row['aiOpenId'] ?? $row['aiPowerId'] ?? 0);
+            foreach ($this->inferStateMapping($variables,$stateId,$type) as $meaning=>$value) {
+                $field = self::AI_STATE_FIELDS[$meaning] ?? null;
+                if ($field === null || trim((string)($row[$field] ?? '')) !== '') continue;
+                $row[$field] = is_bool($value) ? ($value ? 'true' : 'false') : (string)$value;
+            }
+            $sourceId = (int)($candidate['sourceId'] ?? 0);
+            if ($sourceId > 0 && function_exists('IPS_GetInstance')) {
+                try {
+                    $instance = IPS_GetInstance($sourceId);
+                    $moduleInfo = is_array($instance) ? (array)($instance['ModuleInfo'] ?? []) : [];
+                    $row['ai']['source'] = [
+                        'instanceId'=>$sourceId,
+                        'moduleId'=>(string)($moduleInfo['ModuleID'] ?? ''),
+                        'moduleName'=>(string)($moduleInfo['ModuleName'] ?? ''),
+                        'variableIds'=>array_column($variables,'id'),
+                        'unmappedVariableIds'=>array_values(array_diff(array_column($variables,'id'),array_keys($used)))
+                    ];
+                } catch (Throwable $ignored) {}
+            }
+            $row['aiType'] = $type;
+            $row['aiReviewed'] = false;
+            $row['ai']['review'] = [
+                'status'=>'pending',
+                'note'=>'Legacy-Zuordnung und Statusbedeutung am Geraet bestaetigen'
+            ];
+            $rows[$index] = $row;
+            $count++;
+        }
+        if ($count === 0) { echo 'Keine alten Geraete markiert.'; return; }
+        $updated = $this->rebuildRoomsCatalogFromEntries($rows,$original);
+        $loss = [];
+        $this->findLostCatalogFields($original,$updated,'RoomsCatalogEdit',$loss);
+        if ($loss !== []) {
+            echo 'Legacy-Uebernahme wegen Datenverlust abgebrochen: ' . implode('; ',array_slice($loss,0,3));
+            return;
+        }
+        if (IPS_SetScriptContent($editId,"<?php\nreturn " . var_export($updated,true) . ";\n") === false) {
+            echo 'RoomsCatalogEdit konnte nicht gespeichert werden.';
+            return;
+        }
+        $this->WriteAttributeString('LegacyMigrationPreview','{}');
+        $this->UpdateFormField('LegacyDevices','values','[]');
+        $this->reloadAllFromCatalog();
+        $this->RefreshVisibleLists();
+        echo $count . ' bestehende Geraete im EDIT-Katalog typisiert; Legacy-Felder und PROD unveraendert. Noch am Geraet pruefen.';
     }
 
     public function ScanNewDevices(): void
@@ -648,13 +1189,21 @@ class RoomsCatalogConfigurator extends IPSModule
         $visited = [];
         $candidates = [];
         $skipped = 0;
+        $inventory = [];
+        $noVariables = 0;
+        $excludedGroups = 0;
+        $disabled = 0;
+        $depthLimited = false;
         while ($queue !== [] && count($visited) < 2500 && count($candidates) < 200) {
             [$id,$depth] = array_shift($queue);
             if ($id <= 0 || isset($visited[$id]) || !IPS_ObjectExists($id)) continue;
             $visited[$id] = true;
             $object = IPS_GetObject($id);
-            if (!is_array($object) || !in_array((int)($object['ObjectType'] ?? -1), [0,1], true)
-                || !empty($object['ObjectIsDisabled'])) continue;
+            if (!is_array($object) || !in_array((int)($object['ObjectType'] ?? -1), [0,1], true)) continue;
+            if (!empty($object['ObjectIsDisabled'])) {
+                $disabled++;
+                continue;
+            }
             $kind = (int)$object['ObjectType'];
             $children = IPS_GetChildrenIDs($id);
             $childContainers = 0;
@@ -666,20 +1215,68 @@ class RoomsCatalogConfigurator extends IPSModule
                 if ($childType === 0 || $childType === 1) {
                     $childContainers++;
                     if ($kind === 0 && $depth < 12) $queue[] = [(int)$childId,$depth+1];
+                    elseif ($kind === 0 && $depth >= 12) $depthLimited = true;
                 }
             }
             // Instanzen sind Geräte; Kategorien nur als kleine Blatt-Gruppe zulassen.
-            if ($kind === 0 && ($childContainers > 0 || $directVariables === 0 || $directVariables > 12)) continue;
-            if ($kind === 1 && $directVariables === 0 && $childContainers === 0) continue;
+            if ($kind === 0 && $childContainers > 0) {
+                if ($directVariables > 0) $excludedGroups++;
+                continue;
+            }
+            if ($kind === 0 && $directVariables === 0) continue;
+            if ($kind === 0 && $directVariables > 12) { $excludedGroups++; continue; }
+            if ($kind === 1 && $directVariables === 0 && $childContainers === 0) {
+                $noVariables++;
+                continue;
+            }
             $variables = $this->getIpsVariablesUnderScope($id);
-            if ($variables === []) continue;
+            if ($variables === []) { $noVariables++; continue; }
+            $moduleInfo = [];
+            if ($kind === 1 && function_exists('IPS_GetInstance')) {
+                try {
+                    $instance = IPS_GetInstance($id);
+                    $moduleInfo = is_array($instance) ? (array)($instance['ModuleInfo'] ?? []) : [];
+                } catch (Throwable $ignored) {}
+            }
+            $moduleId = (string)($moduleInfo['ModuleID'] ?? '');
+            $moduleName = mb_substr((string)($moduleInfo['ModuleName'] ?? ''),0,100);
+            $template = $this->learnedModuleTemplate($edit,$moduleId);
+            $variables = $this->withLearnedRoleHints($variables,$template);
             $ids = array_column($variables, 'id');
-            if (isset($known['source:' . $id]) || array_filter($ids, static fn($v): bool => isset($known['var:' . $v])) !== []) {
+            $isKnown = isset($known['source:' . $id])
+                || array_filter($ids, static fn($v): bool => isset($known['var:' . $v])) !== [];
+            $typing = isset($template['type']) && ($template['roles'] ?? []) !== []
+                ? ['type'=>$template['type'],'confidence'=>'Hoch','reason'=>'Bestaetigte Vorlage (ModuleID)']
+                : $this->inferDeviceTypeFromMetadata($variables,$moduleName,(string)($object['ObjectName'] ?? ''));
+            $type = $typing['type'];
+            $roomKey = $this->matchDiscoveryRoom($id, $edit);
+            $suggestions = $this->suggestAIFields([], $type, $variables);
+            $coverage = $this->roleCoverage($type,$suggestions);
+            $matched = [];
+            foreach ($suggestions as $suggestion) {
+                if ($suggestion['confidence'] === 'Hoch' && (int)$suggestion['candidateId'] > 0) {
+                    $matched[$suggestion['property']] = (int)$suggestion['candidateId'];
+                }
+            }
+            $inventory[] = [
+                'sourceId'=>$id,'sourceType'=>$kind===1 ? 'instance' : 'category',
+                'moduleId'=>$moduleId,'moduleName'=>$moduleName,
+                'name'=>mb_substr((string)($object['ObjectName'] ?? ''),0,100),
+                'roomKey'=>$roomKey,'deviceType'=>$type,
+                'variableIds'=>$ids,'roles'=>$matched,'roleMissing'=>$coverage['missing'],
+                'known'=>$isKnown,
+                'variables'=>array_map(static fn(array $var): array => [
+                    'id'=>$var['id'],'name'=>$var['name'],'ident'=>$var['ident'],
+                    'profile'=>$var['profile'],'type'=>$var['type'],
+                    'action'=>$var['action'],'unit'=>$var['unit'] ?? '',
+                    'associations'=>$var['associations'] ?? [],
+                    'updated'=>$var['updated'] ?? 0,'changed'=>$var['changed'] ?? 0
+                ],$variables)
+            ];
+            if ($isKnown) {
                 $skipped++;
                 continue;
             }
-            $type = $this->inferDiscoveredType($variables);
-            $roomKey = $this->matchDiscoveryRoom($id, $edit);
             $high = count($this->discoverHighProperties($variables));
             $confidence = $roomKey !== '' && $type !== 'generic' && $high > 0 ? 'Hoch' : 'Pruefen';
             $title = trim((string)($object['ObjectName'] ?? ''));
@@ -687,12 +1284,27 @@ class RoomsCatalogConfigurator extends IPSModule
                 'selected'=>false, 'sourceId'=>$id, 'sourceType'=>$kind === 1 ? 'instance' : 'category',
                 'title'=>$title !== '' ? $title : 'Geraet ' . $id,
                 'roomKey'=>$roomKey, 'deviceType'=>$type,
+                'moduleName'=>$moduleName,'moduleId'=>$moduleId,
+                'typeHint'=>$typing['reason'],'typeConfidence'=>$typing['confidence'],
                 'variableCount'=>count($variables), 'confidence'=>$confidence,
                 'reason'=>($roomKey === '' ? 'Raum zuordnen; ' : '') .
-                    ($type === 'generic' ? 'Geraetetyp pruefen; ' : '') . $high . ' eindeutige Variablen',
+                    ($type === 'generic' ? 'Geraetetyp pruefen; ' : '') . $high . ' eindeutige Variablen' .
+                    ($coverage['missing'] !== [] ? '; offen: ' . implode(', ',$coverage['missing']) : ''),
+                'readiness'=>$coverage['missing'] === [] ? 'Pruefen' : 'Unvollstaendig',
+                'mappedRoles'=>$matched,
                 'variableIds'=>$ids
             ];
         }
+        $truncated = $queue !== [] || $depthLimited || count($visited) >= 2500 || count($candidates) >= 200;
+        $inventoryReport = [
+            'time'=>time(),'roots'=>$roots,'scannedObjects'=>count($visited),
+            'devices'=>count($inventory),'known'=>$skipped,'new'=>count($candidates),
+            'withoutVariables'=>$noVariables,'excludedGroups'=>$excludedGroups,
+            'disabled'=>$disabled,'truncated'=>$truncated,
+            'items'=>$inventory
+        ];
+        $this->WriteAttributeString('DiscoveryInventory',json_encode($inventoryReport,JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->WriteAttributeString('DiscoveryAuditReport','Neue Inventur: Vollstaendigkeitspruefung erneut starten.');
         $preview = [
             'time'=>time(), 'roots'=>$roots,
             'editHash'=>hash('sha256', IPS_GetScriptContent($this->ReadPropertyInteger('RoomsCatalogEditScriptID'))),
@@ -700,7 +1312,11 @@ class RoomsCatalogConfigurator extends IPSModule
         ];
         $this->WriteAttributeString('DiscoveryCandidates', json_encode($preview, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
         $this->UpdateFormField('DiscoveredDevices','values',json_encode($candidates, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
-        echo sprintf('%d neue Kandidaten gefunden, %d bereits bekannte Geraete uebersprungen. Nur explizite Uebernahme aendert EDIT.', count($candidates),$skipped);
+        $this->UpdateFormField('DiscoveryInventoryList','values',json_encode(
+            $this->discoveryInventoryRows($inventoryReport),JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+        $summary = $this->discoveryInventorySummary($inventoryReport);
+        $this->UpdateFormField('DiscoverySummary','caption',$summary);
+        echo $summary . ' Nur explizite Uebernahme aendert EDIT.';
     }
 
     public function UpdateDiscoveryCandidate(string $rowJson): void
@@ -764,13 +1380,15 @@ class RoomsCatalogConfigurator extends IPSModule
                 continue;
             }
             $variables = $this->getIpsVariablesUnderScope($sourceId);
+            $variables = $this->withLearnedRoleHints($variables,
+                $this->learnedModuleTemplate($original,(string)($candidate['moduleId'] ?? '')));
             $ids = array_column($variables, 'id');
             if (isset($known['source:' . $sourceId]) || $ids === []
                 || array_filter($ids, static fn($v): bool => isset($known['var:' . $v])) !== []) {
                 $errors[] = 'Geraet ' . $sourceId . ': bereits bekannt oder keine gueltigen Variablen.';
                 continue;
             }
-            [$domain,$group] = $this->discoveryTypeLocation($type);
+            [$domain,$group] = $this->guidedTypeLocation($type);
             $key = $this->discoveryDeviceKey($title,$sourceId);
             $entry = [
                 'selected'=>false,'roomKey'=>$roomKey,'roomLabel'=>(string)($rooms[$roomKey]['display'] ?? $roomKey),
@@ -785,6 +1403,24 @@ class RoomsCatalogConfigurator extends IPSModule
                 $entry[self::AI_VARIABLE_FIELDS[$suggestion['property']]] = $id;
                 $used[$id] = true;
             }
+            $statusId = (int)($entry['aiStatusId'] ?? $entry['aiOpenId'] ?? $entry['aiPowerId'] ?? 0);
+            $stateMapping = $this->inferStateMapping($variables,$statusId,$type);
+            foreach ($stateMapping as $meaning=>$value) {
+                $field = self::AI_STATE_FIELDS[$meaning] ?? null;
+                if ($field !== null) $entry[$field] = is_bool($value)
+                    ? ($value ? 'true' : 'false') : (string)$value;
+            }
+            $entry['ai'] = [
+                'version'=>2,
+                'source'=>[
+                    'instanceId'=>$sourceId,
+                    'moduleId'=>(string)($candidate['moduleId'] ?? ''),
+                    'moduleName'=>(string)($candidate['moduleName'] ?? ''),
+                    'variableIds'=>$ids,
+                    'unmappedVariableIds'=>array_values(array_diff($ids,array_keys($used)))
+                ],
+                'review'=>['status'=>'pending','note'=>'Gerätetyp, Variablen und Statussemantik am Geraet verifizieren']
+            ];
             // Legacy-Felder ergänzen nur bekannte, eindeutige Mappings.
             $legacy = match ($type) {
                 'light','dimmer','fan','switch' => ['power'=>'state','control'=>'toggle','brightness'=>'value'],
@@ -839,7 +1475,7 @@ class RoomsCatalogConfigurator extends IPSModule
             'key', 'title', 'synonyms', 'entityId', 'kiEnabled', 'kiReadOnly',
             'state', 'toggle', 'editorOriginalKey'
         ];
-        $keys = array_merge($keys, ['aiType'], array_values(self::AI_VARIABLE_FIELDS), array_values(self::AI_STATE_FIELDS));
+        $keys = array_merge($keys, ['aiType','aiReviewed'], array_values(self::AI_VARIABLE_FIELDS), array_values(self::AI_STATE_FIELDS));
         foreach ($entries as $row) {
             if (!is_array($row)) continue;
             foreach (array_keys($row) as $name) {
@@ -1294,6 +1930,8 @@ class RoomsCatalogConfigurator extends IPSModule
             'powerWatts' => ['leistung'],
             'energy' => ['verbrauch'],
             'motion' => ['state'],
+            'status' => ['statusId','state'],
+            'action' => ['controlId','toggle'],
             default => []
         };
         foreach ($candidates as $candidate) {
@@ -1310,6 +1948,7 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         $ai = isset($cfg['ai']) && is_array($cfg['ai']) ? $cfg['ai'] : [];
         $row['aiType'] = is_string($ai['type'] ?? null) ? $ai['type'] : '';
+        $row['aiReviewed'] = ($ai['review']['status'] ?? '') === 'confirmed';
         $variables = isset($ai['variables']) && is_array($ai['variables']) ? $ai['variables'] : [];
         foreach (self::AI_VARIABLE_FIELDS as $property => $field) {
             $configured = $variables[$property] ?? null;
@@ -1361,6 +2000,15 @@ class RoomsCatalogConfigurator extends IPSModule
             if ($value !== '') $mapping[$property] = $this->parseAIStateValue($value);
         }
         if ($mapping !== [] || array_key_exists('stateMapping', $ai)) $ai['stateMapping'] = $mapping;
+        if (!empty($row['aiReviewed'])) {
+            $review = is_array($ai['review'] ?? null) ? $ai['review'] : [];
+            $review['status'] = 'confirmed';
+            $review['confirmedAt'] = (int)($review['confirmedAt'] ?? time());
+            $ai['review'] = $review;
+        } elseif (isset($ai['review'])) {
+            $ai['review']['status'] = 'pending';
+            unset($ai['review']['confirmedAt']);
+        }
         $cfg['ai'] = $ai;
         return $cfg;
     }
@@ -1460,6 +2108,7 @@ class RoomsCatalogConfigurator extends IPSModule
             // Keine unbemerkte Schaltfreigabe direkt beim Anlegen.
             $row['kiEnabled'] = false;
             $row['kiReadOnly'] = true;
+            $row['aiReviewed'] = false;
             $legacyFields = match ($type) {
                 'light','dimmer','fan','switch' => ['power'=>'state','control'=>'toggle','brightness'=>'value'],
                 'blind' => ['position'=>'wert'],
@@ -1470,6 +2119,15 @@ class RoomsCatalogConfigurator extends IPSModule
             foreach ($legacyFields as $property => $legacyField) {
                 $id = (int)($row[self::AI_VARIABLE_FIELDS[$property]] ?? 0);
                 if ($id > 0 && (int)($row[$legacyField] ?? 0) <= 0) $row[$legacyField] = $id;
+            }
+        }
+        if (!$new && $type !== (string)($source['aiType'] ?? '')) $row['aiReviewed'] = false;
+        if (!$new) {
+            foreach (array_merge(array_values(self::AI_VARIABLE_FIELDS),array_values(self::AI_STATE_FIELDS)) as $field) {
+                if (array_key_exists($field,$row) && (string)$row[$field] !== (string)($source[$field] ?? '')) {
+                    $row['aiReviewed'] = false;
+                    break;
+                }
             }
         }
 
@@ -1914,6 +2572,13 @@ class RoomsCatalogConfigurator extends IPSModule
         $discoveryPreview = json_decode($this->ReadAttributeString('DiscoveryCandidates'), true);
         $discoveryRows = is_array($discoveryPreview) && is_array($discoveryPreview['rows'] ?? null)
             ? $discoveryPreview['rows'] : [];
+        $legacyPreview = json_decode($this->ReadAttributeString('LegacyMigrationPreview'),true);
+        $legacyRows = is_array($legacyPreview) && is_array($legacyPreview['rows'] ?? null)
+            ? $legacyPreview['rows'] : [];
+        $inventoryPreview = json_decode($this->ReadAttributeString('DiscoveryInventory'),true);
+        $discoverySummary = is_array($inventoryPreview) && isset($inventoryPreview['items'])
+            ? $this->discoveryInventorySummary($inventoryPreview) : 'Noch keine Geraeteinventur gestartet.';
+        $inventoryRows = is_array($inventoryPreview) ? $this->discoveryInventoryRows($inventoryPreview) : [];
 
         [$roomOptions, $domainOptions, $groupOptions] = $this->buildFilterOptionsFromEntries(array_merge($entriesProd, $entriesEdit));
         $knownRooms = array_column($roomOptions, 'value');
@@ -2153,7 +2818,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 ],
                 [
                     'type' => 'ExpansionPanel',
-                    'caption' => 'V3.3: Neue IP-Symcon-Geraete erkennen',
+                    'caption' => 'V3.3.1: Vollstaendige IP-Symcon-Geraeteinventur',
                     'expanded' => true,
                     'items' => [
                         ['type'=>'Label','caption'=>'Nur die hier ausgewaehlten Kategorien/Instanzen werden durchsucht. Gefundene Geraete sind erst Vorschlaege; keine automatische KI- oder Schreibfreigabe. Suchwurzeln nach dem Aendern mit Uebernehmen speichern.'],
@@ -2161,7 +2826,34 @@ class RoomsCatalogConfigurator extends IPSModule
                             ['type'=>'SelectObject','name'=>'DiscoveryRootId','caption'=>'Suchwurzel (Kategorie oder Instanz)'],
                             ['type'=>'ValidationTextBox','name'=>'DiscoveryExtraRootIds','caption'=>'Weitere Suchwurzeln (IPS-IDs, Komma getrennt)']
                         ]],
-                        ['type'=>'Button','caption'=>'NEUE GERAETE SUCHEN','onClick'=>'RCC_ScanNewDevices($id);'],
+                        ['type'=>'Button','caption'=>'IP-SYMCON-GERAETE INVENTARISIEREN','onClick'=>'RCC_ScanNewDevices($id);'],
+                        ['type'=>'Label','name'=>'DiscoverySummary','caption'=>$discoverySummary],
+                        ['type'=>'Button','caption'=>'DATENSTAND UND OFFENE PUNKTE PRUEFEN',
+                            'onClick'=>'RCC_AuditDiscoveryCoverage($id);'],
+                        ['type'=>'Button','caption'=>'INVENTAR ALS JSON ZUM KOPIEREN',
+                            'onClick'=>'RCC_ExportDiscoveryInventory($id);'],
+                        ['type'=>'Label','name'=>'DiscoveryAudit',
+                            'caption'=>$this->ReadAttributeString('DiscoveryAuditReport')],
+                        [
+                            'type'=>'List','name'=>'DiscoveryInventoryList',
+                            'caption'=>'Inventar aller gefundenen Geraete, inklusive Bestand (IPS-ID anklicken fuer Details)',
+                            'rowCount'=>12,'loadValuesFromConfiguration'=>false,
+                            'add'=>false,'delete'=>false,
+                            'sort'=>['column'=>'name','direction'=>'ascending'],
+                            'columns'=>[
+                                ['caption'=>'IPS-ID / Details','name'=>'sourceId','width'=>'110px','save'=>false,
+                                    'quickFilter'=>true,
+                                    'onClick'=>'RCC_ShowDiscoveryDetails($id, (int)($DiscoveryInventoryList["sourceId"] ?? 0));'],
+                                ['caption'=>'Geraet','name'=>'name','width'=>'175px','save'=>false,'quickFilter'=>true],
+                                ['caption'=>'Modul','name'=>'moduleName','width'=>'125px','save'=>false,'quickFilter'=>true],
+                                ['caption'=>'Raum','name'=>'roomKey','width'=>'100px','save'=>false],
+                                ['caption'=>'Typ','name'=>'deviceType','width'=>'105px','save'=>false],
+                                ['caption'=>'Bestand / Neu','name'=>'knownLabel','width'=>'95px','save'=>false],
+                                ['caption'=>'Variablen','name'=>'variableCount','width'=>'80px','save'=>false],
+                                ['caption'=>'Hinweis (Scan-Vorschlag)','name'=>'roleMissingText','width'=>'auto','save'=>false]
+                            ],
+                            'values'=>$inventoryRows
+                        ],
                         [
                             'type'=>'List','name'=>'DiscoveredDevices','caption'=>'Neue Geraete: pruefen und zur Uebernahme markieren',
                             'rowCount'=>15,'loadValuesFromConfiguration'=>false,
@@ -2169,7 +2861,10 @@ class RoomsCatalogConfigurator extends IPSModule
                             'sort'=>['column'=>'title','direction'=>'ascending'],
                             'columns'=>[
                                 ['caption'=>'Uebernehmen','name'=>'selected','width'=>'95px','edit'=>['type'=>'CheckBox']],
-                                ['caption'=>'IPS-ID','name'=>'sourceId','width'=>'85px','save'=>false,'quickFilter'=>true],
+                                ['caption'=>'IPS-ID (Details)','name'=>'sourceId','width'=>'105px','save'=>false,
+                                    'quickFilter'=>true,
+                                    'onClick'=>'RCC_ShowDiscoveryDetails($id, (int)($DiscoveredDevices["sourceId"] ?? 0));'],
+                                ['caption'=>'Modultyp','name'=>'moduleName','width'=>'135px','save'=>false,'quickFilter'=>true],
                                 ['caption'=>'Quelle','name'=>'sourceType','width'=>'85px','save'=>false],
                                 ['caption'=>'Geraetename','name'=>'title','width'=>'165px','edit'=>['type'=>'ValidationTextBox'],'quickFilter'=>true],
                                 ['caption'=>'Raum','name'=>'roomKey','width'=>'125px','edit'=>['type'=>'Select','options'=>$roomOptions]],
@@ -2182,6 +2877,7 @@ class RoomsCatalogConfigurator extends IPSModule
                                 ]]],
                                 ['caption'=>'Variablen','name'=>'variableCount','width'=>'80px','save'=>false],
                                 ['caption'=>'Bewertung','name'=>'confidence','width'=>'90px','save'=>false],
+                                ['caption'=>'Datenstand','name'=>'readiness','width'=>'95px','save'=>false],
                                 ['caption'=>'Hinweis','name'=>'reason','width'=>'auto','save'=>false]
                             ],
                             'values'=>$discoveryRows,
@@ -2200,7 +2896,51 @@ class RoomsCatalogConfigurator extends IPSModule
                                 'confirm'=>'Markierte neue Geraete ausschliesslich nach RoomsCatalogEdit importieren? KI bleibt deaktiviert und PROD unveraendert.',
                                 'onClick'=>'RCC_ApplyDiscoveredDevices($id);']
                         ]],
-                        ['type'=>'Label','caption'=>'Unklare Zuordnungen bitte vor der Uebernahme korrigieren. Neue Geraete starten immer mit Mit KI = aus und Nur abfragen = an.']
+                        ['type'=>'Label','caption'=>'Alle 10 Geraeteklassen werden analysiert. Der Bericht unterscheidet die abgeschlossene Suche vom fachlich geprueften Datenstand. Neue Geraete starten mit KI aus und Nur abfragen an. Profile und Namen liefern Vorschlaege, keine ungeprueften Schaltrechte.']
+                    ]
+                ],
+                [
+                    'type'=>'ExpansionPanel',
+                    'caption'=>'V3.3.1: Bisherige Geraete ins neue Datenmodell uebernehmen',
+                    'expanded'=>false,
+                    'items'=>[
+                        ['type'=>'Label','caption'=>'Bestehende Legacy-Geraete analysieren. Die Uebernahme fuegt nur ai.type/Variablen im EDIT-Katalog hinzu. Alte Felder, KI-Freigaben und PROD bleiben erhalten.'],
+                        ['type'=>'Button','caption'=>'BESTEHENDE GERAETE ANALYSIEREN',
+                            'onClick'=>'RCC_AnalyzeLegacyDevices($id);'],
+                        [
+                            'type'=>'List','name'=>'LegacyDevices','caption'=>'Bestehende Geraete zur Typisierung',
+                            'rowCount'=>12,'loadValuesFromConfiguration'=>false,
+                            'add'=>false,'delete'=>false,
+                            'columns'=>[
+                                ['caption'=>'Uebernehmen','name'=>'selected','width'=>'90px','edit'=>['type'=>'CheckBox']],
+                                ['caption'=>'Katalogpfad','name'=>'composite','width'=>'200px','save'=>false,'quickFilter'=>true],
+                                ['caption'=>'Geraet','name'=>'title','width'=>'150px','save'=>false,'quickFilter'=>true],
+                                ['caption'=>'Raum','name'=>'roomKey','width'=>'105px','save'=>false],
+                                ['caption'=>'IPS-ID','name'=>'sourceId','width'=>'85px','save'=>false],
+                                ['caption'=>'Typ','name'=>'deviceType','width'=>'135px','edit'=>['type'=>'Select','options'=>[
+                                    ['caption'=>'Licht','value'=>'light'],['caption'=>'Dimmer','value'=>'dimmer'],
+                                    ['caption'=>'Jalousie','value'=>'blind'],['caption'=>'Heizung','value'=>'heating'],
+                                    ['caption'=>'Fenster','value'=>'window'],['caption'=>'Steckdose','value'=>'switch'],
+                                    ['caption'=>'Energie','value'=>'energy'],['caption'=>'Bewegung','value'=>'motion'],
+                                    ['caption'=>'Lueftung','value'=>'fan'],['caption'=>'Sonstiges','value'=>'generic']
+                                ]]],
+                                ['caption'=>'Bewertung','name'=>'confidence','width'=>'85px','save'=>false],
+                                ['caption'=>'Pruefhinweis','name'=>'reason','width'=>'auto','save'=>false]
+                            ],
+                            'values'=>$legacyRows,
+                            'onEdit'=>'RCC_UpdateLegacyCandidate($id, json_encode(array_filter(['
+                                . '\'composite\' => ($LegacyDevices["composite"] ?? null), '
+                                . '\'selected\' => ($LegacyDevices["selected"] ?? null), '
+                                . '\'deviceType\' => ($LegacyDevices["deviceType"] ?? null)'
+                                . '], static fn($v) => $v !== null), JSON_INVALID_UTF8_SUBSTITUTE));'
+                        ],
+                        ['type'=>'RowLayout','items'=>[
+                            ['type'=>'Button','caption'=>'EINDEUTIGE MARKIEREN','onClick'=>'RCC_SelectLegacyCandidates($id, true);'],
+                            ['type'=>'Button','caption'=>'MARKIERUNGEN AUFHEBEN','onClick'=>'RCC_SelectLegacyCandidates($id, false);'],
+                            ['type'=>'Button','caption'=>'MARKIERTE NACH EDIT UEBERNEHMEN',
+                                'confirm'=>'Bestehende Geraete ohne Aenderung der Legacy-Felder nach ai.type migrieren? Nur EDIT wird beschrieben.',
+                                'onClick'=>'RCC_ApplyLegacyCandidates($id);']
+                        ]]
                     ]
                 ],
                 [
@@ -2277,6 +3017,7 @@ class RoomsCatalogConfigurator extends IPSModule
 
     private function reloadAllFromCatalog(): void
     {
+        $this->learnedModuleTemplateCache = [];
         $this->logDebug('reloadAllFromCatalog: START');
 
         $scriptId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
@@ -2930,7 +3671,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $hasRoomsWrapper = isset($existingCatalog['rooms']) && is_array($existingCatalog['rooms']);
         $existingRoomsMap = $hasRoomsWrapper ? $existingCatalog['rooms'] : $existingCatalog;
         $virtualAIFields = array_merge(
-            ['aiType'], array_values(self::AI_VARIABLE_FIELDS), array_values(self::AI_STATE_FIELDS)
+            ['aiType','aiReviewed'], array_values(self::AI_VARIABLE_FIELDS), array_values(self::AI_STATE_FIELDS)
         );
 
         foreach ($entries as $row) {
@@ -3214,6 +3955,14 @@ class RoomsCatalogConfigurator extends IPSModule
         $discoveryRows = is_array($discoveryPreview) && is_array($discoveryPreview['rows'] ?? null)
             ? $discoveryPreview['rows'] : [];
         $this->UpdateFormField('DiscoveredDevices', 'values', json_encode($discoveryRows, JSON_INVALID_UTF8_SUBSTITUTE));
+        $inventory = json_decode($this->ReadAttributeString('DiscoveryInventory'),true);
+        $this->UpdateFormField('DiscoveryInventoryList','values',json_encode(
+            is_array($inventory) ? $this->discoveryInventoryRows($inventory) : [],
+            JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+        $legacyPreview = json_decode($this->ReadAttributeString('LegacyMigrationPreview'),true);
+        $legacyRows = is_array($legacyPreview) && is_array($legacyPreview['rows'] ?? null)
+            ? $legacyPreview['rows'] : [];
+        $this->UpdateFormField('LegacyDevices','values',json_encode($legacyRows,JSON_INVALID_UTF8_SUBSTITUTE));
         [$roomOptions] = $this->buildFilterOptionsFromEntries(array_merge($prod, $edit));
         $knownKeys = array_column($roomOptions, 'value');
         foreach ($roomRows as $roomRow) {
@@ -3475,7 +4224,8 @@ class RoomsCatalogConfigurator extends IPSModule
             'control' => 'Steuerungsvariable', 'temperature' => 'Isttemperatur',
             'targetTemperature' => 'Solltemperatur', 'open' => 'Fensterstatus',
             'powerWatts' => 'Leistung (W)', 'energy' => 'Verbrauch/Zaehlerstand',
-            'motion' => 'Bewegung'
+            'motion' => 'Bewegung', 'status' => 'Geraetestatus (z.B. Offen/Geschlossen)',
+            'action' => 'Aktion (z.B. Auf/Ab/Stop)'
         ];
         $aiItems = [['type'=>'Label','caption'=>'Nur die zum Geraetetyp passenden Variablen auswaehlen. Bei unbekannter Bedeutung keine Statuswerte raten.']];
         foreach (array_chunk(array_keys(self::AI_VARIABLE_FIELDS), 2) as $pair) {
@@ -3499,6 +4249,9 @@ class RoomsCatalogConfigurator extends IPSModule
                 'caption'=>$caption . ' (z.B. true/false, 0/100)','visible'=>$visible];
         }
         $aiItems[] = ['type'=>'RowLayout','items'=>$controls];
+        $aiItems[] = ['type'=>'CheckBox','name'=>'aiReviewed',
+            'caption'=>'Alle Variablen und die Wertbedeutung am echten Geraet geprueft',
+            'enabled'=>!$isNew];
         $items[] = ['type'=>'ExpansionPanel','caption'=>'3. Variablen und Zustandswerte',
             'expanded'=>true,'items'=>$aiItems];
         $items[] = ['type'=>'ExpansionPanel','caption'=>'4. KI-Freigabe','expanded'=>true,'items'=>[
@@ -3513,7 +4266,7 @@ class RoomsCatalogConfigurator extends IPSModule
 
         $hidden = array_merge(['selected','roomKey','roomLabel','floor','domain','group','key','title',
             'synonyms','entityId','kiEnabled','kiReadOnly','rowColor','kiStatus','diffKeys','editable',
-            'deletable','ipsObjectIds','ipsInstanceIds','ai','aiType'],
+            'deletable','ipsObjectIds','ipsInstanceIds','ai','aiType','aiReviewed'],
             array_values(self::AI_VARIABLE_FIELDS), array_values(self::AI_STATE_FIELDS));
         $idFields = ['id','controlId','statusId','tiltId','set','state','ist','soll','eingestellt',
             'stellung','toggle','value','wert','var'];
