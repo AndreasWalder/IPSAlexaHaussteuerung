@@ -80,6 +80,8 @@ jobs:
         run: php tests/test_rooms_catalog_v3_model.php
       - name: Test RoomsCatalog V3.1 central rooms floors aliases and EDIT to PROD
         run: php tests/test_rooms_catalog_v31_rooms.php
+      - name: Test RoomsCatalog V3.2 safe instance-scoped variable suggestions
+        run: php tests/test_rooms_catalog_v32_suggestions.php
       - name: Test Symcon IPSList checkbox callbacks and filtered multi-selection
         run: php tests/test_rooms_catalog_ipslist_multiselect.php
       - name: Test RoomsCatalog quick search for IPS object IDs and parent instance IDs
