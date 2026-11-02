@@ -316,6 +316,25 @@ class RoomsCatalogConfigurator extends IPSModule
         return $keys;
     }
 
+    /** Nur ausdruecklich gewaehlte Aenderungen vom Verlustcheck ausnehmen. */
+    private function isAuthorizedBulkChange(string $problem,array $keys,array $options): bool
+    {
+        foreach ($keys as $key) {
+            $parts = explode('|',$key,4);
+            if (count($parts)!==4) continue;
+            [$room,$domain,$group,$device]=$parts;
+            $base = 'RoomsCatalogEdit.' . $room . '.domains.' . $domain . '.'
+                . (in_array($domain,['heizung','jalousie'],true) ? '' : $group . '.') . $device;
+            if ($options['aiMode']!=='keep'
+                && (str_starts_with($problem,$base . '.kiEnabled:')
+                    || str_starts_with($problem,$base . '.kiReadOnly:'))) return true;
+            if ($options['type']!=='keep' || $options['review']==='pending') {
+                if (str_starts_with($problem,$base . '.ai.')) return true;
+            }
+        }
+        return false;
+    }
+
     /** Reine Vorschau: Auswahl, Einstellungen und EDIT-Inhalt werden festgeschrieben. */
     public function PreviewBulkEdit(): void
     {
@@ -453,6 +472,8 @@ class RoomsCatalogConfigurator extends IPSModule
         $updated = $this->rebuildRoomsCatalogFromEntries($rows,$original);
         $loss = [];
         $this->findLostCatalogFields($original,$updated,'RoomsCatalogEdit',$loss);
+        $loss = array_values(array_filter($loss,fn(string $problem): bool=>
+            !$this->isAuthorizedBulkChange($problem,$preview['keys'],$options)));
         if ($loss!==[]) {
             echo 'Sammelbearbeitung abgebrochen: Datenverlust erkannt: ' . implode('; ',array_slice($loss,0,3));
             return;
