@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /**
  * ============================================================
- * ROOMS CATALOG CONFIGURATOR — IP-Symcon Modul (V3.1)
+ * ROOMS CATALOG CONFIGURATOR — IP-Symcon Modul (V3.2)
  * ============================================================
  *
  * Änderungsverlauf
@@ -49,6 +49,11 @@ declare(strict_types=1);
  * - Raumname, Etage und alternative Namen nur einmal pro Raum bearbeiten
  * - Neue, leere Räume zuerst ausschließlich im EDIT-Katalog anlegen
  * - Alias-Konflikte prüfen, unbekannte Raum-/Gerätedaten beibehalten
+ *
+ * 2026-11-02: V3.2 — sichere Variablenvorschläge pro Gerät
+ * - Analysiert nur die Instanz/Kategorie bereits zugeordneter Gerätevariablen
+ * - Bewertet Namen, Ident, Profile, Typ und Schaltaktion; zeigt Konflikte an
+ * - Übernimmt nur eindeutige Treffer nach expliziter Bestätigung nach EDIT
  */
 
 class RoomsCatalogConfigurator extends IPSModule
@@ -88,6 +93,23 @@ class RoomsCatalogConfigurator extends IPSModule
         'generic' => ['power', 'control']
     ];
 
+    /** Normalisierte Namen/Ident-Beispiele. Mehrdeutige Treffer werden nicht übernommen. */
+    private const AI_SUGGESTION_NAMES = [
+        'power' => ['status','state','schaltstatus','schaltzustand','ein','onoff','powerstate'],
+        'brightness' => ['helligkeit','brightness','dimmwert','dimmerlevel','dimming'],
+        'position' => ['position','istposition','behangposition','rollladenposition','actualposition'],
+        'targetPosition' => ['sollposition','targetposition','positionvorgabe','positiontarget'],
+        'tilt' => ['lamellen','lamellenwinkel','lamellenposition','tilt','slatposition'],
+        'moving' => ['fahrstatus','fahrrichtung','moving','bewegungstatus','ismoving'],
+        'control' => ['schalten','schaltbefehl','steuern','steuerung','switch','command','control'],
+        'temperature' => ['isttemperatur','temperaturist','raumtemperatur','actualtemperature','temperature'],
+        'targetTemperature' => ['solltemperatur','temperatursoll','zieltemperatur','targettemperature','setpoint'],
+        'open' => ['fensterkontakt','fensterstatus','kontakt','contact','openstate'],
+        'powerWatts' => ['leistung','wirkleistung','powerw','powerwatts','currentpower'],
+        'energy' => ['energie','energieverbrauch','zaehlerstand','energy','consumption','kwh'],
+        'motion' => ['bewegung','bewegungsmelder','motion','presence','praesenz']
+    ];
+
     /** Auflösung der übergeordneten Instanz-ID je IP-Symcon-Objekt innerhalb des PHP-Laufs. */
     private array $ipsInstanceLookupCache = [];
 
@@ -103,6 +125,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('FilterDomain', '');
         $this->RegisterAttributeString('FilterGroup', '');
         $this->RegisterAttributeString('FilterAI', 'all');
+        $this->RegisterAttributeString('SuggestionPreview', '{}');
     }
 
     public function ApplyChanges()
@@ -124,6 +147,7 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         $this->logDebug('ReloadCatalog: Button gedrückt');
         $this->reloadAllFromCatalog();
+        $this->clearSuggestionPreview();
         $this->RefreshVisibleLists();
     }
 
@@ -188,6 +212,292 @@ class RoomsCatalogConfigurator extends IPSModule
         unset($row);
         $this->WriteAttributeString('RuntimeEntries', json_encode($rows, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
         $this->RefreshVisibleLists();
+    }
+
+    /** Ein Gerät markieren; Analyse verändert weder EDIT noch PROD. */
+    public function AnalyzeSelectedDevice(): void
+    {
+        $selected = $this->singleSelectedDevice();
+        if ($selected === null) {
+            $this->clearSuggestionPreview();
+            echo 'Bitte genau ein Geraet in der Spalte Markiert auswaehlen.';
+            return;
+        }
+        $row = $selected['row'];
+        $type = (string)($row['aiType'] ?? '');
+        if (!array_key_exists($type, self::AI_TYPE_FIELDS)) $type = $this->inferredAIType($row);
+        $scopedVariables = $this->getScopedIpsVariables($row);
+        if ($scopedVariables === []) {
+            $this->clearSuggestionPreview();
+            echo 'Keine analysierbare Geraeteinstanz gefunden. Zuerst mindestens eine bestehende IPS-Variable beim Geraet zuordnen.';
+            return;
+        }
+        $suggestions = $this->suggestAIFields($row, $type, $scopedVariables);
+        $preview = [
+            'key' => $this->buildCompositeKey($row),
+            'fingerprint' => $this->suggestionFingerprint($row),
+            'time' => time(), 'type' => $type, 'suggestions' => $suggestions
+        ];
+        $this->WriteAttributeString('SuggestionPreview', json_encode($preview, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->UpdateFormField('Suggestions', 'values', json_encode($suggestions, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+        $high = count(array_filter($suggestions, static fn($r): bool => $r['confidence'] === 'Hoch'));
+        echo sprintf('%s: %d Variablen im Geraeteumfeld geprueft, %d eindeutige Vorschlaege. Details in V3.2 ansehen.',
+            (string)($row['title'] ?? $row['key'] ?? 'Geraet'), count($scopedVariables), $high);
+    }
+
+    /** Nur bestätigte, eindeutige und noch unbelegte Bindungen nach EDIT schreiben. */
+    public function ApplySelectedSuggestions(): void
+    {
+        $selected = $this->singleSelectedDevice();
+        $preview = json_decode($this->ReadAttributeString('SuggestionPreview'), true);
+        if ($selected === null || !is_array($preview) || !isset($preview['suggestions'])
+            || !is_array($preview['suggestions'])) {
+            echo 'Keine gueltige Vorschau. Bitte genau ein Geraet markieren und zuerst analysieren.';
+            return;
+        }
+        $row = $selected['row'];
+        if (($preview['key'] ?? null) !== $this->buildCompositeKey($row)
+            || ($preview['fingerprint'] ?? '') !== $this->suggestionFingerprint($row)
+            || time() - (int)($preview['time'] ?? 0) > 600) {
+            echo 'Geraet oder Konfiguration hat sich geaendert. Bitte Vorschlaege neu analysieren.';
+            return;
+        }
+        $type = (string)($preview['type'] ?? '');
+        if (!array_key_exists($type, self::AI_TYPE_FIELDS)) return;
+        $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        if ($editId <= 0 || !IPS_ScriptExists($editId)) {
+            echo 'RoomsCatalogEdit ist nicht konfiguriert.';
+            return;
+        }
+        $rows = $this->getRuntimeEntries();
+        $index = $selected['index'];
+        // Vorschlags-IDs auch bei der Übernahme erneut anhand der aktuellen
+        // IPS-Objekte/Typen/Aktionen und ihres Geraeteumfelds verifizieren.
+        $liveSuggestions = $this->suggestAIFields($row, $type, $this->getScopedIpsVariables($row));
+        $liveIndex = [];
+        foreach ($liveSuggestions as $live) $liveIndex[$live['property']] = $live;
+        $used = [];
+        $changed = 0;
+        foreach ($preview['suggestions'] as $suggestion) {
+            if (!is_array($suggestion) || ($suggestion['confidence'] ?? '') !== 'Hoch') continue;
+            $property = (string)($suggestion['property'] ?? '');
+            if (!in_array($property, self::AI_TYPE_FIELDS[$type], true)) continue;
+            $field = self::AI_VARIABLE_FIELDS[$property];
+            $candidate = (int)($suggestion['candidateId'] ?? 0);
+            if (($liveIndex[$property]['confidence'] ?? '') !== 'Hoch'
+                || (int)($liveIndex[$property]['candidateId'] ?? 0) !== $candidate) continue;
+            if ((int)($rows[$index][$field] ?? 0) > 0 || $candidate <= 0 || isset($used[$candidate])
+                || !function_exists('IPS_VariableExists') || !IPS_VariableExists($candidate)) continue;
+            $used[$candidate] = true;
+            $rows[$index][$field] = $candidate;
+            $changed++;
+        }
+        if ($changed === 0) {
+            echo 'Keine eindeutigen, freien Variablen zu uebernehmen. Unsichere Treffer bitte manuell pruefen.';
+            return;
+        }
+        $rows[$index]['aiType'] = $type;
+        $original = $this->loadRoomsCatalog($editId, 'EDIT');
+        if ($original === []) {
+            echo 'RoomsCatalogEdit nicht lesbar; keine Aenderung gespeichert.';
+            return;
+        }
+        $updated = $this->rebuildRoomsCatalogFromEntries($rows, $original);
+        $errors = [];
+        $this->findLostCatalogFields($original, $updated, 'RoomsCatalogEdit', $errors);
+        if ($errors !== []) {
+            echo 'Vorschlaege nicht gespeichert: ' . implode('; ', array_slice($errors, 0, 3));
+            return;
+        }
+        if (IPS_SetScriptContent($editId, "<?php\nreturn " . var_export($updated, true) . ";\n") === false) {
+            echo 'RoomsCatalogEdit konnte nicht geschrieben werden.';
+            return;
+        }
+        $this->clearSuggestionPreview();
+        $this->reloadAllFromCatalog();
+        $this->RefreshVisibleLists();
+        echo $changed . ' eindeutige Variablenvorschlaege in RoomsCatalogEdit uebernommen (PROD unveraendert).';
+    }
+
+    private function singleSelectedDevice(): ?array
+    {
+        $found = null;
+        foreach ($this->getRuntimeEntries() as $index => $row) {
+            if (!is_array($row) || empty($row['selected'])) continue;
+            if ($found !== null) return null;
+            $found = ['index' => $index, 'row' => $row];
+        }
+        return $found;
+    }
+
+    private function suggestionFingerprint(array $row): string
+    {
+        foreach (['selected','rowColor','kiStatus','diffKeys','editable','ipsObjectIds','ipsInstanceIds'] as $field) unset($row[$field]);
+        ksort($row);
+        return hash('sha256', json_encode($row, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+    }
+
+    private function clearSuggestionPreview(): void
+    {
+        $this->WriteAttributeString('SuggestionPreview', '{}');
+        $this->UpdateFormField('Suggestions', 'values', '[]');
+    }
+
+    /** Keine globale IPS-Suche: nur eine bestehende zugehörige Instanz/Kategorie. */
+    private function getScopedIpsVariables(array $row): array
+    {
+        foreach (['IPS_GetObject','IPS_GetChildrenIDs','IPS_GetVariable','IPS_VariableExists'] as $api) {
+            if (!function_exists($api)) return [];
+        }
+        $anchorFields = array_merge(
+            ['state','toggle','value','set','wert','stellung','ist','soll','eingestellt','statusId','controlId','tiltId','id','var'],
+            array_values(self::AI_VARIABLE_FIELDS)
+        );
+        $scopeCounts = [];
+        $seenAnchors = [];
+        foreach ($anchorFields as $field) {
+            $id = (int)($row[$field] ?? 0);
+            if ($id <= 0 || isset($seenAnchors[$id]) || !IPS_VariableExists($id)) continue;
+            $seenAnchors[$id] = true;
+            $object = IPS_GetObject($id);
+            if (!is_array($object) || (int)($object['ObjectType'] ?? -1) !== 2) continue;
+            $scope = $this->lookupIpsInstanceId($id);
+            if ($scope <= 0) $scope = (int)($object['ParentID'] ?? $object['ObjectParentID'] ?? 0);
+            if ($scope > 0) $scopeCounts[$scope] = ($scopeCounts[$scope] ?? 0) + 1;
+        }
+        if ($scopeCounts === []) return [];
+        arsort($scopeCounts, SORT_NUMERIC);
+        $scope = (int)array_key_first($scopeCounts);
+        $queue = [[$scope, 0]];
+        $visited = [];
+        $found = [];
+        while ($queue !== [] && count($visited) < 250) {
+            [$parent, $depth] = array_shift($queue);
+            if ($parent <= 0 || isset($visited[$parent])) continue;
+            $visited[$parent] = true;
+            $children = IPS_GetChildrenIDs($parent);
+            if (!is_array($children)) continue;
+            sort($children, SORT_NUMERIC);
+            foreach ($children as $childId) {
+                $childId = (int)$childId;
+                if ($childId <= 0) continue;
+                if (count($found) >= 200) break;
+                $object = IPS_GetObject($childId);
+                if (!is_array($object)) continue;
+                $objectType = (int)($object['ObjectType'] ?? -1);
+                if ($objectType === 0 && $depth < 2) {
+                    $queue[] = [$childId, $depth + 1];
+                    continue;
+                }
+                if ($objectType !== 2 || !IPS_VariableExists($childId)) continue;
+                $variable = IPS_GetVariable($childId);
+                if (!is_array($variable)) continue;
+                $customProfile = (string)($variable['VariableCustomProfile'] ?? '');
+                $profile = $customProfile !== '' ? $customProfile : (string)($variable['VariableProfile'] ?? '');
+                $customAction = (int)($variable['VariableCustomAction'] ?? 0);
+                $action = $customAction !== 1 && ($customAction > 1 || (int)($variable['VariableAction'] ?? 0) > 0);
+                $found[$childId] = [
+                    'id' => $childId,
+                    'name' => (string)($object['ObjectName'] ?? ''),
+                    'ident' => (string)($object['ObjectIdent'] ?? ''),
+                    'profile' => $profile,
+                    'type' => isset($variable['VariableType']) ? (int)$variable['VariableType'] : -1,
+                    'action' => $action
+                ];
+            }
+        }
+        return array_values($found);
+    }
+
+    private function normalizeSuggestionText(string $text): string
+    {
+        $text = mb_strtolower($text, 'UTF-8');
+        $text = str_replace(['ä','ö','ü','ß'], ['ae','oe','ue','ss'], $text);
+        return preg_replace('/[^a-z0-9]+/u', '', $text) ?? '';
+    }
+
+    private function suggestionScore(array $variable, string $property): int
+    {
+        $names = self::AI_SUGGESTION_NAMES[$property] ?? [];
+        $name = $this->normalizeSuggestionText((string)$variable['name']);
+        $ident = $this->normalizeSuggestionText((string)$variable['ident']);
+        $profile = $this->normalizeSuggestionText((string)$variable['profile']);
+        $score = 0;
+        foreach ($names as $alias) {
+            if ($alias === $name || ($ident !== '' && $alias === $ident)) {
+                $score = max($score, 115);
+            } elseif (strlen($alias) >= 6 && (str_contains($name, $alias) || str_contains($ident, $alias))) {
+                $score = max($score, 65);
+            }
+        }
+        // Ein Profil alleine reicht bewusst nie zur automatischen Zuordnung.
+        $profileHint = match ($property) {
+            'power','control' => ['switch','boolean'],
+            'brightness' => ['intensity','brightness'],
+            'position','targetPosition','tilt' => ['shutter','blind','intensity'],
+            'temperature','targetTemperature' => ['temperature'],
+            'open' => ['window','contact'],
+            'powerWatts' => ['watt','power'],
+            'energy' => ['energy','electricity','kwh'],
+            'motion','moving' => ['motion','boolean'],
+            default => []
+        };
+        foreach ($profileHint as $hint) {
+            if ($profile !== '' && str_contains($profile, $hint)) {
+                $score += 15;
+                break;
+            }
+        }
+        $type = (int)($variable['type'] ?? -1);
+        $compatible = match ($property) {
+            'power','open','motion','moving' => in_array($type, [0,1], true),
+            'brightness','position','targetPosition','tilt','temperature','targetTemperature','powerWatts','energy' => in_array($type, [1,2], true),
+            'control' => in_array($type, [0,1,2], true),
+            default => false
+        };
+        if (!$compatible) return 0;
+        $score += 10;
+        if ($property === 'control') {
+            if (empty($variable['action'])) return 0;
+            $score += 20;
+        }
+        return $score;
+    }
+
+    private function suggestAIFields(array $row, string $type, array $variables): array
+    {
+        $suggestions = [];
+        foreach (self::AI_TYPE_FIELDS[$type] as $property) {
+            $field = self::AI_VARIABLE_FIELDS[$property];
+            $current = (int)($row[$field] ?? 0);
+            $ranked = [];
+            if ($current <= 0) {
+                foreach ($variables as $variable) {
+                    $score = $this->suggestionScore($variable, $property);
+                    if ($score > 0) $ranked[] = ['variable' => $variable, 'score' => $score];
+                }
+                usort($ranked, static fn($a,$b): int => $b['score'] <=> $a['score'] ?: $a['variable']['id'] <=> $b['variable']['id']);
+            }
+            $best = $ranked[0] ?? null;
+            $runnerUp = $ranked[1]['score'] ?? 0;
+            $confidence = $best === null ? 'Keine' : (
+                $best['score'] >= 105 && $best['score'] - $runnerUp >= 25 ? 'Hoch' : 'Pruefen'
+            );
+            $suggestions[] = [
+                'property' => $property,
+                'currentId' => $current,
+                'candidateId' => (int)($best['variable']['id'] ?? 0),
+                'name' => (string)($best['variable']['name'] ?? ''),
+                'profile' => (string)($best['variable']['profile'] ?? ''),
+                'confidence' => $current > 0 ? 'Bereits belegt' : $confidence,
+                'reason' => $current > 0 ? 'Bestehende Zuordnung bleibt erhalten' : (
+                    $best === null ? 'Kein passender Name/Typ gefunden' :
+                    'Namens-/Profiltreffer, Score ' . $best['score'] .
+                        ($runnerUp > 0 ? ', zweiter Treffer ' . $runnerUp : '')
+                )
+            ];
+        }
+        return $suggestions;
     }
 
     /**
@@ -1025,6 +1335,10 @@ class RoomsCatalogConfigurator extends IPSModule
         foreach (['state','toggle','set','value','ist','soll','eingestellt','wert','stellung','id','var','controlId','statusId','tiltId'] as $idField) {
             if (isset($clone[$idField])) $clone[$idField] = 0;
         }
+        // Geklontes Gerät darf niemals heimlich die KI-Variablen des Originals nutzen.
+        unset($clone['ai']);
+        foreach (self::AI_VARIABLE_FIELDS as $virtualField) $clone[$virtualField] = 0;
+        foreach (self::AI_STATE_FIELDS as $virtualField) $clone[$virtualField] = '';
         $clone['kiEnabled'] = false;
         $clone['kiReadOnly'] = true;
         if (isset($clone['entityId'])) $clone['entityId'] = '';
@@ -1111,6 +1425,9 @@ class RoomsCatalogConfigurator extends IPSModule
         $prodCatalog = $this->loadConfiguredCatalog('RoomsCatalogScriptID', 'PROD');
         $roomRows = $this->buildRoomListRows($editCatalog);
         $roomDiffRows = $this->buildRoomDiffEntries($prodCatalog, $editCatalog);
+        $suggestionPreview = json_decode($this->ReadAttributeString('SuggestionPreview'), true);
+        $suggestionRows = is_array($suggestionPreview) && is_array($suggestionPreview['suggestions'] ?? null)
+            ? $suggestionPreview['suggestions'] : [];
 
         [$roomOptions, $domainOptions, $groupOptions] = $this->buildFilterOptionsFromEntries(array_merge($entriesProd, $entriesEdit));
         $knownRooms = array_column($roomOptions, 'value');
@@ -1316,6 +1633,36 @@ class RoomsCatalogConfigurator extends IPSModule
                                 ]
                             ]
                         ]
+                    ]
+                ],
+                [
+                    'type' => 'ExpansionPanel',
+                    'caption' => 'V3.2: Intelligente Variablenvorschlaege',
+                    'expanded' => true,
+                    'items' => [
+                        ['type'=>'Label','caption'=>'Genau ein Geraet oben markieren. Die Analyse durchsucht nur seine bekannte Instanz/Kategorie. Bestehende IDs und KI-Freigaben werden nie ueberschrieben.'],
+                        ['type'=>'RowLayout','items'=>[
+                            ['type'=>'Button','caption'=>'MARKIERTES GERAET ANALYSIEREN',
+                                'onClick'=>'RCC_AnalyzeSelectedDevice($id);'],
+                            ['type'=>'Button','caption'=>'EINDEUTIGE VORSCHLAEGE NACH EDIT UEBERNEHMEN',
+                                'confirm'=>'Nur eindeutige, noch leere KI-Variablenbindungen im EDIT-Katalog hinzufuegen? PROD bleibt unveraendert.',
+                                'onClick'=>'RCC_ApplySelectedSuggestions($id);']
+                        ]],
+                        [
+                            'type'=>'List','name'=>'Suggestions','caption'=>'Vorschau pro Eigenschaft',
+                            'rowCount'=>13,'add'=>false,'delete'=>false,
+                            'columns'=>[
+                                ['caption'=>'Eigenschaft','name'=>'property','width'=>'135px'],
+                                ['caption'=>'Aktuelle ID','name'=>'currentId','width'=>'90px'],
+                                ['caption'=>'Vorschlag ID','name'=>'candidateId','width'=>'100px'],
+                                ['caption'=>'Gefundene Variable','name'=>'name','width'=>'160px'],
+                                ['caption'=>'Profil','name'=>'profile','width'=>'125px'],
+                                ['caption'=>'Bewertung','name'=>'confidence','width'=>'100px'],
+                                ['caption'=>'Begruendung','name'=>'reason','width'=>'auto']
+                            ],
+                            'values'=>$suggestionRows
+                        ],
+                        ['type'=>'Label','caption'=>'Nur eindeutige Treffer werden uebernommen. Unklare Treffer bitte im V3.0-Geraeteeditor manuell auswaehlen. Offen/Geschlossen-Statuswerte werden nie geraten.']
                     ]
                 ],
                 [
