@@ -87,11 +87,15 @@ $mod->WriteAttributeString('RuntimeEntries', '[]');
 $mod->WriteAttributeString('FilterAI', 'all');
 $form = json_decode($mod->GetConfigurationForm(), true, 512, JSON_THROW_ON_ERROR);
 $panel = null;
-foreach ($form['elements'] as $element) if (str_contains($element['caption'] ?? '', 'V3.3:')) $panel = $element;
+foreach ($form['elements'] as $element) {
+    if (str_contains($element['caption'] ?? '', 'V3.3')
+        && str_contains($element['caption'] ?? '', 'Geraeteinventur')) $panel = $element;
+}
 check33(is_array($panel), 'V3.3 configuration panel is missing');
 $panelJson = json_encode($panel, JSON_THROW_ON_ERROR);
 foreach (['DiscoveryRootId','DiscoveryExtraRootIds','DiscoveredDevices','RCC_ScanNewDevices',
-    'RCC_UpdateDiscoveryCandidate','RCC_SelectDiscoveredDevices','RCC_ApplyDiscoveredDevices'] as $part) {
+    'RCC_UpdateDiscoveryCandidate','RCC_SelectDiscoveredDevices','RCC_ApplyDiscoveredDevices',
+    'RCC_AuditDiscoveryCoverage','DiscoverySummary'] as $part) {
     check33(str_contains($panelJson, $part), 'V3.3 editor missing: ' . $part);
 }
 
