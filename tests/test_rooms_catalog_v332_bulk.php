@@ -95,7 +95,7 @@ bulkCheck(str_contains($previewMessage,'2 ausgewaehlte Geraete')
     && IPS_GetScriptContent(40)===IPS_GetScriptContent(41),
     'Bulk preview wrote to scripts or selected an incorrect scope');
 ob_start(); $mod->ApplyBulkEdit(); $applied=ob_get_clean();
-bulkCheck(str_contains($applied,'2 Geraete'),'Filtered bulk apply failed');
+bulkCheck(str_contains($applied,'2 Geraete'),'Filtered bulk apply failed: ' . $applied);
 $updated=require $GLOBALS['bulkDir'] . '/scripts/41.php';
 foreach (['decke','wand'] as $key) {
     $cfg=$updated['wohnzimmer']['domains']['licht']['switches'][$key];
