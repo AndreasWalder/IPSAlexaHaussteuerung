@@ -79,8 +79,9 @@ $editNames = namesInDialog($edit);
 assertEditor(in_array('kiEnabled', $editNames, true) && in_array('toggle', $editNames, true), 'Existing row edit form incomplete');
 $add = json_decode($instance->GetEntryEditForm(), true, 512, JSON_THROW_ON_ERROR);
 $addNames = namesInDialog($add);
-assertEditor(in_array('roomKey', $addNames, true) && in_array('state', $addNames, true)
-    && in_array('toggle', $addNames, true), 'New device form missing fields');
+assertEditor(in_array('roomKey', $addNames, true) && in_array('aiType', $addNames, true)
+    && in_array('aiPowerId', $addNames, true)
+    && in_array('aiControlId', $addNames, true), 'New guided device form missing typed fields');
 
 $instance->SetRoomFilter('testraum');
 assertEditor(isset($instance->updatedFields['Entries.values']), 'Filtering should update existing list');
