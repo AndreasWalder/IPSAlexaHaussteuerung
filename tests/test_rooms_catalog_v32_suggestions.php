@@ -42,6 +42,7 @@ function IPS_SetScriptContent(int $id, string $php): bool
     file_put_contents($GLOBALS['v32Temp'] . '/scripts/' . $id . '.php', $php);
     return true;
 }
+function IPS_GetScriptContent(int $id): string { return $GLOBALS['v32Scripts'][$id] ?? ''; }
 function IPS_VariableExists(int $id): bool { return isset($GLOBALS['v32Variables'][$id]); }
 function IPS_ObjectExists(int $id): bool { return isset($GLOBALS['v32Objects'][$id]); }
 function IPS_GetObject(int $id): array { return $GLOBALS['v32Objects'][$id] ?? []; }
