@@ -837,7 +837,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $keys = [
             'selected', 'roomKey', 'roomLabel', 'floor', 'domain', 'group',
             'key', 'title', 'synonyms', 'entityId', 'kiEnabled', 'kiReadOnly',
-            'state', 'toggle'
+            'state', 'toggle', 'editorOriginalKey'
         ];
         $keys = array_merge($keys, ['aiType'], array_values(self::AI_VARIABLE_FIELDS), array_values(self::AI_STATE_FIELDS));
         foreach ($entries as $row) {
@@ -1365,6 +1365,143 @@ class RoomsCatalogConfigurator extends IPSModule
         return $cfg;
     }
 
+    /** Ein Geräte-Key wird beim Anlegen aus dem Anzeigenamen vorgeschlagen. */
+    private function entryKeyFromTitle(string $title): string
+    {
+        $text = mb_strtolower(trim($title), 'UTF-8');
+        $text = str_replace(['ä','ö','ü','ß'], ['ae','oe','ue','ss'], $text);
+        $text = trim((string)preg_replace('/[^a-z0-9]+/u', '_', $text), '_');
+        return substr($text !== '' ? $text : 'geraet', 0, 48);
+    }
+
+    /** Standards für NEUE typisierte Geräte; Legacy-Einträge behalten ihren bisherigen Pfad. */
+    private function guidedTypeLocation(string $type): array
+    {
+        return match ($type) {
+            'switch','generic' => ['devices','tabs'],
+            default => $this->discoveryTypeLocation($type)
+        };
+    }
+
+    /** Bei einem echten Raum-/Typwechsel den alten Leaf entfernen, auch im letzten Raum. */
+    private function removeMovedCatalogLeaf(array &$catalog, string $composite): void
+    {
+        $parts = explode('|', $composite, 4);
+        if (count($parts) !== 4) return;
+        [$roomKey,$domain,$group,$key] = $parts;
+        if (isset($catalog['rooms']) && is_array($catalog['rooms'])) {
+            $rooms = &$catalog['rooms'];
+        } else {
+            $rooms = &$catalog;
+        }
+        if (!isset($rooms[$roomKey]['domains'][$domain])) return;
+        if ($domain === 'heizung' || $domain === 'jalousie') {
+            unset($rooms[$roomKey]['domains'][$domain][$key]);
+        } else {
+            unset($rooms[$roomKey]['domains'][$domain][$group][$key]);
+            if (($rooms[$roomKey]['domains'][$domain][$group] ?? null) === []) {
+                unset($rooms[$roomKey]['domains'][$domain][$group]);
+            }
+        }
+        if ($rooms[$roomKey]['domains'][$domain] === []) unset($rooms[$roomKey]['domains'][$domain]);
+    }
+
+    /**
+     * Die abgeleiteten Angaben niemals dem Dialog-Client überlassen.
+     * sourceKey ist nur eine kurzlebige Editor-Hilfe und wird nicht gespeichert.
+     *
+     * @return array{0:array,1:string}
+     */
+    private function normalizeGuidedEntry(array $row, array $existingRows, array $catalog): array
+    {
+        $originalKey = trim((string)($row['editorOriginalKey'] ?? ''));
+        unset($row['editorOriginalKey']);
+        $source = null;
+        if ($originalKey !== '') {
+            foreach ($existingRows as $existing) {
+                if ($this->buildCompositeKey($existing) === $originalKey) {
+                    $source = $existing;
+                    break;
+                }
+            }
+            if ($source === null) throw new InvalidArgumentException('Urspruengliches Geraet wurde zwischenzeitlich geaendert. Bitte neu laden.');
+            // Vor einem Raum-/Typwechsel alle unbekannten Legacy- und ai-Felder
+            // mitnehmen, die das Dialogformular nicht ausdrücklich enthält.
+            $row = array_replace($source, $row);
+        }
+        $new = $source === null;
+        $roomKey = trim((string)($row['roomKey'] ?? ''));
+        $rooms = $this->roomMap($catalog);
+        if ($roomKey === '' || $roomKey === 'global' || !isset($rooms[$roomKey]['domains'])
+            || !is_array($rooms[$roomKey]['domains'])) {
+            throw new InvalidArgumentException('Bitte einen gueltigen Raum aus der Raumliste auswaehlen.');
+        }
+        $row['roomKey'] = $roomKey;
+        $row['roomLabel'] = (string)($rooms[$roomKey]['display'] ?? $roomKey);
+        $row['floor'] = (string)($rooms[$roomKey]['floor'] ?? '');
+        $row['title'] = trim((string)($row['title'] ?? ''));
+        if ($row['title'] === '') throw new InvalidArgumentException('Bitte einen Geraetenamen eingeben.');
+
+        $type = trim((string)($row['aiType'] ?? ($source['aiType'] ?? '')));
+        if ($new && !array_key_exists($type, self::AI_TYPE_FIELDS)) {
+            throw new InvalidArgumentException('Neue Geraete brauchen einen konkreten Geraetetyp.');
+        }
+        if ($type !== '' && !array_key_exists($type, self::AI_TYPE_FIELDS)) {
+            throw new InvalidArgumentException('Unbekannter Geraetetyp.');
+        }
+        if ($new || ($type !== '' && $type !== (string)($source['aiType'] ?? '')
+            && $type !== $this->inferredAIType($source))) {
+            [$row['domain'],$row['group']] = $this->guidedTypeLocation($type);
+        } else {
+            $row['domain'] = (string)($source['domain'] ?? $row['domain'] ?? '');
+            $row['group'] = (string)($source['group'] ?? $row['group'] ?? '');
+        }
+        if ($new) {
+            // Keine unbemerkte Schaltfreigabe direkt beim Anlegen.
+            $row['kiEnabled'] = false;
+            $row['kiReadOnly'] = true;
+            $legacyFields = match ($type) {
+                'light','dimmer','fan','switch' => ['power'=>'state','control'=>'toggle','brightness'=>'value'],
+                'blind' => ['position'=>'wert'],
+                'heating' => ['temperature'=>'ist','targetTemperature'=>'soll'],
+                'window' => ['open'=>'state'], 'motion' => ['motion'=>'state'],
+                default => []
+            };
+            foreach ($legacyFields as $property => $legacyField) {
+                $id = (int)($row[self::AI_VARIABLE_FIELDS[$property]] ?? 0);
+                if ($id > 0 && (int)($row[$legacyField] ?? 0) <= 0) $row[$legacyField] = $id;
+            }
+        }
+
+        $key = trim((string)($row['key'] ?? ''));
+        if ($key === '') {
+            $key = $this->entryKeyFromTitle($row['title']);
+            $base = $key;
+            $suffix = 2;
+            $taken = [];
+            foreach ($existingRows as $existing) {
+                $composite = $this->buildCompositeKey($existing);
+                if ($composite !== null && $composite !== $originalKey) $taken[$composite] = true;
+            }
+            while (isset($taken[$roomKey . '|' . $row['domain'] . '|' . $row['group'] . '|' . $key])) {
+                $key = $base . '_' . $suffix++;
+            }
+        }
+        if (($new || $key !== (string)($source['key'] ?? ''))
+            && preg_match('/^[A-Za-z0-9_-]{1,80}$/D', $key) !== 1) {
+            throw new InvalidArgumentException('Geraete-Key darf nur Buchstaben, Zahlen, _ oder - enthalten.');
+        }
+        $row['key'] = $key;
+        $targetKey = $this->buildCompositeKey($row);
+        foreach ($existingRows as $existing) {
+            $composite = $this->buildCompositeKey($existing);
+            if ($composite === $targetKey && $composite !== $originalKey) {
+                throw new InvalidArgumentException('Dieser Geraete-Key ist in Raum/Bereich/Gruppe bereits vergeben.');
+            }
+        }
+        return [$row, $originalKey];
+    }
+
     /**
      * Speichert die (gefilterten) Einträge zurück in das RoomsCatalogEdit-Script.
      * Wird über den Formular-Button mit RCC_($id, json_encode($Entries)) aufgerufen.
@@ -1407,6 +1544,20 @@ class RoomsCatalogConfigurator extends IPSModule
         }
 
         $all = $this->getRuntimeEntries();
+        $originalKeysToMove = [];
+        if (count($entries) === 1 && is_array($entries[0])
+            && array_key_exists('editorOriginalKey', $entries[0])) {
+            try {
+                [$entries[0],$originalKey] = $this->normalizeGuidedEntry(
+                    $entries[0], $all, $this->loadRoomsCatalog($editScriptId, 'EDIT')
+                );
+            } catch (InvalidArgumentException $error) {
+                echo 'Geraet nicht gespeichert: ' . $error->getMessage();
+                return;
+            }
+            $newKey = $this->buildCompositeKey($entries[0]);
+            if ($originalKey !== '' && $originalKey !== $newKey) $originalKeysToMove[$originalKey] = true;
+        }
 
         if (count($entries) === 1) {
             $row = $entries[0];
@@ -1446,6 +1597,12 @@ class RoomsCatalogConfigurator extends IPSModule
             }
         }
 
+        if ($originalKeysToMove !== []) {
+            // Standort/Typwechsel verschiebt das Geraet, statt es zu duplizieren.
+            $all = array_values(array_filter($all, fn(array $entry): bool =>
+                !isset($originalKeysToMove[$this->buildCompositeKey($entry) ?? ''])));
+        }
+
         $index = [];
         foreach ($all as $i => $row) {
             if (!is_array($row)) {
@@ -1480,6 +1637,9 @@ class RoomsCatalogConfigurator extends IPSModule
 
         $existingEdit = $this->loadRoomsCatalog($editScriptId, 'EDIT');
         $newCatalog   = $this->rebuildRoomsCatalogFromEntries($all, $existingEdit);
+        foreach (array_keys($originalKeysToMove) as $oldKey) {
+            $this->removeMovedCatalogLeaf($newCatalog, $oldKey);
+        }
 
         $php = "<?php\nreturn " . var_export($newCatalog, true) . ";\n";
         IPS_SetScriptContent($editScriptId, $php);
@@ -3205,6 +3365,30 @@ class RoomsCatalogConfigurator extends IPSModule
         ];
     }
 
+    /** Die Variablen-Auswahl im offenen Listen-Dialog beim Typwechsel umschalten. */
+    public function UpdateEntryTypeForm(string $type): void
+    {
+        if (!array_key_exists($type,self::AI_TYPE_FIELDS)) {
+            $this->UpdateFormField('EntryTargetPreview','caption',
+                'Bisheriges Datenmodell: Bereich und Gruppe bleiben unveraendert.');
+            $type = '';
+        } else {
+            [$domain,$group] = $this->guidedTypeLocation($type);
+            $this->UpdateFormField('EntryTargetPreview','caption',
+                'Bereich / Gruppe werden automatisch zugeordnet: ' . $domain . ' / ' . $group);
+        }
+        foreach (self::AI_VARIABLE_FIELDS as $property=>$field) {
+            $this->UpdateFormField($field,'visible',in_array($property,self::AI_TYPE_FIELDS[$type] ?? [],true));
+        }
+        foreach (self::AI_STATE_FIELDS as $property=>$field) {
+            $show = in_array($type,['blind','window'],true)
+                ? in_array($property,['open','closed'],true)
+                : (in_array($type,['light','dimmer','switch','fan','motion'],true)
+                    && in_array($property,['on','off'],true));
+            $this->UpdateFormField($field,'visible',$show);
+        }
+    }
+
     /** Dynamischer Bearbeitungsdialog für Symcon-Listen, benötigt PHP-Form-Dialog-Support. */
     public function GetEntryEditForm(string $roomKey = '', string $domain = '', string $group = '', string $key = ''): string
     {
@@ -3224,55 +3408,65 @@ class RoomsCatalogConfigurator extends IPSModule
                 }
             }
         }
-        if ($row === []) {
-            // Leerer "Hinzufügen"-Dialog mit sicheren Defaults und
-            // Variablenfeldern für einen neuen Lichtschalter.
+        $isNew = $row === [];
+        if ($isNew) {
             $row = [
-                'roomKey' => $roomKey, 'roomLabel' => '',
-                'floor' => 'EG', 'domain' => $domain ?: 'licht',
-                'group' => $group ?: 'switches', 'key' => $key,
-                'title' => '', 'synonyms' => '', 'entityId' => '',
-                'kiEnabled' => false, 'kiReadOnly' => true,
-                'state' => 0, 'toggle' => 0
+                'roomKey'=>'', 'roomLabel'=>'', 'floor'=>'',
+                'domain'=>'licht', 'group'=>'switches', 'key'=>'',
+                'title'=>'', 'synonyms'=>'', 'entityId'=>'',
+                'aiType'=>'light', 'kiEnabled'=>false, 'kiReadOnly'=>true
             ];
         }
-        $items = [
-            [
-                'type'=>'ExpansionPanel','caption'=>'Raum und Geraet','expanded'=>true,
-                'items'=>[
-                    ['type'=>'RowLayout','items'=>[
-                        ['type'=>'ValidationTextBox','name'=>'roomKey','caption'=>'Raum-Key'],
-                        ['type'=>'ValidationTextBox','name'=>'roomLabel','caption'=>'Raumname'],
-                        ['type'=>'Select','name'=>'floor','caption'=>'Etage','options'=>array_map(
-                            static fn($x): array=>['caption'=>$x,'value'=>$x],
-                            ['','Keller','EG','OG','DG','AUSSEN'])]
-                    ]],
-                    ['type'=>'RowLayout','items'=>[
-                        ['type'=>'ValidationTextBox','name'=>'domain','caption'=>'Bereich'],
-                        ['type'=>'ValidationTextBox','name'=>'group','caption'=>'Gruppe'],
-                        ['type'=>'ValidationTextBox','name'=>'key','caption'=>'Geraete-Key']
-                    ]],
-                    ['type'=>'ValidationTextBox','name'=>'title','caption'=>'Anzeigename'],
-                    ['type'=>'ValidationTextBox','name'=>'synonyms','caption'=>'Synonyme (Komma getrennt)'],
-                    ['type'=>'ValidationTextBox','name'=>'entityId','caption'=>'Entity-ID (optional)']
-                ]
-            ],
-            [
-                'type'=>'ExpansionPanel','caption'=>'KI-Freigabe','expanded'=>true,'items'=>[
-                    ['type'=>'CheckBox','name'=>'kiEnabled','caption'=>'Mit KI: Abfragen freigeben'],
-                    ['type'=>'CheckBox','name'=>'kiReadOnly','caption'=>'Nur abfragen: Schalten gesperrt'],
-                    ['type'=>'Label','caption'=>'Schaltbefehle nur mit globaler Freigabe, expliziter Geraetefreigabe und gueltiger IP-Symcon-Aktion.']
-                ]
-            ]
-        ];
+        $roomOptions = [['caption'=>'-- Bitte Raum auswaehlen --','value'=>'']];
+        $catalogRooms = $this->roomMap($this->loadConfiguredCatalog('RoomsCatalogEditScriptID', 'EDIT'));
+        foreach ($catalogRooms as $knownKey => $roomCfg) {
+            if ($knownKey === 'global' || !is_array($roomCfg) || !is_array($roomCfg['domains'] ?? null)) continue;
+            $caption = (string)($roomCfg['display'] ?? $knownKey);
+            $floor = trim((string)($roomCfg['floor'] ?? ''));
+            $roomOptions[] = ['caption'=>$caption . ($floor !== '' ? ' (' . $floor . ')' : ''),'value'=>(string)$knownKey];
+        }
+        usort($roomOptions, static fn(array $a,array $b): int => strcasecmp($a['caption'],$b['caption']));
+        if (!$isNew && !in_array((string)$row['roomKey'], array_column($roomOptions,'value'), true)) {
+            $roomOptions[] = ['caption'=>(string)($row['roomLabel'] ?? $row['roomKey']),'value'=>(string)$row['roomKey']];
+        }
         $type = (string)($row['aiType'] ?? '');
         $editorType = array_key_exists($type, self::AI_TYPE_FIELDS) ? $type : $this->inferredAIType($row);
         $typeCaptions = [
-            '' => 'Bisheriges Datenmodell (unveraendert)',
             'light' => 'Licht', 'dimmer' => 'Dimmer', 'blind' => 'Jalousie',
             'heating' => 'Heizung', 'window' => 'Fensterkontakt',
             'switch' => 'Steckdose/Schalter', 'energy' => 'Energiezaehler',
             'motion' => 'Bewegungsmelder', 'fan' => 'Lueftung', 'generic' => 'Sonstiges'
+        ];
+        if (!$isNew) $typeCaptions = [''=>'Bisheriges Datenmodell (unveraendert)'] + $typeCaptions;
+        $path = $this->guidedTypeLocation($editorType);
+        $targetHint = !$isNew && $type === ''
+            ? 'Bisheriges Datenmodell: Bereich und Gruppe bleiben unveraendert.'
+            : 'Bereich / Gruppe werden automatisch zugeordnet: ' . $path[0] . ' / ' . $path[1];
+        $items = [
+            ['type'=>'ValidationTextBox','name'=>'editorOriginalKey',
+                'value'=>$isNew ? '' : ($this->buildCompositeKey($row) ?? ''),'visible'=>false],
+            [
+                'type'=>'ExpansionPanel','caption'=>'1. Geraetetyp auswaehlen','expanded'=>true,'items'=>[
+                    ['type'=>'Select','name'=>'aiType','caption'=>'Was fuer ein Geraet ist es?',
+                        'value'=>$type,'options'=>array_map(
+                            static fn($value,$caption): array=>['value'=>$value,'caption'=>$caption],
+                            array_keys($typeCaptions),array_values($typeCaptions)),
+                        'onChange'=>'RCC_UpdateEntryTypeForm($id, $aiType);'],
+                    ['type'=>'Label','name'=>'EntryTargetPreview',
+                        'caption'=>$targetHint]
+                ]
+            ],
+            [
+                'type'=>'ExpansionPanel','caption'=>'2. Raum und Geraet','expanded'=>true,'items'=>[
+                    ['type'=>'Select','name'=>'roomKey','caption'=>'Raum aus der Raumverwaltung',
+                        'value'=>(string)$row['roomKey'],'options'=>$roomOptions],
+                    ['type'=>'Label','caption'=>'Raum-Key, Raumname und Etage kommen automatisch aus V3.1. Bereich und Gruppe aus dem Geraetetyp.'],
+                    ['type'=>'ValidationTextBox','name'=>'title','caption'=>'Geraetename'],
+                    ['type'=>'ValidationTextBox','name'=>'key','caption'=>'Geraete-Key (optional, aus Geraetename automatisch)'],
+                    ['type'=>'ValidationTextBox','name'=>'synonyms','caption'=>'Alternative Geraetenamen (Komma getrennt)'],
+                    ['type'=>'ValidationTextBox','name'=>'entityId','caption'=>'Entity-ID (optional)']
+                ]
+            ]
         ];
         $variableCaptions = [
             'power' => 'Ein/Aus (Rueckmeldung)', 'brightness' => 'Helligkeit',
@@ -3283,38 +3477,39 @@ class RoomsCatalogConfigurator extends IPSModule
             'powerWatts' => 'Leistung (W)', 'energy' => 'Verbrauch/Zaehlerstand',
             'motion' => 'Bewegung'
         ];
-        $aiItems = [
-            ['type'=>'Select','name'=>'aiType','caption'=>'Geraetetyp (V3.0)',
-                'options'=>array_map(
-                    static fn($value, $caption): array => ['value'=>$value,'caption'=>$caption],
-                    array_keys($typeCaptions), array_values($typeCaptions)
-                )],
-            ['type'=>'Label','caption'=>'Legacy-Felder bleiben bestehen. Die Auswahl eines Typs aktiviert ein zusaetzliches ai-Modell; nach Typwechsel den Dialog erneut oeffnen, um die passenden Felder zu sehen.']
-        ];
-        $fields = self::AI_TYPE_FIELDS[$editorType] ?? [];
-        foreach (array_chunk($fields, 2) as $pair) {
+        $aiItems = [['type'=>'Label','caption'=>'Nur die zum Geraetetyp passenden Variablen auswaehlen. Bei unbekannter Bedeutung keine Statuswerte raten.']];
+        foreach (array_chunk(array_keys(self::AI_VARIABLE_FIELDS), 2) as $pair) {
             $controls = [];
             foreach ($pair as $property) {
                 $controls[] = ['type'=>'SelectVariable','name'=>self::AI_VARIABLE_FIELDS[$property],
-                    'caption'=>$variableCaptions[$property]];
+                    'caption'=>$variableCaptions[$property],
+                    'visible'=>in_array($property,self::AI_TYPE_FIELDS[$editorType] ?? [],true)];
             }
             $aiItems[] = ['type'=>'RowLayout','items'=>$controls];
         }
-        $stateFields = $editorType === 'blind' || $editorType === 'window'
-            ? ['open'=>'Offen ist', 'closed'=>'Geschlossen ist']
-            : (in_array($editorType, ['light','dimmer','switch','fan','motion'], true)
-                ? ['on'=>'Aktiv/Ein ist', 'off'=>'Inaktiv/Aus ist'] : []);
-        if ($stateFields !== []) {
-            $controls = [];
-            foreach ($stateFields as $property => $caption) {
-                $controls[] = ['type'=>'ValidationTextBox','name'=>self::AI_STATE_FIELDS[$property],
-                    'caption'=>$caption . ' (z.B. true/false, 0/100)'];
-            }
-            $aiItems[] = ['type'=>'RowLayout','items'=>$controls];
-            $aiItems[] = ['type'=>'Label','caption'=>'Statuswerte nicht raten: bei unklarer Bedeutung erst in IP-Symcon pruefen.'];
+        $stateFields = ['on'=>'Aktiv/Ein ist','off'=>'Inaktiv/Aus ist',
+            'open'=>'Offen ist','closed'=>'Geschlossen ist'];
+        $controls = [];
+        foreach ($stateFields as $property=>$caption) {
+            $visible = in_array($editorType,['blind','window'],true)
+                ? in_array($property,['open','closed'],true)
+                : (in_array($editorType,['light','dimmer','switch','fan','motion'],true)
+                    && in_array($property,['on','off'],true));
+            $controls[] = ['type'=>'ValidationTextBox','name'=>self::AI_STATE_FIELDS[$property],
+                'caption'=>$caption . ' (z.B. true/false, 0/100)','visible'=>$visible];
         }
-        $items[] = ['type'=>'ExpansionPanel','caption'=>'V3.0: Geraetetyp und KI-Variablen',
+        $aiItems[] = ['type'=>'RowLayout','items'=>$controls];
+        $items[] = ['type'=>'ExpansionPanel','caption'=>'3. Variablen und Zustandswerte',
             'expanded'=>true,'items'=>$aiItems];
+        $items[] = ['type'=>'ExpansionPanel','caption'=>'4. KI-Freigabe','expanded'=>true,'items'=>[
+            ['type'=>'CheckBox','name'=>'kiEnabled','caption'=>'Mit KI: Abfragen freigeben',
+                'enabled'=>!$isNew],
+            ['type'=>'CheckBox','name'=>'kiReadOnly','caption'=>'Nur abfragen: Schalten gesperrt',
+                'enabled'=>!$isNew],
+            ['type'=>'Label','caption'=>$isNew
+                ? 'Neue Geraete starten sicher mit KI aus und Nur abfragen an. Freigabe spaeter im EDIT-Katalog setzen.'
+                : 'Schalten nur bei expliziter Freigabe und gueltiger IP-Symcon-Aktion.']
+        ]];
 
         $hidden = array_merge(['selected','roomKey','roomLabel','floor','domain','group','key','title',
             'synonyms','entityId','kiEnabled','kiReadOnly','rowColor','kiStatus','diffKeys','editable',
