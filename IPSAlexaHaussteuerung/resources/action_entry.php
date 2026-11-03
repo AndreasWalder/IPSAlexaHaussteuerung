@@ -1796,6 +1796,7 @@ function Execute($request = null)
         // --------- RoomsCatalog ---------
         // IAH_NAVIGATION_OVERLAY_V335_BEGIN: do not modify RoomsCatalog on disk.
         $catalogRooms = (array) require IPS_GetScriptFile($S['ROOMS_CATALOG']);
+        // IAH_ROOM_UI_OVERLAY_V3311_BEGIN
         // V3.3.11: Szenen, Standardtasten und zentrale Lueftung stammen
         // nach der Migration ausschliesslich aus SystemConfiguration PROD.
         // Renderer erhalten weiterhin ihre bisherigen RoomsCatalog-Pfade,
@@ -1812,6 +1813,7 @@ function Execute($request = null)
                 }
             }
         }
+        // IAH_ROOM_UI_OVERLAY_V3311_END
 
         if (($CFG['navigation']['mode'] ?? '') === 'active') {
             $helperId = iah_get_child_object($instanceId, 'iahHelper', 'Alexa new devices helper');
