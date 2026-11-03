@@ -81,6 +81,7 @@ $mod->properties = ['RoomsCatalogScriptID'=>20, 'RoomsCatalogEditScriptID'=>21];
 $baseRow = priv32($mod, 'buildFlatEntriesFromRooms', [priv32($mod, 'extractRoomsFromCatalog', [$catalog])])[0];
 $baseRow['selected'] = true;
 $mod->WriteAttributeString('RuntimeEntries', json_encode([$baseRow], JSON_THROW_ON_ERROR));
+$mod->WriteAttributeString('RuntimeEditHash',hash('sha256',IPS_GetScriptContent(21)));
 $mod->WriteAttributeString('FilterAI', 'all');
 $form = json_decode($mod->GetConfigurationForm(), true, 512, JSON_THROW_ON_ERROR);
 $suggestionPanel = null;
@@ -124,6 +125,7 @@ ok32((require $GLOBALS['v32Temp'] . '/scripts/20.php') === $catalog, 'PROD chang
 $GLOBALS['v32Objects'][50105] = ['ObjectType'=>2,'ParentID'=>7001,'ObjectName'=>'Schalten','ObjectIdent'=>'SWITCH2'];
 $GLOBALS['v32Variables'][50105] = ['VariableType'=>0,'VariableProfile'=>'~Switch','VariableAction'=>7001,'VariableCustomAction'=>0];
 $mod->WriteAttributeString('RuntimeEntries', json_encode([$baseRow], JSON_THROW_ON_ERROR));
+$mod->WriteAttributeString('RuntimeEditHash',hash('sha256',IPS_GetScriptContent(21)));
 ob_start(); $mod->AnalyzeSelectedDevice(); ob_end_clean();
 $ambiguous = json_decode($mod->ReadAttributeString('SuggestionPreview'), true, 512, JSON_THROW_ON_ERROR);
 $ambiguousControl = array_values(array_filter($ambiguous['suggestions'], fn($x)=>$x['property']==='control'))[0];
@@ -139,6 +141,7 @@ ob_start(); $mod->AnalyzeSelectedDevice(); ob_end_clean();
 $changedRow = $baseRow;
 $changedRow['title'] = 'Anderes Licht';
 $mod->WriteAttributeString('RuntimeEntries', json_encode([$changedRow], JSON_THROW_ON_ERROR));
+$mod->WriteAttributeString('RuntimeEditHash',hash('sha256',IPS_GetScriptContent(21)));
 $beforeStale = IPS_GetScriptContent(21);
 ob_start(); $mod->ApplySelectedSuggestions(); $stale = ob_get_clean();
 ok32(str_contains($stale, 'neu analysieren'), 'Changed row reused stale preview');
@@ -151,6 +154,7 @@ foreach (array_keys($noAnchor) as $field) {
     if (str_starts_with($field, 'ai') && str_ends_with($field, 'Id')) $noAnchor[$field] = 0;
 }
 $mod->WriteAttributeString('RuntimeEntries', json_encode([$noAnchor], JSON_THROW_ON_ERROR));
+$mod->WriteAttributeString('RuntimeEditHash',hash('sha256',IPS_GetScriptContent(21)));
 ob_start(); $mod->AnalyzeSelectedDevice(); $missing = ob_get_clean();
 ok32(str_contains($missing, 'mindestens eine bestehende IPS-Variable'), 'Unanchored analysis searched globally');
 
