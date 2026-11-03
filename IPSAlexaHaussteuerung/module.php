@@ -7,6 +7,7 @@ require_once __DIR__ . '/src/KICostAccounting.php';
 require_once __DIR__ . '/src/KICostCurrency.php';
 require_once __DIR__ . '/src/AlexaLogBuffer.php';
 require_once __DIR__ . '/src/AlexaLogTrait.php';
+require_once __DIR__ . '/src/SystemConfigurationManager.php';
 require_once __DIR__ . '/src/KICostTrait.php';
 require_once __DIR__ . '/src/Router.php';
 require_once __DIR__ . '/src/Routes/RouteAll.php';
@@ -85,6 +86,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyString('KICostPriceTableJson', json_encode(iah_ki_price_table()));
         $this->RegisterPropertyBoolean('VoiceRouterStoreTranscript', true);
         $this->RegisterAttributeString('DelayedPageSwitchPayload', '');
+        // V3.3.3: Nur Inventardaten, niemals Zugangsdaten oder Skriptinhalte.
+        $this->RegisterAttributeString('SystemConfigurationInventory', '');
         $this->RegisterTimer('DelayedPageSwitch', 0, 'IAH_HandleDelayedPageSwitch($_IPS["TARGET"]);');
         $this->RegisterTimer('KICostRefresh', 60000, 'IAH_UpdateKICostExchangeRate($_IPS["TARGET"]); IAH_RefreshKICostDisplay($_IPS["TARGET"]);');
         $this->RegisterTimer('AlexaLogRefresh', 15000, 'IAH_RefreshAlexaLogBuffer($_IPS["TARGET"]);');
@@ -244,7 +247,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->ensureVar($root, 'domain_flag', 'domainFlag', VARIABLETYPE_STRING, '', '');
         $this->ensureVar($root, 'activeTabState', 'activeTabState', VARIABLETYPE_STRING, '', '');
 
-        $this->ensureSystemConfigurationScript($catSettings, $catHelper);
+        $systemConfigurationId = $this->ensureSystemConfigurationScript($catSettings, $catHelper);
+        $this->ensureSystemConfigurationStagingScripts($catSettings, $systemConfigurationId);
         $this->EnsureKICostInfrastructure();
         // Hinweis: Die Statusvariablen (Information/Meldungen/Außentemperatur) werden nicht mehr automatisch
         // erstellt. Sie müssen über die Instanzkonfiguration mit bestehenden Variablen verknüpft werden.
@@ -368,7 +372,119 @@ class IPSAlexaHaussteuerung extends IPSModule
             $form['actions'] = [];
         }
 
+        $form['elements'][] = $this->buildSystemConfigurationInventoryForm();
+
         return json_encode($form, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * V3.3.3: Erst die Bestandsaufnahme. Die Navigation bleibt im RoomsCatalog
+     * produktiv, bis eine spätere Version eine geprüfte Übernahme erlaubt.
+     */
+    public function ScanSystemConfiguration(): void
+    {
+        $settings = $this->getObjectIDByIdentOrName($this->InstanceID, 'iahSettings', 'Einstellungen');
+        $ids = $this->systemConfigurationScriptIds($settings);
+        $catalogId = $settings > 0
+            ? $this->getObjectIDByIdentOrName($settings, 'roomsCatalog', 'RoomsCatalog') : 0;
+        $config = $this->readConfigurationArrayFromScript($ids['prod']);
+        $catalog = $this->readConfigurationArrayFromScript($catalogId);
+        $scan = IAHSystemConfigurationManager::inventoryNavigation($catalog ?? []);
+        $warnings = $scan['warnings'];
+        if ($catalog === null) {
+            $warnings[] = 'RoomsCatalog konnte nicht als Array eingelesen werden.';
+        }
+        if ($config === null) {
+            $warnings[] = 'SystemConfiguration konnte nicht als Array eingelesen werden.';
+        }
+        $inventory = [
+            'scriptIds' => $ids,
+            'catalogScriptId' => $catalogId,
+            'sections' => IAHSystemConfigurationManager::configurationStructure($config ?? []),
+            'tabs' => array_map(static function (array $entry): array {
+                return [
+                    'room' => $entry['roomKey'],
+                    'domain' => $entry['domainKey'],
+                    'title' => $entry['title'],
+                    'objectId' => (string) $entry['objectId'],
+                    'review' => $entry['review'],
+                    'legacyPath' => $entry['legacyPath'],
+                ];
+            }, $scan['entries']),
+            'warnings' => $warnings,
+        ];
+        // Nur Struktur und Objekt-IDs speichern, niemals Variablenwerte,
+        // Konfigurationstexte, Kennwörter oder Tokens.
+        $this->WriteAttributeString('SystemConfigurationInventory', (string) json_encode(
+            $inventory, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+        ));
+        $summary = $this->systemConfigurationInventorySummary($inventory);
+        $this->UpdateFormField('SystemConfigurationInventorySummary', 'caption', $summary);
+        $this->UpdateFormField('SystemConfigurationTabInventory', 'values', json_encode($inventory['tabs']));
+        echo $summary;
+    }
+
+    private function buildSystemConfigurationInventoryForm(): array
+    {
+        $inventory = json_decode($this->ReadAttributeString('SystemConfigurationInventory'), true);
+        if (!is_array($inventory)) {
+            $inventory = [];
+        }
+        $fields = [
+            ['name' => 'room', 'caption' => 'Raum', 'width' => '110px'],
+            ['name' => 'domain', 'caption' => 'Bereich', 'width' => '100px'],
+            ['name' => 'title', 'caption' => 'Navigation', 'width' => '200px'],
+            ['name' => 'objectId', 'caption' => 'Objekt-ID', 'width' => '100px'],
+            ['name' => 'review', 'caption' => 'Prüfung', 'width' => '100px'],
+            ['name' => 'legacyPath', 'caption' => 'Bisheriger Pfad', 'width' => '350px'],
+        ];
+        return [
+            'type' => 'ExpansionPanel',
+            'caption' => 'V3.3.3 – SystemConfiguration und Navigation (Bestandsaufnahme)',
+            'expanded' => false,
+            'items' => [
+                ['type' => 'Label', 'caption' => 'PROD bleibt unverändert. SystemConfigurationEdit und SystemConfiguration_Backup werden unter Einstellungen angelegt; Tab-Einträge werden zunächst ausschließlich gelesen.'],
+                ['type' => 'Button', 'caption' => 'Systemeinstellungen und Tabs einlesen', 'onClick' => 'IAH_ScanSystemConfiguration($id);'],
+                ['type' => 'Label', 'name' => 'SystemConfigurationInventorySummary',
+                    'caption' => $this->systemConfigurationInventorySummary($inventory)],
+                ['type' => 'List', 'name' => 'SystemConfigurationTabInventory',
+                    'caption' => 'Vorhandene Navigations-Tabs – vorläufig keine Geräte',
+                    'rowCount' => 10, 'add' => false, 'delete' => false,
+                    'columns' => $fields, 'values' => $inventory['tabs'] ?? []],
+            ],
+        ];
+    }
+
+    private function systemConfigurationInventorySummary(array $inventory): string
+    {
+        if ($inventory === []) {
+            return 'Noch keine Bestandsaufnahme. Nach der Modulaktualisierung auf „Systemeinstellungen und Tabs einlesen“ klicken.';
+        }
+        $ids = $inventory['scriptIds'] ?? [];
+        $sections = array_map(static fn(array $s): string => $s['name'] . ' (' . $s['entries'] . ')', $inventory['sections'] ?? []);
+        return sprintf(
+            'PROD #%d · EDIT #%d · Backup #%d · %d Navigations-Tabs · %d Hinweise · Bereiche: %s',
+            (int) ($ids['prod'] ?? 0), (int) ($ids['edit'] ?? 0),
+            (int) ($ids['backup'] ?? 0), count($inventory['tabs'] ?? []),
+            count($inventory['warnings'] ?? []), implode(', ', $sections)
+        );
+    }
+
+    private function readConfigurationArrayFromScript(int $scriptId): ?array
+    {
+        if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) {
+            return null;
+        }
+        $path = @IPS_GetScriptFile($scriptId);
+        if (!is_string($path) || $path === '' || !is_file($path)) {
+            return null;
+        }
+        try {
+            $result = @include $path;
+            return is_array($result) ? $result : null;
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     /**
@@ -1228,6 +1344,71 @@ PHP;
         }
 
         return (int) $id;
+    }
+
+    /**
+     * V3.3.3: Staging einmalig initialisieren, danach NICHT automatisch ändern.
+     * Der produktive Inhalt wird exakt übernommen, auch wenn er eigene Felder,
+     * Kommentare oder Formatierungen enthält.
+     */
+    private function ensureSystemConfigurationStagingScripts(int $settingsCat, int $fallbackProdId): void
+    {
+        $configuredId = $this->ReadPropertyInteger('SystemConfigScriptId');
+        $sourceId = $configuredId > 0 && IPS_ScriptExists($configuredId)
+            ? $configuredId : $fallbackProdId;
+        $source = $this->getScriptContent($sourceId);
+        if ($source === null || trim($source) === '') {
+            return;
+        }
+
+        $this->ensureUnmodifiedStagingScript(
+            $settingsCat, 'SystemConfigurationEdit', 'iahSystemConfigurationEdit', $source
+        );
+        $initialBackup = [
+            'schemaVersion' => 1,
+            'snapshots' => [[
+                'createdAt' => gmdate('c'),
+                'reason' => 'initial_v3_3_3',
+                'sourceScriptId' => $sourceId,
+                'sha256' => hash('sha256', $source),
+                // Originaltext, keine verlustbehaftete Array-Konvertierung.
+                'phpSource' => $source,
+            ]],
+        ];
+        $this->ensureUnmodifiedStagingScript(
+            $settingsCat, 'SystemConfiguration_Backup', 'iahSystemConfigurationBackup',
+            "<?php\nreturn " . var_export($initialBackup, true) . ";\n"
+        );
+    }
+
+    private function ensureUnmodifiedStagingScript(int $parent, string $name, string $ident, string $initialContent): int
+    {
+        $id = $this->getObjectIDByIdentOrName($parent, $ident, $name);
+        if ($id > 0) {
+            // Bereits vorhandene EDIT-/Backup-Skripte niemals überschreiben.
+            return $id;
+        }
+        $id = IPS_CreateScript(0);
+        IPS_SetParent($id, $parent);
+        IPS_SetName($id, $name);
+        IPS_SetIdent($id, $ident);
+        IPS_SetScriptContent($id, $initialContent);
+        return (int) $id;
+    }
+
+    /** @return array{prod:int,edit:int,backup:int} */
+    private function systemConfigurationScriptIds(int $settingsCat): array
+    {
+        if ($settingsCat <= 0) {
+            return ['prod' => 0, 'edit' => 0, 'backup' => 0];
+        }
+        $configured = $this->ReadPropertyInteger('SystemConfigScriptId');
+        $local = $this->getObjectIDByIdentOrName($settingsCat, 'iahSystemConfiguration', 'SystemConfiguration');
+        return [
+            'prod' => $configured > 0 && IPS_ScriptExists($configured) ? $configured : $local,
+            'edit' => $this->getObjectIDByIdentOrName($settingsCat, 'iahSystemConfigurationEdit', 'SystemConfigurationEdit'),
+            'backup' => $this->getObjectIDByIdentOrName($settingsCat, 'iahSystemConfigurationBackup', 'SystemConfiguration_Backup'),
+        ];
     }
 
     private function scriptContentIsEmpty(int $scriptId): bool
