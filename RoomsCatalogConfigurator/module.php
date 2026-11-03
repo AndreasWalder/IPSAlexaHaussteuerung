@@ -664,9 +664,19 @@ class RoomsCatalogConfigurator extends IPSModule
             if ($scope > 0) $scopeCounts[$scope] = ($scopeCounts[$scope] ?? 0) + 1;
         }
         if ($scopeCounts === []) return [];
-        arsort($scopeCounts, SORT_NUMERIC);
-        $scope = (int)array_key_first($scopeCounts);
-        return $this->getIpsVariablesUnderScope($scope);
+        // Ein logisches KNX-Geraet kann Istwert, Sollwert und Aktion auf
+        // verschiedenen KNX-Instanzen haben. V3.2 suchte nur in der
+        // haeufigsten Instanz und erzeugte so bis zu 79 falsche Warnungen.
+        // Ausschliesslich den Instanzen der vorhandenen Anker-IDs folgen.
+        if (count($scopeCounts)>16) return [];
+        $all=[];
+        foreach (array_keys($scopeCounts) as $scope) {
+            foreach ($this->getIpsVariablesUnderScope((int)$scope) as $variable) {
+                $id=(int)($variable['id'] ?? 0);
+                if ($id>0) $all[$id]=$variable;
+            }
+        }
+        return array_values($all);
     }
 
     /** Gemeinsamer begrenzter Scanner für V3.2 und V3.3. */
