@@ -3024,13 +3024,34 @@ class RoomsCatalogConfigurator extends IPSModule
         $devices=[];
         $changes=[];
         $counts=[];
+        $owners=[];
+        // Never attach a candidate that already belongs to another device,
+        // even if it appears only in that device's legacy fields.
+        foreach ($rows as $sourceRow) {
+            $sourceKey=$this->buildCompositeKey($sourceRow);
+            if ($sourceKey===null) continue;
+            $ids=(array)($sourceRow['ai']['variables']??[]);
+            foreach (['state','toggle','value','set','wert','stellung','ist','soll','statusId','controlId'] as $legacyName) {
+                if ((int)($sourceRow[$legacyName]??0)>0) $ids[]=$sourceRow[$legacyName];
+            }
+            foreach ($ids as $rawId) {
+                $id=is_numeric($rawId) ? (int)$rawId : 0;
+                if ($id>0) $owners[$id][$sourceKey]=true;
+            }
+        }
         foreach ($rows as $row) {
             $key=$this->buildCompositeKey($row);
             if ($key===null) continue;
             $audit=$this->assessTechnicalDevice($row);
             $scope=$this->getScopedIpsVariables($row);
+            $reserved=[];
+            foreach ($owners as $id=>$deviceOwners) {
+                if (count($deviceOwners)>1 || !isset($deviceOwners[$key])) $reserved[$id]=true;
+            }
             $bindings=RCCSafeAutoRepair::propose(
-                $row,$scope,fn(array $variable,string $role):int=>$this->suggestionScore($variable,$role)
+                $row,$scope,
+                fn(array $variable,string $role):int=>$this->suggestionScore($variable,$role),
+                $reserved
             );
             if ($bindings!==[]) $changes[$key]=$bindings;
             $status=(string)($audit['status']??'Unbekannt');
