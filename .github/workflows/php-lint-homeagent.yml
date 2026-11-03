@@ -110,6 +110,8 @@ jobs:
         run: php tests/test_ki_model_selection.php
       - name: Test public catalog and credential-safe Alexa logging
         run: php tests/test_security_hardening.php
+      - name: Test Alexa launch tile image URLs, custom icon defaults and registered diagnostics
+        run: php tests/test_launch_icons.php
       - name: Test Alexa UI voice/APL routing and diagnostics
         run: php tests/test_voice_intent_router.php
       - name: Test GetHaus Device-only legacy navigation before KI
