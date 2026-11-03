@@ -3166,11 +3166,91 @@ class RoomsCatalogConfigurator extends IPSModule
         return ['devices'=>$devices,'changes'=>$changes,'counts'=>$counts];
     }
 
+    /**
+     * Read-only field-path diff for ChatGPT diagnostics, never sends raw
+     * script bodies, current IPS values, passwords, or field contents.
+     */
+    private static function diagnosticFieldPathDiff(
+        mixed $before,mixed $after,string $prefix,array &$paths,int $limit=60
+    ): void {
+        if (count($paths)>=$limit) return;
+        if (is_string($before) && is_string($after)
+            && ($before[0]??'')==='{' && ($after[0]??'')==='{') {
+            $decodedBefore=json_decode($before,true);
+            $decodedAfter=json_decode($after,true);
+            if (is_array($decodedBefore) && is_array($decodedAfter)) {
+                $before=$decodedBefore;
+                $after=$decodedAfter;
+            }
+        }
+        if (is_array($before) && is_array($after)) {
+            $keys=array_unique(array_merge(array_keys($before),array_keys($after)));
+            foreach ($keys as $key) {
+                if (count($paths)>=$limit) return;
+                $field=$prefix==='' ? (string)$key : $prefix.'.'.(string)$key;
+                if (!array_key_exists($key,$before) || !array_key_exists($key,$after)) {
+                    $paths[]=$field;
+                    continue;
+                }
+                self::diagnosticFieldPathDiff($before[$key],$after[$key],$field,$paths,$limit);
+            }
+            return;
+        }
+        if ($before!==$after && $prefix!=='') $paths[]=$prefix;
+    }
+
+    private function diagnosticCatalogDiff(array $editCatalog,array $prodCatalog): array
+    {
+        $edit=$this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($editCatalog));
+        $prod=$this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($prodCatalog));
+        $rows=$this->deviceDiffReport($prod,$edit);
+        $editByKey=[];
+        $prodByKey=[];
+        foreach ($edit as $row) {
+            $key=$this->buildCompositeKey($row);
+            if ($key!==null) $editByKey[$key]=$row;
+        }
+        foreach ($prod as $row) {
+            $key=$this->buildCompositeKey($row);
+            if ($key!==null) $prodByKey[$key]=$row;
+        }
+        $details=[];
+        foreach ($rows['rows'] as $diff) {
+            $key=(string)($diff['path']??'');
+            $changed=[];
+            if (($diff['type']??'')==='changed'
+                && isset($prodByKey[$key],$editByKey[$key])) {
+                $from=$prodByKey[$key];
+                $to=$editByKey[$key];
+                // Do not include UI-only, selected, or display metadata.
+                foreach (['selected','rowColor','diffKeys'] as $field) {
+                    unset($from[$field],$to[$field]);
+                }
+                self::diagnosticFieldPathDiff($from,$to,'',$changed);
+            }
+            $details[]=[
+                'path'=>$key,
+                'room'=>(string)($diff['room']??''),
+                'device'=>(string)($diff['title']??''),
+                'type'=>(string)($diff['type']??''),
+                'changedFields'=>$changed,
+                'fieldsTruncated'=>count($changed)>=60,
+            ];
+        }
+        return [
+            'counts'=>$rows['counts'],
+            'total'=>count($details),
+            'items'=>$details
+        ];
+    }
+
     public function ExportAIRepairDiagnostics(): void
     {
         try {
             $sources=$this->safeRepairSources();
             $plan=$this->safeRepairPlan($sources['catalog']);
+            $prodCatalog=$this->loadRoomsCatalog($sources['prodId'],'PROD');
+            $diff=$this->diagnosticCatalogDiff($sources['catalog'],$prodCatalog);
             $report=[
                 'schema'=>'RoomsCatalogSafeRepair/1','createdAt'=>date(DATE_ATOM),
                 'note'=>'Nur Metadaten. Keine Livewerte, Passwoerter oder Aktionstests. Fachliche Pruefung offen.',
@@ -3180,6 +3260,7 @@ class RoomsCatalogConfigurator extends IPSModule
                     'prodSha256'=>hash('sha256',$sources['prodSource']),
                     'identical'=>$sources['editSource']===$sources['prodSource']
                 ],
+                'editProdComparison'=>$diff,
                 'summary'=>['total'=>count($plan['devices']),
                     'statusCounts'=>$plan['counts'],'safeBindingChanges'=>count($plan['changes']),
                     'capabilityCounts'=>array_count_values(array_column($plan['devices'],'capability')),
@@ -3193,10 +3274,11 @@ class RoomsCatalogConfigurator extends IPSModule
                 'prodHash'=>hash('sha256',$sources['prodSource']),
                 'signature'=>$signature
             ],JSON_INVALID_UTF8_SUBSTITUTE));
-            $notice=sprintf('Diagnose fuer %d Geraete erstellt; %d eindeutige technische Korrekturen vorgeschlagen. '
-                .'Schritt 2 innerhalb von zehn Minuten moeglich, nur wenn EDIT/PROD identisch sind. '
+            $notice=sprintf('Diagnose fuer %d Geraete erstellt; %d eindeutige technische Korrekturen vorgeschlagen; '
+                .'%d EDIT/PROD-Unterschiede mit Feldpfaden im Download. '
+                .'Schritt 2 ist bei EDIT/PROD-Unterschieden gesperrt. '
                 .'Alle unsicheren Zuordnungen bleiben unveraendert.',
-                count($plan['devices']),count($plan['changes']));
+                count($plan['devices']),count($plan['changes']),(int)$diff['total']);
             $this->WriteAttributeString('AutoRepairNotice',$notice);
             $this->UpdateFormField('AutoRepairNotice','caption',$notice);
             $json=json_encode($report,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE
