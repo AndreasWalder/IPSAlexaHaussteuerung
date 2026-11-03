@@ -3462,6 +3462,44 @@ class RoomsCatalogConfigurator extends IPSModule
             ]
         ];
 
+        // Einmalige Versionsassistenten nicht mehr im normalen Einstellungsfluss
+        // anzeigen. Inventur und Variablenanalyse bleiben dauerhaft unter einer
+        // zugeklappten Rubrik fuer neue Geraete erreichbar.
+        $assistants = [];
+        $remaining = [];
+        $insertAt = null;
+        foreach ($form['elements'] as $element) {
+            $caption = (string)($element['caption'] ?? '');
+            if (in_array($caption, [
+                'Variablenzuordnungen pruefen',
+                'IP-Symcon-Geraeteinventur',
+                'Altgeraete ins neue Modell uebernehmen'
+            ],true)) {
+                if ($insertAt === null) $insertAt = count($remaining);
+                if ($caption === 'Altgeraete ins neue Modell uebernehmen'
+                    && $migrationStats['legacy'] === 0) {
+                    continue; // Keine Altdaten mehr in EDIT: Assistent entfaellt.
+                }
+                $element['expanded'] = false;
+                $assistants[] = $element;
+                continue;
+            }
+            $remaining[] = $element;
+        }
+        if ($insertAt !== null) {
+            array_splice($remaining,$insertAt,0,[[
+                'type'=>'ExpansionPanel',
+                'caption'=>'Geraete erkennen, inventarisieren und reparieren',
+                'expanded'=>false,
+                'items'=>array_merge([
+                    ['type'=>'Label','caption'=>
+                        'Geraete koennen hier auch nach abgeschlossener Migration erneut erkannt werden. '
+                        .'Vorhandene Konfigurationen und KI-Berechtigungen bleiben bei Analysen unveraendert.']
+                ],$assistants)
+            ]]);
+        }
+        $form['elements'] = $remaining;
+
         return json_encode($form);
     }
 
@@ -4050,7 +4088,9 @@ class RoomsCatalogConfigurator extends IPSModule
      */
     private function normalizeCurrentFilters(array $edit, array $prod = []): array
     {
-        $entries = array_merge($edit, $prod);
+        // Geräte-Filter ausschließlich aus EDIT: alte, in PROD bereits
+        // entfernte Navigations-Tabs dürfen keine auswählbaren Gruppen erzeugen.
+        $entries = $edit;
         $selectedRoom = $this->ReadAttributeString('FilterRoom');
         $selectedDomain = $this->ReadAttributeString('FilterDomain');
         $selectedGroup = $this->ReadAttributeString('FilterGroup');
