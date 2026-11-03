@@ -97,6 +97,9 @@ $invalid=$activatedNav;
 $invalid['items'][array_key_first($invalid['items'])]['objectId']=987654;
 $audit=IAHSystemNavigationMigration::audit($legacyCatalog,$invalid,'IPS_ObjectExists');
 sc335_assert(count($audit['errors'])>=1,'Missing IPS object was accepted');
+sc335_assert(str_contains(implode(' ', $audit['errors']), '#987654')
+    && str_contains(implode(' ', $audit['errors']), 'Tab:'),
+    'Missing IPS object diagnostic must include ID and navigation context');
 $wrongSource=$activatedNav;
 $first=array_key_first($wrongSource['items']);
 $wrongSource['items'][$first]['legacyDefinition']=4444;
@@ -176,6 +179,42 @@ sc335_assert(($receipt['stage']??'')==='cleaned'
     && IPS_GetScriptContent((int)$receipt['backupEditId'])===$catalogEditOld,
     'Catalog source backups not retained');
 
+// Successful cleanup must now leave only the central navigation editor visible.
+// Legacy V3.3.3 inventory and V3.3.5 migration controls move out of normal settings.
+$formClean = json_decode($module->GetConfigurationForm(), true, 512, JSON_THROW_ON_ERROR);
+$panelsClean = array_values(array_map(
+    static fn(array $e): string => (string)($e['caption'] ?? ''), $formClean['elements']));
+sc335_assert(in_array('Navigation & Tabs', $panelsClean, true)
+    && in_array('Erweiterte Wartung & Wiederherstellung', $panelsClean, true),
+    'Central navigation editor and compact maintenance panel missing after cleanup');
+sc335_assert(!in_array('V3.3.3 – SystemConfiguration und Navigation (Bestandsaufnahme)', $panelsClean, true)
+    && !in_array('V3.3.5 – Navigation produktiv umstellen und absichern', $panelsClean, true),
+    'One-time migration assistants are still shown after successful cleanup');
+$maintenance = array_values(array_filter($formClean['elements'],
+    static fn(array $e): bool => ($e['caption'] ?? '') === 'Erweiterte Wartung & Wiederherstellung'))[0];
+sc335_assert($maintenance['expanded'] === false,
+    'Backup and rollback must be collapsed under advanced maintenance');
+$cleanUi=json_encode($formClean, JSON_THROW_ON_ERROR);
+sc335_assert(!str_contains($cleanUi, 'IAH_PreviewSystemNavigationImport')
+    && !str_contains($cleanUi, 'IAH_CleanupSystemNavigation')
+    && str_contains($cleanUi, 'IAH_PublishSystemNavigationUpdate')
+    && str_contains($cleanUi, 'IAH_RollbackSystemNavigation'),
+    'Legacy controls were not cleaned up or live publish/rollback controls disappeared');
+sc335_assert(IPS_GetScriptContent(501) !== $prodOld
+    && IPS_GetScriptContent(502) === IAHSystemNavigationEditor::encode($cleanCatalog),
+    'Opening compact settings must never rewrite PROD or catalog scripts');
+
+// If cleanup receipt/verified backup is missing, keep migration controls visible.
+$goodReceipt=$module->ReadAttributeString('SystemNavigationMigrationReceipt');
+$badReceipt=$receipt;
+$badReceipt['backupProdId']=999999;
+$module->WriteAttributeString('SystemNavigationMigrationReceipt',json_encode($badReceipt));
+$formUnsafe=json_decode($module->GetConfigurationForm(),true,512,JSON_THROW_ON_ERROR);
+$unsafeCaptions=array_column($formUnsafe['elements'],'caption');
+sc335_assert(in_array('V3.3.5 – Navigation produktiv umstellen und absichern',$unsafeCaptions,true),
+    'Missing original backup was incorrectly classified as completed migration');
+$module->WriteAttributeString('SystemNavigationMigrationReceipt',$goodReceipt);
+
 // After cleanup, a new tab edit can be published through the main module.
 // No manual SystemConfiguration script editor is required.
 $editable = require IPS_GetScriptFile($editId);
@@ -215,6 +254,14 @@ sc335_assert(IPS_GetScriptContent(501)===$prodOld
     'Rollback did not exactly restore original PHP scripts');
 sc335_assert($module->ReadAttributeString('SystemNavigationMigrationReceipt')==='',
     'Rollback receipt was not cleared');
+
+$formAfterRollback=json_decode($module->GetConfigurationForm(),true,512,JSON_THROW_ON_ERROR);
+$afterRollbackCaptions=array_column($formAfterRollback['elements'],'caption');
+sc335_assert(in_array('V3.3.3 – SystemConfiguration und Navigation (Bestandsaufnahme)',
+    $afterRollbackCaptions,true)
+    && in_array('V3.3.5 – Navigation produktiv umstellen und absichern',
+        $afterRollbackCaptions,true),
+    'Rollback must restore access to inventory and migration tools');
 
 // Required patches in source (all future installations).
 $source=file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/resources/action_entry.php');
