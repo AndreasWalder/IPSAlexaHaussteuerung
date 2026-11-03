@@ -2962,6 +2962,78 @@ class RoomsCatalogConfigurator extends IPSModule
         return $stored;
     }
 
+
+    private function technicalDeviceSourceSummary(array $snapshot): string
+    {
+        if ($snapshot === []) {
+            return 'Katalogquellen noch nicht geprueft – bitte technische Pruefung ausfuehren.';
+        }
+        $src = (array)($snapshot['source'] ?? []);
+        $editId = (int)($src['editId'] ?? 0);
+        $prodId = (int)($src['prodId'] ?? 0);
+        $hashE = substr((string)($src['editHash'] ?? ''),0,12);
+        $hashP = substr((string)($src['prodHash'] ?? ''),0,12);
+        $typed = (int)($src['typed'] ?? 0);
+        $legacy = (int)($src['legacy'] ?? 0);
+        $message = sprintf(
+            'DATENQUELLEN: EDIT #%d (Hash %s), PROD #%d (Hash %s). '
+            .'Im aktuellen EDIT-Katalog: %d typisiert, %d Legacy. ',
+            $editId,$hashE,$prodId,$hashP,$typed,$legacy
+        );
+        if ($editId === $prodId) {
+            $message .= 'FEHLKONFIGURATION: EDIT und PROD zeigen auf DIESELBE Skript-ID! '
+                .'Keine Aenderungen bestaetigen oder produktiv uebernehmen. ';
+        } elseif ($hashE === $hashP) {
+            $message .= 'Die Skriptinhalte sind identisch; 0 Unterschiede ist daher nachvollziehbar. ';
+        } elseif (empty($snapshot['diffRows'])) {
+            $message .= 'Quelltexte unterscheiden sich, die analysierten Geraeteeintraege aber nicht. ';
+        }
+        $previous = (array)($src['previousAudit'] ?? []);
+        if (($previous['available'] ?? false) && !empty($previous['changed'])) {
+            $message .= sprintf(
+                'ACHTUNG: Seit der letzten Migrationspruefung hat sich EDIT geaendert. '
+                .'Vorher: %d typisiert, %d Legacy. Jetzt: %d typisiert, %d Legacy. ',
+                (int)($previous['typed'] ?? 0),(int)($previous['legacy'] ?? 0),
+                $typed,$legacy
+            );
+        } elseif (($previous['available'] ?? false) && empty($previous['changed'])
+            && ((int)($previous['typed'] ?? -1) !== $typed
+                || (int)($previous['legacy'] ?? -1) !== $legacy)) {
+            $message .= 'WIDERSPRUCH: alter und neuer Zaehler unterscheiden sich trotz identischem EDIT-Hash. ';
+        } elseif (!($previous['available'] ?? false)) {
+            $message .= 'Ein direkt vergleichbarer alter Migrations-Pruefbericht ist nicht mehr vorhanden. ';
+        }
+        $issues = (array)($snapshot['issueCounts'] ?? []);
+        arsort($issues,SORT_NUMERIC);
+        $names = [
+            'role_name_ambiguous'=>'Rollenname/Profil uneindeutig',
+            'multiple_candidates'=>'mehrere gleichwertige Variablen',
+            'missing_required_role'=>'Pflichtrolle im neuen Modell fehlt',
+            'no_typed_variables'=>'keine expliziten ai.variables',
+            'legacy_fields_not_mapped'=>'Legacy-IDs noch nicht im neuen Modell',
+            'no_scope'=>'kein IPS-Geraeteumfeld',
+            'outside_scope'=>'Variable ausserhalb der Instanz',
+            'missing_ips'=>'IPS-Variable existiert nicht',
+            'wrong_type'=>'IPS-Datentyp falsch',
+            'no_action'=>'fehlende Steueraktion',
+            'duplicate_mapping'=>'unplausible Doppelzuordnung',
+            'state_mapping_missing'=>'Statusbedeutung fehlt',
+            'state_mapping_conflict'=>'Statuswerte und Profil widersprechen sich',
+            'state_associations_missing'=>'keine eindeutigen Profil-Werte',
+            'write_variable_invalid'=>'KI-Schaltvariable fehlt',
+            'write_action_unproven'=>'KI-Aktion nicht verifiziert',
+        ];
+        if ($issues !== []) {
+            $parts = [];
+            foreach (array_slice($issues,0,12,true) as $code=>$count) {
+                $parts[] = ($names[$code] ?? $code) . ': ' . (int)$count;
+            }
+            $message .= "\nHAEUFIGSTE PRUEFURSACHEN (Geraete koennen mehrfach vorkommen): "
+                .implode(' | ',$parts);
+        }
+        return $message;
+    }
+
     private function technicalDeviceSummaryFromSnapshot(array $snapshot): string
     {
         if ($snapshot === []) {
@@ -3018,6 +3090,30 @@ class RoomsCatalogConfigurator extends IPSModule
             }
         }
         $diff = $this->deviceDiffReport($prodRows,$rows);
+        $typeStats = $this->catalogMigrationStatistics($rows,$prodRows);
+        $oldAudit = json_decode($this->ReadAttributeString('MigrationReadinessDetails'),true);
+        $currentHash = hash('sha256',json_encode($catalog,JSON_INVALID_UTF8_SUBSTITUTE));
+        $oldStats = (array)($oldAudit['statistics'] ?? []);
+        $priorAvailable = is_array($oldAudit) && isset($oldAudit['catalogHash'])
+            && isset($oldStats['typed']) && isset($oldStats['legacy']);
+        $issueCounts = [];
+        foreach ($results as $result) {
+            foreach (array_unique((array)($result['issueCodes'] ?? [])) as $code) {
+                $issueCounts[(string)$code] = ($issueCounts[(string)$code] ?? 0) + 1;
+            }
+        }
+        $source = [
+            'editId'=>$editId,'prodId'=>$prodId,
+            'editHash'=>hash('sha256',$editSource),'prodHash'=>hash('sha256',$prodSource),
+            'typed'=>$typeStats['typed'],'legacy'=>$typeStats['legacy'],
+            'previousAudit'=>[
+                'available'=>$priorAvailable,
+                'changed'=>$priorAvailable && !hash_equals(
+                    (string)$oldAudit['catalogHash'],$currentHash),
+                'typed'=>(int)($oldStats['typed'] ?? -1),
+                'legacy'=>(int)($oldStats['legacy'] ?? -1)
+            ]
+        ];
         // A scan is a read-only snapshot. Avoid a false current snapshot if
         // the EDIT script was changed during a long inventory read.
         if ($editSource !== IPS_GetScriptContent($editId) || $prodSource !== IPS_GetScriptContent($prodId)) {
@@ -3029,13 +3125,16 @@ class RoomsCatalogConfigurator extends IPSModule
             'editHash'=>hash('sha256',$editSource),
             'prodHash'=>hash('sha256',$prodSource),
             'rows'=>$results,'counts'=>$stats,'legacyRows'=>$legacyRows,
-            'diffRows'=>$diff['rows'],'diffCounts'=>$diff['counts']
+            'diffRows'=>$diff['rows'],'diffCounts'=>$diff['counts'],
+            'issueCounts'=>$issueCounts,'source'=>$source
         ];
         $this->WriteAttributeString('TechnicalDeviceSnapshot',json_encode($snapshot,JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_UNICODE));
         $this->WriteAttributeString('TechnicalDevicePreview','{}');
         $summary = $this->technicalDeviceSummaryFromSnapshot($snapshot);
         $this->WriteAttributeString('TechnicalDeviceSummary',$summary);
         $this->UpdateFormField('TechnicalDeviceSummary','caption',$summary);
+        $this->UpdateFormField('TechnicalDeviceSourceSummary','caption',
+            $this->technicalDeviceSourceSummary($snapshot));
         $this->UpdateFormField('TechnicalDeviceChecks','values',json_encode($results,JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_UNICODE));
         $this->UpdateFormField('TechnicalLegacyDevices','values',json_encode($legacyRows,JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_UNICODE));
         $this->UpdateFormField('TechnicalDiffRows','values',json_encode($diff['rows'],JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_UNICODE));
@@ -3164,6 +3263,10 @@ class RoomsCatalogConfigurator extends IPSModule
         }
         $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
         if ($editId <= 0 || !IPS_ScriptExists($editId)) return;
+        if ($editId === $this->ReadPropertyInteger('RoomsCatalogScriptID')) {
+            echo 'SICHERHEITSSTOPP: EDIT und PROD haben dieselbe Skript-ID. Keine Uebernahme.';
+            return;
+        }
         $originalSource = IPS_GetScriptContent($editId);
         if (!RCCDeviceTechnicalAudit::isLiteralArraySource((string)$originalSource)) {
             echo 'RoomsCatalogEdit enthaelt dynamisches PHP; automatische Uebernahme gesperrt, '
@@ -3540,6 +3643,8 @@ class RoomsCatalogConfigurator extends IPSModule
                             'onClick'=>'RCC_RunTechnicalDeviceAudit($id);'],
                         ['type'=>'Label','name'=>'TechnicalDeviceSummary',
                             'caption'=>$this->technicalDeviceSummaryFromSnapshot($this->deviceTechnicalSnapshot())],
+                        ['type'=>'Label','name'=>'TechnicalDeviceSourceSummary',
+                            'caption'=>$this->technicalDeviceSourceSummary($this->deviceTechnicalSnapshot())],
                         [
                             'type'=>'List','name'=>'TechnicalDeviceChecks',
                             'caption'=>'Technische Geraetepruefung (alle Typen)',
