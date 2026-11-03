@@ -2872,6 +2872,27 @@ class RoomsCatalogConfigurator extends IPSModule
             fn(array $variable,string $property): int => $this->suggestionScore($variable,$property),
             fn(int $id): bool => function_exists('IPS_VariableExists') && IPS_VariableExists($id)
         );
+        // KI-Schreibrechte sind besonders kritisch. Ein plausibler
+        // Istwert allein beweist KEINE funktionsfaehige Schaltaktion.
+        if (!empty($row['kiEnabled']) && empty($row['kiReadOnly'])) {
+            $writeId = $this->aiWriteId($row);
+            if ($writeId <= 0 || !function_exists('IPS_VariableExists') || !IPS_VariableExists($writeId)) {
+                $assessment['status'] = 'Ungueltig';
+                $assessment['manualEligible'] = false;
+                $assessment['reason'] .= '; KI-Schreibfreigabe ohne gueltige Schaltvariable';
+            } else {
+                $writeMetadata = null;
+                foreach ($variables as $var) {
+                    if ((int)($var['id'] ?? 0) === $writeId) { $writeMetadata = $var; break; }
+                }
+                if (!is_array($writeMetadata) || empty($writeMetadata['action'])
+                    || (function_exists('HasAction') && !HasAction($writeId))) {
+                    $assessment['status'] = 'Manuell pruefen';
+                    $assessment['manualEligible'] = false;
+                    $assessment['reason'] .= '; KI-Schaltvariable #'.$writeId.' ohne nachgewiesene IPS-Aktion';
+                }
+            }
+        }
         return array_merge($base,$assessment);
     }
 
