@@ -468,6 +468,15 @@ class IPSAlexaHaussteuerung extends IPSModule
                 .'Bitte Aenderungen zuerst kontrolliert abgleichen, sonst wuerde die Sammelmigration '
                 .'nicht eindeutig sein. Keine Daten geaendert.');
         }
+        $action=$this->getScriptContent($this->getActionScriptId());
+        if (!is_string($action)
+            || !str_contains($action,'IAH_ROOM_UI_OVERLAY_V3311_BEGIN')
+            || !str_contains($action,'IAH_ROOM_UI_OVERLAY_V3311_END')
+            || !str_contains($action,"'roomUi' => is_array(")) {
+            throw new \RuntimeException('Alexa Action-Skript hat die neue RoomUi-Projektion '
+                .'noch nicht. Hauptmodul uebernehmen; falls der Patch gesperrt ist, '
+                .'Action-Skript manuell pruefen. KEINE UI-Bereinigung ohne Laufzeit-Unterstuetzung.');
+        }
         if (($sources['systemProd']['array']['navigation']['mode'] ?? '')!=='active') {
             throw new \RuntimeException('Die Navigation ist in SystemConfiguration PROD nicht aktiv.');
         }
@@ -2055,6 +2064,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->patchActionScriptTileQuietFollowup((int) $id);
         $this->patchActionScriptVisuVoice((int) $id);
         $this->patchActionScriptNavigationMigration((int) $id);
+        $this->patchActionScriptRoomUiMigration((int) $id);
 
         return (int) $id;
     }
@@ -2100,6 +2110,52 @@ class IPSAlexaHaussteuerung extends IPSModule
         if (str_contains($next, $cfgTag) && str_contains($next, $overlayEnd)
             && $next !== $current) {
             IPS_SetScriptContent($scriptId, $next);
+        }
+    }
+
+    /** Updates only the two well-known insertion points in existing Action scripts. */
+    private function patchActionScriptRoomUiMigration(int $scriptId): void
+    {
+        $source=$this->getScriptContent($scriptId);
+        $template=@file_get_contents(__DIR__.'/resources/action_entry.php');
+        if (!is_string($source) || $source==='' || !is_string($template)) return;
+        $marker='IAH_ROOM_UI_OVERLAY_V3311_BEGIN';
+        $end='IAH_ROOM_UI_OVERLAY_V3311_END';
+        $configMarker="'roomUi' => is_array(\$data['roomUi'] ?? null)";
+        if (str_contains($source,$marker) && str_contains($source,$end)
+            && str_contains($source,$configMarker)) return;
+        $next=$source;
+        if (!str_contains($next,$configMarker)) {
+            $anchor="                'navigation' => is_array(\$data['navigation'] ?? null) ? \$data['navigation'] : [],";
+            if (substr_count($next,$anchor)!==1) {
+                IPS_LogMessage('Alexa','RoomUi V3.3.11: Action-Konfigurationsanker unklar; Migration gesperrt.');
+                return;
+            }
+            $next=str_replace($anchor,$anchor."\n"
+                ."                'roomUi' => is_array(\$data['roomUi'] ?? null) ? \$data['roomUi'] : [],",$next);
+        }
+        if (!str_contains($next,$marker)) {
+            $begin=strpos($template,"        // ".$marker);
+            $finish=$begin===false?false:strpos($template,"        // ".$end,$begin);
+            if ($begin===false || $finish===false) return;
+            $finish+=strlen("        // ".$end);
+            $block=substr($template,$begin,$finish-$begin);
+            $anchor="        \$catalogRooms = (array) require IPS_GetScriptFile(\$S['ROOMS_CATALOG']);";
+            if (substr_count($next,$anchor)!==1) {
+                IPS_LogMessage('Alexa','RoomUi V3.3.11: Action-Rendereranker unklar; Migration gesperrt.');
+                return;
+            }
+            $next=str_replace($anchor,$anchor."\n".$block,$next);
+        }
+        if (!str_contains($next,$configMarker) || !str_contains($next,$marker)
+            || !str_contains($next,$end)) return;
+        if ($next===$source) return;
+        // Eine bestehende kundenspezifische Action-Datei NIE pauschal ersetzen.
+        $this->createNavigationCatalogBackup($scriptId,'ActionBeforeRoomUiV3311',$source);
+        IPS_SetScriptContent($scriptId,$next);
+        if ($this->getScriptContent($scriptId)!==$next) {
+            IPS_SetScriptContent($scriptId,$source);
+            IPS_LogMessage('Alexa','RoomUi V3.3.11: Action-Patch verifiziert fehlgeschlagen, Backup liegt vor.');
         }
     }
 
