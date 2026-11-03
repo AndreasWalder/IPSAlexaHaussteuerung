@@ -134,6 +134,9 @@ $updated['bad']['domains']['heizung']['bad']['ai']=[
 IPS_SetScriptContent(40,auditCatalog($updated));
 IPS_SetScriptContent(41,auditCatalog($updated));
 $allDone=auditReadForm($mod);
+$reportField=auditFind($allDone,'MigrationReadinessReport');
+auditCheck(str_contains((string)($reportField['caption']??''),'Datenstand erneut pruefen'),
+    'Migration report must expire when EDIT changes outside the configurator');
 $compact=array_values(array_filter($allDone['elements'],
     static fn(array $row):bool => ($row['caption']??'')==='Geraete erkennen, inventarisieren und reparieren'))[0];
 auditCheck(!str_contains(json_encode($compact),'RCC_AnalyzeLegacyDevices')
