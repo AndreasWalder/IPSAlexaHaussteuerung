@@ -64,14 +64,41 @@ final class IAHSystemNavigationEditor
     }
 
     /** List row values: strictly metadata, never configuration values or secrets. */
-    public static function rows(array $configuration): array
-    {
+    /**
+     * Review aus V3.3.4 bleibt als historischer Datensatz erhalten.
+     * Die sichtbare Spalte zeigt dagegen den aktuellen technischen Stand:
+     * EDIT vs. PROD und ob das IPS-Ziel noch existiert. Keine Aussage
+     * ueber einen manuellen Alexa-Funktionstest.
+     */
+    public static function rows(
+        array $configuration,
+        ?array $productive = null,
+        ?callable $objectExists = null
+    ): array {
         $rows = [];
+        $live = is_array($productive)
+            && ($productive['navigation']['mode'] ?? '') === 'active';
+        $prodItems = $live ? self::items($productive) : [];
         foreach (self::items($configuration) as $key => $entry) {
             if (!is_array($entry)) {
                 continue;
             }
             $aliases = (array) ($entry['aliases'] ?? []);
+            $status = (string) ($entry['review'] ?? 'Offen');
+            if ($live) {
+                $objectId = (int) ($entry['objectId'] ?? 0);
+                $prodItem = $prodItems[$key] ?? null;
+                if (!is_array($prodItem) || $prodItem !== $entry) {
+                    $status = 'Änderung offen';
+                } elseif (!empty($entry['enabled']) && $objectId <= 0) {
+                    $status = 'Objekt fehlt';
+                } elseif (!empty($entry['enabled'])
+                    && $objectExists !== null && !$objectExists($objectId)) {
+                    $status = 'Objekt fehlt';
+                } else {
+                    $status = !empty($entry['enabled']) ? 'PROD synchron' : 'Deaktiviert';
+                }
+            }
             $rows[] = [
                 'entryKey' => (string) $key,
                 'roomKey' => (string) ($entry['roomKey'] ?? ''),
@@ -82,7 +109,7 @@ final class IAHSystemNavigationEditor
                 'sortOrder' => (int) ($entry['sortOrder'] ?? 0),
                 'aliases' => implode(', ', array_map('strval', $aliases)),
                 'enabled' => !empty($entry['enabled']),
-                'review' => (string) ($entry['review'] ?? 'Offen'),
+                'review' => $status,
                 'legacyPath' => (string) ($entry['legacyPath'] ?? ''),
                 'revision' => self::entryHash($entry),
             ];

@@ -225,6 +225,19 @@ sc335_assert(str_contains(json_encode($navPanel, JSON_UNESCAPED_UNICODE | JSON_T
     && str_contains(json_encode($navPanel, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR), 'ÄNDERUNGEN PRÜFEN'),
     'Ongoing navigation publish controls missing from simplified UI');
 
+
+$navForm=array_values(array_filter($formClean['elements'],static fn(array $el):bool =>
+    ($el['caption']??'')==='Navigation & Tabs'))[0];
+$navList=array_values(array_filter($navForm['items'],static fn(array $el):bool =>
+    ($el['name']??'')==='SystemNavigationEditRows'))[0];
+sc335_assert(($navList['columns'][array_search('review',array_column($navList['columns'],'name'))]['caption']??'')==='Status',
+    'Review column must be called Status, not pending manual review');
+foreach ($navList['values'] as $row) {
+    $expected=empty($row['enabled']) ? 'Deaktiviert' : 'PROD synchron';
+    sc335_assert($row['review']===$expected,
+        'Previously activated navigation tab still shows stale Offen status: '.($row['tabKey']??''));
+}
+
 $cleanUi=json_encode($formClean, JSON_THROW_ON_ERROR);
 sc335_assert(!str_contains($cleanUi, 'IAH_PreviewSystemNavigationImport')
     && !str_contains($cleanUi, 'IAH_CleanupSystemNavigation')
@@ -255,6 +268,14 @@ $changedKey = array_values(array_filter($updatedKeys, static function(string $ke
 }))[0] ?? '';
 sc335_assert($changedKey !== '', 'No editable new tab available for live update');
 $editable['navigation']['items'][$changedKey]['title'] = 'Roboter Diagnose Live';
+// A changed EDIT row is not yet synchronized with PROD.
+$editRowCheck=IAHSystemNavigationEditor::rows(
+    $editable, $live, 'IPS_ObjectExists');
+$changedRow=array_values(array_filter($editRowCheck,
+    static fn(array $row):bool => $row['entryKey']===$changedKey))[0];
+sc335_assert($changedRow['review']==='Änderung offen',
+    'Unpublished EDIT changes must show Aenderung offen');
+
 IPS_SetScriptContent($editId, IAHSystemNavigationEditor::encode($editable));
 ob_start();
 $module->PreviewSystemNavigationUpdate();

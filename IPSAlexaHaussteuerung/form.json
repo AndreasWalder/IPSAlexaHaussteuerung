@@ -549,6 +549,21 @@
               }
             }
           ]
+        },
+        {
+          "type": "RowLayout",
+          "items": [
+            {
+              "type": "Button",
+              "caption": "KACHEL-ICONS PRÜFEN",
+              "onClick": "IAH_CheckLaunchIcons($id);"
+            },
+            {
+              "type": "Label",
+              "name": "LaunchIconDiagnostics",
+              "caption": "Prüft Bilddateien unter user/icons/, den Icon-WebHook und HTTPS – ohne Token auszugeben."
+            }
+          ]
         }
       ]
     },
