@@ -37,6 +37,23 @@ $catalogOld = IPS_GetScriptContent(502);
 $catalogEditOld = IPS_GetScriptContent(503);
 $editNavBefore = require IPS_GetScriptFile($editId);
 $nav = $editNavBefore['navigation'];
+
+$sampleKey = array_key_first($nav['items']);
+$sampleEntry = $nav['items'][$sampleKey];
+$sampleUnicode = IAHSystemNavigationEditor::update(['navigation'=>$nav],[
+    'entryKey'=>$sampleKey,
+    'revision'=>IAHSystemNavigationEditor::entryHash($sampleEntry),
+    'roomKey'=>'Außen',
+    'domainKey'=>$sampleEntry['domainKey'],
+    'title'=>$sampleEntry['title'],
+    'objectId'=>$sampleEntry['objectId'],
+    'sortOrder'=>$sampleEntry['sortOrder'],
+    'aliases'=>$sampleEntry['aliases'],
+    'enabled'=>$sampleEntry['enabled']
+]);
+sc335_assert($sampleUnicode['navigation']['items'][$sampleKey]['roomKey']==='Außen',
+    'Unicode room keys must be editable without conversion');
+
 $audit = IAHSystemNavigationMigration::audit($legacyCatalog, $nav, 'IPS_ObjectExists');
 sc335_assert($audit['errors']===[] && $audit['total']===5 && $audit['legacy']===4,
     'Navigation source mapping validation failed');
