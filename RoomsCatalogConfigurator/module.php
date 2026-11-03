@@ -91,6 +91,7 @@ class RoomsCatalogConfigurator extends IPSModule
         'powerWatts' => 'aiWattsId',
         'energy' => 'aiEnergyId',
         'motion' => 'aiMotionId',
+        'illuminance' => 'aiIlluminanceId',
         'status' => 'aiStatusId',
         'action' => 'aiActionId'
     ];
@@ -109,6 +110,7 @@ class RoomsCatalogConfigurator extends IPSModule
         'switch' => ['power', 'powerWatts', 'energy', 'status', 'control'],
         'energy' => ['powerWatts', 'energy', 'status'],
         'motion' => ['motion', 'status'],
+        'illuminance' => ['illuminance'],
         'fan' => ['power', 'status', 'control'],
         'generic' => ['power', 'status', 'action', 'control']
     ];
@@ -128,6 +130,7 @@ class RoomsCatalogConfigurator extends IPSModule
         'powerWatts' => ['leistung','wirkleistung','powerw','powerwatts','currentpower'],
         'energy' => ['energie','energieverbrauch','zaehlerstand','energy','consumption','kwh'],
         'motion' => ['bewegung','bewegungsmelder','motion','presence','praesenz'],
+        'illuminance' => ['lux','helligkeit','beleuchtungsstaerke','illuminance'],
         'status' => ['status','devicestatus','geraetestatus','rollladenstatus','shutterstatus','blindenstatus'],
         'action' => ['aktion','fahrbefehl','fahraktion','action','direction','fahrtrichtung','befehl']
     ];
@@ -768,6 +771,7 @@ class RoomsCatalogConfigurator extends IPSModule
             'powerWatts' => ['watt','power'],
             'energy' => ['energy','electricity','kwh'],
             'motion','moving' => ['motion','boolean'],
+            'illuminance' => ['illumination','lux','illuminance'],
             'status' => ['status','shutter','blind'],
             'action' => ['action','direction','blind','shutter'],
             default => []
@@ -788,6 +792,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $type = (int)($variable['type'] ?? -1);
         $compatible = match ($property) {
             'power','open','motion','moving' => in_array($type, [0,1], true),
+            'illuminance' => $type === 2,
             'brightness','position','targetPosition','tilt','temperature','targetTemperature','powerWatts','energy' => in_array($type, [1,2], true),
             'control','action' => in_array($type, [0,1,2], true),
             'status' => in_array($type, [0,1,2,3], true),
@@ -1065,6 +1070,7 @@ class RoomsCatalogConfigurator extends IPSModule
             'window' => [['open','status']],
             'energy' => [['energy','powerWatts']],
             'motion' => [['motion']],
+            'illuminance' => [['illuminance']],
             default => []
         };
     }
@@ -1096,7 +1102,8 @@ class RoomsCatalogConfigurator extends IPSModule
             'light' => ['licht','switches'], 'dimmer' => ['licht','dimmers'],
             'blind' => ['jalousie','jalousie'], 'heating' => ['heizung','heizung'],
             'fan' => ['lueftung','fans'], 'window' => ['sensoren','fenster'],
-            'motion' => ['sensoren','bewegung'], 'energy' => ['energie','zaehler'],
+            'motion' => ['sensoren','bewegung'],
+            'illuminance' => ['licht','status'], 'energy' => ['energie','zaehler'],
             'switch' => ['geraete','switches'], default => ['geraete','other']
         };
     }
@@ -2203,6 +2210,7 @@ class RoomsCatalogConfigurator extends IPSModule
             'powerWatts' => ['leistung'],
             'energy' => ['verbrauch'],
             'motion' => ['state'],
+            'illuminance' => ['value','wert'],
             'status' => ['statusId','state'],
             'action' => ['controlId','toggle'],
             default => []
