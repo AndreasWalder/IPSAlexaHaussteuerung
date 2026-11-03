@@ -191,6 +191,21 @@ ck339(($changedAudit['source']['typed']??-1)===3
     'Changed catalog must explain old vs new typed/legacy figures');
 IPS_SetScriptContent(41,$editAfterManual);
 
+// A misconfigured module must never write to PROD through an EDIT alias.
+$mod->properties['RoomsCatalogScriptID']=41;
+ob_start();$mod->RunTechnicalDeviceAudit();ob_end_clean();
+$sameIdSummary=$mod->updates['TechnicalDeviceSourceSummary.caption']??'';
+ck339(str_contains($sameIdSummary,'DIESELBE Skript-ID'),
+    'Same PROD/EDIT script ID must produce a clear configuration warning');
+$mod->MarkTechnicalDevice('wohnzimmer|licht|switches|decke',true);
+ob_start();$mod->PreviewTechnicalDeviceReview();ob_end_clean();
+$sameBefore=IPS_GetScriptContent(41);
+ob_start();$mod->ApplyTechnicalDeviceReview();$sameMessage=ob_get_clean();
+ck339(str_contains($sameMessage,'SICHERHEITSSTOPP')
+    && IPS_GetScriptContent(41)===$sameBefore,
+    'Technical approval wrote data into a shared PROD/EDIT script');
+$mod->properties['RoomsCatalogScriptID']=40;
+
 // Missing a required typed role must be shown as INCOMPLETE, not as an
 // unavailable/broken IP-Symcon variable; it can never be confirmed blindly.
 $incomplete=RCCDeviceTechnicalAudit::assess(
