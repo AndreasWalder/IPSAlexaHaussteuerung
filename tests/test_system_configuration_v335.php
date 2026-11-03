@@ -132,6 +132,31 @@ sc335_assert(($receipt['stage']??'')==='cleaned'
     && IPS_GetScriptContent((int)$receipt['backupEditId'])===$catalogEditOld,
     'Catalog source backups not retained');
 
+// After cleanup, a new tab edit can be published through the main module.
+// No manual SystemConfiguration script editor is required.
+$editable = require IPS_GetScriptFile($editId);
+$updatedKeys = array_keys($editable['navigation']['items']);
+$changedKey = array_values(array_filter($updatedKeys, static function(string $key) use ($editable): bool {
+    return ($editable['navigation']['items'][$key]['title'] ?? '') === 'Roboter Diagnose';
+}))[0] ?? '';
+sc335_assert($changedKey !== '', 'No editable new tab available for live update');
+$editable['navigation']['items'][$changedKey]['title'] = 'Roboter Diagnose Live';
+IPS_SetScriptContent($editId, IAHSystemNavigationEditor::encode($editable));
+ob_start();
+$module->PreviewSystemNavigationUpdate();
+$updateMsg=ob_get_clean();
+sc335_assert(str_contains($updateMsg,'Update bereit'), 'Post-cutover EDIT preview failed: '.$updateMsg);
+ob_start();
+$module->PublishSystemNavigationUpdate();
+$publishMsg=ob_get_clean();
+sc335_assert(str_contains($publishMsg,'aktualisiert'), 'Post-cutover EDIT publish failed: '.$publishMsg);
+$liveUpdated = require IPS_GetScriptFile(501);
+sc335_assert($liveUpdated['navigation']['items'][$changedKey]['title'] === 'Roboter Diagnose Live',
+    'Post-cutover navigation did not update in PROD');
+sc335_assert($liveUpdated['var']['Token'] === 'PRIVATE'
+    && IPS_GetScriptContent(502) === IAHSystemNavigationEditor::encode($cleanCatalog),
+    'Incremental update modified non-navigation system values or RoomsCatalog');
+
 // No accidental rollback if the catalog changed after cleanup.
 IPS_SetScriptContent(502, IPS_GetScriptContent(502)."\n");
 ob_start();$module->RollbackSystemNavigation();ob_end_clean();
