@@ -38,7 +38,7 @@ iconCheck(($ds['tiles'][0]['title']??'')==='Licht neu','Custom title overwritten
 iconCheck(($ds['tiles'][0]['color']??'')==='#FFE066','Custom color overwritten');
 $expectedStart='https://example.test/hook/iah-alexa-icons?';
 foreach (['logoUrl','homeIcon','Icon'] as $key) {
-    iconCheck(str_starts_with($ds[$key]??'',$expectedStart),'Header '+$key+' has no dedicated hook URL');
+    iconCheck(str_starts_with($ds[$key]??'',$expectedStart),'Header '.$key.' has no dedicated hook URL');
 }
 iconCheck(str_starts_with($ds['tiles'][0]['icon']??'',$expectedStart)
     && str_contains($ds['tiles'][0]['icon'],'f=Licht.png'),
