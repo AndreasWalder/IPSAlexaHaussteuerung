@@ -17,7 +17,8 @@ file_put_contents(IPS_GetScriptFile(503), IPS_GetScriptContent(502));
 $module->properties['NavigationRoomsCatalogEditScriptId'] = 503;
 
 // The active Alexa action must have both v335 runtime patches installed.
-$GLOBALS['sc333Objects'][504] = ['parent'=>100,'name'=>'Action (Haus\\Übersicht/Einstellungen Entry)','ident'=>'iahActionEntry'];
+$GLOBALS['sc333Objects'][507] = ['parent'=>100,'name'=>'Renderers','ident'=>'iahRenderers'];
+$GLOBALS['sc333Objects'][504] = ['parent'=>507,'name'=>'Action (Haus\\Übersicht/Einstellungen Entry)','ident'=>'iahActionEntry'];
 $GLOBALS['sc333Scripts'][504] =
     "<?php\n// IAH_NAVIGATION_CONFIG_V335\n// IAH_NAVIGATION_OVERLAY_V335_END\n";
 file_put_contents(IPS_GetScriptFile(504), IPS_GetScriptContent(504));
