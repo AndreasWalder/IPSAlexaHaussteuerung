@@ -147,6 +147,22 @@ ck339(($confirmed['wohnzimmer']['domains']['licht']['switches']['defekt']['ai'][
     ==='pending','Unselected invalid device was incorrectly confirmed');
 ck339(IPS_GetScriptContent(40)===$beforeProd,'PROD changed during manual review');
 
+// Writable KI devices need a real write action, not merely a readable state.
+$editAfterManual = IPS_GetScriptContent(41);
+$unsafe = $confirmed;
+$unsafe['wohnzimmer']['domains']['licht']['switches']['decke']['kiReadOnly']=false;
+$unsafe['wohnzimmer']['domains']['licht']['switches']['decke']['toggle']=50101;
+IPS_SetScriptContent(41,'<?php return '.var_export($unsafe,true).';');
+ob_start();$mod->RunTechnicalDeviceAudit();ob_end_clean();
+$unsafeScan=json_decode($mod->ReadAttributeString('TechnicalDeviceSnapshot'),true,512,JSON_THROW_ON_ERROR);
+$unsafeRow=array_values(array_filter($unsafeScan['rows'],static fn(array $r):bool=>
+    $r['key']==='wohnzimmer|licht|switches|decke'))[0];
+ck339($unsafeRow['status']==='Manuell pruefen' && !$unsafeRow['manualEligible']
+    && str_contains($unsafeRow['reason'],'IPS-Aktion'),
+    'Writable KI device with no action was wrongly approved as technically safe');
+IPS_SetScriptContent(41,$editAfterManual);
+
+
 foreach(array_keys($GLOBALS['inventoryScripts']) as $id) @unlink($GLOBALS['inventoryDir'].'/scripts/'.$id.'.php');
 @rmdir($GLOBALS['inventoryDir'].'/scripts');@rmdir($GLOBALS['inventoryDir']);
 echo "PASS V3.3.9: all types, IPS evidence, explicit approval, stale guard, EDIT-only updates, backups, legacy + diff reporting\n";
