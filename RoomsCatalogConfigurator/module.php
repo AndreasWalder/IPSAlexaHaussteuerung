@@ -144,6 +144,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterPropertyString('DiscoveryExtraRootIds', '');
 
         $this->RegisterAttributeString('RuntimeEntries', '[]');
+        $this->RegisterAttributeString('RuntimeEditHash', '');
         $this->RegisterAttributeString('FilterRoom', '');
         $this->RegisterAttributeString('FilterDomain', '');
         $this->RegisterAttributeString('FilterGroup', '');
@@ -158,6 +159,8 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('BulkSuggestions', 'yes');
         $this->RegisterAttributeString('BulkReview', 'keep');
         $this->RegisterAttributeString('BulkPreview', '{}');
+        $this->RegisterAttributeString('MigrationReadinessReport', 'Noch nicht geprüft.');
+        $this->RegisterAttributeString('MigrationReadinessDetails', '{}');
     }
 
     public function ApplyChanges()
@@ -186,6 +189,7 @@ class RoomsCatalogConfigurator extends IPSModule
     public function SetRoomFilter(string $roomKey)
     {
         $this->WriteAttributeString('FilterRoom', $roomKey);
+        $this->normalizeCurrentFilters($this->getRuntimeEntries(), $this->getProdEntries());
         $this->logDebug('SetRoomFilter: roomKey="' . $roomKey . '"');
         $this->RefreshVisibleLists();
     }
@@ -193,6 +197,7 @@ class RoomsCatalogConfigurator extends IPSModule
     public function SetDomainFilter(string $domainKey)
     {
         $this->WriteAttributeString('FilterDomain', $domainKey);
+        $this->normalizeCurrentFilters($this->getRuntimeEntries(), $this->getProdEntries());
                $this->logDebug('SetDomainFilter: domainKey="' . $domainKey . '"');
         $this->RefreshVisibleLists();
     }
@@ -200,6 +205,7 @@ class RoomsCatalogConfigurator extends IPSModule
     public function SetGroupFilter(string $groupKey)
     {
         $this->WriteAttributeString('FilterGroup', $groupKey);
+        $this->normalizeCurrentFilters($this->getRuntimeEntries(), $this->getProdEntries());
         $this->logDebug('SetGroupFilter: groupKey="' . $groupKey . '"');
         $this->RefreshVisibleLists();
     }
@@ -2809,18 +2815,140 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RefreshVisibleLists();
     }
 
+
+    /** Kein Schreibzugriff: KI-Freigabe und Modellbereitschaft sind getrennt. */
+    private function catalogMigrationStatistics(array $edit, array $prod, bool $validateVariables = false): array
+    {
+        $summary = [
+            'total'=>count($edit), 'readOnly'=>0, 'writable'=>0, 'disabled'=>0,
+            'typed'=>0, 'confirmed'=>0, 'legacy'=>0, 'generic'=>0, 'unreviewed'=>0,
+            'missingFeedback'=>0, 'invalidVariables'=>0, 'tabsEdit'=>0, 'tabsProd'=>0,
+            'prodDiff'=>count($this->buildDiffEntries($prod,$edit)), 'examples'=>[]
+        ];
+        foreach ($edit as $row) {
+            if (!is_array($row)) continue;
+            $path = implode(' / ',array_map('strval',[
+                $row['roomKey']??'', $row['domain']??'', $row['group']??'', $row['key']??''
+            ]));
+            if (($row['group'] ?? '') === 'tabs') $summary['tabsEdit']++;
+            if (empty($row['kiEnabled'])) $summary['disabled']++;
+            elseif (empty($row['kiReadOnly'])) $summary['writable']++;
+            else $summary['readOnly']++;
+            $type = trim((string)($row['aiType']??''));
+            if ($type === '' || !array_key_exists($type,self::AI_TYPE_FIELDS)) {
+                $summary['legacy']++;
+                if (count($summary['examples']) < 20) $summary['examples'][]='Ohne typisiertes Modell: '.$path;
+                continue;
+            }
+            $summary['typed']++;
+            if ($type === 'generic') {
+                $summary['generic']++;
+                if (count($summary['examples']) < 20) $summary['examples'][]='Geraetetyp unklar: '.$path;
+            }
+            if (empty($row['aiReviewed'])) {
+                $summary['unreviewed']++;
+                if (count($summary['examples']) < 20) $summary['examples'][]='Zuordnung unbestaetigt: '.$path;
+            } else $summary['confirmed']++;
+            $bound = [];
+            foreach (self::AI_VARIABLE_FIELDS as $property=>$field) {
+                $id = (int)($row[$field]??0);
+                if ($id <= 0) continue;
+                if ($validateVariables && function_exists('IPS_VariableExists') && !IPS_VariableExists($id)) {
+                    $summary['invalidVariables']++;
+                    if (count($summary['examples']) < 20) $summary['examples'][]='Fehlende IPS-Variable #'.$id.': '.$path;
+                    continue;
+                }
+                $bound[] = $property;
+            }
+            if ($type !== 'generic') {
+                foreach ($this->minimumReadingRoles($type) as $options) {
+                    if (array_intersect($options,$bound) === []) {
+                        $summary['missingFeedback']++;
+                        if (count($summary['examples']) < 20) $summary['examples'][]='Fehlende Rueckmeldung ['
+                            .implode('/',$options).']: '.$path;
+                    }
+                }
+            }
+        }
+        foreach ($prod as $row) if (is_array($row) && ($row['group']??'') === 'tabs') $summary['tabsProd']++;
+        $summary['modelReady'] = $summary['legacy'] === 0 && $summary['generic'] === 0
+            && $summary['unreviewed'] === 0 && $summary['missingFeedback'] === 0
+            && $summary['invalidVariables'] === 0;
+        $summary['migrationReady'] = $summary['modelReady'] && $summary['tabsEdit'] === 0
+            && $summary['tabsProd'] === 0 && $summary['prodDiff'] === 0;
+        return $summary;
+    }
+
+    private function currentMigrationReport(array $editCatalog): string
+    {
+        $report = $this->ReadAttributeString('MigrationReadinessReport');
+        $meta = json_decode($this->ReadAttributeString('MigrationReadinessDetails'),true);
+        if ($report === '' || !is_array($meta) || !is_string($meta['catalogHash'] ?? null)) {
+            return 'Noch keine aktuelle Migrationspruefung ausgefuehrt.';
+        }
+        $currentHash = hash('sha256',json_encode($editCatalog,JSON_INVALID_UTF8_SUBSTITUTE));
+        if (!hash_equals($meta['catalogHash'],$currentHash)) {
+            return 'RoomsCatalogEdit wurde seit dem letzten Pruefbericht geaendert. '
+                .'Datenstand erneut pruefen; alte Ergebnisse sind nicht mehr gueltig.';
+        }
+        return $report;
+    }
+
+    private function catalogMigrationShortSummary(array $s): string
+    {
+        return sprintf(
+            'KI-Zugriff: %d/%d freigegeben (%d nur lesen, %d schalten), %d ohne KI. '
+            .'Neues Modell: %d/%d typisiert, %d bestaetigt. '
+            .'Offen: %d Legacy, %d unbekannte Typen, %d unbestaetigte, %d fehlende Rueckmeldungen, '
+            .'%d EDIT/PROD-Unterschiede, %d uebrige Tabs.',
+            $s['readOnly']+$s['writable'], $s['total'], $s['readOnly'], $s['writable'],
+            $s['disabled'], $s['typed'], $s['total'], $s['confirmed'],
+            $s['legacy'], $s['generic'], $s['unreviewed'], $s['missingFeedback'],
+            $s['prodDiff'], $s['tabsEdit']+$s['tabsProd']
+        );
+    }
+
+    /** Geraetedaten-Check ohne KI- oder Schaltfreigabe. */
+    public function AuditMigrationReadiness(): void
+    {
+        $editCatalog = $this->loadConfiguredCatalog('RoomsCatalogEditScriptID','EDIT');
+        $prodCatalog = $this->loadConfiguredCatalog('RoomsCatalogScriptID','PROD');
+        $edit = $this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($editCatalog));
+        $prod = $this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($prodCatalog));
+        $s = $this->catalogMigrationStatistics($edit,$prod,true);
+        $scan = json_decode($this->ReadAttributeString('DiscoveryInventory'),true);
+        $roots = $this->discoveryRoots();
+        $scanned = is_array($scan) && is_array($scan['items']??null)
+            && ($scan['roots']??null) === $roots && $roots !== [] && empty($scan['truncated']);
+        $report = $this->catalogMigrationShortSummary($s);
+        $report .= $s['migrationReady'] ? ' Katalog-Modell technisch konsistent.'
+            : ' Katalog-Modell noch NICHT vollstaendig migriert.';
+        $report .= $scanned ? ' Inventur vorhanden; IP-Symcon-Zuordnungen fachlich pruefen.'
+            : ' Keine nachweislich vollstaendige Inventur aller Suchwurzeln.';
+        if ($s['examples'] !== []) $report .= "\nOffene Punkte (Auswahl):\n".implode("\n",$s['examples']);
+        $this->WriteAttributeString('MigrationReadinessDetails',json_encode([
+            'checkedAt'=>time(), 'catalogHash'=>hash('sha256',json_encode($editCatalog,JSON_INVALID_UTF8_SUBSTITUTE)),
+            'statistics'=>$s, 'scanAvailable'=>$scanned
+        ],JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->WriteAttributeString('MigrationReadinessReport',$report);
+        $this->UpdateFormField('MigrationReadinessReport','caption',$report);
+        echo $report;
+    }
+
     // =====================================================================
     // Konfigurationsformular
     // =====================================================================
 
     public function GetConfigurationForm()
     {
+        $this->ensureRuntimeCatalogCurrent();
         $entriesProd  = $this->getProdEntries();
         $entriesEdit  = $this->getRuntimeEntries();
-        $filterAI     = $this->ReadAttributeString('FilterAI');
-        $filterRoom   = $this->ReadAttributeString('FilterRoom');
-        $filterDomain = $this->ReadAttributeString('FilterDomain');
-        $filterGroup  = $this->ReadAttributeString('FilterGroup');
+        $filterAI = $this->ReadAttributeString('FilterAI');
+        $filters = $this->normalizeCurrentFilters($entriesEdit,$entriesProd);
+        $filterRoom = $filters['room'];
+        $filterDomain = $filters['domain'];
+        $filterGroup = $filters['group'];
 
         $editScriptId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
         $editCatalog = $this->loadConfiguredCatalog('RoomsCatalogEditScriptID', 'EDIT');
@@ -2842,8 +2970,12 @@ class RoomsCatalogConfigurator extends IPSModule
         $inventoryRows = is_array($inventoryPreview) ? $this->discoveryInventoryRows($inventoryPreview) : [];
         $bulkOptions = $this->bulkOptions();
         $bulkPreview = json_decode($this->ReadAttributeString('BulkPreview'),true);
+        $migrationStats = $this->catalogMigrationStatistics($entriesEdit,$entriesProd);
+        $migrationSummary = $this->catalogMigrationShortSummary($migrationStats);
 
-        [$roomOptions, $domainOptions, $groupOptions] = $this->buildFilterOptionsFromEntries(array_merge($entriesProd, $entriesEdit));
+        $roomOptions = $filters['roomOptions'];
+        $domainOptions = $filters['domainOptions'];
+        $groupOptions = $filters['groupOptions'];
         $knownRooms = array_column($roomOptions, 'value');
         foreach ($roomRows as $roomRow) {
             if (!in_array($roomRow['roomKey'], $knownRooms, true)) {
@@ -2886,8 +3018,9 @@ class RoomsCatalogConfigurator extends IPSModule
                 [
                     'type'=>'Label',
                     'name'=>'CatalogSummary',
-                    'caption'=>'RoomsCatalog EDIT: ' . count($entriesEdit) . ' Geraete, KI sichtbar: ' . $aiReadable
-                        . ', KI schaltbar: ' . $aiWritable . '. Aenderungen werden erst mit der Freigabe produktiv.'
+                    'caption'=>'RoomsCatalog EDIT: '.count($entriesEdit).' Eintraege. '
+                        .($aiReadable-$aiWritable).' KI nur lesen, '.$aiWritable.' KI schaltbar, '
+                        .(count($entriesEdit)-$aiReadable).' ohne KI-Freigabe. EDIT wird erst nach Freigabe produktiv.'
                 ],
                 [
                     'type'    => 'ExpansionPanel',
@@ -2908,8 +3041,23 @@ class RoomsCatalogConfigurator extends IPSModule
                     ]
                 ],
                 [
+                    'type'=>'ExpansionPanel',
+                    'caption'=>'Datenstand und KI-Berechtigungen',
+                    'expanded'=>true,
+                    'items'=>[
+                        ['type'=>'Label','name'=>'MigrationSummary','caption'=>$migrationSummary],
+                        ['type'=>'Label','caption'=>
+                            'KI-Lese-/Schreibfreigabe und fachlich bestaetigte Geraetezuordnung sind getrennt. '
+                            .'Keine KI-Schreibfreigaben ohne ausdrueckliche Freigabe.'],
+                        ['type'=>'Button','caption'=>'MODELL, IPS-VARIABLEN UND MIGRATION PRUEFEN',
+                            'onClick'=>'RCC_AuditMigrationReadiness($id);'],
+                        ['type'=>'Label','name'=>'MigrationReadinessReport',
+                            'caption'=>$this->currentMigrationReport($editCatalog)],
+                    ],
+                ],
+                [
                     'type' => 'ExpansionPanel',
-                    'caption' => 'V3.1: Raeume, Etagen und alternative Namen',
+                    'caption' => 'Raeume & Etagen',
                     'expanded' => true,
                     'items' => [
                         ['type' => 'Label', 'caption' => 'Jeden Raum nur einmal bearbeiten. Raum-Key bleibt unveraendert, damit bestehende Geraetezuordnungen erhalten bleiben.'],
@@ -3056,7 +3204,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 ],
                 [
                     'type'=>'ExpansionPanel',
-                    'caption'=>'V3.3.2: Markierte Geraete gemeinsam bearbeiten',
+                    'caption'=>'Mehrere Geraete bearbeiten',
                     'expanded'=>true,
                     'items'=>[
                         ['type'=>'Label','name'=>'BulkSelectionSummary',
@@ -3111,7 +3259,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 ],
                 [
                     'type' => 'ExpansionPanel',
-                    'caption' => 'V3.2: Intelligente Variablenvorschlaege',
+                    'caption' => 'Variablenzuordnungen pruefen',
                     'expanded' => true,
                     'items' => [
                         ['type'=>'Label','caption'=>'Genau ein Geraet oben markieren. Die Analyse durchsucht nur seine bekannte Instanz/Kategorie. Bestehende IDs und KI-Freigaben werden nie ueberschrieben.'],
@@ -3141,7 +3289,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 ],
                 [
                     'type' => 'ExpansionPanel',
-                    'caption' => 'V3.3.1: Vollstaendige IP-Symcon-Geraeteinventur',
+                    'caption' => 'IP-Symcon-Geraeteinventur',
                     'expanded' => true,
                     'items' => [
                         ['type'=>'Label','caption'=>'Nur die hier ausgewaehlten Kategorien/Instanzen werden durchsucht. Gefundene Geraete sind erst Vorschlaege; keine automatische KI- oder Schreibfreigabe. Suchwurzeln nach dem Aendern mit Uebernehmen speichern.'],
@@ -3224,7 +3372,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 ],
                 [
                     'type'=>'ExpansionPanel',
-                    'caption'=>'V3.3.1: Bisherige Geraete ins neue Datenmodell uebernehmen',
+                    'caption'=>'Altgeraete ins neue Modell uebernehmen',
                     'expanded'=>false,
                     'items'=>[
                         ['type'=>'Label','caption'=>'Bestehende Legacy-Geraete analysieren. Die Uebernahme fuegt nur ai.type/Variablen im EDIT-Katalog hinzu. Alte Felder, KI-Freigaben und PROD bleiben erhalten.'],
@@ -3273,7 +3421,7 @@ class RoomsCatalogConfigurator extends IPSModule
                     'items'    => [
                         [
                             'type' => 'List', 'name' => 'RoomsDiff',
-                            'caption' => 'V3.1: Raum-Aenderungen EDIT zu PROD',
+                            'caption' => 'Raum-Aenderungen EDIT zu PROD',
                             'rowCount' => 8, 'add' => false, 'delete' => false,
                             'columns' => [
                                 ['caption'=>'Raum-Key','name'=>'roomKey','width'=>'135px'],
@@ -3331,12 +3479,65 @@ class RoomsCatalogConfigurator extends IPSModule
             ]
         ];
 
+        // Einmalige Versionsassistenten nicht mehr im normalen Einstellungsfluss
+        // anzeigen. Inventur und Variablenanalyse bleiben dauerhaft unter einer
+        // zugeklappten Rubrik fuer neue Geraete erreichbar.
+        $assistants = [];
+        $remaining = [];
+        $insertAt = null;
+        foreach ($form['elements'] as $element) {
+            $caption = (string)($element['caption'] ?? '');
+            if (in_array($caption, [
+                'Variablenzuordnungen pruefen',
+                'IP-Symcon-Geraeteinventur',
+                'Altgeraete ins neue Modell uebernehmen'
+            ],true)) {
+                if ($insertAt === null) $insertAt = count($remaining);
+                if ($caption === 'Altgeraete ins neue Modell uebernehmen'
+                    && $migrationStats['legacy'] === 0) {
+                    continue; // Keine Altdaten mehr in EDIT: Assistent entfaellt.
+                }
+                $element['expanded'] = false;
+                $assistants[] = $element;
+                continue;
+            }
+            $remaining[] = $element;
+        }
+        if ($insertAt !== null) {
+            array_splice($remaining,$insertAt,0,[[
+                'type'=>'ExpansionPanel',
+                'caption'=>'Geraete erkennen, inventarisieren und reparieren',
+                'expanded'=>false,
+                'items'=>array_merge([
+                    ['type'=>'Label','caption'=>
+                        'Geraete koennen hier auch nach abgeschlossener Migration erneut erkannt werden. '
+                        .'Vorhandene Konfigurationen und KI-Berechtigungen bleiben bei Analysen unveraendert.']
+                ],$assistants)
+            ]]);
+        }
+        $form['elements'] = $remaining;
+
         return json_encode($form);
     }
 
     // =====================================================================
     // Interne Logik
     // =====================================================================
+
+    /**
+     * External writes from navigation migration can invalidate RuntimeEntries
+     * and leave a stale "tabs" filter. Compare EDIT's actual source hash first.
+     */
+    private function ensureRuntimeCatalogCurrent(): void
+    {
+        $id = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        if ($id <= 0 || !function_exists('IPS_GetScriptContent') || !IPS_ScriptExists($id)) return;
+        $source = IPS_GetScriptContent($id);
+        if (!is_string($source)) return;
+        if ($this->ReadAttributeString('RuntimeEditHash') !== hash('sha256',$source)) {
+            $this->reloadAllFromCatalog();
+        }
+    }
 
     private function reloadAllFromCatalog(): void
     {
@@ -3350,6 +3551,7 @@ class RoomsCatalogConfigurator extends IPSModule
         if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) {
             $this->logDebug('reloadAllFromCatalog: kein gültiges ScriptID gesetzt');
             $this->WriteAttributeString('RuntimeEntries', '[]');
+            $this->WriteAttributeString('RuntimeEditHash', '');
             return;
         }
 
@@ -3358,6 +3560,7 @@ class RoomsCatalogConfigurator extends IPSModule
         if ($catalog === []) {
             $this->logDebug('reloadAllFromCatalog: Katalog leer oder ungültig');
             $this->WriteAttributeString('RuntimeEntries', '[]');
+            $this->WriteAttributeString('RuntimeEditHash', '');
             return;
         }
 
@@ -3368,6 +3571,10 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->logDebug('reloadAllFromCatalog: erzeugte Einträge=' . count($entries));
 
         $this->WriteAttributeString('RuntimeEntries', json_encode($entries));
+        if (function_exists('IPS_GetScriptContent')) {
+            $source = IPS_GetScriptContent($scriptId);
+            if (is_string($source)) $this->WriteAttributeString('RuntimeEditHash',hash('sha256',$source));
+        }
     }
 
     private function loadRoomsCatalog(int $scriptId, string $mode): array
@@ -3908,6 +4115,51 @@ class RoomsCatalogConfigurator extends IPSModule
         return [$roomOptions, $domainOptions, $groupOptions];
     }
 
+
+    /**
+     * IP-Symcon merkt sich die Filter ueber Modulupdates hinweg. Nach der
+     * Tab-Migration koennen alte Filterwerte (z. B. "tabs") verschwinden.
+     * Nur ungueltige Filter zuruecksetzen, keine Geraete/KI-Flags aendern.
+     *
+     * Domain- und Gruppenoptionen folgen dem gewaehlten Raum/Bereich,
+     * damit weder unpassende noch fehlende Filterwerte angezeigt werden.
+     */
+    private function normalizeCurrentFilters(array $edit, array $prod = []): array
+    {
+        // Geräte-Filter ausschließlich aus EDIT: alte, in PROD bereits
+        // entfernte Navigations-Tabs dürfen keine auswählbaren Gruppen erzeugen.
+        $entries = $edit;
+        $selectedRoom = $this->ReadAttributeString('FilterRoom');
+        $selectedDomain = $this->ReadAttributeString('FilterDomain');
+        $selectedGroup = $this->ReadAttributeString('FilterGroup');
+
+        [$roomOptions] = $this->buildFilterOptionsFromEntries($entries);
+        if ($selectedRoom !== '' && !in_array($selectedRoom, array_column($roomOptions,'value'),true)) {
+            $selectedRoom = '';
+        }
+        $scope = $selectedRoom === '' ? $entries
+            : $this->applyFilters($entries,$selectedRoom,'','');
+        [, $domainOptions] = $this->buildFilterOptionsFromEntries($scope);
+        if ($selectedDomain !== '' && !in_array($selectedDomain,array_column($domainOptions,'value'),true)) {
+            $selectedDomain = '';
+        }
+        $scope = $selectedDomain === '' ? $scope
+            : $this->applyFilters($scope,'',$selectedDomain,'');
+        [, , $groupOptions] = $this->buildFilterOptionsFromEntries($scope);
+        if ($selectedGroup !== '' && !in_array($selectedGroup,array_column($groupOptions,'value'),true)) {
+            $selectedGroup = '';
+        }
+        foreach (['FilterRoom'=>$selectedRoom,'FilterDomain'=>$selectedDomain,'FilterGroup'=>$selectedGroup] as $name=>$value) {
+            if ($this->ReadAttributeString($name) !== $value) {
+                $this->WriteAttributeString($name,$value);
+            }
+        }
+        return [
+            'room'=>$selectedRoom, 'domain'=>$selectedDomain,'group'=>$selectedGroup,
+            'roomOptions'=>$roomOptions,'domainOptions'=>$domainOptions,'groupOptions'=>$groupOptions,
+        ];
+    }
+
     private function applyFilters(array $entries, string $roomFilter, string $domainFilter, string $groupFilter): array
     {
         if ($roomFilter === '' && $domainFilter === '' && $groupFilter === '') {
@@ -4251,12 +4503,22 @@ class RoomsCatalogConfigurator extends IPSModule
      */
     private function RefreshVisibleLists(): void
     {
+        $this->ensureRuntimeCatalogCurrent();
         $edit = $this->getRuntimeEntries();
         $prod = $this->getProdEntries();
-        $room = $this->ReadAttributeString('FilterRoom');
-        $domain = $this->ReadAttributeString('FilterDomain');
-        $group = $this->ReadAttributeString('FilterGroup');
+        $filters = $this->normalizeCurrentFilters($edit,$prod);
+        $room = $filters['room'];
+        $domain = $filters['domain'];
+        $group = $filters['group'];
         $ai = $this->ReadAttributeString('FilterAI');
+        // zuerst Options aktualisieren, dann die aktuellen gueltigen Werte.
+        foreach (['FilterRoom'=>$filters['roomOptions'], 'FilterDomain'=>$filters['domainOptions'],
+                  'FilterGroup'=>$filters['groupOptions']] as $name=>$options) {
+            $this->UpdateFormField($name,'options',json_encode($options,JSON_INVALID_UTF8_SUBSTITUTE));
+        }
+        foreach (['FilterRoom'=>$room,'FilterDomain'=>$domain,'FilterGroup'=>$group] as $name=>$value) {
+            $this->UpdateFormField($name,'value',$value);
+        }
 
         $visible = $this->filterByAI($this->applyFilters($edit, $room, $domain, $group), $ai);
         $visible = array_map(fn(array $row): array => $this->decorateRow($row), $visible);
@@ -4287,7 +4549,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $legacyRows = is_array($legacyPreview) && is_array($legacyPreview['rows'] ?? null)
             ? $legacyPreview['rows'] : [];
         $this->UpdateFormField('LegacyDevices','values',json_encode($legacyRows,JSON_INVALID_UTF8_SUBSTITUTE));
-        [$roomOptions] = $this->buildFilterOptionsFromEntries(array_merge($prod, $edit));
+        $roomOptions = $filters['roomOptions'];
         $knownKeys = array_column($roomOptions, 'value');
         foreach ($roomRows as $roomRow) {
             if (!in_array($roomRow['roomKey'], $knownKeys, true)) {
@@ -4295,11 +4557,18 @@ class RoomsCatalogConfigurator extends IPSModule
             }
         }
         $this->UpdateFormField('FilterRoom', 'options', json_encode($roomOptions, JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->UpdateFormField('FilterRoom', 'value', $room);
 
         $readable = count(array_filter($edit, static fn($r): bool => !empty($r['kiEnabled'])));
         $writable = count(array_filter($edit, static fn($r): bool => !empty($r['kiEnabled']) && empty($r['kiReadOnly'])));
-        $summary = 'RoomsCatalog EDIT: ' . count($edit) . ' Geraete, KI sichtbar: ' . $readable .
-            ', KI schaltbar: ' . $writable . '. Aenderungen werden erst mit der Freigabe produktiv.';
+        $migrationStats = $this->catalogMigrationStatistics($edit,$prod);
+        $summary = 'RoomsCatalog EDIT: '.count($edit).' Eintraege. '
+            .($readable-$writable).' KI nur lesen, '.$writable.' KI schaltbar, '
+            .(count($edit)-$readable).' ohne KI-Freigabe. EDIT wird erst nach Freigabe produktiv.';
+        $this->UpdateFormField('MigrationSummary','caption',$this->catalogMigrationShortSummary($migrationStats));
+        $this->UpdateFormField('MigrationReadinessReport','caption',$this->currentMigrationReport(
+            $this->loadConfiguredCatalog('RoomsCatalogEditScriptID','EDIT')
+        ));
         $this->UpdateFormField('CatalogSummary', 'caption', $summary);
     }
 
