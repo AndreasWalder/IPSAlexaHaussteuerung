@@ -2814,6 +2814,111 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RefreshVisibleLists();
     }
 
+
+    /** Kein Schreibzugriff: KI-Freigabe und Modellbereitschaft sind getrennt. */
+    private function catalogMigrationStatistics(array $edit, array $prod, bool $validateVariables = false): array
+    {
+        $summary = [
+            'total'=>count($edit), 'readOnly'=>0, 'writable'=>0, 'disabled'=>0,
+            'typed'=>0, 'confirmed'=>0, 'legacy'=>0, 'generic'=>0, 'unreviewed'=>0,
+            'missingFeedback'=>0, 'invalidVariables'=>0, 'tabsEdit'=>0, 'tabsProd'=>0,
+            'prodDiff'=>count($this->buildDiffEntries($prod,$edit)), 'examples'=>[]
+        ];
+        foreach ($edit as $row) {
+            if (!is_array($row)) continue;
+            $path = implode(' / ',array_map('strval',[
+                $row['roomKey']??'', $row['domain']??'', $row['group']??'', $row['key']??''
+            ]));
+            if (($row['group'] ?? '') === 'tabs') $summary['tabsEdit']++;
+            if (empty($row['kiEnabled'])) $summary['disabled']++;
+            elseif (empty($row['kiReadOnly'])) $summary['writable']++;
+            else $summary['readOnly']++;
+            $type = trim((string)($row['aiType']??''));
+            if ($type === '' || !array_key_exists($type,self::AI_TYPE_FIELDS)) {
+                $summary['legacy']++;
+                if (count($summary['examples']) < 20) $summary['examples'][]='Ohne typisiertes Modell: '.$path;
+                continue;
+            }
+            $summary['typed']++;
+            if ($type === 'generic') {
+                $summary['generic']++;
+                if (count($summary['examples']) < 20) $summary['examples'][]='Geraetetyp unklar: '.$path;
+            }
+            if (empty($row['aiReviewed'])) {
+                $summary['unreviewed']++;
+                if (count($summary['examples']) < 20) $summary['examples'][]='Zuordnung unbestaetigt: '.$path;
+            } else $summary['confirmed']++;
+            $bound = [];
+            foreach (self::AI_VARIABLE_FIELDS as $property=>$field) {
+                $id = (int)($row[$field]??0);
+                if ($id <= 0) continue;
+                if ($validateVariables && function_exists('IPS_VariableExists') && !IPS_VariableExists($id)) {
+                    $summary['invalidVariables']++;
+                    if (count($summary['examples']) < 20) $summary['examples'][]='Fehlende IPS-Variable #'.$id.': '.$path;
+                    continue;
+                }
+                $bound[] = $property;
+            }
+            if ($type !== 'generic') {
+                foreach ($this->minimumReadingRoles($type) as $options) {
+                    if (array_intersect($options,$bound) === []) {
+                        $summary['missingFeedback']++;
+                        if (count($summary['examples']) < 20) $summary['examples'][]='Fehlende Rueckmeldung ['
+                            .implode('/',$options).']: '.$path;
+                    }
+                }
+            }
+        }
+        foreach ($prod as $row) if (is_array($row) && ($row['group']??'') === 'tabs') $summary['tabsProd']++;
+        $summary['modelReady'] = $summary['legacy'] === 0 && $summary['generic'] === 0
+            && $summary['unreviewed'] === 0 && $summary['missingFeedback'] === 0
+            && $summary['invalidVariables'] === 0;
+        $summary['migrationReady'] = $summary['modelReady'] && $summary['tabsEdit'] === 0
+            && $summary['tabsProd'] === 0 && $summary['prodDiff'] === 0;
+        return $summary;
+    }
+
+    private function catalogMigrationShortSummary(array $s): string
+    {
+        return sprintf(
+            'KI-Zugriff: %d/%d freigegeben (%d nur lesen, %d schalten), %d ohne KI. '
+            .'Neues Modell: %d/%d typisiert, %d bestaetigt. '
+            .'Offen: %d Legacy, %d unbekannte Typen, %d unbestaetigte, %d fehlende Rueckmeldungen, '
+            .'%d EDIT/PROD-Unterschiede, %d uebrige Tabs.',
+            $s['readOnly']+$s['writable'], $s['total'], $s['readOnly'], $s['writable'],
+            $s['disabled'], $s['typed'], $s['total'], $s['confirmed'],
+            $s['legacy'], $s['generic'], $s['unreviewed'], $s['missingFeedback'],
+            $s['prodDiff'], $s['tabsEdit']+$s['tabsProd']
+        );
+    }
+
+    /** Geraetedaten-Check ohne KI- oder Schaltfreigabe. */
+    public function AuditMigrationReadiness(): void
+    {
+        $editCatalog = $this->loadConfiguredCatalog('RoomsCatalogEditScriptID','EDIT');
+        $prodCatalog = $this->loadConfiguredCatalog('RoomsCatalogScriptID','PROD');
+        $edit = $this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($editCatalog));
+        $prod = $this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($prodCatalog));
+        $s = $this->catalogMigrationStatistics($edit,$prod,true);
+        $scan = json_decode($this->ReadAttributeString('DiscoveryInventory'),true);
+        $roots = $this->discoveryRoots();
+        $scanned = is_array($scan) && is_array($scan['items']??null)
+            && ($scan['roots']??null) === $roots && $roots !== [] && empty($scan['truncated']);
+        $report = $this->catalogMigrationShortSummary($s);
+        $report .= $s['migrationReady'] ? ' Katalog-Modell technisch konsistent.'
+            : ' Katalog-Modell noch NICHT vollstaendig migriert.';
+        $report .= $scanned ? ' Inventur vorhanden; IP-Symcon-Zuordnungen fachlich pruefen.'
+            : ' Keine nachweislich vollstaendige Inventur aller Suchwurzeln.';
+        if ($s['examples'] !== []) $report .= "\nOffene Punkte (Auswahl):\n".implode("\n",$s['examples']);
+        $this->WriteAttributeString('MigrationReadinessDetails',json_encode([
+            'checkedAt'=>time(), 'catalogHash'=>hash('sha256',json_encode($editCatalog,JSON_INVALID_UTF8_SUBSTITUTE)),
+            'statistics'=>$s, 'scanAvailable'=>$scanned
+        ],JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->WriteAttributeString('MigrationReadinessReport',$report);
+        $this->UpdateFormField('MigrationReadinessReport','caption',$report);
+        echo $report;
+    }
+
     // =====================================================================
     // Konfigurationsformular
     // =====================================================================
