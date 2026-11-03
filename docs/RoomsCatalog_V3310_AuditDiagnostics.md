@@ -48,10 +48,15 @@ Schreiben im Rahmen der technischen/manuellen Sammelübernahme.
 ## Nächster Schritt auf dem echten Server
 
 1. Das Modul aktualisieren und die Instanz anwenden.
-2. **MODELL, IPS-VARIABLEN UND MIGRATION PRUEFEN** ausführen.
-3. **ALLE GERAETE TECHNISCH PRUEFEN** ausführen.
-4. Die neuen Zeilen **DATENQUELLEN** und
-   **HAEUFIGSTE PRUEFURSACHEN** vergleichen.
+2. **ZUERST ALLE GERAETE TECHNISCH PRUEFEN** ausführen: so kann
+   der gespeicherte frühere Migrationsbericht (167 typisiert/8 Legacy)
+   noch mit dem aktuellen Stand verglichen werden.
+3. Die neuen Zeilen **DATENQUELLEN** und
+   **HAEUFIGSTE PRUEFURSACHEN** kopieren/sichern.
+4. Erst **DANACH MODELL, IPS-VARIABLEN UND MIGRATION PRUEFEN**
+   ausführen. Dieser Knopf aktualisiert die gespeicherte alte
+   Migrationsbilanz; vorheriges erneutes Ausführen würde die
+   historische Vergleichsmöglichkeit verfälschen.
 
 Bitte bei abweichenden Skriptständen keine Sammelbestätigung und keine
 Freigabe EDIT→PROD vornehmen, bevor die Ursache geklärt ist.
