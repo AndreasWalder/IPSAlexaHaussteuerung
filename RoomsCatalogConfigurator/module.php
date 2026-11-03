@@ -2872,6 +2872,31 @@ class RoomsCatalogConfigurator extends IPSModule
             fn(array $variable,string $property): int => $this->suggestionScore($variable,$property),
             fn(int $id): bool => function_exists('IPS_VariableExists') && IPS_VariableExists($id)
         );
+        // Der alte V3.3.8-Check beruecksichtigte auch virtuelle
+        // Legacy-Felder. Ein fehlendes ai.variables-Feld ist hingegen
+        // eine offene Migration, nicht die Aussage "IPS-Geraet defekt".
+        $missingTypedRoles = [];
+        foreach (self::AI_TYPE_FIELDS[$type] as $role) {
+            $field = self::AI_VARIABLE_FIELDS[$role];
+            if ((int)($typedRow[$field] ?? 0) <= 0
+                && (int)($row[$field] ?? 0) > 0) {
+                $missingTypedRoles[] = $role;
+            }
+        }
+        $assessment['mappedExplicitRoles'] = count(array_filter(
+            array_intersect_key($explicit,array_fill_keys(self::AI_TYPE_FIELDS[$type],true)),
+            static fn($id): bool => (int)$id > 0
+        ));
+        $assessment['legacyRoleCandidates'] = count($missingTypedRoles);
+        if ($missingTypedRoles !== []) {
+            $assessment['issueCodes'][] = 'legacy_fields_not_mapped';
+            if ($assessment['status'] === 'Technisch plausibel') {
+                $assessment['status'] = 'Manuell pruefen';
+            }
+            $assessment['manualEligible'] = false;
+            $assessment['reason'] .= '; Legacy-Felder nicht in ai.variables: '
+                .implode(', ',$missingTypedRoles);
+        }
         // KI-Schreibrechte sind besonders kritisch. Ein plausibler
         // Istwert allein beweist KEINE funktionsfaehige Schaltaktion.
         if (!empty($row['kiEnabled']) && empty($row['kiReadOnly'])) {
@@ -2880,6 +2905,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 $assessment['status'] = 'Ungueltig';
                 $assessment['manualEligible'] = false;
                 $assessment['reason'] .= '; KI-Schreibfreigabe ohne gueltige Schaltvariable';
+                $assessment['issueCodes'][] = 'write_variable_invalid';
             } else {
                 $writeMetadata = null;
                 foreach ($variables as $var) {
@@ -2890,6 +2916,7 @@ class RoomsCatalogConfigurator extends IPSModule
                     $assessment['status'] = 'Manuell pruefen';
                     $assessment['manualEligible'] = false;
                     $assessment['reason'] .= '; KI-Schaltvariable #'.$writeId.' ohne nachgewiesene IPS-Aktion';
+                    $assessment['issueCodes'][] = 'write_action_unproven';
                 }
             }
         }
