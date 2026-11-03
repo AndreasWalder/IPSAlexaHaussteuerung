@@ -10,6 +10,7 @@ require_once __DIR__ . '/src/AlexaLogTrait.php';
 require_once __DIR__ . '/src/SystemConfigurationManager.php';
 require_once __DIR__ . '/src/SystemNavigationEditor.php';
 require_once __DIR__ . '/src/SystemNavigationMigration.php';
+require_once __DIR__ . '/src/RoomsCatalogAutoMigration.php';
 require_once __DIR__ . '/src/KICostTrait.php';
 require_once __DIR__ . '/src/Router.php';
 require_once __DIR__ . '/src/Routes/RouteAll.php';
@@ -92,6 +93,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         // V3.3.3: Nur Inventardaten, niemals Zugangsdaten oder Skriptinhalte.
         $this->RegisterAttributeString('SystemConfigurationInventory', '');
         $this->RegisterAttributeString('SystemNavigationImportPreview', '');
+        $this->RegisterAttributeString('RoomsCatalogAutoPreview', '');
+        $this->RegisterAttributeString('RoomsCatalogAutoNotice', 'Noch keine Vorschau.');
         $this->RegisterAttributeString('SystemNavigationEditorNotice', '');
         $this->RegisterAttributeString('LaunchIconDiagnostics', '');
         $this->RegisterAttributeString('SystemNavigationMigrationPreview', '');
@@ -385,6 +388,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         // Assistenten nicht mehr in den regulaeren Einstellungen anzeigen.
         // Die Wiederherstellung bleibt unter "Erweiterte Wartung" erreichbar.
         if ($this->systemNavigationMigrationCompleted()) {
+            $form['elements'][] = $this->buildRoomsCatalogAutoMigrationForm();
             $form['elements'][] = $this->buildSystemNavigationEditorForm();
             $form['elements'][] = $this->buildSystemNavigationMaintenanceForm();
         } else {
@@ -402,6 +406,224 @@ class IPSAlexaHaussteuerung extends IPSModule
      * Keine Schreibzugriffe: reiner Zustandstest anhand Live-PROD, beider
      * bereinigter Catalogs und der verifizierten Quelltext-Backups.
      */
+    /**
+     * V3.3.11: Ein Hauptmodul-Assistent fuer die Geraete- und UI-Datenmigration.
+     * Erkennung nur anhand von IPS-Metadaten, ohne aktuelle Variablenwerte
+     * auszulesen und ohne eine einzige Aktion auszufuehren.
+     */
+    private function buildRoomsCatalogAutoMigrationForm(): array
+    {
+        return [
+            'type'=>'ExpansionPanel',
+            'caption'=>'RoomsCatalog automatisch bereinigen & nach PROD uebernehmen',
+            'expanded'=>false,
+            'items'=>[
+                ['type'=>'Label','caption'=>
+                    'Korrigiert eindeutige Licht-, Dimmer-, Lux-, Heizungs-, '
+                    .'Bewegungs- und Jalousie-Rollen und verschiebt die 8 globalen '
+                    .'Szenen-/Lueftungs-UI-Eintraege nach SystemConfiguration. '
+                    .'Bestehende Freigaben und fachliche Pruefungen bleiben geschuetzt.'],
+                ['type'=>'Label','caption'=>
+                    'Voraussetzung: RoomsCatalog und RoomsCatalogEdit identisch; '
+                    .'Navigation bereits migriert. Ohne Vorschau ist keine PROD-Uebernahme moeglich. '
+                    .'Bei unklaren Geraeten bleiben Typ und Zuordnung offen.'],
+                ['type'=>'Button','caption'=>'1 – MIGRATION PRUEFEN (NUR VORSCHAU)',
+                    'onClick'=>'IAH_PreviewRoomsCatalogAutoMigration($id);'],
+                ['type'=>'Label','name'=>'RoomsCatalogAutoNotice',
+                    'caption'=>$this->ReadAttributeString('RoomsCatalogAutoNotice')],
+                ['type'=>'Button','caption'=>'2 – GEPRUEFTE KORREKTUREN NACH PROD UEBERNEHMEN',
+                    'confirm'=>'ACHTUNG: Vier komplette Skripte werden zuerst einzeln gesichert, danach werden RoomsCatalog + RoomsCatalogEdit UND SystemConfiguration + SystemConfigurationEdit aktualisiert. Bestehende KI-Rechte und fremde Systemeinstellungen werden nicht geaendert. Nur nach gepruefter Vorschau fortfahren!',
+                    'onClick'=>'IAH_ApplyRoomsCatalogAutoMigration($id);'],
+            ]
+        ];
+    }
+
+    private function roomsCatalogAutoContext(): array
+    {
+        $ctx=$this->navigationMigrationContext();
+        $sources=[
+            'catalogProd'=>['id'=>(int)($ctx['catalogId'] ?? 0),'source'=>$ctx['catalogSource'] ?? null,'array'=>$ctx['catalog'] ?? null],
+            'catalogEdit'=>['id'=>(int)($ctx['roomsEditId'] ?? 0),'source'=>$ctx['roomsEditSource'] ?? null,'array'=>$ctx['roomsEdit'] ?? null],
+            'systemProd'=>['id'=>(int)($ctx['ids']['prod'] ?? 0),'source'=>$ctx['prodSource'] ?? null,'array'=>$ctx['prod'] ?? null],
+            'systemEdit'=>['id'=>(int)($ctx['ids']['edit'] ?? 0),'source'=>$ctx['editSource'] ?? null,'array'=>$ctx['edit'] ?? null],
+        ];
+        $ids=[];
+        foreach ($sources as $name=>$source) {
+            if ($source['id']<=0 || !is_string($source['source'])
+                || !is_array($source['array'])
+                || !IAHSystemNavigationEditor::isLiteralArraySource($source['source'])) {
+                throw new \RuntimeException($name.' fehlt oder enthaelt dynamisches PHP. Keine Migration.');
+            }
+            if (isset($ids[$source['id']])) {
+                throw new \RuntimeException('Katalog- und Systemskripte duerfen keine gemeinsame Objekt-ID haben.');
+            }
+            $ids[$source['id']]=true;
+        }
+        if ($sources['catalogProd']['array'] !== $sources['catalogEdit']['array']) {
+            throw new \RuntimeException('RoomsCatalog PROD und EDIT unterscheiden sich. '
+                .'Bitte Aenderungen zuerst kontrolliert abgleichen, sonst wuerde die Sammelmigration '
+                .'nicht eindeutig sein. Keine Daten geaendert.');
+        }
+        if (($sources['systemProd']['array']['navigation']['mode'] ?? '')!=='active') {
+            throw new \RuntimeException('Die Navigation ist in SystemConfiguration PROD nicht aktiv.');
+        }
+        return $sources;
+    }
+
+    private function roomsCatalogAutoMeta(int $id): ?array
+    {
+        if ($id<=0 || !function_exists('IPS_VariableExists') || !IPS_VariableExists($id)) return null;
+        $v=IPS_GetVariable($id);
+        if (!is_array($v)) return null;
+        $custom=(string)($v['VariableCustomProfile'] ?? '');
+        return [
+            'type'=>(int)($v['VariableType'] ?? -1),
+            'profile'=>$custom!==''?$custom:(string)($v['VariableProfile'] ?? ''),
+            'hasAction'=>((int)($v['VariableCustomAction'] ?? 0)>1
+                || ((int)($v['VariableCustomAction'] ?? 0)!==1
+                    && (int)($v['VariableAction'] ?? 0)>0))
+        ];
+    }
+
+    private function roomsCatalogAutoPlan(array $sources): array
+    {
+        $metadata=[];
+        $reader=function (int $id) use (&$metadata): ?array {
+            if (!array_key_exists($id,$metadata)) $metadata[$id]=$this->roomsCatalogAutoMeta($id);
+            return $metadata[$id];
+        };
+        $prod=IAHRoomsCatalogAutoMigration::project(
+            $sources['catalogProd']['array'],$sources['systemProd']['array'],$reader);
+        $edit=IAHRoomsCatalogAutoMigration::project(
+            $sources['catalogEdit']['array'],$sources['systemEdit']['array'],$reader);
+        if ($prod['catalog']!==$edit['catalog']) {
+            throw new \RuntimeException('PROD/EDIT-Katalogprojektion weicht ab – Sicherheitsstopp.');
+        }
+        if ($prod['report']['uiItemsMoved'] !== $edit['report']['uiItemsMoved']) {
+            throw new \RuntimeException('UI-Szenenanzahl ist zwischen PROD/EDIT unterschiedlich.');
+        }
+        return [
+            'result'=>[
+                'catalogProd'=>$prod['catalog'],'catalogEdit'=>$edit['catalog'],
+                'systemProd'=>$prod['system'],'systemEdit'=>$edit['system'],
+            ],
+            'report'=>$prod['report']
+        ];
+    }
+
+    private function roomsCatalogAutoMessage(string $message): void
+    {
+        $this->WriteAttributeString('RoomsCatalogAutoNotice',$message);
+        $this->UpdateFormField('RoomsCatalogAutoNotice','caption',$message);
+        echo $message;
+    }
+
+    public function PreviewRoomsCatalogAutoMigration(): void
+    {
+        $this->WriteAttributeString('RoomsCatalogAutoPreview','');
+        try {
+            $sources=$this->roomsCatalogAutoContext();
+            $plan=$this->roomsCatalogAutoPlan($sources);
+            $checks=[];
+            foreach ($sources as $name=>$source) {
+                $checks[$name]=['id'=>$source['id'],'sha256'=>hash('sha256',$source['source'])];
+            }
+            $this->WriteAttributeString('RoomsCatalogAutoPreview',json_encode([
+                'time'=>time(),'sources'=>$checks,
+                'targetHashes'=>array_map(static fn(array $v):string =>
+                    hash('sha256',IAHSystemNavigationEditor::encode($v)), $plan['result'])
+            ],JSON_INVALID_UTF8_SUBSTITUTE));
+            $r=$plan['report'];
+            $types=[];
+            foreach ($r['typeChanges'] as $name=>$count) $types[]=$name.': '.$count;
+            $message=sprintf(
+                'VORSCHAU: %d Geraete untersucht, %d korrigiert, %d UI-Eintraege '
+                .'nach SystemConfiguration, %d nicht eindeutig. Typwechsel: %s. '
+                .'PROD + EDIT werden gemeinsam publiziert, aber erst nach Schritt 2. '
+                .'Alle vier Quellskripte werden zuvor gesichert.',
+                $r['devicesSeen'],$r['devicesChanged'],$r['uiItemsMoved'],$r['skipped'],
+                implode(' | ',$types)
+            );
+            if ($r['warnings']!==[]) $message.="\nOffene Beispiele: "
+                .implode(' | ',array_slice($r['warnings'],0,8));
+            $this->roomsCatalogAutoMessage($message);
+        } catch (\Throwable $e) {
+            $this->roomsCatalogAutoMessage('VORSCHAU BLOCKIERT: '.$e->getMessage());
+        }
+    }
+
+    public function ApplyRoomsCatalogAutoMigration(): void
+    {
+        try {
+            $preview=json_decode($this->ReadAttributeString('RoomsCatalogAutoPreview'),true);
+            if (!is_array($preview) || time()-(int)($preview['time']??0)>600
+                || !is_array($preview['sources']??null)
+                || !is_array($preview['targetHashes']??null)) {
+                throw new \RuntimeException('Vorschau fehlt oder ist aelter als zehn Minuten.');
+            }
+            $sources=$this->roomsCatalogAutoContext();
+            foreach ($sources as $name=>$source) {
+                $v=$preview['sources'][$name]??null;
+                if (!is_array($v) || (int)($v['id']??0)!==$source['id']
+                    || !hash_equals((string)($v['sha256']??''),hash('sha256',$source['source']))) {
+                    throw new \RuntimeException('Quelle '.$name.' seit Vorschau geaendert. Abbruch.');
+                }
+            }
+            $plan=$this->roomsCatalogAutoPlan($sources);
+            $writes=[];
+            foreach ($plan['result'] as $name=>$value) {
+                $output=IAHSystemNavigationEditor::encode($value);
+                if (!hash_equals((string)($preview['targetHashes'][$name]??''),hash('sha256',$output))) {
+                    throw new \RuntimeException('IPS-Metadaten oder Katalogdaten veraendert: '.$name);
+                }
+                $writes[$name]=$output;
+            }
+            // ALLE Backups vor dem ersten produktiven Schreibzugriff erstellen.
+            $backups=[];
+            foreach ($sources as $name=>$source) {
+                $backups[$name]=$this->createNavigationCatalogBackup(
+                    $source['id'],'RoomsAutoV3311_'.$name,$source['source']);
+            }
+            foreach ($sources as $name=>$source) {
+                if ($this->getScriptContent($source['id'])!==$source['source']) {
+                    throw new \RuntimeException($name.' seit Sicherung geaendert.');
+                }
+            }
+            try {
+                foreach (['systemEdit','catalogEdit','systemProd','catalogProd'] as $name) {
+                    IPS_SetScriptContent($sources[$name]['id'],$writes[$name]);
+                    if ($this->getScriptContent($sources[$name]['id'])!==$writes[$name]) {
+                        throw new \RuntimeException('Schreibverifikation fehlgeschlagen: '.$name);
+                    }
+                }
+            } catch (\Throwable $e) {
+                $restoreErrors=[];
+                foreach ($sources as $name=>$source) {
+                    IPS_SetScriptContent($source['id'],$source['source']);
+                    if ($this->getScriptContent($source['id'])!==$source['source']) $restoreErrors[]=$name;
+                }
+                if ($restoreErrors!==[]) {
+                    throw new \RuntimeException('KRITISCH: Wiederherstellung fehlgeschlagen: '.implode(',',$restoreErrors)
+                        .'. Original-Backups: '.implode(',',$backups));
+                }
+                throw $e;
+            }
+            $this->WriteAttributeString('RoomsCatalogAutoPreview','');
+            $r=$plan['report'];
+            $this->roomsCatalogAutoMessage(sprintf(
+                'ERFOLG: %d Geraetezuordnungen korrigiert und %d UI-Eintraege '
+                .'nach SystemConfiguration verlagert. RoomsCatalog UND SystemConfiguration '
+                .'jeweils PROD + EDIT gespeichert. Vollstaendige Backups: %s. '
+                .'Bitte Licht, Jalousie, Lueftung und Szenen live testen. '
+                .'Unklare Wertbedeutungen bleiben unbestaetigt.',
+                $r['devicesChanged'],$r['uiItemsMoved'],
+                implode(', ',array_map(static fn(int $id):string=>'#'.$id,$backups))
+            ));
+        } catch (\Throwable $e) {
+            $this->roomsCatalogAutoMessage('MIGRATION ABGEBROCHEN: '.$e->getMessage());
+        }
+    }
+
     private function systemNavigationMigrationCompleted(): bool
     {
         $receipt = json_decode($this->ReadAttributeString('SystemNavigationMigrationReceipt'), true);
