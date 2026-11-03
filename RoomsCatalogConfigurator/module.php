@@ -3173,6 +3173,25 @@ class RoomsCatalogConfigurator extends IPSModule
         unset($rooms);
         $loss = [];
         $this->findLostCatalogFields($original,$catalog,'RoomsCatalogEdit',$loss);
+        // Nur die explizit manuell bestaetigten review-Felder duerfen
+        // sich absichtlich aendern. Jede andere Aenderung bleibt gesperrt.
+        if ($mode === 'manual') {
+            $approvedPaths = [];
+            foreach (array_keys($checked) as $approvedKey) {
+                [$room,$domain,$group,$device] = explode('|',$approvedKey,4);
+                $approvedPaths[] = 'RoomsCatalogEdit.' . $room . '.domains.' . $domain . '.'
+                    . (in_array($domain,['heizung','jalousie'],true) ? '' : $group . '.') . $device
+                    . '.ai.review.';
+            }
+            $loss = array_values(array_filter($loss, static function (string $problem) use ($approvedPaths): bool {
+                foreach ($approvedPaths as $path) {
+                    foreach (['status:','confirmedAt:','confirmationMethod:'] as $field) {
+                        if (str_starts_with($problem,$path.$field)) return false;
+                    }
+                }
+                return true;
+            }));
+        }
         if ($loss !== []) {
             echo 'Datenverlustpruefung abgebrochen: '.implode('; ',array_slice($loss,0,3));
             return;
