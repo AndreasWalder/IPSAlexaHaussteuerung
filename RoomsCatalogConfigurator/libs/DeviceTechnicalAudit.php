@@ -73,8 +73,17 @@ final class RCCDeviceTechnicalAudit
                 $uncertain = true;
             }
             if (isset($used[$id]) && $used[$id] !== $role) {
-                $reasons[] = 'Variable #' . $id . ' mehrfach benutzt: ' . $used[$id] . '/' . $role;
-                $uncertain = true;
+                $pair = [$used[$id],$role];
+                sort($pair,SORT_STRING);
+                // Legacy-Projektion: Ein boolescher Status ist zugleich der
+                // power-/open-/motion-Zustand. Das ist kein Mapping-Fehler.
+                $allowedShared = [
+                    ['power','status'], ['open','status'], ['motion','status']
+                ];
+                if (!in_array($pair,$allowedShared,true)) {
+                    $reasons[] = 'Variable #' . $id . ' mehrfach benutzt: ' . $used[$id] . '/' . $role;
+                    $uncertain = true;
+                }
             }
             $used[$id] = $role;
             $rank = (int)$score($v,$role);
