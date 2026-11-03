@@ -50,6 +50,7 @@ jobs:
           php -l IPSAlexaHaussteuerung/src/SystemNavigationMigration.php
           php -l IPSAlexaHaussteuerung/resources/helpers/NavigationRuntime.php
           php -l RoomsCatalogConfigurator/module.php
+          php -l RoomsCatalogConfigurator/libs/DeviceTechnicalAudit.php
       - name: Check Alexa HTML diagnostic JavaScript syntax
         run: |
           python3 - <<'PY'
@@ -96,6 +97,8 @@ jobs:
         run: php tests/test_rooms_catalog_v332_bulk.php
       - name: Test RoomsCatalog stale filters, migration readiness and scoped options
         run: php tests/test_rooms_catalog_filter_migration.php
+      - name: Test RoomsCatalog V3.3.9 full technical audit, manual review, backups and diff
+        run: php tests/test_rooms_catalog_v339_technical.php
       - name: Test V3.3.3 lossless SystemConfiguration staging and navigation inventory
         run: php tests/test_system_configuration_v333.php
       - name: Test V3.3.4 navigation EDIT editor, backup and stale preview protections
