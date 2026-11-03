@@ -158,6 +158,8 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('BulkSuggestions', 'yes');
         $this->RegisterAttributeString('BulkReview', 'keep');
         $this->RegisterAttributeString('BulkPreview', '{}');
+        $this->RegisterAttributeString('MigrationReadinessReport', 'Noch nicht geprüft.');
+        $this->RegisterAttributeString('MigrationReadinessDetails', '{}');
     }
 
     public function ApplyChanges()
@@ -186,6 +188,7 @@ class RoomsCatalogConfigurator extends IPSModule
     public function SetRoomFilter(string $roomKey)
     {
         $this->WriteAttributeString('FilterRoom', $roomKey);
+        $this->normalizeCurrentFilters($this->getRuntimeEntries(), $this->getProdEntries());
         $this->logDebug('SetRoomFilter: roomKey="' . $roomKey . '"');
         $this->RefreshVisibleLists();
     }
@@ -193,6 +196,7 @@ class RoomsCatalogConfigurator extends IPSModule
     public function SetDomainFilter(string $domainKey)
     {
         $this->WriteAttributeString('FilterDomain', $domainKey);
+        $this->normalizeCurrentFilters($this->getRuntimeEntries(), $this->getProdEntries());
                $this->logDebug('SetDomainFilter: domainKey="' . $domainKey . '"');
         $this->RefreshVisibleLists();
     }
@@ -200,6 +204,7 @@ class RoomsCatalogConfigurator extends IPSModule
     public function SetGroupFilter(string $groupKey)
     {
         $this->WriteAttributeString('FilterGroup', $groupKey);
+        $this->normalizeCurrentFilters($this->getRuntimeEntries(), $this->getProdEntries());
         $this->logDebug('SetGroupFilter: groupKey="' . $groupKey . '"');
         $this->RefreshVisibleLists();
     }
@@ -2817,10 +2822,11 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         $entriesProd  = $this->getProdEntries();
         $entriesEdit  = $this->getRuntimeEntries();
-        $filterAI     = $this->ReadAttributeString('FilterAI');
-        $filterRoom   = $this->ReadAttributeString('FilterRoom');
-        $filterDomain = $this->ReadAttributeString('FilterDomain');
-        $filterGroup  = $this->ReadAttributeString('FilterGroup');
+        $filterAI = $this->ReadAttributeString('FilterAI');
+        $filters = $this->normalizeCurrentFilters($entriesEdit,$entriesProd);
+        $filterRoom = $filters['room'];
+        $filterDomain = $filters['domain'];
+        $filterGroup = $filters['group'];
 
         $editScriptId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
         $editCatalog = $this->loadConfiguredCatalog('RoomsCatalogEditScriptID', 'EDIT');
@@ -2843,7 +2849,9 @@ class RoomsCatalogConfigurator extends IPSModule
         $bulkOptions = $this->bulkOptions();
         $bulkPreview = json_decode($this->ReadAttributeString('BulkPreview'),true);
 
-        [$roomOptions, $domainOptions, $groupOptions] = $this->buildFilterOptionsFromEntries(array_merge($entriesProd, $entriesEdit));
+        $roomOptions = $filters['roomOptions'];
+        $domainOptions = $filters['domainOptions'];
+        $groupOptions = $filters['groupOptions'];
         $knownRooms = array_column($roomOptions, 'value');
         foreach ($roomRows as $roomRow) {
             if (!in_array($roomRow['roomKey'], $knownRooms, true)) {
@@ -3908,6 +3916,49 @@ class RoomsCatalogConfigurator extends IPSModule
         return [$roomOptions, $domainOptions, $groupOptions];
     }
 
+
+    /**
+     * IP-Symcon merkt sich die Filter ueber Modulupdates hinweg. Nach der
+     * Tab-Migration koennen alte Filterwerte (z. B. "tabs") verschwinden.
+     * Nur ungueltige Filter zuruecksetzen, keine Geraete/KI-Flags aendern.
+     *
+     * Domain- und Gruppenoptionen folgen dem gewaehlten Raum/Bereich,
+     * damit weder unpassende noch fehlende Filterwerte angezeigt werden.
+     */
+    private function normalizeCurrentFilters(array $edit, array $prod = []): array
+    {
+        $entries = array_merge($edit, $prod);
+        $selectedRoom = $this->ReadAttributeString('FilterRoom');
+        $selectedDomain = $this->ReadAttributeString('FilterDomain');
+        $selectedGroup = $this->ReadAttributeString('FilterGroup');
+
+        [$roomOptions] = $this->buildFilterOptionsFromEntries($entries);
+        if ($selectedRoom !== '' && !in_array($selectedRoom, array_column($roomOptions,'value'),true)) {
+            $selectedRoom = '';
+        }
+        $scope = $selectedRoom === '' ? $entries
+            : $this->applyFilters($entries,$selectedRoom,'','');
+        [, $domainOptions] = $this->buildFilterOptionsFromEntries($scope);
+        if ($selectedDomain !== '' && !in_array($selectedDomain,array_column($domainOptions,'value'),true)) {
+            $selectedDomain = '';
+        }
+        $scope = $selectedDomain === '' ? $scope
+            : $this->applyFilters($scope,'',$selectedDomain,'');
+        [, , $groupOptions] = $this->buildFilterOptionsFromEntries($scope);
+        if ($selectedGroup !== '' && !in_array($selectedGroup,array_column($groupOptions,'value'),true)) {
+            $selectedGroup = '';
+        }
+        foreach (['FilterRoom'=>$selectedRoom,'FilterDomain'=>$selectedDomain,'FilterGroup'=>$selectedGroup] as $name=>$value) {
+            if ($this->ReadAttributeString($name) !== $value) {
+                $this->WriteAttributeString($name,$value);
+            }
+        }
+        return [
+            'room'=>$selectedRoom, 'domain'=>$selectedDomain,'group'=>$selectedGroup,
+            'roomOptions'=>$roomOptions,'domainOptions'=>$domainOptions,'groupOptions'=>$groupOptions,
+        ];
+    }
+
     private function applyFilters(array $entries, string $roomFilter, string $domainFilter, string $groupFilter): array
     {
         if ($roomFilter === '' && $domainFilter === '' && $groupFilter === '') {
@@ -4253,10 +4304,19 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         $edit = $this->getRuntimeEntries();
         $prod = $this->getProdEntries();
-        $room = $this->ReadAttributeString('FilterRoom');
-        $domain = $this->ReadAttributeString('FilterDomain');
-        $group = $this->ReadAttributeString('FilterGroup');
+        $filters = $this->normalizeCurrentFilters($edit,$prod);
+        $room = $filters['room'];
+        $domain = $filters['domain'];
+        $group = $filters['group'];
         $ai = $this->ReadAttributeString('FilterAI');
+        // zuerst Options aktualisieren, dann die aktuellen gueltigen Werte.
+        foreach (['FilterRoom'=>$filters['roomOptions'], 'FilterDomain'=>$filters['domainOptions'],
+                  'FilterGroup'=>$filters['groupOptions']] as $name=>$options) {
+            $this->UpdateFormField($name,'options',json_encode($options,JSON_INVALID_UTF8_SUBSTITUTE));
+        }
+        foreach (['FilterRoom'=>$room,'FilterDomain'=>$domain,'FilterGroup'=>$group] as $name=>$value) {
+            $this->UpdateFormField($name,'value',$value);
+        }
 
         $visible = $this->filterByAI($this->applyFilters($edit, $room, $domain, $group), $ai);
         $visible = array_map(fn(array $row): array => $this->decorateRow($row), $visible);
@@ -4287,7 +4347,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $legacyRows = is_array($legacyPreview) && is_array($legacyPreview['rows'] ?? null)
             ? $legacyPreview['rows'] : [];
         $this->UpdateFormField('LegacyDevices','values',json_encode($legacyRows,JSON_INVALID_UTF8_SUBSTITUTE));
-        [$roomOptions] = $this->buildFilterOptionsFromEntries(array_merge($prod, $edit));
+        $roomOptions = $filters['roomOptions'];
         $knownKeys = array_column($roomOptions, 'value');
         foreach ($roomRows as $roomRow) {
             if (!in_array($roomRow['roomKey'], $knownKeys, true)) {
@@ -4295,6 +4355,7 @@ class RoomsCatalogConfigurator extends IPSModule
             }
         }
         $this->UpdateFormField('FilterRoom', 'options', json_encode($roomOptions, JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->UpdateFormField('FilterRoom', 'value', $room);
 
         $readable = count(array_filter($edit, static fn($r): bool => !empty($r['kiEnabled'])));
         $writable = count(array_filter($edit, static fn($r): bool => !empty($r['kiEnabled']) && empty($r['kiReadOnly'])));
