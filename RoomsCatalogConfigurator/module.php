@@ -2879,6 +2879,21 @@ class RoomsCatalogConfigurator extends IPSModule
         return $summary;
     }
 
+    private function currentMigrationReport(array $editCatalog): string
+    {
+        $report = $this->ReadAttributeString('MigrationReadinessReport');
+        $meta = json_decode($this->ReadAttributeString('MigrationReadinessDetails'),true);
+        if ($report === '' || !is_array($meta) || !is_string($meta['catalogHash'] ?? null)) {
+            return 'Noch keine aktuelle Migrationspruefung ausgefuehrt.';
+        }
+        $currentHash = hash('sha256',json_encode($editCatalog,JSON_INVALID_UTF8_SUBSTITUTE));
+        if (!hash_equals($meta['catalogHash'],$currentHash)) {
+            return 'RoomsCatalogEdit wurde seit dem letzten Pruefbericht geaendert. '
+                .'Datenstand erneut pruefen; alte Ergebnisse sind nicht mehr gueltig.';
+        }
+        return $report;
+    }
+
     private function catalogMigrationShortSummary(array $s): string
     {
         return sprintf(
@@ -3037,7 +3052,7 @@ class RoomsCatalogConfigurator extends IPSModule
                         ['type'=>'Button','caption'=>'MODELL, IPS-VARIABLEN UND MIGRATION PRUEFEN',
                             'onClick'=>'RCC_AuditMigrationReadiness($id);'],
                         ['type'=>'Label','name'=>'MigrationReadinessReport',
-                            'caption'=>$this->ReadAttributeString('MigrationReadinessReport')],
+                            'caption'=>$this->currentMigrationReport($editCatalog)],
                     ],
                 ],
                 [
@@ -4551,6 +4566,9 @@ class RoomsCatalogConfigurator extends IPSModule
             .($readable-$writable).' KI nur lesen, '.$writable.' KI schaltbar, '
             .(count($edit)-$readable).' ohne KI-Freigabe. EDIT wird erst nach Freigabe produktiv.';
         $this->UpdateFormField('MigrationSummary','caption',$this->catalogMigrationShortSummary($migrationStats));
+        $this->UpdateFormField('MigrationReadinessReport','caption',$this->currentMigrationReport(
+            $this->loadConfiguredCatalog('RoomsCatalogEditScriptID','EDIT')
+        ));
         $this->UpdateFormField('CatalogSummary', 'caption', $summary);
     }
 
