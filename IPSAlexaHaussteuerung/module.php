@@ -927,6 +927,14 @@ class IPSAlexaHaussteuerung extends IPSModule
                 ['type' => 'Button', 'caption' => '2 – NAVIGATION IN PROD AKTIVIEREN',
                     'confirm' => 'Navigation nur in SystemConfiguration PROD aktivieren? RoomsCatalog bleibt zuerst als Fallback erhalten.',
                     'onClick' => 'IAH_ActivateSystemNavigationCutover($id);'],
+                ['type' => 'Label', 'caption' => 'Nach Aktivierung: weitere Tab-Aenderungen aus EDIT aktualisieren (ohne erneute Migration):'],
+                ['type' => 'RowLayout', 'items' => [
+                    ['type' => 'Button', 'caption' => 'NAVIGATION-EDIT VORSCHAU',
+                        'onClick' => 'IAH_PreviewSystemNavigationUpdate($id);'],
+                    ['type' => 'Button', 'caption' => 'NAVIGATION AUS EDIT LIVE UEBERNEHMEN',
+                        'confirm' => 'Geaenderte Navigationseinstellungen aus EDIT in PROD veroeffentlichen? Backup wird vorher erstellt.',
+                        'onClick' => 'IAH_PublishSystemNavigationUpdate($id);'],
+                ]],
                 ['type' => 'Label', 'caption' =>
                     'Funktionstest nach Aktivierung: Alexa-Navigation Licht/Jalousie/Geraete, mindestens eine dynamische Domain (z.B. Bienen/Sicherheit), alle wichtigen Tabs und Ruecknavigation pruefen.'],
                 ['type' => 'SelectObject', 'name' => 'NavigationRoomsCatalogEditScriptId',
@@ -1065,6 +1073,77 @@ class IPSAlexaHaussteuerung extends IPSModule
             $this->navigationMigrationMessage('Navigation in PROD aktiv. Jetzt Alexa/Renderer testen! Alte Tabs sind noch vorhanden; Bereinigung erst nach Test.');
         } catch (\Throwable $e) {
             $this->navigationMigrationMessage('Aktivierung fehlgeschlagen: ' . $e->getMessage());
+        }
+    }
+
+
+    public function PreviewSystemNavigationUpdate(): void
+    {
+        $this->WriteAttributeString('SystemNavigationMigrationPreview', '');
+        try {
+            $ctx = $this->navigationMigrationContext();
+            $receipt = json_decode($this->ReadAttributeString('SystemNavigationMigrationReceipt'), true);
+            if (!is_array($receipt) || !in_array($receipt['stage'] ?? '', ['active','cleaned'],true)
+                || ($receipt['activeProdHash'] ?? '') !== hash('sha256', (string)$ctx['prodSource'])
+                || !is_array($ctx['edit']) || !is_array($ctx['prod']) || !is_array($ctx['catalog'])
+                || !is_string($ctx['editSource']) || !is_string($ctx['prodSource'])
+                || !IAHSystemNavigationEditor::isLiteralArraySource($ctx['prodSource'])
+                || !$this->navigationMigrationRuntimeReady()) {
+                throw new \RuntimeException('Aktive PROD-Navigation oder Laufzeit-Helper fehlt/ist geaendert.');
+            }
+            $exists = static fn(int $id): bool => function_exists('IPS_ObjectExists')
+                ? IPS_ObjectExists($id) : true;
+            $next = IAHSystemNavigationMigration::updatedProductive(
+                $ctx['prod'], $ctx['edit'], $ctx['catalog'], $exists);
+            $preview = [
+                'phase' => 'update', 'time' => time(),
+                'ids' => $ctx['ids'], 'roomsId' => $ctx['catalogId'],
+                'prodHash' => hash('sha256', $ctx['prodSource']),
+                'editHash' => hash('sha256', $ctx['editSource']),
+                'roomsHash' => hash('sha256', $ctx['catalogSource']),
+            ];
+            $this->WriteAttributeString('SystemNavigationMigrationPreview', json_encode($preview));
+            $this->navigationMigrationMessage(sprintf('Update bereit: %d Tabs in EDIT, nur Navigation nach PROD, alle anderen Einstellungen bleiben erhalten.',
+                count(IAHSystemNavigationEditor::items($next))));
+        } catch (\Throwable $e) {
+            $this->navigationMigrationMessage('Navigation-Update blockiert: ' . $e->getMessage());
+        }
+    }
+
+    public function PublishSystemNavigationUpdate(): void
+    {
+        $ctx = $this->navigationMigrationContext();
+        $preview = json_decode($this->ReadAttributeString('SystemNavigationMigrationPreview'), true);
+        if (!is_array($preview) || !$this->migrationPreviewValid($preview, $ctx, 'update')) {
+            $this->navigationMigrationMessage('Navigation-Update abgebrochen: Vorschau veraltet.');
+            return;
+        }
+        try {
+            $receipt = json_decode($this->ReadAttributeString('SystemNavigationMigrationReceipt'), true);
+            if (!is_array($receipt) || !in_array($receipt['stage'] ?? '', ['active','cleaned'],true)
+                || ($receipt['activeProdHash'] ?? '') !== hash('sha256', (string)$ctx['prodSource'])) {
+                throw new \RuntimeException('PROD seit Aktivierung geaendert, kein unkontrolliertes Ueberschreiben.');
+            }
+            $exists = static fn(int $id): bool => function_exists('IPS_ObjectExists')
+                ? IPS_ObjectExists($id) : true;
+            $next = IAHSystemNavigationMigration::updatedProductive(
+                $ctx['prod'], $ctx['edit'], $ctx['catalog'], $exists);
+            $source = IAHSystemNavigationEditor::encode($next);
+            $id = (int) $ctx['ids']['prod'];
+            $this->appendNavigationBackup((int)$ctx['ids']['backup'], $id, $ctx['prodSource'], 'before_v335_navigation_update');
+            try {
+                IPS_SetScriptContent($id, $source);
+                if ($this->getScriptContent($id) !== $source) throw new \RuntimeException('PROD-Verifikation fehlgeschlagen.');
+            } catch (\Throwable $e) {
+                IPS_SetScriptContent($id, $ctx['prodSource']);
+                throw $e;
+            }
+            $receipt['activeProdHash'] = hash('sha256', $source);
+            $this->WriteAttributeString('SystemNavigationMigrationReceipt', json_encode($receipt));
+            $this->WriteAttributeString('SystemNavigationMigrationPreview', '');
+            $this->navigationMigrationMessage('Navigation aus EDIT in PROD aktualisiert. Alle anderen Systemwerte unveraendert.');
+        } catch (\Throwable $e) {
+            $this->navigationMigrationMessage('Navigation-Update fehlgeschlagen: ' . $e->getMessage());
         }
     }
 
