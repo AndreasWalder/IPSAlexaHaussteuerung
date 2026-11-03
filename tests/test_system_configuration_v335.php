@@ -25,6 +25,7 @@ $GLOBALS['sc333Objects'][505] = ['parent'=>100,'name'=>'Alexa new devices helper
 $GLOBALS['sc333Objects'][506] = ['parent'=>505,'name'=>'NavigationRuntime','ident'=>'navigationRuntimeScript'];
 $GLOBALS['sc333Scripts'][506] = file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/resources/helpers/NavigationRuntime.php');
 file_put_contents(IPS_GetScriptFile(506), IPS_GetScriptContent(506));
+function IPS_GetParent(int $id): int { return (int)($GLOBALS['sc333Objects'][$id]['parent'] ?? 0); }
 function IPS_ObjectExists(int $id): bool
 {
     return in_array($id, [53544,44390,38806,58379,57001],true);
@@ -114,7 +115,8 @@ sc335_assert(str_contains($cleanupPreviewResult,'Bereinigung bereit'),
     'Cleanup preview does not pass full parity checks: '.$cleanupPreviewResult);
 ob_start();$module->CleanupSystemNavigation(false);ob_end_clean();
 sc335_assert(IPS_GetScriptContent(502)===$catalogOld,'Missing user confirmation allowed cleanup');
-ob_start();$module->CleanupSystemNavigation(true);ob_end_clean();
+ob_start();$module->CleanupSystemNavigation(true);$cleanupResult=ob_get_clean();
+sc335_assert(str_contains($cleanupResult,'bereinigt'), 'Cleanup failed: '.$cleanupResult);
 $cleanCatalog=require IPS_GetScriptFile(502);
 $cleanCatalogEdit=require IPS_GetScriptFile(503);
 sc335_assert(count(IAHSystemConfigurationManager::inventoryNavigation($cleanCatalog)['entries'])===0,
