@@ -47,6 +47,7 @@ final class RCCDeviceTechnicalAudit
         $reasons = [];
         $critical = false;
         $uncertain = false;
+        $unusableAction = false;
         $bound = [];
         $used = [];
         $evidence = [];
@@ -71,6 +72,7 @@ final class RCCDeviceTechnicalAudit
             if (in_array($role,['control','action'],true) && empty($v['action'])) {
                 $reasons[] = '#' . $id . ' besitzt keine Schreibaktion (' . $role . ')';
                 $uncertain = true;
+                $unusableAction = true;
             }
             if (isset($used[$id]) && $used[$id] !== $role) {
                 $pair = [$used[$id],$role];
@@ -165,7 +167,7 @@ final class RCCDeviceTechnicalAudit
             'reason'=> $reasons !== [] ? implode('; ',array_slice(array_unique($reasons),0,4))
                 : 'ID, Instanz, Datentyp, Rollenname und benoetigte Rueckmeldungen plausibel.',
             'roleCount'=>count($configured),
-            'manualEligible'=>!$critical && $configured !== [] && $snapshot !== []
+            'manualEligible'=>!$critical && !$unusableAction && $configured !== [] && $snapshot !== []
                 && (!in_array($type,['blind','window'],true)
                     || (trim((string)($row['aiOpenValue'] ?? '')) !== ''
                         && trim((string)($row['aiClosedValue'] ?? '')) !== ''
