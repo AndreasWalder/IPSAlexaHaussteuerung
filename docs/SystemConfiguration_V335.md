@@ -63,6 +63,24 @@ anderen Gerätekategorien, Zustände oder Metadaten.
 Die in-memory-Projektion **vor und nach dem Entfernen** muss identisch
 sein, sonst bricht der Vorgang ab.
 
+## Navigation später ändern (ohne Skripteditor)
+
+Nach der ersten Aktivierung – auch nach der Bereinigung – kannst du einen
+Tab im V3.3.4-Editor ändern oder einen neuen Tab hinzufügen. Verwende
+anschließend im Abschnitt V3.3.5 die beiden Knöpfe
+**Navigation-EDIT Vorschau** und **Navigation aus EDIT live übernehmen**.
+Nur das Feld `navigation` wird in die aktuelle
+`SystemConfiguration` (PROD) geschrieben, nie sämtliche alten Werte
+aus einer eventuell veralteten EDIT-Kopie. Die bestehende PROD-Fassung
+wird vorher im `SystemConfiguration_Backup` gesichert.
+
+Dabei werden Objekt-IDs, Dubletten, Raumbezüge, der aktuelle PROD-Hash
+und die unveränderlichen Herkunftsdaten vorhandener Tabs geprüft.
+Ein deaktivierter Tab bleibt als Datensatz im SystemConfiguration
+erhalten und wird beim Rendern ausgeblendet. Vorhandene neue Änderungen
+am produktiven System, die nicht von diesem Modul stammen, blockieren
+die sichere Übernahme.
+
 ## Rückfall
 
 **Notfall – vorherigen Stand wiederherstellen** stellt zuerst beide
