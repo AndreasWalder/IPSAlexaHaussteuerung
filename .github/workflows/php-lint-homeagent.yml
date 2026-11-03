@@ -31,6 +31,7 @@ jobs:
       - name: Check PHP syntax
         run: |
           php -l IPSAlexaHaussteuerung/module.php
+          php -l IPSAlexaHaussteuerung/src/RoomsCatalogAutoMigration.php
           php -l IPSAlexaHaussteuerung/resources/action_entry.php
           php -l IPSAlexaHaussteuerung/resources/helpers/HomeAgentVoiceBridge.php
           php -l IPSAlexaHaussteuerung/resources/helpers/KIHouseController.php
@@ -99,6 +100,8 @@ jobs:
         run: php tests/test_rooms_catalog_filter_migration.php
       - name: Test RoomsCatalog V3.3.9 full technical audit, manual review, backups and diff
         run: php tests/test_rooms_catalog_v339_technical.php
+      - name: Test V3.3.11 safe catalog-to-system UI migration and typed metadata
+        run: php tests/test_rooms_catalog_v3311_migration.php
       - name: Test V3.3.3 lossless SystemConfiguration staging and navigation inventory
         run: php tests/test_system_configuration_v333.php
       - name: Test V3.3.4 navigation EDIT editor, backup and stale preview protections
