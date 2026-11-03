@@ -252,6 +252,66 @@ ck339(str_contains($safeAction,'Keine eindeutigen weiteren Korrekturen')
     && IPS_GetScriptContent(40)===$beforeExport && IPS_GetScriptContent(41)===$beforeExport,
     'Safe auto-repair changed catalog without an unambiguous high-confidence mapping');
 
+
+/** V3.3.13: the flattened-list ai JSON must be decoded in exports;
+ * one unique writable KNX target is corrected with independent verified
+ * backups for EDIT/PROD, without granting user-control permissions. */
+addInvVar(50303,2003,'Wohnzimmer','Value',2,'~Temperature',false);
+addInvVar(50304,2003,'Wohnzimmer Solltemperatur','Value',2,'~Temperature.Room',true);
+$heaterCatalog=require $GLOBALS['inventoryDir'].'/scripts/41.php';
+$heaterCatalog['wohnzimmer']['domains']['heizung']['wohnzimmer']=[
+    'title'=>'Wohnzimmer','ist'=>50301,'soll'=>50303,'stellung'=>50301,
+    'kiEnabled'=>true,'kiReadOnly'=>true,
+    'ai'=>['version'=>1,'type'=>'heating',
+        'variables'=>['temperature'=>50301,'targetTemperature'=>50303,'control'=>50303],
+        'review'=>['status'=>'pending']]
+];
+$heaterSource='<?php return '.var_export($heaterCatalog,true).';';
+IPS_SetScriptContent(40,$heaterSource);
+IPS_SetScriptContent(41,$heaterSource);
+(new ReflectionMethod(RoomsCatalogConfigurator::class,'reloadAllFromCatalog'))->invoke($mod);
+ob_start();$mod->ExportAIRepairDiagnostics();$heaterDownload=ob_get_clean();
+$prefix='data:application/json;charset=utf-8;base64,';
+$heaterJson=base64_decode(substr($heaterDownload,strlen($prefix)),true);
+$heaterReport=json_decode($heaterJson===false?'':$heaterJson,true,512,JSON_THROW_ON_ERROR);
+$heaterRow=null;
+foreach($heaterReport['devices'] as $row) {
+    if($row['key']==='wohnzimmer|heizung|heizung|wohnzimmer') $heaterRow=$row;
+}
+ck339($heaterRow!==null
+    && ($heaterRow['roles']['temperature']??0)===50301
+    && ($heaterRow['roles']['targetTemperature']??0)===50303
+    && ($heaterRow['roles']['control']??0)===50303
+    && ($heaterRow['reviewStatus']??'')==='pending',
+    'Diagnostic export lost ai.variables or review status after list serialization');
+ck339(($heaterRow['safeSuggestedBindings']['control']??0)===50304,
+    'Unique writable KNX setpoint must be proposed instead of read-only control');
+ck339(($heaterReport['summary']['typedRolesExported']??0)>0,
+    'Role export integrity count is zero for typed device');
+ob_start();$mod->ApplySafeAutoRepair();$heaterApplied=ob_get_clean();
+ck339(str_contains($heaterApplied,'ERFOLG: 1')
+    && str_contains($heaterApplied,'Backups: EDIT #')
+    && (IPS_GetScriptContent(40)===IPS_GetScriptContent(41)),
+    'Guarded EDIT+PROD repair failed: '.$heaterApplied);
+$heaterAfter=require $GLOBALS['inventoryDir'].'/scripts/41.php';
+$fixed=$heaterAfter['wohnzimmer']['domains']['heizung']['wohnzimmer'];
+ck339(($fixed['ai']['variables']['control']??0)===50304
+    && ($fixed['ai']['variables']['targetTemperature']??0)===50303
+    && ($fixed['ai']['variables']['temperature']??0)===50301
+    && ($fixed['ai']['review']['status']??'')==='pending'
+    && $fixed['kiReadOnly']===true
+    && $fixed['kiEnabled']===true
+    && $fixed['soll']===50303,
+    'Control correction changed unrelated fields, read-only permissions or existing temperature roles');
+ob_start();$mod->RunTechnicalDeviceAudit();ob_end_clean();
+$newScan=json_decode($mod->ReadAttributeString('TechnicalDeviceSnapshot'),true,512,JSON_THROW_ON_ERROR);
+$updatedStatus='';
+foreach($newScan['rows'] as $row) {
+    if($row['key']==='wohnzimmer|heizung|heizung|wohnzimmer') $updatedStatus=$row['status'];
+}
+ck339($updatedStatus==='Technisch plausibel',
+    'Corrected KNX Solltemperatur control still reported uncertain');
+
 foreach(array_keys($GLOBALS['inventoryScripts']) as $id) @unlink($GLOBALS['inventoryDir'].'/scripts/'.$id.'.php');
 @rmdir($GLOBALS['inventoryDir'].'/scripts');@rmdir($GLOBALS['inventoryDir']);
 echo "PASS V3.3.9: all types, IPS evidence, explicit approval, stale guard, EDIT-only updates, backups, legacy + diff reporting\n";
