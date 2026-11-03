@@ -45,8 +45,10 @@ final class RCCDeviceTechnicalAudit
             if ($id > 0) $snapshot[$id] = $var;
         }
         $reasons = [];
+        $issueCodes = [];
         $critical = false;
         $uncertain = false;
+        $missingRequired = false;
         $unusableAction = false;
         $bound = [];
         $used = [];
@@ -54,11 +56,13 @@ final class RCCDeviceTechnicalAudit
         foreach ($configured as $role => $id) {
             if (!$exists($id)) {
                 $reasons[] = 'IPS-Variable #' . $id . ' fuer ' . $role . ' existiert nicht';
+                $issueCodes['missing_ips'] = true;
                 $critical = true;
                 continue;
             }
             if (!isset($snapshot[$id])) {
                 $reasons[] = 'Variable #' . $id . ' (' . $role . ') ausserhalb der erkannten Geraeteinstanz';
+                $issueCodes['outside_scope'] = true;
                 $uncertain = true;
                 continue;
             }
@@ -66,11 +70,13 @@ final class RCCDeviceTechnicalAudit
             $typeCode = (int)($v['type'] ?? -1);
             if (!in_array($typeCode,self::VALID_TYPES[$role] ?? [],true)) {
                 $reasons[] = 'Datentyp von #' . $id . ' passt nicht zu ' . $role;
+                $issueCodes['wrong_type'] = true;
                 $critical = true;
                 continue;
             }
             if (in_array($role,['control','action'],true) && empty($v['action'])) {
                 $reasons[] = '#' . $id . ' besitzt keine Schreibaktion (' . $role . ')';
+                $issueCodes['no_action'] = true;
                 $uncertain = true;
                 $unusableAction = true;
             }
@@ -84,6 +90,7 @@ final class RCCDeviceTechnicalAudit
                 ];
                 if (!in_array($pair,$allowedShared,true)) {
                     $reasons[] = 'Variable #' . $id . ' mehrfach benutzt: ' . $used[$id] . '/' . $role;
+                    $issueCodes['duplicate_mapping'] = true;
                     $uncertain = true;
                 }
             }
@@ -91,6 +98,7 @@ final class RCCDeviceTechnicalAudit
             $rank = (int)$score($v,$role);
             if ($rank < 105) {
                 $reasons[] = '#' . $id . ' (' . $role . '): Rolle anhand Name/Profil nicht eindeutig';
+                $issueCodes['role_name_ambiguous'] = true;
                 $uncertain = true;
             }
             $peers = [];
@@ -100,6 +108,7 @@ final class RCCDeviceTechnicalAudit
             }
             if ($peers !== [] && max($peers) >= $rank - 24) {
                 $reasons[] = 'Mehrdeutige Kandidaten fuer ' . $role;
+                $issueCodes['multiple_candidates'] = true;
                 $uncertain = true;
             }
             $bound[$role] = true;
@@ -111,16 +120,22 @@ final class RCCDeviceTechnicalAudit
         }
         if ($configured === []) {
             $reasons[]='Keine typisierte IPS-Variable zugeordnet';
+            $issueCodes['no_typed_variables'] = true;
             $uncertain = true;
         }
         if ($snapshot === []) {
             $reasons[]='Keine eindeutig ermittelte Geraeteinstanz; Metadaten nicht verfuegbar';
+            $issueCodes['no_scope'] = true;
             $uncertain = true;
         }
         foreach ($requiredRoles as $alternatives) {
             if (array_intersect($alternatives,array_keys($bound)) === []) {
                 $reasons[]='Pflicht-Rueckmeldung fehlt: '.implode(' oder ',$alternatives);
-                $critical = true;
+                // Fehlendes Mapping ist unvollstaendig, nicht automatisch eine
+                // defekte IPS-Variable. Manuelle Bestaetigung bleibt gesperrt.
+                $issueCodes['missing_required_role'] = true;
+                $uncertain = true;
+                $missingRequired = true;
             }
         }
 
@@ -136,6 +151,7 @@ final class RCCDeviceTechnicalAudit
             if ($mapping['open'] === '' || $mapping['closed'] === ''
                 || $mapping['open'] === $mapping['closed']) {
                 $reasons[]='Offen/Geschlossen-Werte nicht explizit und unterschiedlich hinterlegt';
+                $issueCodes['state_mapping_missing'] = true;
                 $uncertain = true;
             } elseif ($associations !== []) {
                 $known = [];
@@ -148,10 +164,12 @@ final class RCCDeviceTechnicalAudit
                 }
                 if (count($known) !== 2) {
                     $reasons[]='Profil-Assoziationen bestaetigen Offen/Geschlossen-Werte nicht';
+                    $issueCodes['state_mapping_conflict'] = true;
                     $uncertain = true;
                 }
             } else {
                 $reasons[]='Keine Profil-Assoziationen fuer Offen/Geschlossen; am realen Geraet pruefen';
+                $issueCodes['state_associations_missing'] = true;
                 $uncertain = true;
             }
         }
@@ -167,7 +185,8 @@ final class RCCDeviceTechnicalAudit
             'reason'=> $reasons !== [] ? implode('; ',array_slice(array_unique($reasons),0,4))
                 : 'ID, Instanz, Datentyp, Rollenname und benoetigte Rueckmeldungen plausibel.',
             'roleCount'=>count($configured),
-            'manualEligible'=>!$critical && !$unusableAction && $configured !== [] && $snapshot !== []
+            'issueCodes'=>array_keys($issueCodes),
+            'manualEligible'=>!$critical && !$missingRequired && !$unusableAction && $configured !== [] && $snapshot !== []
                 && (!in_array($type,['blind','window'],true)
                     || (trim((string)($row['aiOpenValue'] ?? '')) !== ''
                         && trim((string)($row['aiClosedValue'] ?? '')) !== ''
