@@ -2953,6 +2953,8 @@ class RoomsCatalogConfigurator extends IPSModule
         $inventoryRows = is_array($inventoryPreview) ? $this->discoveryInventoryRows($inventoryPreview) : [];
         $bulkOptions = $this->bulkOptions();
         $bulkPreview = json_decode($this->ReadAttributeString('BulkPreview'),true);
+        $migrationStats = $this->catalogMigrationStatistics($entriesEdit,$entriesProd);
+        $migrationSummary = $this->catalogMigrationShortSummary($migrationStats);
 
         $roomOptions = $filters['roomOptions'];
         $domainOptions = $filters['domainOptions'];
@@ -2999,8 +3001,9 @@ class RoomsCatalogConfigurator extends IPSModule
                 [
                     'type'=>'Label',
                     'name'=>'CatalogSummary',
-                    'caption'=>'RoomsCatalog EDIT: ' . count($entriesEdit) . ' Geraete, KI sichtbar: ' . $aiReadable
-                        . ', KI schaltbar: ' . $aiWritable . '. Aenderungen werden erst mit der Freigabe produktiv.'
+                    'caption'=>'RoomsCatalog EDIT: '.count($entriesEdit).' Eintraege. '
+                        .($aiReadable-$aiWritable).' KI nur lesen, '.$aiWritable.' KI schaltbar, '
+                        .(count($entriesEdit)-$aiReadable).' ohne KI-Freigabe. EDIT wird erst nach Freigabe produktiv.'
                 ],
                 [
                     'type'    => 'ExpansionPanel',
@@ -3021,8 +3024,23 @@ class RoomsCatalogConfigurator extends IPSModule
                     ]
                 ],
                 [
+                    'type'=>'ExpansionPanel',
+                    'caption'=>'Datenstand und KI-Berechtigungen',
+                    'expanded'=>true,
+                    'items'=>[
+                        ['type'=>'Label','name'=>'MigrationSummary','caption'=>$migrationSummary],
+                        ['type'=>'Label','caption'=>
+                            'KI-Lese-/Schreibfreigabe und fachlich bestaetigte Geraetezuordnung sind getrennt. '
+                            .'Keine KI-Schreibfreigaben ohne ausdrueckliche Freigabe.'],
+                        ['type'=>'Button','caption'=>'MODELL, IPS-VARIABLEN UND MIGRATION PRUEFEN',
+                            'onClick'=>'RCC_AuditMigrationReadiness($id);'],
+                        ['type'=>'Label','name'=>'MigrationReadinessReport',
+                            'caption'=>$this->ReadAttributeString('MigrationReadinessReport')],
+                    ],
+                ],
+                [
                     'type' => 'ExpansionPanel',
-                    'caption' => 'V3.1: Raeume, Etagen und alternative Namen',
+                    'caption' => 'Raeume & Etagen',
                     'expanded' => true,
                     'items' => [
                         ['type' => 'Label', 'caption' => 'Jeden Raum nur einmal bearbeiten. Raum-Key bleibt unveraendert, damit bestehende Geraetezuordnungen erhalten bleiben.'],
@@ -3169,7 +3187,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 ],
                 [
                     'type'=>'ExpansionPanel',
-                    'caption'=>'V3.3.2: Markierte Geraete gemeinsam bearbeiten',
+                    'caption'=>'Mehrere Geraete bearbeiten',
                     'expanded'=>true,
                     'items'=>[
                         ['type'=>'Label','name'=>'BulkSelectionSummary',
@@ -3224,7 +3242,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 ],
                 [
                     'type' => 'ExpansionPanel',
-                    'caption' => 'V3.2: Intelligente Variablenvorschlaege',
+                    'caption' => 'Variablenzuordnungen pruefen',
                     'expanded' => true,
                     'items' => [
                         ['type'=>'Label','caption'=>'Genau ein Geraet oben markieren. Die Analyse durchsucht nur seine bekannte Instanz/Kategorie. Bestehende IDs und KI-Freigaben werden nie ueberschrieben.'],
@@ -3254,7 +3272,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 ],
                 [
                     'type' => 'ExpansionPanel',
-                    'caption' => 'V3.3.1: Vollstaendige IP-Symcon-Geraeteinventur',
+                    'caption' => 'IP-Symcon-Geraeteinventur',
                     'expanded' => true,
                     'items' => [
                         ['type'=>'Label','caption'=>'Nur die hier ausgewaehlten Kategorien/Instanzen werden durchsucht. Gefundene Geraete sind erst Vorschlaege; keine automatische KI- oder Schreibfreigabe. Suchwurzeln nach dem Aendern mit Uebernehmen speichern.'],
@@ -3337,7 +3355,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 ],
                 [
                     'type'=>'ExpansionPanel',
-                    'caption'=>'V3.3.1: Bisherige Geraete ins neue Datenmodell uebernehmen',
+                    'caption'=>'Altgeraete ins neue Modell uebernehmen',
                     'expanded'=>false,
                     'items'=>[
                         ['type'=>'Label','caption'=>'Bestehende Legacy-Geraete analysieren. Die Uebernahme fuegt nur ai.type/Variablen im EDIT-Katalog hinzu. Alte Felder, KI-Freigaben und PROD bleiben erhalten.'],
@@ -3386,7 +3404,7 @@ class RoomsCatalogConfigurator extends IPSModule
                     'items'    => [
                         [
                             'type' => 'List', 'name' => 'RoomsDiff',
-                            'caption' => 'V3.1: Raum-Aenderungen EDIT zu PROD',
+                            'caption' => 'Raum-Aenderungen EDIT zu PROD',
                             'rowCount' => 8, 'add' => false, 'delete' => false,
                             'columns' => [
                                 ['caption'=>'Raum-Key','name'=>'roomKey','width'=>'135px'],
@@ -4464,8 +4482,11 @@ class RoomsCatalogConfigurator extends IPSModule
 
         $readable = count(array_filter($edit, static fn($r): bool => !empty($r['kiEnabled'])));
         $writable = count(array_filter($edit, static fn($r): bool => !empty($r['kiEnabled']) && empty($r['kiReadOnly'])));
-        $summary = 'RoomsCatalog EDIT: ' . count($edit) . ' Geraete, KI sichtbar: ' . $readable .
-            ', KI schaltbar: ' . $writable . '. Aenderungen werden erst mit der Freigabe produktiv.';
+        $migrationStats = $this->catalogMigrationStatistics($edit,$prod);
+        $summary = 'RoomsCatalog EDIT: '.count($edit).' Eintraege. '
+            .($readable-$writable).' KI nur lesen, '.$writable.' KI schaltbar, '
+            .(count($edit)-$readable).' ohne KI-Freigabe. EDIT wird erst nach Freigabe produktiv.';
+        $this->UpdateFormField('MigrationSummary','caption',$this->catalogMigrationShortSummary($migrationStats));
         $this->UpdateFormField('CatalogSummary', 'caption', $summary);
     }
 
