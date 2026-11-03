@@ -536,8 +536,11 @@ class IPSAlexaHaussteuerung extends IPSModule
         }
         $items = IAHSystemNavigationEditor::items($config);
         $active = count(array_filter($items, static fn($e): bool => is_array($e) && !empty($e['enabled'])));
-        return sprintf('%d Navigationseintraege in EDIT #%d (%d aktiv) · PROD unveraendert · V3.3.5 fuer Laufzeitumschaltung erforderlich',
-            count($items), $ids['edit'], $active);
+        $prod = $this->readConfigurationArrayFromScript((int)($ids['prod'] ?? 0));
+        $live = is_array($prod) && ($prod['navigation']['mode'] ?? '') === 'active';
+        return sprintf('%d Navigationseintraege in EDIT #%d (%d aktiv) · %s',
+            count($items), $ids['edit'], $active,
+            $live ? 'PROD aktiv: Aenderungen unter V3.3.5 gezielt live uebernehmen' : 'Noch nicht produktiv aktiviert (V3.3.5)');
     }
 
     private function buildSystemNavigationEditorForm(): array
@@ -612,7 +615,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             'caption' => 'V3.3.4 – Navigation und Tabs verwalten (SystemConfigurationEdit)',
             'expanded' => true,
             'items' => [
-                ['type' => 'Label', 'caption' => 'Zuerst Vorschau, danach Import in EDIT. Der bisherige RoomsCatalog bleibt bis V3.3.5 die aktive Navigationsquelle. Keine Live-Aenderung an Alexa oder Renderern.'],
+                ['type' => 'Label', 'caption' => 'Tabs in EDIT verwalten: vor Aktivierung liest Alexa RoomsCatalog, danach SystemConfiguration PROD. Aenderungen hier werden erst mit V3.3.5 (Navigation aus EDIT live uebernehmen) produktiv.'],
                 ['type' => 'RowLayout', 'items' => [
                     ['type' => 'Button', 'caption' => 'BESTANDSVORSCHAU ANZEIGEN',
                         'onClick' => 'IAH_PreviewSystemNavigationImport($id);'],
