@@ -8,6 +8,7 @@ require_once __DIR__ . '/src/KICostCurrency.php';
 require_once __DIR__ . '/src/AlexaLogBuffer.php';
 require_once __DIR__ . '/src/AlexaLogTrait.php';
 require_once __DIR__ . '/src/SystemConfigurationManager.php';
+require_once __DIR__ . '/src/SystemNavigationEditor.php';
 require_once __DIR__ . '/src/KICostTrait.php';
 require_once __DIR__ . '/src/Router.php';
 require_once __DIR__ . '/src/Routes/RouteAll.php';
@@ -88,6 +89,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterAttributeString('DelayedPageSwitchPayload', '');
         // V3.3.3: Nur Inventardaten, niemals Zugangsdaten oder Skriptinhalte.
         $this->RegisterAttributeString('SystemConfigurationInventory', '');
+        $this->RegisterAttributeString('SystemNavigationImportPreview', '');
+        $this->RegisterAttributeString('SystemNavigationEditorNotice', '');
         $this->RegisterTimer('DelayedPageSwitch', 0, 'IAH_HandleDelayedPageSwitch($_IPS["TARGET"]);');
         $this->RegisterTimer('KICostRefresh', 60000, 'IAH_UpdateKICostExchangeRate($_IPS["TARGET"]); IAH_RefreshKICostDisplay($_IPS["TARGET"]);');
         $this->RegisterTimer('AlexaLogRefresh', 15000, 'IAH_RefreshAlexaLogBuffer($_IPS["TARGET"]);');
@@ -373,6 +376,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         }
 
         $form['elements'][] = $this->buildSystemConfigurationInventoryForm();
+        $form['elements'][] = $this->buildSystemNavigationEditorForm();
 
         return json_encode($form, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
@@ -484,6 +488,357 @@ class IPSAlexaHaussteuerung extends IPSModule
             return is_array($result) ? $result : null;
         } catch (\Throwable $e) {
             return null;
+        }
+    }
+
+
+    /**
+     * V3.3.4 – Navigation ist zuerst nur ein ENTWURF in SystemConfigurationEdit.
+     * RoomsCatalog/PROD und die Renderer werden hier bewusst NIE geaendert.
+     */
+    private function navigationEditorContext(): array
+    {
+        $settings = $this->getObjectIDByIdentOrName($this->InstanceID, 'iahSettings', 'Einstellungen');
+        $ids = $this->systemConfigurationScriptIds($settings);
+        $catalogId = $settings > 0
+            ? $this->getObjectIDByIdentOrName($settings, 'roomsCatalog', 'RoomsCatalog') : 0;
+        return [
+            'ids' => $ids,
+            'catalogId' => $catalogId,
+            'editSource' => $this->getScriptContent($ids['edit']),
+            'edit' => $this->readConfigurationArrayFromScript($ids['edit']),
+            'catalogSource' => $this->getScriptContent($catalogId),
+            'catalog' => $this->readConfigurationArrayFromScript($catalogId),
+        ];
+    }
+
+    private function systemNavigationEditorSummary(array $context): string
+    {
+        $ids = $context['ids'];
+        $config = $context['edit'];
+        if ($ids['edit'] <= 0 || !is_array($config)) {
+            return 'SystemConfigurationEdit fehlt oder ist nicht lesbar. Modulkonfiguration uebernehmen und erneut oeffnen.';
+        }
+        $nav = $config['navigation'] ?? null;
+        if (!is_array($nav)) {
+            $scanned = IAHSystemConfigurationManager::inventoryNavigation($context['catalog'] ?? []);
+            return sprintf('Noch nicht importiert · %d Tabs aus RoomsCatalog gefunden · %d Hinweise · EDIT #%d',
+                count($scanned['entries']), count($scanned['warnings']), $ids['edit']);
+        }
+        if (($nav['schemaVersion'] ?? null) !== IAHSystemNavigationEditor::SCHEMA) {
+            return 'Vorhandener navigation-Bereich hat ein unbekanntes Datenmodell. Keine automatische Aenderung.';
+        }
+        $items = IAHSystemNavigationEditor::items($config);
+        $active = count(array_filter($items, static fn($e): bool => is_array($e) && !empty($e['enabled'])));
+        return sprintf('%d Navigationseintraege in EDIT #%d (%d aktiv) · PROD unveraendert · V3.3.5 fuer Laufzeitumschaltung erforderlich',
+            count($items), $ids['edit'], $active);
+    }
+
+    private function buildSystemNavigationEditorForm(): array
+    {
+        $context = $this->navigationEditorContext();
+        $edit = is_array($context['edit']) ? $context['edit'] : [];
+        $catalog = is_array($context['catalog']) ? $context['catalog'] : [];
+        $rooms = isset($catalog['rooms']) && is_array($catalog['rooms']) ? $catalog['rooms'] : $catalog;
+        $roomOptions = [];
+        foreach ($rooms as $roomKey => $room) {
+            if (!is_array($room)) continue;
+            $key = (string) $roomKey;
+            if ($key === '') continue;
+            $label = (string) ($room['display'] ?? $room['name'] ?? $key);
+            $roomOptions[] = ['caption' => $label . ' (' . $key . ')', 'value' => $key];
+        }
+        if ($roomOptions === []) {
+            $roomOptions[] = ['caption' => 'global', 'value' => 'global'];
+        }
+        $rows = IAHSystemNavigationEditor::rows($edit);
+        $rowData = [
+            'entryKey' => '($SystemNavigationEditRows["entryKey"] ?? "")',
+            'revision' => '($SystemNavigationEditRows["revision"] ?? "")',
+            'roomKey' => '($SystemNavigationEditRows["roomKey"] ?? "")',
+            'domainKey' => '($SystemNavigationEditRows["domainKey"] ?? "")',
+            'title' => '($SystemNavigationEditRows["title"] ?? "")',
+            'objectId' => '($SystemNavigationEditRows["objectId"] ?? 0)',
+            'sortOrder' => '($SystemNavigationEditRows["sortOrder"] ?? 0)',
+            'aliases' => '($SystemNavigationEditRows["aliases"] ?? "")',
+            'enabled' => '($SystemNavigationEditRows["enabled"] ?? false)',
+        ];
+        $params = [];
+        foreach ($rowData as $key => $expression) {
+            $params[] = var_export($key, true) . ' => ' . $expression;
+        }
+        $onEdit = 'IAH_SaveSystemNavigationTab($id, json_encode(['
+            . implode(', ', $params)
+            . '], JSON_INVALID_UTF8_SUBSTITUTE));';
+        $onCreate = 'IAH_CreateSystemNavigationTab($id, json_encode(['
+            . '"roomKey" => $SystemNavNewRoom, '
+            . '"domainKey" => $SystemNavNewDomain, '
+            . '"title" => $SystemNavNewTitle, '
+            . '"objectId" => $SystemNavNewObject, '
+            . '"sortOrder" => $SystemNavNewOrder, '
+            . '"aliases" => $SystemNavNewAliases, '
+            . '"enabled" => $SystemNavNewEnabled'
+            . '], JSON_INVALID_UTF8_SUBSTITUTE));';
+        $fields = [
+            ['name' => 'roomKey', 'caption' => 'Raum', 'width' => '120px',
+                'add' => '', 'edit' => ['type' => 'Select', 'options' => $roomOptions]],
+            ['name' => 'domainKey', 'caption' => 'Bereich', 'width' => '105px',
+                'add' => '', 'edit' => ['type' => 'ValidationTextBox']],
+            ['name' => 'tabKey', 'caption' => 'Tab-Key', 'width' => '125px', 'add' => '', 'save' => false],
+            ['name' => 'title', 'caption' => 'Anzeigename', 'width' => '170px',
+                'add' => '', 'edit' => ['type' => 'ValidationTextBox']],
+            ['name' => 'objectId', 'caption' => 'IPS-Objekt', 'width' => '130px',
+                'add' => 0, 'edit' => ['type' => 'SelectObject']],
+            ['name' => 'sortOrder', 'caption' => 'Reihenfolge', 'width' => '90px',
+                'add' => 100, 'edit' => ['type' => 'NumberSpinner']],
+            ['name' => 'aliases', 'caption' => 'Synonyme', 'width' => '185px',
+                'add' => '', 'edit' => ['type' => 'ValidationTextBox']],
+            ['name' => 'enabled', 'caption' => 'Aktiv', 'width' => '65px',
+                'add' => true, 'edit' => ['type' => 'CheckBox']],
+            ['name' => 'review', 'caption' => 'Pruefung', 'width' => '105px', 'add' => '', 'save' => false],
+            ['name' => 'legacyPath', 'caption' => 'Herkunft', 'width' => '290px', 'add' => '', 'save' => false],
+            ['name' => 'entryKey', 'caption' => 'Interne ID', 'width' => '150px', 'add' => '', 'save' => false],
+            ['name' => 'revision', 'caption' => 'Revision', 'width' => '100px', 'add' => '', 'save' => false],
+        ];
+        $notice = $this->ReadAttributeString('SystemNavigationEditorNotice');
+        return [
+            'type' => 'ExpansionPanel',
+            'caption' => 'V3.3.4 – Navigation und Tabs verwalten (SystemConfigurationEdit)',
+            'expanded' => true,
+            'items' => [
+                ['type' => 'Label', 'caption' => 'Zuerst Vorschau, danach Import in EDIT. Der bisherige RoomsCatalog bleibt bis V3.3.5 die aktive Navigationsquelle. Keine Live-Aenderung an Alexa oder Renderern.'],
+                ['type' => 'RowLayout', 'items' => [
+                    ['type' => 'Button', 'caption' => 'BESTANDSVORSCHAU ANZEIGEN',
+                        'onClick' => 'IAH_PreviewSystemNavigationImport($id);'],
+                    ['type' => 'Button', 'caption' => 'GEPRUEFTE TABS NACH EDIT IMPORTIEREN',
+                        'confirm' => '27 oder mehr Navigations-Tabs nach SystemConfigurationEdit kopieren? Produktiv bleibt unveraendert.',
+                        'onClick' => 'IAH_ApplySystemNavigationImport($id);'],
+                    ['type' => 'Button', 'caption' => 'EDIT NEU LADEN',
+                        'onClick' => 'IAH_ReloadSystemNavigationEditor($id);'],
+                ]],
+                ['type' => 'Label', 'name' => 'SystemNavigationImportSummary',
+                    'caption' => 'Noch keine aktuelle Importvorschau.'],
+                ['type' => 'Label', 'name' => 'SystemNavigationEditorSummary',
+                    'caption' => $this->systemNavigationEditorSummary($context)],
+                ['type' => 'Label', 'name' => 'SystemNavigationEditorNotice', 'caption' => $notice],
+                ['type' => 'List', 'name' => 'SystemNavigationEditRows',
+                    'caption' => 'Navigation & Tabs – nur SystemConfigurationEdit',
+                    'rowCount' => 12, 'loadValuesFromConfiguration' => false,
+                    'add' => false, 'delete' => false,
+                    'columns' => $fields, 'values' => $rows,
+                    'onEdit' => $onEdit,
+                ],
+                ['type' => 'Label', 'caption' => 'Neuen Navigationseintrag vorbereiten (ohne Aenderung am RoomsCatalog):'],
+                ['type' => 'RowLayout', 'items' => [
+                    ['type' => 'Select', 'name' => 'SystemNavNewRoom', 'caption' => 'Raum',
+                        'options' => $roomOptions, 'value' => $roomOptions[0]['value']],
+                    ['type' => 'ValidationTextBox', 'name' => 'SystemNavNewDomain',
+                        'caption' => 'Bereich', 'value' => 'devices'],
+                    ['type' => 'ValidationTextBox', 'name' => 'SystemNavNewTitle',
+                        'caption' => 'Navigations-Titel', 'value' => ''],
+                    ['type' => 'SelectObject', 'name' => 'SystemNavNewObject',
+                        'caption' => 'IPS-Objekt-ID', 'value' => 0],
+                    ['type' => 'NumberSpinner', 'name' => 'SystemNavNewOrder',
+                        'caption' => 'Reihenfolge', 'value' => 100],
+                    ['type' => 'ValidationTextBox', 'name' => 'SystemNavNewAliases',
+                        'caption' => 'Synonyme (Komma-getrennt)', 'value' => ''],
+                    ['type' => 'CheckBox', 'name' => 'SystemNavNewEnabled',
+                        'caption' => 'Aktiv', 'value' => true],
+                ]],
+                ['type' => 'Button', 'name' => 'SystemNavigationAddButton',
+                    'caption' => 'NEUEN TAB NUR IN EDIT ANLEGEN', 'onClick' => $onCreate],
+                ['type' => 'ExpansionPanel', 'caption' => 'Andere Systemeinstellungen: Wo pflege ich was?',
+                    'expanded' => false, 'items' => [
+                        ['type' => 'Label', 'caption' => 'KI, Alexa, Visualisierung, Launch-Kacheln, Renderer und PageMappings werden bereits ueber die oberen Instanz-Einstellungen bearbeitet. Keine zweite Konfigurationskopie anlegen.'],
+                        ['type' => 'Label', 'caption' => 'var / script: automatische IDs und bestehende Modulparameter. Die Inventur zeigt nur die Anzahl, keine Zugangsdaten. Noch nicht alles ist interaktiv editierbar.'],
+                        ['type' => 'Label', 'caption' => 'RoomsCatalogConfigurator: nur Raeume und echte Geraete. Tabs bleiben vorerst technisch im alten RoomsCatalog, werden aber hier fuer die Migration vorbereitet.'],
+                    ]],
+            ],
+        ];
+    }
+
+    public function PreviewSystemNavigationImport(): void
+    {
+        $context = $this->navigationEditorContext();
+        $edit = $context['edit'];
+        $catalog = $context['catalog'];
+        $rawEdit = $context['editSource'];
+        $rawCatalog = $context['catalogSource'];
+        if (!is_array($edit) || !is_array($catalog) || !is_string($rawEdit) || !is_string($rawCatalog)
+            || !IAHSystemNavigationEditor::isLiteralArraySource($rawEdit)
+            || array_key_exists('navigation', $edit)) {
+            $this->WriteAttributeString('SystemNavigationImportPreview', '');
+            $this->updateSystemNavigationNotice('Import nicht moeglich: EDIT nicht als einfaches Array lesbar oder navigation bereits vorhanden.');
+            return;
+        }
+        $scan = IAHSystemConfigurationManager::inventoryNavigation($catalog);
+        if (count($scan['entries']) === 0 || count($scan['warnings']) > 0) {
+            $this->WriteAttributeString('SystemNavigationImportPreview', '');
+            $this->updateSystemNavigationNotice('Keine Tabs gefunden oder offene Hinweise. Zuerst V3.3.3-Inventur pruefen.');
+            return;
+        }
+        $preview = [
+            'time' => time(),
+            'editId' => $context['ids']['edit'],
+            'catalogId' => $context['catalogId'],
+            'editHash' => hash('sha256', $rawEdit),
+            'catalogHash' => hash('sha256', $rawCatalog),
+            'count' => count($scan['entries']),
+        ];
+        $this->WriteAttributeString('SystemNavigationImportPreview', json_encode($preview));
+        $message = sprintf('Vorschau: %d Navigationseintraege · 0 Hinweise · nur EDIT #%d · Quelle #%d. Kein PROD-Schreibzugriff.',
+            $preview['count'], $preview['editId'], $preview['catalogId']);
+        $this->UpdateFormField('SystemNavigationImportSummary', 'caption', $message);
+        echo $message;
+    }
+
+    public function ApplySystemNavigationImport(): void
+    {
+        $preview = json_decode($this->ReadAttributeString('SystemNavigationImportPreview'), true);
+        $context = $this->navigationEditorContext();
+        if (!is_array($preview) || time() - (int) ($preview['time'] ?? 0) > 600
+            || ($preview['editId'] ?? null) !== $context['ids']['edit']
+            || ($preview['catalogId'] ?? null) !== $context['catalogId']
+            || !is_string($context['editSource']) || !is_string($context['catalogSource'])
+            || ($preview['editHash'] ?? '') !== hash('sha256', $context['editSource'])
+            || ($preview['catalogHash'] ?? '') !== hash('sha256', $context['catalogSource'])
+            || !is_array($context['edit']) || !is_array($context['catalog'])
+            || array_key_exists('navigation', $context['edit'])) {
+            $this->WriteAttributeString('SystemNavigationImportPreview', '');
+            $this->updateSystemNavigationNotice('Vorschau abgelaufen oder geaendert. Bitte Bestand neu pruefen.');
+            return;
+        }
+        try {
+            $next = IAHSystemNavigationEditor::importDraft(
+                $context['edit'], $context['catalog'], $preview['catalogHash']);
+            if (count(IAHSystemNavigationEditor::items($next)) !== $preview['count']) {
+                throw new RuntimeException('Tab-Anzahl stimmt nicht mit der Vorschau ueberein.');
+            }
+            $this->saveSystemNavigationEdit($context, $next, 'before_navigation_import');
+            $this->WriteAttributeString('SystemNavigationImportPreview', '');
+            $this->updateSystemNavigationNotice('Navigationsbestand nach EDIT uebernommen. PROD und RoomsCatalog unveraendert.');
+            $this->ReloadSystemNavigationEditor();
+        } catch (\Throwable $e) {
+            $this->updateSystemNavigationNotice('Import abgebrochen: ' . $e->getMessage());
+        }
+    }
+
+    public function SaveSystemNavigationTab(string $payload): void
+    {
+        $data = json_decode($payload, true);
+        if (!is_array($data)) {
+            $this->updateSystemNavigationNotice('Ungueltige Navigationsdaten.');
+            return;
+        }
+        $context = $this->navigationEditorContext();
+        try {
+            if (!is_array($context['edit'])) throw new RuntimeException('EDIT nicht lesbar.');
+            $next = IAHSystemNavigationEditor::update($context['edit'], $data);
+            $this->saveSystemNavigationEdit($context, $next, 'before_navigation_edit');
+            $this->updateSystemNavigationNotice('Navigation in SystemConfigurationEdit gespeichert (noch nicht live).');
+            $this->ReloadSystemNavigationEditor();
+        } catch (\Throwable $e) {
+            $this->updateSystemNavigationNotice('Aenderung abgebrochen: ' . $e->getMessage());
+        }
+    }
+
+    public function CreateSystemNavigationTab(string $payload): void
+    {
+        $data = json_decode($payload, true);
+        if (!is_array($data)) {
+            $this->updateSystemNavigationNotice('Ungueltige Angaben fuer neuen Tab.');
+            return;
+        }
+        $context = $this->navigationEditorContext();
+        try {
+            if (!is_array($context['edit']) || !is_array($context['catalog'])) {
+                throw new RuntimeException('EDIT oder RoomsCatalog nicht lesbar.');
+            }
+            $rooms = isset($context['catalog']['rooms']) && is_array($context['catalog']['rooms'])
+                ? $context['catalog']['rooms'] : $context['catalog'];
+            $key = (string) ($data['roomKey'] ?? '');
+            if (!isset($rooms[$key]) || !is_array($rooms[$key])) {
+                throw new RuntimeException('Raum existiert nicht. Zuerst im RoomsCatalog anlegen.');
+            }
+            $next = IAHSystemNavigationEditor::create($context['edit'], $data);
+            $this->saveSystemNavigationEdit($context, $next, 'before_navigation_create');
+            $this->updateSystemNavigationNotice('Neuer Tab in EDIT angelegt (noch nicht live).');
+            $this->ReloadSystemNavigationEditor();
+        } catch (\Throwable $e) {
+            $this->updateSystemNavigationNotice('Neuer Tab abgebrochen: ' . $e->getMessage());
+        }
+    }
+
+    public function ReloadSystemNavigationEditor(): void
+    {
+        $context = $this->navigationEditorContext();
+        $rows = IAHSystemNavigationEditor::rows($context['edit'] ?? []);
+        $this->UpdateFormField('SystemNavigationEditRows', 'values', json_encode($rows, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->UpdateFormField('SystemNavigationEditorSummary', 'caption', $this->systemNavigationEditorSummary($context));
+    }
+
+    private function updateSystemNavigationNotice(string $message): void
+    {
+        $this->WriteAttributeString('SystemNavigationEditorNotice', $message);
+        $this->UpdateFormField('SystemNavigationEditorNotice', 'caption', $message);
+        echo $message;
+    }
+
+    /**
+     * Jeder EDIT-Schreibvorgang: Original-PHP-Array sichern, dann schreiben,
+     * danach verifizieren. Kein PROD- und RoomsCatalog-Schreibzugriff.
+     */
+    private function saveSystemNavigationEdit(array $context, array $next, string $reason): void
+    {
+        $ids = $context['ids'];
+        $editId = (int) $ids['edit'];
+        $backupId = (int) $ids['backup'];
+        $raw = $context['editSource'];
+        if ($editId <= 0 || $backupId <= 0 || !is_string($raw)
+            || !IAHSystemNavigationEditor::isLiteralArraySource($raw)
+            || !IPS_ScriptExists($editId) || !IPS_ScriptExists($backupId)
+            || $raw !== $this->getScriptContent($editId)) {
+            throw new RuntimeException('EDIT/Backup ungueltig oder EDIT wurde zwischenzeitlich geaendert.');
+        }
+        if (!is_array($context['edit']) || ($next === $context['edit'])) {
+            return;
+        }
+        $backup = $this->readConfigurationArrayFromScript($backupId);
+        if (!is_array($backup) || !is_array($backup['snapshots'] ?? null)
+            || $backup['snapshots'] === []) {
+            throw new RuntimeException('Sicherungsformat ungueltig. Keine Aenderung geschrieben.');
+        }
+        $prevHash = hash('sha256', $raw);
+        $snapshots = $backup['snapshots'];
+        $last = end($snapshots);
+        if (($last['sha256'] ?? '') !== $prevHash) {
+            $snapshots[] = [
+                'createdAt' => gmdate('c'),
+                'reason' => $reason,
+                'sourceScriptId' => $editId,
+                'sha256' => $prevHash,
+                'phpSource' => $raw,
+            ];
+        }
+        // Initiales PROD-Backup immer erhalten, nur letzte EDIT-Zwischenstaende begrenzen.
+        $backup['snapshots'] = array_merge(array_slice($snapshots, 0, 1), array_slice($snapshots, -12));
+        if (count($snapshots) <= 13) {
+            $backup['snapshots'] = $snapshots;
+        }
+        $backupSource = IAHSystemNavigationEditor::encode($backup);
+        IPS_SetScriptContent($backupId, $backupSource);
+        if ($this->getScriptContent($backupId) !== $backupSource) {
+            throw new RuntimeException('Backup konnte nicht verifiziert werden. EDIT bleibt unveraendert.');
+        }
+        $nextSource = IAHSystemNavigationEditor::encode($next);
+        try {
+            IPS_SetScriptContent($editId, $nextSource);
+            if ($this->getScriptContent($editId) !== $nextSource) {
+                throw new RuntimeException('EDIT konnte nicht verifiziert werden.');
+            }
+        } catch (\Throwable $e) {
+            IPS_SetScriptContent($editId, $raw);
+            throw $e;
         }
     }
 
