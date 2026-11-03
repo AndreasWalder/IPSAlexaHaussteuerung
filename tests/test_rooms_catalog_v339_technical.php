@@ -73,7 +73,7 @@ ck339(count($scan['legacyRows'])===1 && $scan['legacyRows'][0]['title']==='Alt-L
 $byKey=[];
 foreach($scan['rows'] as $item) $byKey[$item['key']]=$item;
 ck339(($byKey['wohnzimmer|licht|switches|decke']['status']??'')==='Technisch plausibel',
-    'Known, valid light status not accepted as technically plausible');
+    'Known light not plausible: '.json_encode($byKey['wohnzimmer|licht|switches|decke']??null));
 ck339(($byKey['wohnzimmer|dimmer|dimmers|dimmer']['status']??'')==='Technisch plausibel',
     'Known dimmer profile was not accepted as technically plausible');
 ck339(($byKey['wohnzimmer|licht|switches|defekt']['status']??'')==='Ungueltig',
