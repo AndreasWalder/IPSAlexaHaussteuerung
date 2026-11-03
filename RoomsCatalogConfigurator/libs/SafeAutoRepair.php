@@ -72,4 +72,39 @@ final class RCCSafeAutoRepair
         }
         return true;
     }
+    /** Apply only explicitly proposed additions to ai.variables; all other fields stay untouched. */
+    public static function applyBindings(array $catalog, array $changes): array
+    {
+        $next=$catalog;
+        if (isset($next['rooms']) && is_array($next['rooms'])) $rooms=&$next['rooms'];
+        else $rooms=&$next;
+        foreach ($changes as $key=>$bindings) {
+            if (!is_array($bindings) || $bindings===[]) continue;
+            $parts=explode('|',(string)$key,4);
+            if (count($parts)!==4) throw new RuntimeException('Ungueltiger Reparaturschluessel');
+            [$room,$domain,$group,$device]=$parts;
+            $path=in_array($domain,['heizung','jalousie'],true)
+                ? [$room,'domains',$domain,$device]
+                : [$room,'domains',$domain,$group,$device];
+            $item=&$rooms;
+            foreach ($path as $part) {
+                if (!is_array($item) || !array_key_exists($part,$item))
+                    throw new RuntimeException('Geraet nicht gefunden: '.$key);
+                $item=&$item[$part];
+            }
+            if (!is_array($item) || !is_array($item['ai']??null)
+                || !is_array($item['ai']['variables']??null)
+                || ($item['ai']['review']['status']??'')==='confirmed')
+                throw new RuntimeException('Keine sichere Zuordnung fuer '.$key);
+            foreach ($bindings as $role=>$id) {
+                if ((int)($item['ai']['variables'][$role]??0)>0 || (int)$id<=0)
+                    throw new RuntimeException('Rolle bereits belegt: '.$key.'/'.$role);
+                $item['ai']['variables'][$role]=(int)$id;
+            }
+            unset($item);
+        }
+        unset($rooms);
+        return $next;
+    }
+
 }
