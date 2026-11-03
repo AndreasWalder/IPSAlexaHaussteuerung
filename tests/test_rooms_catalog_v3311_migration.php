@@ -103,4 +103,16 @@ try{
 }catch(RuntimeException $e){
     checkm(str_contains($e->getMessage(),'Unerwartetes'),'Unknown UI structure not rejected');
 }
+$actionTemplate=file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/resources/action_entry.php');
+$moduleSource=file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/module.php');
+checkm(str_contains($actionTemplate,'IAH_ROOM_UI_OVERLAY_V3311_BEGIN')
+    && str_contains($actionTemplate,'IAH_ROOM_UI_OVERLAY_V3311_END')
+    && str_contains($actionTemplate,"'roomUi' => is_array("),
+    'Action runtime template does not support UI settings outside RoomsCatalog');
+checkm(str_contains($moduleSource,'patchActionScriptRoomUiMigration((int) $id)')
+    && str_contains($moduleSource,'KEINE UI-Bereinigung ohne Laufzeit-Unterstuetzung'),
+    'Existing Action script is not safely patched before live migration');
+checkm(str_contains($moduleSource,'RollbackRoomsCatalogAutoMigration')
+    && str_contains($moduleSource,'RoomsCatalogAutoReceipt'),
+    'Migration cannot be rolled back with verified original backup receipt');
 echo "PASS V3.3.11: 8 UI items, 5 typed devices, lossless system config, KI flags, idempotency and conflict guards\n";
