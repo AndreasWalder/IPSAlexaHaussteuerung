@@ -181,6 +181,9 @@ sc335_assert(($receipt['stage']??'')==='cleaned'
 
 // Successful cleanup must now leave only the central navigation editor visible.
 // Legacy V3.3.3 inventory and V3.3.5 migration controls move out of normal settings.
+// Veraltete einmalige Import-Meldungen duerfen nach Cleanup nicht erscheinen.
+$module->WriteAttributeString('SystemNavigationEditorNotice',
+    'Import nicht moeglich: EDIT nicht als einfaches Array lesbar oder navigation bereits vorhanden.');
 $formClean = json_decode($module->GetConfigurationForm(), true, 512, JSON_THROW_ON_ERROR);
 $panelsClean = array_values(array_map(
     static fn(array $e): string => (string)($e['caption'] ?? ''), $formClean['elements']));
@@ -194,6 +197,34 @@ $maintenance = array_values(array_filter($formClean['elements'],
     static fn(array $e): bool => ($e['caption'] ?? '') === 'Erweiterte Wartung & Wiederherstellung'))[0];
 sc335_assert($maintenance['expanded'] === false,
     'Backup and rollback must be collapsed under advanced maintenance');
+
+$navPanel=array_values(array_filter($formClean['elements'],
+    static fn(array $e): bool => ($e['caption'] ?? '') === 'Navigation & Tabs'))[0];
+$navLists=array_values(array_filter($navPanel['items'],
+    static fn(array $e): bool => ($e['name'] ?? '') === 'SystemNavigationEditRows'));
+sc335_assert(count($navLists) === 1 && ($navLists[0]['caption'] ?? '') === 'Navigationsbereiche',
+    'Navigation table has not been simplified');
+$columns=[];
+foreach ($navLists[0]['columns'] as $col) $columns[$col['name']]=$col;
+foreach (['tabKey','legacyPath','entryKey','revision'] as $technical) {
+    sc335_assert(($columns[$technical]['visible'] ?? true) === false,
+        'Technical column should not appear after cleanup: '.$technical);
+}
+sc335_assert(($columns['title']['visible'] ?? true) === true
+    && ($columns['objectId']['visible'] ?? true) === true
+    && is_int($navLists[0]['values'][0]['objectId']),
+    'Visible navigation fields or typed IPS object IDs incorrect');
+sc335_assert(str_contains($navLists[0]['onEdit'], "'entryKey'")
+    && str_contains($navLists[0]['onEdit'], "'revision'"),
+    'Technical revision fields must remain available to onEdit');
+$notice=array_values(array_filter($navPanel['items'],
+    static fn(array $e): bool => ($e['name'] ?? '') === 'SystemNavigationEditorNotice'));
+sc335_assert(count($notice)===1 && ($notice[0]['visible'] ?? true) === false,
+    'Obsolete import warning is still visible after successful migration');
+sc335_assert(str_contains(json_encode($navPanel, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR), 'ÄNDERUNGEN AKTIVIEREN')
+    && str_contains(json_encode($navPanel, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR), 'ÄNDERUNGEN PRÜFEN'),
+    'Ongoing navigation publish controls missing from simplified UI');
+
 $cleanUi=json_encode($formClean, JSON_THROW_ON_ERROR);
 sc335_assert(!str_contains($cleanUi, 'IAH_PreviewSystemNavigationImport')
     && !str_contains($cleanUi, 'IAH_CleanupSystemNavigation')

@@ -622,9 +622,9 @@ class IPSAlexaHaussteuerung extends IPSModule
         $active = count(array_filter($items, static fn($e): bool => is_array($e) && !empty($e['enabled'])));
         $prod = $this->readConfigurationArrayFromScript((int)($ids['prod'] ?? 0));
         $live = is_array($prod) && ($prod['navigation']['mode'] ?? '') === 'active';
-        return sprintf('%d Navigationseintraege in EDIT #%d (%d aktiv) · %s',
-            count($items), $ids['edit'], $active,
-            $live ? 'PROD aktiv: Aenderungen unter V3.3.5 gezielt live uebernehmen' : 'Noch nicht produktiv aktiviert (V3.3.5)');
+        return sprintf('%d Navigations-Tabs (%d aktiv) · EDIT #%d · %s',
+            count($items), $active, $ids['edit'],
+            $live ? 'PROD aktiv. Aenderungen ueber die Schaltflaechen unten uebernehmen.' : 'Navigation noch nicht produktiv aktiv.');
     }
 
     private function buildSystemNavigationEditorForm(): array
@@ -644,6 +644,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         if ($roomOptions === []) {
             $roomOptions[] = ['caption' => 'global', 'value' => 'global'];
         }
+        $migrationFinished = $this->systemNavigationMigrationCompleted();
         $rows = IAHSystemNavigationEditor::rows($edit);
         $rowData = [
             'entryKey' => '($SystemNavigationEditRows["entryKey"] ?? "")',
@@ -677,7 +678,8 @@ class IPSAlexaHaussteuerung extends IPSModule
                 'add' => '', 'edit' => ['type' => 'Select', 'options' => $roomOptions]],
             ['name' => 'domainKey', 'caption' => 'Bereich', 'width' => '105px',
                 'add' => '', 'edit' => ['type' => 'ValidationTextBox']],
-            ['name' => 'tabKey', 'caption' => 'Tab-Key', 'width' => '125px', 'add' => '', 'save' => false],
+            ['name' => 'tabKey', 'caption' => 'Tab-Key', 'width' => '125px',
+                'add' => '', 'save' => false, 'visible' => !$migrationFinished],
             ['name' => 'title', 'caption' => 'Anzeigename', 'width' => '170px',
                 'add' => '', 'edit' => ['type' => 'ValidationTextBox']],
             ['name' => 'objectId', 'caption' => 'IPS-Objekt', 'width' => '130px',
@@ -689,13 +691,24 @@ class IPSAlexaHaussteuerung extends IPSModule
             ['name' => 'enabled', 'caption' => 'Aktiv', 'width' => '65px',
                 'add' => true, 'edit' => ['type' => 'CheckBox']],
             ['name' => 'review', 'caption' => 'Pruefung', 'width' => '105px', 'add' => '', 'save' => false],
-            ['name' => 'legacyPath', 'caption' => 'Herkunft', 'width' => '290px', 'add' => '', 'save' => false],
-            ['name' => 'entryKey', 'caption' => 'Interne ID', 'width' => '150px', 'add' => '', 'save' => false],
-            ['name' => 'revision', 'caption' => 'Revision', 'width' => '100px', 'add' => '', 'save' => false],
+            ['name' => 'legacyPath', 'caption' => 'Herkunft', 'width' => '290px',
+                'add' => '', 'save' => false, 'visible' => !$migrationFinished],
+            ['name' => 'entryKey', 'caption' => 'Interne ID', 'width' => '150px',
+                'add' => '', 'save' => false, 'visible' => false],
+            ['name' => 'revision', 'caption' => 'Revision', 'width' => '100px',
+                'add' => '', 'save' => false, 'visible' => false],
         ];
         $notice = $this->ReadAttributeString('SystemNavigationEditorNotice');
         $hasNavigationDraft = is_array($edit['navigation'] ?? null);
-        $migrationFinished = $this->systemNavigationMigrationCompleted();
+        // Ein einmaliger Importversuch ist nach erfolgreicher Migration
+        // nicht mehr relevant. Meldung nicht als aktuellen Fehler ausgeben.
+        if ($migrationFinished && (
+            str_starts_with($notice, 'Import nicht moeglich:')
+            || str_starts_with($notice, 'Keine Tabs gefunden')
+            || str_starts_with($notice, 'Navigationsbestand nach EDIT uebernommen.')
+        )) {
+            $notice = '';
+        }
         return [
             'type' => 'ExpansionPanel',
             'caption' => 'Navigation & Tabs',
@@ -722,9 +735,10 @@ class IPSAlexaHaussteuerung extends IPSModule
                 ]] : []),
                 ['type' => 'Label', 'name' => 'SystemNavigationEditorSummary',
                     'caption' => $this->systemNavigationEditorSummary($context)],
-                ['type' => 'Label', 'name' => 'SystemNavigationEditorNotice', 'caption' => $notice],
+                ['type' => 'Label', 'name' => 'SystemNavigationEditorNotice',
+                    'caption' => $notice, 'visible' => $notice !== ''],
                 ['type' => 'List', 'name' => 'SystemNavigationEditRows',
-                    'caption' => 'Navigation & Tabs – nur SystemConfigurationEdit',
+                    'caption' => 'Navigationsbereiche',
                     'rowCount' => 12, 'loadValuesFromConfiguration' => false,
                     'add' => false, 'delete' => false,
                     'columns' => $fields, 'values' => $rows,
@@ -733,9 +747,9 @@ class IPSAlexaHaussteuerung extends IPSModule
                 ...($migrationFinished ? [[
                     'type' => 'RowLayout',
                     'items' => [
-                        ['type' => 'Button', 'caption' => 'NAVIGATION-EDIT VORSCHAU',
+                        ['type' => 'Button', 'caption' => 'ÄNDERUNGEN PRÜFEN',
                             'onClick' => 'IAH_PreviewSystemNavigationUpdate($id);'],
-                        ['type' => 'Button', 'caption' => 'NAVIGATION AUS EDIT LIVE UEBERNEHMEN',
+                        ['type' => 'Button', 'caption' => 'ÄNDERUNGEN AKTIVIEREN',
                             'confirm' => 'Geaenderte Navigation aus EDIT nach PROD uebernehmen? Vorher wird automatisch gesichert.',
                             'onClick' => 'IAH_PublishSystemNavigationUpdate($id);'],
                     ],
@@ -758,7 +772,7 @@ class IPSAlexaHaussteuerung extends IPSModule
                         'caption' => 'Aktiv', 'value' => true],
                 ]],
                 ['type' => 'Button', 'name' => 'SystemNavigationAddButton',
-                    'caption' => 'NEUEN TAB NUR IN EDIT ANLEGEN', 'onClick' => $onCreate],
+                    'caption' => 'TAB IN EDIT ANLEGEN', 'onClick' => $onCreate],
                 ...(!$migrationFinished ? [[
                     'type' => 'ExpansionPanel', 'caption' => 'Andere Systemeinstellungen: Wo pflege ich was?',
                     'expanded' => false, 'items' => [
@@ -894,6 +908,7 @@ class IPSAlexaHaussteuerung extends IPSModule
     {
         $this->WriteAttributeString('SystemNavigationEditorNotice', $message);
         $this->UpdateFormField('SystemNavigationEditorNotice', 'caption', $message);
+        $this->UpdateFormField('SystemNavigationEditorNotice', 'visible', true);
         echo $message;
     }
 

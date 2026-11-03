@@ -78,7 +78,7 @@ final class IAHSystemNavigationEditor
                 'domainKey' => (string) ($entry['domainKey'] ?? ''),
                 'tabKey' => (string) ($entry['tabKey'] ?? ''),
                 'title' => (string) ($entry['title'] ?? ''),
-                'objectId' => (string) ($entry['objectId'] ?? 0),
+                'objectId' => (int) ($entry['objectId'] ?? 0),
                 'sortOrder' => (int) ($entry['sortOrder'] ?? 0),
                 'aliases' => implode(', ', array_map('strval', $aliases)),
                 'enabled' => !empty($entry['enabled']),
