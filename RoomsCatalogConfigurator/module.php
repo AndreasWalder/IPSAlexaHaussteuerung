@@ -2851,8 +2851,21 @@ class RoomsCatalogConfigurator extends IPSModule
             ];
         }
         $variables = $this->getScopedIpsVariables($row);
+        // Virtuelle Editorwerte koennen aus Legacy-Feldern stammen.
+        // Fuer V3.4 nur wirklich im neuen ai.variables gespeicherte
+        // Rollen als typisierte Bindungen bestaetigen.
+        $sourceAi = $row['ai'] ?? [];
+        if (is_string($sourceAi)) $sourceAi = json_decode($sourceAi,true);
+        $explicit = is_array($sourceAi) && is_array($sourceAi['variables'] ?? null)
+            ? $sourceAi['variables'] : [];
+        $typedRow = $row;
+        foreach (self::AI_VARIABLE_FIELDS as $role=>$field) {
+            if (!isset($explicit[$role]) || (int)$explicit[$role] <= 0) {
+                $typedRow[$field] = 0;
+            }
+        }
         $assessment = RCCDeviceTechnicalAudit::assess(
-            $row,
+            $typedRow,
             array_intersect_key(self::AI_VARIABLE_FIELDS,array_fill_keys(self::AI_TYPE_FIELDS[$type],true)),
             $variables,
             $this->minimumReadingRoles($type),
