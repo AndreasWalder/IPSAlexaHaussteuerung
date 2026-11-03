@@ -2876,11 +2876,19 @@ class RoomsCatalogConfigurator extends IPSModule
         // Legacy-Felder. Ein fehlendes ai.variables-Feld ist hingegen
         // eine offene Migration, nicht die Aussage "IPS-Geraet defekt".
         $missingTypedRoles = [];
-        foreach (self::AI_TYPE_FIELDS[$type] as $role) {
-            $field = self::AI_VARIABLE_FIELDS[$role];
-            if ((int)($typedRow[$field] ?? 0) <= 0
-                && (int)($row[$field] ?? 0) > 0) {
-                $missingTypedRoles[] = $role;
+        // Nur wirklich benoetigte Rueckmeldungen nachfordern:
+        // ein Licht mit ai.variables.power braucht nicht zusaetzlich
+        // ein legacy-"status" Alias auf dieselbe Statusvariable.
+        foreach ($this->minimumReadingRoles($type) as $alternatives) {
+            $hasTypedRole = false;
+            foreach ($alternatives as $role) {
+                $field = self::AI_VARIABLE_FIELDS[$role];
+                if ((int)($typedRow[$field] ?? 0) > 0) $hasTypedRole = true;
+            }
+            if ($hasTypedRole) continue;
+            foreach ($alternatives as $role) {
+                $field = self::AI_VARIABLE_FIELDS[$role];
+                if ((int)($row[$field] ?? 0) > 0) $missingTypedRoles[] = $role;
             }
         }
         $assessment['mappedExplicitRoles'] = count(array_filter(
