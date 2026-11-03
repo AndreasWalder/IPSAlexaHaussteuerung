@@ -312,6 +312,78 @@ foreach($newScan['rows'] as $row) {
 ck339($updatedStatus==='Technisch plausibel',
     'Corrected KNX Solltemperatur control still reported uncertain');
 
+
+// V3.3.15: "Nur Steuerung" is a reporting capability, NOT successful
+// technical validation or a physical device confirmation.
+$capMethod=new ReflectionMethod(RoomsCatalogConfigurator::class,'classifyTechnicalCapability');
+$onlyCommand=[
+    'aiType'=>'blind','wert'=>55194
+];
+$commandIssues=[
+    'status'=>'Manuell pruefen',
+    'issueCodes'=>['missing_required_role','state_mapping_missing']
+];
+$actionProfile=[
+    ['id'=>55194,'name'=>'Test Rolladen 100%','ident'=>'','profile'=>'Rolladen_Steuerung',
+        'type'=>1,'action'=>true,
+        'associations'=>[
+            ['value'=>0,'name'=>'Oeffnen'],
+            ['value'=>50,'name'=>'Mitte'],
+            ['value'=>100,'name'=>'Schliessen'],
+            ['value'=>999,'name'=>'Stop']
+        ]]
+];
+ck339($capMethod->invoke($mod,$onlyCommand,$commandIssues,$actionProfile,['action'=>55194])
+    ==='Nur Steuerung (Ist-Rueckmeldung nicht nachgewiesen)',
+    'Real KNX command-only shutter not correctly separated from mapping error');
+ck339($capMethod->invoke($mod,$onlyCommand,$commandIssues,$actionProfile,[
+        'action'=>55194,'position'=>55194])
+    ==='Technische Zuordnung pruefen',
+    'Misclassified command as physically measured position');
+$invalidProfile=$actionProfile;
+$invalidProfile[0]['profile']='~Shutter';
+ck339($capMethod->invoke($mod,$onlyCommand,$commandIssues,$invalidProfile,['action'=>55194])
+    ==='Technische Zuordnung pruefen',
+    'Shutter control-only label must require a control action profile');
+$readOnlyAction=$actionProfile;
+$readOnlyAction[0]['action']=false;
+ck339($capMethod->invoke($mod,$onlyCommand,$commandIssues,$readOnlyAction,['action'=>55194])
+    ==='Technische Zuordnung pruefen',
+    'No IPS action must prevent command-only category');
+$ambiguousIssues=$commandIssues;
+$ambiguousIssues['issueCodes'][]='role_name_ambiguous';
+ck339($capMethod->invoke($mod,$onlyCommand,$ambiguousIssues,$actionProfile,['action'=>55194])
+    ==='Technische Zuordnung pruefen',
+    'Technical ambiguity should never be silently treated as command-only');
+ck339($capMethod->invoke($mod, ['aiType'=>'blind','wert'=>55194],
+        ['status'=>'Technisch plausibel','issueCodes'=>[]],
+        $actionProfile,['action'=>55194])==='Technisch plausibel (nicht fachlich bestaetigt)',
+    'Fully plausible category should remain separate');
+
+$newForm=json_decode($mod->GetConfigurationForm(),true,512,JSON_THROW_ON_ERROR);
+$serialized=json_encode($newForm,JSON_UNESCAPED_UNICODE);
+ck339(str_contains($serialized,'"name":"capability"'),
+    'Technical device table missing explicit capability column');
+ck339(str_contains($serialized,'Funktionsumfang'),
+    'Technical capability must be visible in the technical audit list');
+$oldSnapshot=['rows'=>[1,2,3],'counts'=>['Technisch plausibel'=>1,'Manuell pruefen'=>2],
+    'capabilityCounts'=>[
+        'Technisch plausibel (nicht fachlich bestaetigt)'=>1,
+        'Nur Steuerung (Ist-Rueckmeldung nicht nachgewiesen)'=>1,
+        'Technische Zuordnung pruefen'=>1],
+    'diffCounts'=>['new'=>0,'removed'=>0,'changed'=>0]];
+$summaryMethod=new ReflectionMethod(RoomsCatalogConfigurator::class,'technicalDeviceSummaryFromSnapshot');
+$capSummary=$summaryMethod->invoke($mod,$oldSnapshot);
+ck339(str_contains($capSummary,'1 Geraete nur mit Steuerbefehl')
+    && str_contains($capSummary,'1 technische Zuordnungen gesondert pruefen')
+    && str_contains($capSummary,'2 manuell pruefen'),
+    'Capabilities should never inflate technical plausibility counts');
+
+// Snapshot classification never executes device actions or mutates catalogs.
+$beforeCapabilityCheck=IPS_GetScriptContent(40);
+ck339(IPS_GetScriptContent(40)===$beforeCapabilityCheck,
+    'Classifier unexpectedly wrote production script');
+
 foreach(array_keys($GLOBALS['inventoryScripts']) as $id) @unlink($GLOBALS['inventoryDir'].'/scripts/'.$id.'.php');
 @rmdir($GLOBALS['inventoryDir'].'/scripts');@rmdir($GLOBALS['inventoryDir']);
 echo "PASS V3.3.9: all types, IPS evidence, explicit approval, stale guard, EDIT-only updates, backups, legacy + diff reporting\n";

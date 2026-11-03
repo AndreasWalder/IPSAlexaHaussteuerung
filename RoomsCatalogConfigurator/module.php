@@ -2866,6 +2866,7 @@ class RoomsCatalogConfigurator extends IPSModule
         ];
         if ($key === null || !array_key_exists($type,self::AI_TYPE_FIELDS) || $type === 'generic') {
             return $base + [
+                'capability'=>'Technische Zuordnung pruefen',
                 'status'=>$type === '' ? 'Legacy' : 'Manuell pruefen',
                 'reason'=>$type === '' ? 'Kein ai.type hinterlegt – Legacy-Import pruefen'
                     : 'Unbekannter/unspezifischer Geraetetyp, manuell zuordnen'
@@ -2949,7 +2950,67 @@ class RoomsCatalogConfigurator extends IPSModule
                 }
             }
         }
+        $assessment['capability']=$this->classifyTechnicalCapability(
+            $row,$assessment,$variables,$explicit
+        );
         return array_merge($base,$assessment);
+    }
+
+
+    /**
+     * Distinguish a legitimate KNX blind command-only configuration from
+     * an incorrect mapping, without treating commands as position feedback.
+     * This is ONLY a reporting label: review status and permissions stay
+     * exactly as before; no device is marked technically validated.
+     */
+    private function classifyTechnicalCapability(
+        array $row,array $assessment,array $scoped,array $explicit
+    ): string {
+        if (($assessment['status']??'')==='Technisch plausibel') {
+            return 'Technisch plausibel (nicht fachlich bestaetigt)';
+        }
+        if (($row['aiType']??'')!=='blind'
+            || ($assessment['status']??'')!=='Manuell pruefen') {
+            return 'Technische Zuordnung pruefen';
+        }
+        $codes=array_values(array_unique((array)($assessment['issueCodes']??[])));
+        sort($codes,SORT_STRING);
+        $expected=['missing_required_role','state_mapping_missing'];
+        sort($expected,SORT_STRING);
+        if ($codes!==$expected) return 'Technische Zuordnung pruefen';
+        $actionId=(int)($explicit['action']??0);
+        if ($actionId<=0 || $actionId!==(int)($row['wert']??0)
+            || !empty($explicit['position']) || !empty($explicit['status'])
+            || !empty($explicit['targetPosition'])
+            || !empty($explicit['open'])) return 'Technische Zuordnung pruefen';
+        $matched=null;
+        foreach ($scoped as $variable) {
+            if ((int)($variable['id']??0)===$actionId) {
+                $matched=$variable;
+                break;
+            }
+        }
+        if (!is_array($matched) || empty($matched['action'])
+            || (int)($matched['type']??-1)!==1) {
+            return 'Technische Zuordnung pruefen';
+        }
+        $profile=strtolower((string)($matched['profile']??''));
+        if (!str_contains($profile,'steuerung')
+            || !(str_contains($profile,'rolladen')
+                || str_contains($profile,'jalousie'))) {
+            return 'Technische Zuordnung pruefen';
+        }
+        $commands=[];
+        foreach ((array)($matched['associations']??[]) as $association) {
+            if (!is_array($association)) continue;
+            $label=mb_strtolower(trim((string)($association['name']??'')),'UTF-8');
+            $label=str_replace(['ä','ö','ü','ß'],['ae','oe','ue','ss'],$label);
+            $commands[$label]=true;
+        }
+        if (!isset($commands['oeffnen'],$commands['schliessen'],$commands['stop'])) {
+            return 'Technische Zuordnung pruefen';
+        }
+        return 'Nur Steuerung (Ist-Rueckmeldung nicht nachgewiesen)';
     }
 
     /** Field names only – never include device values or secrets in diff reports. */
@@ -3086,7 +3147,9 @@ class RoomsCatalogConfigurator extends IPSModule
                 'key'=>$key,'room'=>(string)($row['roomLabel']??''),
                 'device'=>(string)($row['title']??$row['key']??''),
                 'type'=>(string)($row['aiType']??''),
-                'status'=>$status,'reasons'=>(string)($audit['reason']??''),
+                'status'=>$status,
+                'capability'=>(string)($audit['capability']??'Technische Zuordnung pruefen'),
+                'reasons'=>(string)($audit['reason']??''),
                 'issueCodes'=>(array)($audit['issueCodes']??[]),
                 'roles'=>(array)($row['ai']['variables']??[]),
                 'stateMapping'=>(array)($row['ai']['stateMapping']??[]),
@@ -3119,6 +3182,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 ],
                 'summary'=>['total'=>count($plan['devices']),
                     'statusCounts'=>$plan['counts'],'safeBindingChanges'=>count($plan['changes']),
+                    'capabilityCounts'=>array_count_values(array_column($plan['devices'],'capability')),
                     'typedRolesExported'=>count(array_filter($plan['devices'],static fn(array $d):bool=>($d['roles']??[])!==[]))],
                 'devices'=>$plan['devices']
             ];
@@ -3369,10 +3433,15 @@ class RoomsCatalogConfigurator extends IPSModule
         }
         $stats = (array)($snapshot['counts'] ?? []);
         $diff = (array)($snapshot['diffCounts'] ?? []);
+        $modes=(array)($snapshot['capabilityCounts']??[]);
+        $commandOnly=(int)($modes['Nur Steuerung (Ist-Rueckmeldung nicht nachgewiesen)']??0);
+        $toReview=(int)($modes['Technische Zuordnung pruefen']??0);
         return sprintf(
             '%d Geraete geprueft: %d technisch plausibel, %d manuell pruefen, '
             .'%d ungueltig, %d Legacy; %d bereits fachlich bestaetigt. '
             .'EDIT/PROD: %d neu, %d entfernt, %d geaendert. '
+            .'Davon %d Geraete nur mit Steuerbefehl (keine echte Rueckmeldung nachgewiesen), '
+            .'%d technische Zuordnungen gesondert pruefen. '
             .'Technisch plausibel bedeutet NICHT am echten Geraet bestaetigt.',
             count($snapshot['rows']),
             (int)($stats['Technisch plausibel'] ?? 0),
@@ -3381,7 +3450,8 @@ class RoomsCatalogConfigurator extends IPSModule
             (int)($stats['Legacy'] ?? 0),
             (int)($stats['Manuell bestaetigt'] ?? 0),
             (int)($diff['new'] ?? 0),(int)($diff['removed'] ?? 0),
-            (int)($diff['changed'] ?? 0)
+            (int)($diff['changed'] ?? 0),
+            $commandOnly,$toReview
         );
     }
 
@@ -3424,6 +3494,10 @@ class RoomsCatalogConfigurator extends IPSModule
         $oldStats = (array)($oldAudit['statistics'] ?? []);
         $priorAvailable = is_array($oldAudit) && isset($oldAudit['catalogHash'])
             && isset($oldStats['typed']) && isset($oldStats['legacy']);
+        $capabilityCounts=array_count_values(array_map(
+            static fn(array $row):string=>(string)($row['capability']??'Technische Zuordnung pruefen'),
+            $results
+        ));
         $issueCounts = [];
         foreach ($results as $result) {
             foreach (array_unique((array)($result['issueCodes'] ?? [])) as $code) {
@@ -3452,7 +3526,8 @@ class RoomsCatalogConfigurator extends IPSModule
             'version'=>1,'time'=>time(),
             'editHash'=>hash('sha256',$editSource),
             'prodHash'=>hash('sha256',$prodSource),
-            'rows'=>$results,'counts'=>$stats,'legacyRows'=>$legacyRows,
+            'rows'=>$results,'counts'=>$stats,'capabilityCounts'=>$capabilityCounts,
+            'legacyRows'=>$legacyRows,
             'diffRows'=>$diff['rows'],'diffCounts'=>$diff['counts'],
             'issueCounts'=>$issueCounts,'source'=>$source
         ];
@@ -4000,6 +4075,7 @@ class RoomsCatalogConfigurator extends IPSModule
                                 ['caption'=>'Geraet','name'=>'title','width'=>'170px','save'=>false,'quickFilter'=>true,'add'=>''],
                                 ['caption'=>'Typ','name'=>'type','width'=>'95px','save'=>false,'quickFilter'=>true,'add'=>''],
                                 ['caption'=>'Technischer Stand','name'=>'status','width'=>'145px','save'=>false,'quickFilter'=>true,'add'=>''],
+                                ['caption'=>'Funktionsumfang','name'=>'capability','width'=>'230px','save'=>false,'quickFilter'=>true,'add'=>''],
                                 ['caption'=>'Manuell bestaetigt','name'=>'manuallyConfirmed','width'=>'110px','save'=>false,'add'=>false],
                                 ['caption'=>'Rollen','name'=>'roleCount','width'=>'65px','save'=>false,'add'=>0],
                                 ['caption'=>'Grund / offener Punkt','name'=>'reason','width'=>'auto','save'=>false,'add'=>''],
