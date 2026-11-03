@@ -179,6 +179,34 @@ final class RCCDeviceTechnicalAudit
         ];
     }
 
+
+    /** Reject arbitrary executable PHP before reserializing EDIT from an array. */
+    public static function isLiteralArraySource(string $php): bool
+    {
+        $tokens = token_get_all($php);
+        $hasReturn = false;
+        foreach ($tokens as $token) {
+            if (is_string($token)) {
+                if (!str_contains('[](),;=+-', $token)) return false;
+                continue;
+            }
+            [$kind,$value] = $token;
+            if ($kind === T_RETURN) {
+                if ($hasReturn) return false;
+                $hasReturn = true;
+                continue;
+            }
+            if (in_array($kind, [
+                T_OPEN_TAG,T_WHITESPACE,T_COMMENT,T_DOC_COMMENT,
+                T_CONSTANT_ENCAPSED_STRING,T_LNUMBER,T_DNUMBER,T_DOUBLE_ARROW,T_ARRAY
+            ],true)) continue;
+            if ($kind === T_STRING && in_array(strtolower($value),
+                ['true','false','null','array'],true)) continue;
+            return false;
+        }
+        return $hasReturn;
+    }
+
     private static function normalize(string $text): string
     {
         $text = mb_strtolower(trim($text),'UTF-8');
