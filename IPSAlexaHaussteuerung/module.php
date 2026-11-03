@@ -1261,6 +1261,8 @@ class IPSAlexaHaussteuerung extends IPSModule
             $receipt['roomsEditId'] = $ctx['roomsEditId'];
             $receipt['backupProdId'] = $backupProdId;
             $receipt['backupEditId'] = $backupEditId;
+            $receipt['originalRoomsProdHash'] = hash('sha256', $ctx['catalogSource']);
+            $receipt['originalRoomsEditHash'] = hash('sha256', $ctx['roomsEditSource']);
             $receipt['cleanedRoomsProdHash'] = hash('sha256', $newProdSource);
             $receipt['cleanedRoomsEditHash'] = hash('sha256', $newEditSource);
             $this->WriteAttributeString('SystemNavigationMigrationReceipt', json_encode($receipt));
@@ -1305,7 +1307,8 @@ class IPSAlexaHaussteuerung extends IPSModule
                 }
                 foreach (['Prod', 'Edit'] as $type) {
                     $original = $this->getScriptContent((int)$receipt['backup'.$type.'Id']);
-                    if (!is_string($original) || $original === '') {
+                    if (!is_string($original) || $original === ''
+                        || hash('sha256', $original) !== ($receipt['originalRooms'.$type.'Hash'] ?? '')) {
                         throw new \RuntimeException('RoomsCatalog-' . $type . '-Backup nicht mehr vorhanden.');
                     }
                     $currentId = $type === 'Prod' ? $ctx['catalogId'] : $ctx['roomsEditId'];
