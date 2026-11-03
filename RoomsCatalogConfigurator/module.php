@@ -3003,13 +3003,13 @@ class RoomsCatalogConfigurator extends IPSModule
         $prodId=$this->ReadPropertyInteger('RoomsCatalogScriptID');
         if ($editId<=0 || $prodId<=0 || $editId===$prodId
             || !IPS_ScriptExists($editId) || !IPS_ScriptExists($prodId)) {
-            throw new \\RuntimeException('EDIT/PROD-Skripte fehlen oder verwenden dieselbe ID.');
+            throw new \RuntimeException('EDIT/PROD-Skripte fehlen oder verwenden dieselbe ID.');
         }
         $editSource=(string)IPS_GetScriptContent($editId);
         $prodSource=(string)IPS_GetScriptContent($prodId);
         if (!RCCDeviceTechnicalAudit::isLiteralArraySource($editSource)
             || !RCCDeviceTechnicalAudit::isLiteralArraySource($prodSource)) {
-            throw new \\RuntimeException('Nicht-statische PHP-Kataloge werden aus Sicherheitsgruenden nicht automatisch veraendert.');
+            throw new \RuntimeException('Nicht-statische PHP-Kataloge werden aus Sicherheitsgruenden nicht automatisch veraendert.');
         }
         return [
             'editId'=>$editId,'prodId'=>$prodId,
@@ -3101,7 +3101,7 @@ class RoomsCatalogConfigurator extends IPSModule
             $json=json_encode($report,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE
                 |JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR);
             echo 'data:application/json;charset=utf-8;base64,'.base64_encode($json);
-        } catch (\\Throwable $e) {
+        } catch (\Throwable $e) {
             $message='DIAGNOSE FEHLGESCHLAGEN: '.$e->getMessage();
             $this->WriteAttributeString('AutoRepairNotice',$message);
             $this->UpdateFormField('AutoRepairNotice','caption',$message);
@@ -3115,23 +3115,23 @@ class RoomsCatalogConfigurator extends IPSModule
         try {
             $preview=json_decode($this->ReadAttributeString('AutoRepairPreview'),true);
             if (!is_array($preview) || time()-(int)($preview['time']??0)>600) {
-                throw new \\RuntimeException('Bitte zuerst eine aktuelle Diagnose herunterladen (max. zehn Minuten).');
+                throw new \RuntimeException('Bitte zuerst eine aktuelle Diagnose herunterladen (max. zehn Minuten).');
             }
             $sources=$this->safeRepairSources();
             if ($sources['editSource']!==$sources['prodSource']) {
-                throw new \\RuntimeException('EDIT und PROD unterscheiden sich – bitte zuerst manuell abgleichen.');
+                throw new \RuntimeException('EDIT und PROD unterscheiden sich – bitte zuerst manuell abgleichen.');
             }
             foreach (['edit','prod'] as $name) {
                 if ((int)($preview[$name.'Id']??0)!==$sources[$name.'Id']
                     || !hash_equals((string)($preview[$name.'Hash']??''),
                         hash('sha256',$sources[$name.'Source']))) {
-                    throw new \\RuntimeException('Katalog seit der Diagnose veraendert: '.$name);
+                    throw new \RuntimeException('Katalog seit der Diagnose veraendert: '.$name);
                 }
             }
             $plan=$this->safeRepairPlan($sources['catalog']);
             $signature=hash('sha256',json_encode($plan,JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_UNICODE));
             if (!hash_equals((string)($preview['signature']??''),$signature)) {
-                throw new \\RuntimeException('IP-Symcon-Metadaten seit Diagnose veraendert. Abbruch.');
+                throw new \RuntimeException('IP-Symcon-Metadaten seit Diagnose veraendert. Abbruch.');
             }
             $changes=$plan['changes'];
             if ($changes===[]) {
@@ -3144,11 +3144,11 @@ class RoomsCatalogConfigurator extends IPSModule
             $next=RCCSafeAutoRepair::applyBindings($sources['catalog'],$changes);
             $loss=[];
             $this->findLostCatalogFields($sources['catalog'],$next,'RoomsCatalogEdit',$loss);
-            if ($loss!==[]) throw new \\RuntimeException('Datenverlustpruefung: '.implode('; ',array_slice($loss,0,3)));
-            $nextSource="<?php\\nreturn ".var_export($next,true).";\\n";
+            if ($loss!==[]) throw new \RuntimeException('Datenverlustpruefung: '.implode('; ',array_slice($loss,0,3)));
+            $nextSource="<?php\nreturn ".var_export($next,true).";\n";
             if (IPS_GetScriptContent($sources['editId'])!==$sources['editSource']
                 || IPS_GetScriptContent($sources['prodId'])!==$sources['prodSource']) {
-                throw new \\RuntimeException('Katalog kurz vor der Sicherung veraendert. Abbruch.');
+                throw new \RuntimeException('Katalog kurz vor der Sicherung veraendert. Abbruch.');
             }
             // Both original scripts must have verifiable independent backups
             // BEFORE either script is modified.
@@ -3157,35 +3157,35 @@ class RoomsCatalogConfigurator extends IPSModule
                 $scriptId=$sources[$name.'Id'];
                 $backup=IPS_CreateScript(0);
                 if (!is_int($backup) || $backup<=0) {
-                    throw new \\RuntimeException('Sicherung konnte nicht angelegt werden. PROD/EDIT unveraendert.');
+                    throw new \RuntimeException('Sicherung konnte nicht angelegt werden. PROD/EDIT unveraendert.');
                 }
                 IPS_SetParent($backup,IPS_GetParent($scriptId));
                 IPS_SetName($backup,'RoomsCatalog_V3312_before_repair_'.strtoupper($name).'_'.date('Ymd_His').'_'.$backup);
                 IPS_SetScriptContent($backup,$sources[$name.'Source']);
                 if (IPS_GetScriptContent($backup)!==$sources[$name.'Source']) {
-                    throw new \\RuntimeException('Backup-Verifikation fehlgeschlagen; keine Uebernahme.');
+                    throw new \RuntimeException('Backup-Verifikation fehlgeschlagen; keine Uebernahme.');
                 }
                 $backups[$name]=$backup;
             }
             if (IPS_GetScriptContent($sources['editId'])!==$sources['editSource']
                 || IPS_GetScriptContent($sources['prodId'])!==$sources['prodSource']) {
-                throw new \\RuntimeException('Katalog nach Sicherung veraendert; keine Uebernahme.');
+                throw new \RuntimeException('Katalog nach Sicherung veraendert; keine Uebernahme.');
             }
             try {
                 foreach (['edit','prod'] as $name) {
                     IPS_SetScriptContent($sources[$name.'Id'],$nextSource);
                     if (IPS_GetScriptContent($sources[$name.'Id'])!==$nextSource)
-                        throw new \\RuntimeException('Schreibverifikation fehlgeschlagen: '.$name);
+                        throw new \RuntimeException('Schreibverifikation fehlgeschlagen: '.$name);
                 }
-            } catch (\\Throwable $writeError) {
+            } catch (\Throwable $writeError) {
                 $failed=[];
                 foreach (['edit','prod'] as $name) {
                     try {
                         IPS_SetScriptContent($sources[$name.'Id'],$sources[$name.'Source']);
                         if (IPS_GetScriptContent($sources[$name.'Id'])!==$sources[$name.'Source']) $failed[]=$name;
-                    } catch (\\Throwable $restoreError) { $failed[]=$name; }
+                    } catch (\Throwable $restoreError) { $failed[]=$name; }
                 }
-                throw new \\RuntimeException('Schreibfehler: '.$writeError->getMessage().
+                throw new \RuntimeException('Schreibfehler: '.$writeError->getMessage().
                     ($failed!==[]?' ROLLBACK FEHLER: '.implode(',',$failed):' Alte Inhalte wiederhergestellt.').
                     ' Backups: '.implode(',',$backups));
             }
@@ -3199,7 +3199,7 @@ class RoomsCatalogConfigurator extends IPSModule
             $this->WriteAttributeString('AutoRepairNotice',$message);
             $this->UpdateFormField('AutoRepairNotice','caption',$message);
             echo $message;
-        } catch (\\Throwable $e) {
+        } catch (\Throwable $e) {
             $message='AUTO-KORREKTUR BLOCKIERT: '.$e->getMessage();
             $this->WriteAttributeString('AutoRepairNotice',$message);
             $this->UpdateFormField('AutoRepairNotice','caption',$message);
