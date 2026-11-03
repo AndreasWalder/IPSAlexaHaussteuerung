@@ -81,10 +81,11 @@ final class IAHSystemNavigationMigration
                 if ($domain === '' || $title === '') {
                     $errors[] = 'Bereich oder Titel fehlt bei Navigation ' . $entryKey;
                 }
+                $tabContext = sprintf('%s / %s / %s', $room, $domain, $title);
                 if ($id <= 0) {
-                    $errors[] = 'IPS-ID fehlt bei Navigation ' . $entryKey;
+                    $errors[] = 'IPS-ID fehlt: ' . $tabContext . ' (Eintrag ' . $entryKey . ')';
                 } elseif ($objectExists !== null && !$objectExists($id)) {
-                    $errors[] = 'IPS-Objekt nicht vorhanden: #' . $id;
+                    $errors[] = 'IPS-Objekt #' . $id . ' existiert nicht (Tab: ' . $tabContext . '). Ziel bitte im Navigation-Editor neu zuordnen.';
                 }
                 $destination = mb_strtolower($room . '/' . $domain . '/' . $title, 'UTF-8');
                 if (isset($seenDestination[$destination])) {
@@ -145,7 +146,7 @@ final class IAHSystemNavigationMigration
             $id = (int)($entry['objectId'] ?? 0);
             if ($room === '' || !isset($rooms[$room]) || $domain === '' || $title === ''
                 || $id <= 0 || ($objectExists !== null && !$objectExists($id))) {
-                throw new RuntimeException('Ungueltiger Raum/Bereich/Titel oder IPS-ID: ' . $key);
+                throw new RuntimeException('Ungueltiges Navigationsziel: ' . $room . ' / ' . $domain . ' / ' . $title . ' (IPS #' . $id . ', Key ' . $key . '). Objektzuordnung im Editor pruefen.');
             }
             $target = mb_strtolower($room . '/' . $domain . '/' . $title,'UTF-8');
             if (isset($seen[$target])) throw new RuntimeException('Doppelter Navigationstitel: '.$target);

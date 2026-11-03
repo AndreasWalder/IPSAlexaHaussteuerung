@@ -124,3 +124,36 @@ gesperrt, um neuere Einstellungen nicht zu überschreiben.
 - `tests/test_system_configuration_v335.php`:
   Aktivierung, veraltete Vorschau, Katalog-Parität, Bereinigung und
   Wiederherstellung in einer simulierten IP-Symcon-Installation.
+
+## Nach erfolgreicher Migration: aufgeräumte Einstellungen
+
+Sobald **alle** folgenden Bedingungen erfüllt sind, vereinfacht sich
+die Instanzkonfiguration automatisch:
+
+- Migration wurde über den V3.3.5-Assistenten abgeschlossen
+  (`stage=cleaned`, nicht bloß die Navigation in PROD aktiviert).
+- `SystemConfiguration` ist produktiv auf `navigation.mode=active`.
+- Die ursprünglich importierten Navigationseinträge sind aus
+  `RoomsCatalog` **und** `RoomsCatalogEdit` entfernt.
+- Beide ursprünglichen RoomsCatalog-Sicherungen existieren noch und
+  stimmen mit den gespeicherten Quellprüfsummen überein.
+- Die betroffenen Quellskripte stimmen mit dem Migrationsprotokoll
+  überein.
+
+Danach werden die einmaligen **V3.3.3-Bestandsaufnahme**, die
+**V3.3.4-Import-Schaltflächen** und der **V3.3.5-Migrationsassistent**
+im normalen Formular automatisch ausgeblendet.
+
+Stattdessen zeigt die Hauptinstanz nur noch **Navigation & Tabs** –
+mit `SystemConfigurationEdit` als Bearbeitungsstand und den Schaltflächen
+**Navigation-EDIT Vorschau** und **Navigation aus EDIT live übernehmen**.
+Eine zusammengefasste, zugeklappte Rubrik
+**Erweiterte Wartung & Wiederherstellung** enthält den
+statusgesicherten Wiederherstellungsknopf.
+
+**Es werden dabei keine Skripte, Backups oder Konfigurationswerte
+gelöscht.** Die Änderung betrifft nur die Oberfläche.
+Wenn die Abschlussbedingungen nach einem Rollback oder fehlenden
+Backups nicht mehr gelten, sind die ursprünglichen Migrationswerkzeuge
+wieder sichtbar. Änderungen an echten Geräten und anderen
+Systemeinstellungen bleiben dadurch unabhängig von der Navigation.

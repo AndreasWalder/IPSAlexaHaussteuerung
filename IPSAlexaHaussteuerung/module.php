@@ -380,11 +380,95 @@ class IPSAlexaHaussteuerung extends IPSModule
             $form['actions'] = [];
         }
 
-        $form['elements'][] = $this->buildSystemConfigurationInventoryForm();
-        $form['elements'][] = $this->buildSystemNavigationEditorForm();
-        $form['elements'][] = $this->buildSystemNavigationMigrationForm();
+        // Nach vollstaendig bereinigter Migration die einmaligen V3.3.3-/V3.3.5-
+        // Assistenten nicht mehr in den regulaeren Einstellungen anzeigen.
+        // Die Wiederherstellung bleibt unter "Erweiterte Wartung" erreichbar.
+        if ($this->systemNavigationMigrationCompleted()) {
+            $form['elements'][] = $this->buildSystemNavigationEditorForm();
+            $form['elements'][] = $this->buildSystemNavigationMaintenanceForm();
+        } else {
+            $form['elements'][] = $this->buildSystemConfigurationInventoryForm();
+            $form['elements'][] = $this->buildSystemNavigationEditorForm();
+            $form['elements'][] = $this->buildSystemNavigationMigrationForm();
+        }
 
         return json_encode($form, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * Die UI wird erst aufgeraeumt, wenn die Migration wirklich abgeschlossen
+     * wurde – nicht bereits nach einem erfolgreichen EDIT-Import oder Cutover.
+     * Keine Schreibzugriffe: reiner Zustandstest anhand Live-PROD, beider
+     * bereinigter Catalogs und der verifizierten Quelltext-Backups.
+     */
+    private function systemNavigationMigrationCompleted(): bool
+    {
+        $receipt = json_decode($this->ReadAttributeString('SystemNavigationMigrationReceipt'), true);
+        if (!is_array($receipt) || ($receipt['stage'] ?? '') !== 'cleaned') {
+            return false;
+        }
+
+        $ctx = $this->navigationMigrationContext();
+        $prod = $ctx['prod'] ?? null;
+        $nav = is_array($prod) ? ($prod['navigation'] ?? null) : null;
+        if (!is_array($nav)
+            || ($nav['schemaVersion'] ?? 0) !== 1
+            || ($nav['mode'] ?? '') !== 'active'
+            || !is_array($nav['items'] ?? null)
+            || $nav['items'] === []
+            || !is_array($ctx['catalog'] ?? null)
+            || !is_array($ctx['roomsEdit'] ?? null)
+            || (int)($receipt['prodId'] ?? 0) !== (int)($ctx['ids']['prod'] ?? 0)
+            || (int)($receipt['roomsProdId'] ?? 0) !== (int)($ctx['catalogId'] ?? 0)
+            || (int)($receipt['roomsEditId'] ?? 0) !== (int)($ctx['roomsEditId'] ?? 0)) {
+            return false;
+        }
+
+        foreach (['Prod', 'Edit'] as $part) {
+            $backupId = (int)($receipt['backup'.$part.'Id'] ?? 0);
+            $expectedHash = (string)($receipt['originalRooms'.$part.'Hash'] ?? '');
+            if ($backupId <= 0 || !IPS_ScriptExists($backupId)
+                || $expectedHash === '') {
+                return false;
+            }
+            $backupSource = $this->getScriptContent($backupId);
+            if (!is_string($backupSource)
+                || !hash_equals($expectedHash, hash('sha256', $backupSource))) {
+                return false;
+            }
+        }
+        if (IAHSystemNavigationMigration::hasLegacyTabs($ctx['catalog'], $nav)
+            || IAHSystemNavigationMigration::hasLegacyTabs($ctx['roomsEdit'], $nav)) {
+            return false;
+        }
+        return true;
+    }
+
+    /** Ein schlanker Wartungsbereich statt drei dauerhaft sichtbarer Assistenten. */
+    private function buildSystemNavigationMaintenanceForm(): array
+    {
+        $ctx = $this->navigationMigrationContext();
+        $config = $ctx['prod'] ?? [];
+        $items = is_array($config) ? IAHSystemNavigationEditor::items($config) : [];
+        $enabled = count(array_filter($items, static fn($entry): bool =>
+            is_array($entry) && !empty($entry['enabled'])));
+        return [
+            'type' => 'ExpansionPanel',
+            'caption' => 'Erweiterte Wartung & Wiederherstellung',
+            'expanded' => false,
+            'items' => [
+                ['type' => 'Label', 'caption' => sprintf(
+                    'Migration abgeschlossen: %d Navigationseintraege (%d aktiv) in SystemConfiguration PROD #%d. RoomsCatalog und RoomsCatalogEdit bereinigt; Original-Backups verifiziert.',
+                    count($items), $enabled, (int)($ctx['ids']['prod'] ?? 0)
+                )],
+                ['type' => 'Label', 'caption' =>
+                    'Hinweis: Nachtraegliche Einstellungen aus EDIT unter "Navigation & Tabs" mit Vorschau und Backup live uebernehmen. Alte Import- und Bereinigungsassistenten sind hier nicht mehr notwendig.'],
+                ['type' => 'Button',
+                    'caption' => 'NOTFALL – MIGRATION ZURUECKSETZEN',
+                    'confirm' => 'ACHTUNG: Navigation und beide RoomsCatalog-Skripte auf den alten gesicherten Stand zuruecksetzen? Seit der Migration vorgenommene Aenderungen koennen die Wiederherstellung blockieren.',
+                    'onClick' => 'IAH_RollbackSystemNavigation($id);'],
+            ],
+        ];
     }
 
     /**
@@ -610,23 +694,32 @@ class IPSAlexaHaussteuerung extends IPSModule
             ['name' => 'revision', 'caption' => 'Revision', 'width' => '100px', 'add' => '', 'save' => false],
         ];
         $notice = $this->ReadAttributeString('SystemNavigationEditorNotice');
+        $hasNavigationDraft = is_array($edit['navigation'] ?? null);
+        $migrationFinished = $this->systemNavigationMigrationCompleted();
         return [
             'type' => 'ExpansionPanel',
-            'caption' => 'V3.3.4 – Navigation und Tabs verwalten (SystemConfigurationEdit)',
+            'caption' => 'Navigation & Tabs',
             'expanded' => true,
             'items' => [
-                ['type' => 'Label', 'caption' => 'Tabs in EDIT verwalten: vor Aktivierung liest Alexa RoomsCatalog, danach SystemConfiguration PROD. Aenderungen hier werden erst mit V3.3.5 (Navigation aus EDIT live uebernehmen) produktiv.'],
-                ['type' => 'RowLayout', 'items' => [
+                ['type' => 'Label', 'caption' => $migrationFinished
+                    ? 'Navigation zentral verwalten: hier in EDIT bearbeiten, anschliessend mit Vorschau und Backup in PROD uebernehmen.'
+                    : 'Navigation in EDIT vorbereiten. Vor Aktivierung liest Alexa RoomsCatalog, danach SystemConfiguration PROD.'],
+                ['type' => 'RowLayout', 'items' => $hasNavigationDraft ? [
+                    ['type' => 'Button', 'caption' => 'EDIT NEU LADEN',
+                        'onClick' => 'IAH_ReloadSystemNavigationEditor($id);'],
+                ] : [
                     ['type' => 'Button', 'caption' => 'BESTANDSVORSCHAU ANZEIGEN',
                         'onClick' => 'IAH_PreviewSystemNavigationImport($id);'],
                     ['type' => 'Button', 'caption' => 'GEPRUEFTE TABS NACH EDIT IMPORTIEREN',
-                        'confirm' => '27 oder mehr Navigations-Tabs nach SystemConfigurationEdit kopieren? Produktiv bleibt unveraendert.',
+                        'confirm' => 'Vorhandene Navigation nach SystemConfigurationEdit importieren? PROD bleibt unveraendert.',
                         'onClick' => 'IAH_ApplySystemNavigationImport($id);'],
                     ['type' => 'Button', 'caption' => 'EDIT NEU LADEN',
                         'onClick' => 'IAH_ReloadSystemNavigationEditor($id);'],
                 ]],
-                ['type' => 'Label', 'name' => 'SystemNavigationImportSummary',
-                    'caption' => 'Noch keine aktuelle Importvorschau.'],
+                ...(!$hasNavigationDraft ? [[
+                    'type' => 'Label', 'name' => 'SystemNavigationImportSummary',
+                    'caption' => 'Noch keine aktuelle Importvorschau.',
+                ]] : []),
                 ['type' => 'Label', 'name' => 'SystemNavigationEditorSummary',
                     'caption' => $this->systemNavigationEditorSummary($context)],
                 ['type' => 'Label', 'name' => 'SystemNavigationEditorNotice', 'caption' => $notice],
@@ -637,7 +730,17 @@ class IPSAlexaHaussteuerung extends IPSModule
                     'columns' => $fields, 'values' => $rows,
                     'onEdit' => $onEdit,
                 ],
-                ['type' => 'Label', 'caption' => 'Neuen Navigationseintrag vorbereiten (ohne Aenderung am RoomsCatalog):'],
+                ...($migrationFinished ? [[
+                    'type' => 'RowLayout',
+                    'items' => [
+                        ['type' => 'Button', 'caption' => 'NAVIGATION-EDIT VORSCHAU',
+                            'onClick' => 'IAH_PreviewSystemNavigationUpdate($id);'],
+                        ['type' => 'Button', 'caption' => 'NAVIGATION AUS EDIT LIVE UEBERNEHMEN',
+                            'confirm' => 'Geaenderte Navigation aus EDIT nach PROD uebernehmen? Vorher wird automatisch gesichert.',
+                            'onClick' => 'IAH_PublishSystemNavigationUpdate($id);'],
+                    ],
+                ]] : []),
+                ['type' => 'Label', 'caption' => 'Neuen Navigations-Tab anlegen:'],
                 ['type' => 'RowLayout', 'items' => [
                     ['type' => 'Select', 'name' => 'SystemNavNewRoom', 'caption' => 'Raum',
                         'options' => $roomOptions, 'value' => $roomOptions[0]['value']],
@@ -656,12 +759,13 @@ class IPSAlexaHaussteuerung extends IPSModule
                 ]],
                 ['type' => 'Button', 'name' => 'SystemNavigationAddButton',
                     'caption' => 'NEUEN TAB NUR IN EDIT ANLEGEN', 'onClick' => $onCreate],
-                ['type' => 'ExpansionPanel', 'caption' => 'Andere Systemeinstellungen: Wo pflege ich was?',
+                ...(!$migrationFinished ? [[
+                    'type' => 'ExpansionPanel', 'caption' => 'Andere Systemeinstellungen: Wo pflege ich was?',
                     'expanded' => false, 'items' => [
-                        ['type' => 'Label', 'caption' => 'KI, Alexa, Visualisierung, Launch-Kacheln, Renderer und PageMappings werden bereits ueber die oberen Instanz-Einstellungen bearbeitet. Keine zweite Konfigurationskopie anlegen.'],
-                        ['type' => 'Label', 'caption' => 'var / script: automatische IDs und bestehende Modulparameter. Die Inventur zeigt nur die Anzahl, keine Zugangsdaten. Noch nicht alles ist interaktiv editierbar.'],
-                        ['type' => 'Label', 'caption' => 'RoomsCatalogConfigurator: nur Raeume und echte Geraete. Tabs bleiben vorerst technisch im alten RoomsCatalog, werden aber hier fuer die Migration vorbereitet.'],
-                    ]],
+                        ['type' => 'Label', 'caption' => 'KI, Alexa, Visualisierung, Launch-Kacheln, Renderer und PageMappings werden bereits ueber die oberen Instanz-Einstellungen bearbeitet.'],
+                        ['type' => 'Label', 'caption' => 'RoomsCatalogConfigurator: Raeume und echte Geraete. Navigation in diesem Hauptmodul.'],
+                    ],
+                ]] : []),
             ],
         ];
     }
