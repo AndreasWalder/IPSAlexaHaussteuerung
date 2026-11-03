@@ -68,7 +68,7 @@ sein, sonst bricht der Vorgang ab.
 Nach der ersten Aktivierung – auch nach der Bereinigung – kannst du einen
 Tab im V3.3.4-Editor ändern oder einen neuen Tab hinzufügen. Verwende
 anschließend im Abschnitt V3.3.5 die beiden Knöpfe
-**Navigation-EDIT Vorschau** und **Navigation aus EDIT live übernehmen**.
+**Änderungen prüfen** und **Änderungen aktivieren**.
 Nur das Feld `navigation` wird in die aktuelle
 `SystemConfiguration` (PROD) geschrieben, nie sämtliche alten Werte
 aus einer eventuell veralteten EDIT-Kopie. Die bestehende PROD-Fassung
@@ -146,7 +146,7 @@ im normalen Formular automatisch ausgeblendet.
 
 Stattdessen zeigt die Hauptinstanz nur noch **Navigation & Tabs** –
 mit `SystemConfigurationEdit` als Bearbeitungsstand und den Schaltflächen
-**Navigation-EDIT Vorschau** und **Navigation aus EDIT live übernehmen**.
+**Änderungen prüfen** und **Änderungen aktivieren**.
 Eine zusammengefasste, zugeklappte Rubrik
 **Erweiterte Wartung & Wiederherstellung** enthält den
 statusgesicherten Wiederherstellungsknopf.
@@ -157,3 +157,30 @@ Wenn die Abschlussbedingungen nach einem Rollback oder fehlenden
 Backups nicht mehr gelten, sind die ursprünglichen Migrationswerkzeuge
 wieder sichtbar. Änderungen an echten Geräten und anderen
 Systemeinstellungen bleiben dadurch unabhängig von der Navigation.
+
+## Abschlussarbeiten in der Oberfläche (V3.3.7)
+
+Nach dem verifizierten Cleanup gibt es im Hauptmodul keine eigenen
+V3.3.3- bis V3.3.5-Konfigurationsbereiche mehr. Die einmaligen
+Import-, Bestandsaufnahme- und Cleanup-Schaltflächen sind ausgeblendet.
+Die laufende Pflege erfolgt über **Navigation & Tabs** mit den
+Aktionen **Änderungen prüfen** und **Änderungen aktivieren**.
+
+Die Tabelle zeigt jetzt nur die tatsächlich benötigten Felder;
+Tab-Key, ursprünglicher Quellpfad, interne ID und Prüfsumme bleiben
+für die sichere Bearbeitung in den Listendaten erhalten, sind aber im
+Alltag verborgen. Die IP-Symcon-Objekt-ID wird als **Integer**
+übergeben, damit die Objektauswahl die ID korrekt interpretieren kann.
+Eine alte Importfehlermeldung wird bei abgeschlossener Migration nicht
+mehr als aktueller Fehler angezeigt; neue Fehlermeldungen bleiben
+weiterhin sichtbar.
+
+Die Prüfung/Review-Information und die Datensicherungen werden nicht
+entfernt. Die abgeschlossene Migration bestätigt eine technische
+Bereinigung, **keine vollständige Alexa-Funktionsprüfung** und noch
+keinen 100-%-Gerätedatenstand für den künftigen KIHouseController.
+
+Die Wiederherstellung bleibt unter **Erweiterte Wartung &
+Wiederherstellung** erreichbar. Es werden **keine Skripte, Backups
+oder Attribute automatisch gelöscht**, da der lokale Backup- und
+Migrationsnachweis zum Schutz produktiver Installationen gebraucht wird.
