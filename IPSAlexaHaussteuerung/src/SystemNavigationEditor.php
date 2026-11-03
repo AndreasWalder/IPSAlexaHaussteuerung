@@ -219,7 +219,7 @@ final class IAHSystemNavigationEditor
     private static function identifier(string $value, string $label): string
     {
         $value = trim($value);
-        if ($value === '' || strlen($value) > 100 || !preg_match('/^[a-zA-Z0-9_\-]+$/D', $value)) {
+        if ($value === '' || strlen($value) > 100 || !preg_match('/^[\p{L}\p{N}_\-]+$/uD', $value)) {
             throw new RuntimeException($label . ': nur Buchstaben, Zahlen, _ und - zulassen.');
         }
         return $value;

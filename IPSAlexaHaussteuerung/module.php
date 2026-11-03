@@ -9,6 +9,7 @@ require_once __DIR__ . '/src/AlexaLogBuffer.php';
 require_once __DIR__ . '/src/AlexaLogTrait.php';
 require_once __DIR__ . '/src/SystemConfigurationManager.php';
 require_once __DIR__ . '/src/SystemNavigationEditor.php';
+require_once __DIR__ . '/src/SystemNavigationMigration.php';
 require_once __DIR__ . '/src/KICostTrait.php';
 require_once __DIR__ . '/src/Router.php';
 require_once __DIR__ . '/src/Routes/RouteAll.php';
@@ -65,6 +66,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyString('LaunchHomeIcon', (string) ($launchDefaults['homeIcon'] ?? 'HomeIcon.png'));
         $this->RegisterPropertyString('LaunchHeaderIcon', (string) ($launchDefaults['headerIcon'] ?? 'Icon.png'));
         $this->RegisterPropertyInteger('SystemConfigScriptId', 0);
+        $this->RegisterPropertyInteger('NavigationRoomsCatalogEditScriptId', 0);
         $this->RegisterPropertyBoolean('KIIntentEnabled', true);
         $this->RegisterPropertyString('KIIntentApiKey', '');
         $this->RegisterPropertyString('KIIntentModel', 'gpt-4.1-mini'); // Altwert: weiterhin für bestehende Konfigurationen gespeichert
@@ -91,6 +93,9 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterAttributeString('SystemConfigurationInventory', '');
         $this->RegisterAttributeString('SystemNavigationImportPreview', '');
         $this->RegisterAttributeString('SystemNavigationEditorNotice', '');
+        $this->RegisterAttributeString('SystemNavigationMigrationPreview', '');
+        $this->RegisterAttributeString('SystemNavigationMigrationReceipt', '');
+        $this->RegisterAttributeString('SystemNavigationMigrationNotice', '');
         $this->RegisterTimer('DelayedPageSwitch', 0, 'IAH_HandleDelayedPageSwitch($_IPS["TARGET"]);');
         $this->RegisterTimer('KICostRefresh', 60000, 'IAH_UpdateKICostExchangeRate($_IPS["TARGET"]); IAH_RefreshKICostDisplay($_IPS["TARGET"]);');
         $this->RegisterTimer('AlexaLogRefresh', 15000, 'IAH_RefreshAlexaLogBuffer($_IPS["TARGET"]);');
@@ -377,6 +382,7 @@ class IPSAlexaHaussteuerung extends IPSModule
 
         $form['elements'][] = $this->buildSystemConfigurationInventoryForm();
         $form['elements'][] = $this->buildSystemNavigationEditorForm();
+        $form['elements'][] = $this->buildSystemNavigationMigrationForm();
 
         return json_encode($form, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
@@ -530,8 +536,11 @@ class IPSAlexaHaussteuerung extends IPSModule
         }
         $items = IAHSystemNavigationEditor::items($config);
         $active = count(array_filter($items, static fn($e): bool => is_array($e) && !empty($e['enabled'])));
-        return sprintf('%d Navigationseintraege in EDIT #%d (%d aktiv) · PROD unveraendert · V3.3.5 fuer Laufzeitumschaltung erforderlich',
-            count($items), $ids['edit'], $active);
+        $prod = $this->readConfigurationArrayFromScript((int)($ids['prod'] ?? 0));
+        $live = is_array($prod) && ($prod['navigation']['mode'] ?? '') === 'active';
+        return sprintf('%d Navigationseintraege in EDIT #%d (%d aktiv) · %s',
+            count($items), $ids['edit'], $active,
+            $live ? 'PROD aktiv: Aenderungen unter V3.3.5 gezielt live uebernehmen' : 'Noch nicht produktiv aktiviert (V3.3.5)');
     }
 
     private function buildSystemNavigationEditorForm(): array
@@ -606,7 +615,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             'caption' => 'V3.3.4 – Navigation und Tabs verwalten (SystemConfigurationEdit)',
             'expanded' => true,
             'items' => [
-                ['type' => 'Label', 'caption' => 'Zuerst Vorschau, danach Import in EDIT. Der bisherige RoomsCatalog bleibt bis V3.3.5 die aktive Navigationsquelle. Keine Live-Aenderung an Alexa oder Renderern.'],
+                ['type' => 'Label', 'caption' => 'Tabs in EDIT verwalten: vor Aktivierung liest Alexa RoomsCatalog, danach SystemConfiguration PROD. Aenderungen hier werden erst mit V3.3.5 (Navigation aus EDIT live uebernehmen) produktiv.'],
                 ['type' => 'RowLayout', 'items' => [
                     ['type' => 'Button', 'caption' => 'BESTANDSVORSCHAU ANZEIGEN',
                         'onClick' => 'IAH_PreviewSystemNavigationImport($id);'],
@@ -839,6 +848,494 @@ class IPSAlexaHaussteuerung extends IPSModule
         } catch (\Throwable $e) {
             IPS_SetScriptContent($editId, $raw);
             throw $e;
+        }
+    }
+
+
+    /** V3.3.5 – all operations are protected by a recent, hash-bound preview. */
+    private function navigationMigrationContext(): array
+    {
+        $ctx = $this->navigationEditorContext();
+        $prodId = (int) ($ctx['ids']['prod'] ?? 0);
+        $ctx['prodSource'] = $this->getScriptContent($prodId);
+        $ctx['prod'] = $this->readConfigurationArrayFromScript($prodId);
+        $ctx['roomsEditId'] = $this->findNavigationRoomsEditScriptId((int) $ctx['catalogId']);
+        $ctx['roomsEditSource'] = $this->getScriptContent($ctx['roomsEditId']);
+        $ctx['roomsEdit'] = $this->readConfigurationArrayFromScript($ctx['roomsEditId']);
+        return $ctx;
+    }
+
+    private function findNavigationRoomsEditScriptId(int $prodId): int
+    {
+        $configured = $this->ReadPropertyInteger('NavigationRoomsCatalogEditScriptId');
+        if ($configured > 0 && IPS_ScriptExists($configured)) return $configured;
+        $settings = $this->getObjectIDByIdentOrName($this->InstanceID, 'iahSettings', 'Einstellungen');
+        foreach (['roomsCatalogEdit', 'RoomsCatalogEdit'] as $ident) {
+            $candidate = $this->getObjectIDByIdentOrName($settings, $ident, 'RoomsCatalogEdit');
+            if ($candidate > 0 && IPS_ScriptExists($candidate)) return $candidate;
+        }
+        if (function_exists('IPS_GetInstanceListByModuleID') && function_exists('IPS_GetConfiguration')) {
+            $instances = @IPS_GetInstanceListByModuleID('{0AD6D448-0E89-4F15-AC66-2B6698E5AA60}');
+            foreach ((array) $instances as $instanceId) {
+                $properties = json_decode((string) @IPS_GetConfiguration((int) $instanceId), true);
+                if (is_array($properties)
+                    && (int) ($properties['RoomsCatalogScriptID'] ?? 0) === $prodId) {
+                    $id = (int) ($properties['RoomsCatalogEditScriptID'] ?? 0);
+                    if ($id > 0 && IPS_ScriptExists($id)) return $id;
+                }
+            }
+        }
+        return 0;
+    }
+
+    private function navigationMigrationRuntimeReady(): bool
+    {
+        $actionId = $this->getActionScriptId();
+        $action = $this->getScriptContent($actionId);
+        if (!is_string($action)
+            || !str_contains($action, 'IAH_NAVIGATION_CONFIG_V335')
+            || !str_contains($action, 'IAH_NAVIGATION_OVERLAY_V335_END')) return false;
+        $helper = $this->getObjectIDByIdentOrName($this->InstanceID, 'iahHelper', 'Alexa new devices helper');
+        $runtimeId = $this->getObjectIDByIdentOrName($helper, 'navigationRuntimeScript', 'NavigationRuntime');
+        return $runtimeId > 0 && IPS_ScriptExists($runtimeId);
+    }
+
+    private function buildSystemNavigationMigrationForm(): array
+    {
+        $ctx = $this->navigationMigrationContext();
+        $receipt = json_decode($this->ReadAttributeString('SystemNavigationMigrationReceipt'), true);
+        $receipt = is_array($receipt) ? $receipt : [];
+        $live = is_array($ctx['prod']['navigation'] ?? null)
+            && ($ctx['prod']['navigation']['mode'] ?? '') === 'active';
+        $stage = (string) ($receipt['stage'] ?? 'nicht aktiviert');
+        $nav = is_array($ctx['edit']['navigation'] ?? null) ? $ctx['edit']['navigation'] : [];
+        $tabCount = count(IAHSystemNavigationEditor::items(['navigation' => $nav]));
+        $caption = sprintf(
+            'PROD #%d · EDIT #%d · RoomsCatalog #%d · Navigation %d · Laufzeit %s · Sicherungsstufe %s',
+            (int) $ctx['ids']['prod'], (int) $ctx['ids']['edit'], (int) $ctx['catalogId'],
+            $tabCount, $live ? 'AKTIV' : 'Legacy', $stage
+        );
+        return [
+            'type' => 'ExpansionPanel',
+            'caption' => 'V3.3.5 – Navigation produktiv umstellen und absichern',
+            'expanded' => true,
+            'items' => [
+                ['type' => 'Label', 'caption' =>
+                    '1. Vorschau pruefen, 2. PROD-Navigation aktivieren, 3. Alexa/Renderer mit echten Aufrufen testen, 4. erst danach alte Tabs bereinigen. Wiederherstellung ist hashgeschuetzt.'],
+                ['type' => 'Label', 'name' => 'SystemNavigationMigrationStatus', 'caption' => $caption],
+                ['type' => 'Label', 'name' => 'SystemNavigationMigrationNotice',
+                    'caption' => $this->ReadAttributeString('SystemNavigationMigrationNotice')],
+                ['type' => 'Button', 'caption' => '1 – AKTIVIERUNG VORSCHAU',
+                    'onClick' => 'IAH_PreviewSystemNavigationCutover($id);'],
+                ['type' => 'Button', 'caption' => '2 – NAVIGATION IN PROD AKTIVIEREN',
+                    'confirm' => 'Navigation nur in SystemConfiguration PROD aktivieren? RoomsCatalog bleibt zuerst als Fallback erhalten.',
+                    'onClick' => 'IAH_ActivateSystemNavigationCutover($id);'],
+                ['type' => 'Label', 'caption' => 'Nach Aktivierung: weitere Tab-Aenderungen aus EDIT aktualisieren (ohne erneute Migration):'],
+                ['type' => 'RowLayout', 'items' => [
+                    ['type' => 'Button', 'caption' => 'NAVIGATION-EDIT VORSCHAU',
+                        'onClick' => 'IAH_PreviewSystemNavigationUpdate($id);'],
+                    ['type' => 'Button', 'caption' => 'NAVIGATION AUS EDIT LIVE UEBERNEHMEN',
+                        'confirm' => 'Geaenderte Navigationseinstellungen aus EDIT in PROD veroeffentlichen? Backup wird vorher erstellt.',
+                        'onClick' => 'IAH_PublishSystemNavigationUpdate($id);'],
+                ]],
+                ['type' => 'Label', 'caption' =>
+                    'Funktionstest nach Aktivierung: Alexa-Navigation Licht/Jalousie/Geraete, mindestens eine dynamische Domain (z.B. Bienen/Sicherheit), alle wichtigen Tabs und Ruecknavigation pruefen.'],
+                ['type' => 'SelectObject', 'name' => 'NavigationRoomsCatalogEditScriptId',
+                    'caption' => 'RoomsCatalogEdit – nur wenn automatische Erkennung fehlt (optional)'],
+                ['type' => 'CheckBox', 'name' => 'SystemNavigationLiveTested', 'caption' =>
+                    'Ich habe die Navigation nach Aktivierung am echten Alexa-Geraet getestet.',
+                    'value' => false],
+                ['type' => 'Button', 'caption' => '3 – BEREINIGUNG VORSCHAU',
+                    'onClick' => 'IAH_PreviewSystemNavigationCleanup($id, $SystemNavigationLiveTested);'],
+                ['type' => 'Button', 'caption' => '4 – ALTE TABS NACH BACKUP AUS ROOMSCATALOG ENTFERNEN',
+                    'confirm' => 'SICHERUNG und Bereinigung der bereits migrierten Tabs aus RoomsCatalog UND RoomsCatalogEdit durchfuehren?',
+                    'onClick' => 'IAH_CleanupSystemNavigation($id, $SystemNavigationLiveTested);'],
+                ['type' => 'Button', 'caption' => 'NOTFALL – VORHERIGEN STAND WIEDERHERSTELLEN',
+                    'confirm' => 'Aktivierung zuruecknehmen und ggf. gesicherte Tabs zurueckspielen? Neuere manuelle Aenderungen blockieren die Wiederherstellung.',
+                    'onClick' => 'IAH_RollbackSystemNavigation($id);'],
+            ],
+        ];
+    }
+
+    private function navigationMigrationMessage(string $message): void
+    {
+        $this->WriteAttributeString('SystemNavigationMigrationNotice', $message);
+        $this->UpdateFormField('SystemNavigationMigrationNotice', 'caption', $message);
+        echo $message;
+    }
+
+    private function navigationMigrationAudit(array $ctx): array
+    {
+        if (!is_array($ctx['catalog']) || !is_array($ctx['edit'])
+            || !is_array($ctx['prod']) || !is_string($ctx['prodSource'])
+            || !is_string($ctx['editSource']) || !is_string($ctx['catalogSource'])
+            || !IAHSystemNavigationEditor::isLiteralArraySource($ctx['prodSource'])
+            || !IAHSystemNavigationEditor::isLiteralArraySource($ctx['editSource'])) {
+            throw new \RuntimeException('PROD, EDIT oder RoomsCatalog nicht als einfaches Array lesbar.');
+        }
+        if (!$this->navigationMigrationRuntimeReady()) {
+            throw new \RuntimeException('Alexa Action-Router/NavigationRuntime noch nicht aktualisiert. Modulkonfiguration uebernehmen.');
+        }
+        $nav = $ctx['edit']['navigation'] ?? null;
+        if (!is_array($nav)) throw new \RuntimeException('Navigation muss zuerst nach SystemConfigurationEdit importiert werden.');
+        $exists = static fn(int $id): bool => function_exists('IPS_ObjectExists')
+            ? IPS_ObjectExists($id) : true;
+        $audit = IAHSystemNavigationMigration::audit($ctx['catalog'], $nav, $exists);
+        if ($audit['errors'] !== []) {
+            throw new \RuntimeException(implode('; ', array_slice($audit['errors'], 0, 5)));
+        }
+        return $audit;
+    }
+
+    public function PreviewSystemNavigationCutover(): void
+    {
+        $this->WriteAttributeString('SystemNavigationMigrationPreview', '');
+        try {
+            $ctx = $this->navigationMigrationContext();
+            $audit = $this->navigationMigrationAudit($ctx);
+            IAHSystemNavigationMigration::prepareProductive($ctx['prod'], $ctx['edit'], $ctx['catalog']);
+            $preview = [
+                'phase' => 'activate', 'time' => time(),
+                'ids' => $ctx['ids'], 'roomsId' => $ctx['catalogId'],
+                'prodHash' => hash('sha256', $ctx['prodSource']),
+                'editHash' => hash('sha256', $ctx['editSource']),
+                'roomsHash' => hash('sha256', $ctx['catalogSource']),
+            ];
+            $this->WriteAttributeString('SystemNavigationMigrationPreview', json_encode($preview));
+            $this->navigationMigrationMessage(sprintf(
+                'Aktivierung bereit: %d Tabs, davon %d aktiv, %d Altpfade, %d neue Tabs, 0 Fehler. Keine Aenderung gespeichert.',
+                $audit['total'], $audit['enabled'], $audit['legacy'], $audit['new']
+            ));
+        } catch (\Throwable $e) {
+            $this->navigationMigrationMessage('Aktivierung blockiert: ' . $e->getMessage());
+        }
+    }
+
+    private function migrationPreviewValid(array $preview, array $ctx, string $phase): bool
+    {
+        if (($preview['phase'] ?? '') !== $phase || time() - (int)($preview['time'] ?? 0) > 600
+            || ($preview['ids'] ?? null) !== $ctx['ids']
+            || ($preview['roomsId'] ?? null) !== $ctx['catalogId']) return false;
+        foreach (['prodHash' => 'prodSource', 'editHash' => 'editSource', 'roomsHash' => 'catalogSource'] as $h => $source) {
+            if (!is_string($ctx[$source])
+                || ($preview[$h] ?? '') !== hash('sha256', $ctx[$source])) return false;
+        }
+        if ($phase === 'cleanup') {
+            if (($preview['roomsEditId'] ?? 0) !== $ctx['roomsEditId']
+                || !is_string($ctx['roomsEditSource'])
+                || ($preview['roomsEditHash'] ?? '') !== hash('sha256', $ctx['roomsEditSource'])) return false;
+        }
+        return true;
+    }
+
+    private function appendNavigationBackup(int $scriptId, int $sourceId, string $source, string $reason): void
+    {
+        $backup = $this->readConfigurationArrayFromScript($scriptId);
+        if (!is_array($backup) || !is_array($backup['snapshots'] ?? null)) {
+            throw new \RuntimeException('SystemConfiguration_Backup ungueltig.');
+        }
+        $backup['snapshots'][] = [
+            'createdAt' => gmdate('c'), 'reason' => $reason,
+            'sourceScriptId' => $sourceId,
+            'sha256' => hash('sha256', $source), 'phpSource' => $source,
+        ];
+        $write = IAHSystemNavigationEditor::encode($backup);
+        IPS_SetScriptContent($scriptId, $write);
+        if ($this->getScriptContent($scriptId) !== $write) {
+            throw new \RuntimeException('SystemConfiguration_Backup konnte nicht verifiziert werden.');
+        }
+    }
+
+    public function ActivateSystemNavigationCutover(): void
+    {
+        $preview = json_decode($this->ReadAttributeString('SystemNavigationMigrationPreview'), true);
+        $ctx = $this->navigationMigrationContext();
+        if (!is_array($preview) || !$this->migrationPreviewValid($preview, $ctx, 'activate')) {
+            $this->navigationMigrationMessage('Aktivierung abgebrochen: Vorschau veraltet. Erneut pruefen.');
+            return;
+        }
+        try {
+            $this->navigationMigrationAudit($ctx);
+            $next = IAHSystemNavigationMigration::prepareProductive($ctx['prod'], $ctx['edit'], $ctx['catalog']);
+            $php = IAHSystemNavigationEditor::encode($next);
+            $prodId = (int) $ctx['ids']['prod'];
+            $this->appendNavigationBackup((int) $ctx['ids']['backup'], $prodId, $ctx['prodSource'], 'before_v335_navigation_activation');
+            try {
+                IPS_SetScriptContent($prodId, $php);
+                if ($this->getScriptContent($prodId) !== $php) throw new \RuntimeException('PROD-Verifikation fehlgeschlagen.');
+            } catch (\Throwable $e) {
+                IPS_SetScriptContent($prodId, $ctx['prodSource']);
+                throw $e;
+            }
+            $this->WriteAttributeString('SystemNavigationMigrationReceipt', json_encode([
+                'stage' => 'active', 'prodId' => $prodId,
+                'originalProdHash' => hash('sha256', $ctx['prodSource']),
+                'activeProdHash' => hash('sha256', $php),
+            ]));
+            $this->WriteAttributeString('SystemNavigationMigrationPreview', '');
+            $this->navigationMigrationMessage('Navigation in PROD aktiv. Jetzt Alexa/Renderer testen! Alte Tabs sind noch vorhanden; Bereinigung erst nach Test.');
+        } catch (\Throwable $e) {
+            $this->navigationMigrationMessage('Aktivierung fehlgeschlagen: ' . $e->getMessage());
+        }
+    }
+
+
+    public function PreviewSystemNavigationUpdate(): void
+    {
+        $this->WriteAttributeString('SystemNavigationMigrationPreview', '');
+        try {
+            $ctx = $this->navigationMigrationContext();
+            $receipt = json_decode($this->ReadAttributeString('SystemNavigationMigrationReceipt'), true);
+            if (!is_array($receipt) || !in_array($receipt['stage'] ?? '', ['active','cleaned'],true)
+                || ($receipt['activeProdHash'] ?? '') !== hash('sha256', (string)$ctx['prodSource'])
+                || !is_array($ctx['edit']) || !is_array($ctx['prod']) || !is_array($ctx['catalog'])
+                || !is_string($ctx['editSource']) || !is_string($ctx['prodSource'])
+                || !IAHSystemNavigationEditor::isLiteralArraySource($ctx['prodSource'])
+                || !$this->navigationMigrationRuntimeReady()) {
+                throw new \RuntimeException('Aktive PROD-Navigation oder Laufzeit-Helper fehlt/ist geaendert.');
+            }
+            $exists = static fn(int $id): bool => function_exists('IPS_ObjectExists')
+                ? IPS_ObjectExists($id) : true;
+            $next = IAHSystemNavigationMigration::updatedProductive(
+                $ctx['prod'], $ctx['edit'], $ctx['catalog'], $exists);
+            $preview = [
+                'phase' => 'update', 'time' => time(),
+                'ids' => $ctx['ids'], 'roomsId' => $ctx['catalogId'],
+                'prodHash' => hash('sha256', $ctx['prodSource']),
+                'editHash' => hash('sha256', $ctx['editSource']),
+                'roomsHash' => hash('sha256', $ctx['catalogSource']),
+            ];
+            $this->WriteAttributeString('SystemNavigationMigrationPreview', json_encode($preview));
+            $this->navigationMigrationMessage(sprintf('Update bereit: %d Tabs in EDIT, nur Navigation nach PROD, alle anderen Einstellungen bleiben erhalten.',
+                count(IAHSystemNavigationEditor::items($next))));
+        } catch (\Throwable $e) {
+            $this->navigationMigrationMessage('Navigation-Update blockiert: ' . $e->getMessage());
+        }
+    }
+
+    public function PublishSystemNavigationUpdate(): void
+    {
+        $ctx = $this->navigationMigrationContext();
+        $preview = json_decode($this->ReadAttributeString('SystemNavigationMigrationPreview'), true);
+        if (!is_array($preview) || !$this->migrationPreviewValid($preview, $ctx, 'update')) {
+            $this->navigationMigrationMessage('Navigation-Update abgebrochen: Vorschau veraltet.');
+            return;
+        }
+        try {
+            $receipt = json_decode($this->ReadAttributeString('SystemNavigationMigrationReceipt'), true);
+            if (!is_array($receipt) || !in_array($receipt['stage'] ?? '', ['active','cleaned'],true)
+                || ($receipt['activeProdHash'] ?? '') !== hash('sha256', (string)$ctx['prodSource'])) {
+                throw new \RuntimeException('PROD seit Aktivierung geaendert, kein unkontrolliertes Ueberschreiben.');
+            }
+            $exists = static fn(int $id): bool => function_exists('IPS_ObjectExists')
+                ? IPS_ObjectExists($id) : true;
+            $next = IAHSystemNavigationMigration::updatedProductive(
+                $ctx['prod'], $ctx['edit'], $ctx['catalog'], $exists);
+            $source = IAHSystemNavigationEditor::encode($next);
+            $id = (int) $ctx['ids']['prod'];
+            $this->appendNavigationBackup((int)$ctx['ids']['backup'], $id, $ctx['prodSource'], 'before_v335_navigation_update');
+            try {
+                IPS_SetScriptContent($id, $source);
+                if ($this->getScriptContent($id) !== $source) throw new \RuntimeException('PROD-Verifikation fehlgeschlagen.');
+            } catch (\Throwable $e) {
+                IPS_SetScriptContent($id, $ctx['prodSource']);
+                throw $e;
+            }
+            $receipt['activeProdHash'] = hash('sha256', $source);
+            $this->WriteAttributeString('SystemNavigationMigrationReceipt', json_encode($receipt));
+            $this->WriteAttributeString('SystemNavigationMigrationPreview', '');
+            $this->navigationMigrationMessage('Navigation aus EDIT in PROD aktualisiert. Alle anderen Systemwerte unveraendert.');
+        } catch (\Throwable $e) {
+            $this->navigationMigrationMessage('Navigation-Update fehlgeschlagen: ' . $e->getMessage());
+        }
+    }
+
+    public function PreviewSystemNavigationCleanup(bool $liveTested = false): void
+    {
+        $this->WriteAttributeString('SystemNavigationMigrationPreview', '');
+        if (!$liveTested) {
+            $this->navigationMigrationMessage('Bereinigung blockiert: Zuerst Alexa am echten Geraet testen und Haken setzen.');
+            return;
+        }
+        try {
+            $ctx = $this->navigationMigrationContext();
+            $receipt = json_decode($this->ReadAttributeString('SystemNavigationMigrationReceipt'), true);
+            if (!is_array($receipt) || ($receipt['stage'] ?? '') !== 'active'
+                || ($receipt['activeProdHash'] ?? '') !== hash('sha256', (string)$ctx['prodSource'])) {
+                throw new \RuntimeException('Keine unveraenderte Aktivierung aus diesem Modul vorhanden.');
+            }
+            if (!is_array($ctx['roomsEdit']) || !is_string($ctx['roomsEditSource'])
+                || $ctx['roomsEditId'] <= 0 || $ctx['roomsEditId'] === $ctx['catalogId']
+                || !IAHSystemNavigationEditor::isLiteralArraySource($ctx['catalogSource'])
+                || !IAHSystemNavigationEditor::isLiteralArraySource($ctx['roomsEditSource'])) {
+                throw new \RuntimeException('RoomsCatalogEdit fehlt oder ist nicht als Literal-Array lesbar. ID ggf. oben zuweisen und uebernehmen.');
+            }
+            $nav = $ctx['prod']['navigation'] ?? [];
+            if (($nav['mode'] ?? '') !== 'active') throw new \RuntimeException('Navigation noch nicht produktiv aktiv.');
+            $auditProd = IAHSystemNavigationMigration::audit($ctx['catalog'], $nav);
+            $auditEdit = IAHSystemNavigationMigration::audit($ctx['roomsEdit'], $nav);
+            if ($auditProd['errors'] !== [] || $auditEdit['errors'] !== []) {
+                throw new \RuntimeException('Unterschiede zwischen Alt-Tabs und importierter Navigation: '
+                    . implode('; ', array_slice(array_merge($auditProd['errors'], $auditEdit['errors']), 0, 4)));
+            }
+            $cleanProd = IAHSystemNavigationMigration::stripLegacyTabs($ctx['catalog'], $nav);
+            $cleanEdit = IAHSystemNavigationMigration::stripLegacyTabs($ctx['roomsEdit'], $nav);
+            IAHSystemNavigationMigration::assertProjectionParity($ctx['catalog'], $cleanProd, $nav);
+            IAHSystemNavigationMigration::assertProjectionParity($ctx['roomsEdit'], $cleanEdit, $nav);
+            $preview = [
+                'phase' => 'cleanup', 'time' => time(),
+                'ids' => $ctx['ids'], 'roomsId' => $ctx['catalogId'],
+                'prodHash' => hash('sha256', $ctx['prodSource']),
+                'editHash' => hash('sha256', $ctx['editSource']),
+                'roomsHash' => hash('sha256', $ctx['catalogSource']),
+                'roomsEditId' => $ctx['roomsEditId'],
+                'roomsEditHash' => hash('sha256', $ctx['roomsEditSource']),
+            ];
+            $this->WriteAttributeString('SystemNavigationMigrationPreview', json_encode($preview));
+            $this->navigationMigrationMessage(sprintf(
+                'Bereinigung bereit: %d importierte Alt-Tabs, PROD und EDIT vollstaendig abgeglichen. Beide RoomsCatalog-Skripte werden vorher gesichert.',
+                $auditProd['legacy']
+            ));
+        } catch (\Throwable $e) {
+            $this->navigationMigrationMessage('Bereinigung blockiert: ' . $e->getMessage());
+        }
+    }
+
+    private function createNavigationCatalogBackup(int $scriptId, string $label, string $content): int
+    {
+        $id = IPS_CreateScript(0);
+        if (!is_int($id) || $id <= 0) throw new \RuntimeException('Backup-Skript konnte nicht angelegt werden.');
+        IPS_SetParent($id, IPS_GetParent($scriptId));
+        IPS_SetName($id, $label . '_NavigationBackup_' . date('Ymd_His') . '_' . $id);
+        IPS_SetScriptContent($id, $content);
+        if ($this->getScriptContent($id) !== $content) {
+            throw new \RuntimeException('Catalog-Backup konnte nicht verifiziert werden.');
+        }
+        return $id;
+    }
+
+    public function CleanupSystemNavigation(bool $liveTested = false): void
+    {
+        $preview = json_decode($this->ReadAttributeString('SystemNavigationMigrationPreview'), true);
+        $ctx = $this->navigationMigrationContext();
+        if (!$liveTested || !is_array($preview)
+            || !$this->migrationPreviewValid($preview, $ctx, 'cleanup')) {
+            $this->navigationMigrationMessage('Bereinigung abgebrochen: Testbestaetigung oder aktuelle Vorschau fehlt.');
+            return;
+        }
+        $receipt = json_decode($this->ReadAttributeString('SystemNavigationMigrationReceipt'), true);
+        if (!is_array($receipt) || ($receipt['stage'] ?? '') !== 'active') {
+            $this->navigationMigrationMessage('Bereinigung abgebrochen: Aktivierung nicht vorhanden.');
+            return;
+        }
+        try {
+            $nav = $ctx['prod']['navigation'] ?? [];
+            $auditProd = IAHSystemNavigationMigration::audit($ctx['catalog'], $nav);
+            $auditEdit = IAHSystemNavigationMigration::audit($ctx['roomsEdit'], $nav);
+            if ($auditProd['errors'] !== [] || $auditEdit['errors'] !== []) {
+                throw new \RuntimeException('Quellabgleich nicht mehr gueltig.');
+            }
+            $roomsProd = IAHSystemNavigationMigration::stripLegacyTabs($ctx['catalog'], $nav);
+            $roomsEdit = IAHSystemNavigationMigration::stripLegacyTabs($ctx['roomsEdit'], $nav);
+            IAHSystemNavigationMigration::assertProjectionParity($ctx['catalog'], $roomsProd, $nav);
+            IAHSystemNavigationMigration::assertProjectionParity($ctx['roomsEdit'], $roomsEdit, $nav);
+            $backupProdId = $this->createNavigationCatalogBackup(
+                $ctx['catalogId'], 'RoomsCatalog', $ctx['catalogSource']);
+            $backupEditId = $this->createNavigationCatalogBackup(
+                $ctx['roomsEditId'], 'RoomsCatalogEdit', $ctx['roomsEditSource']);
+            $newProdSource = IAHSystemNavigationEditor::encode($roomsProd);
+            $newEditSource = IAHSystemNavigationEditor::encode($roomsEdit);
+            try {
+                IPS_SetScriptContent($ctx['roomsEditId'], $newEditSource);
+                if ($this->getScriptContent($ctx['roomsEditId']) !== $newEditSource) {
+                    throw new \RuntimeException('RoomsCatalogEdit-Verifikation fehlgeschlagen.');
+                }
+                IPS_SetScriptContent($ctx['catalogId'], $newProdSource);
+                if ($this->getScriptContent($ctx['catalogId']) !== $newProdSource) {
+                    throw new \RuntimeException('RoomsCatalog PROD-Verifikation fehlgeschlagen.');
+                }
+            } catch (\Throwable $e) {
+                IPS_SetScriptContent($ctx['roomsEditId'], $ctx['roomsEditSource']);
+                IPS_SetScriptContent($ctx['catalogId'], $ctx['catalogSource']);
+                throw $e;
+            }
+            $receipt['stage'] = 'cleaned';
+            $receipt['roomsProdId'] = $ctx['catalogId'];
+            $receipt['roomsEditId'] = $ctx['roomsEditId'];
+            $receipt['backupProdId'] = $backupProdId;
+            $receipt['backupEditId'] = $backupEditId;
+            $receipt['originalRoomsProdHash'] = hash('sha256', $ctx['catalogSource']);
+            $receipt['originalRoomsEditHash'] = hash('sha256', $ctx['roomsEditSource']);
+            $receipt['cleanedRoomsProdHash'] = hash('sha256', $newProdSource);
+            $receipt['cleanedRoomsEditHash'] = hash('sha256', $newEditSource);
+            $this->WriteAttributeString('SystemNavigationMigrationReceipt', json_encode($receipt));
+            $this->WriteAttributeString('SystemNavigationMigrationPreview', '');
+            $this->navigationMigrationMessage('Tabs aus RoomsCatalog und RoomsCatalogEdit bereinigt; volle Backup-Skripte vorhanden. Navigation kommt nun nur aus SystemConfiguration PROD.');
+        } catch (\Throwable $e) {
+            $this->navigationMigrationMessage('Bereinigung fehlgeschlagen: ' . $e->getMessage());
+        }
+    }
+
+    public function RollbackSystemNavigation(): void
+    {
+        $receipt = json_decode($this->ReadAttributeString('SystemNavigationMigrationReceipt'), true);
+        if (!is_array($receipt) || !in_array($receipt['stage'] ?? '', ['active', 'cleaned'], true)) {
+            $this->navigationMigrationMessage('Keine aktivierte V3.3.5-Migration zur Wiederherstellung.');
+            return;
+        }
+        try {
+            $ctx = $this->navigationMigrationContext();
+            if ($ctx['ids']['prod'] !== ($receipt['prodId'] ?? null)
+                || hash('sha256', (string)$ctx['prodSource']) !== ($receipt['activeProdHash'] ?? '')) {
+                throw new \RuntimeException('PROD wurde seit Aktivierung geaendert. Automatische Wiederherstellung gesperrt.');
+            }
+            $backup = $this->readConfigurationArrayFromScript((int)$ctx['ids']['backup']);
+            $originalProd = null;
+            foreach (array_reverse((array)($backup['snapshots'] ?? [])) as $snapshot) {
+                if (($snapshot['sourceScriptId'] ?? null) === $ctx['ids']['prod']
+                    && ($snapshot['sha256'] ?? '') === ($receipt['originalProdHash'] ?? '')
+                    && is_string($snapshot['phpSource'] ?? null)
+                    && hash('sha256', $snapshot['phpSource']) === ($snapshot['sha256'] ?? '')) {
+                    $originalProd = $snapshot['phpSource'];
+                    break;
+                }
+            }
+            if (!is_string($originalProd)) throw new \RuntimeException('PROD-Backup nicht gefunden.');
+            if (($receipt['stage'] ?? '') === 'cleaned') {
+                if ($ctx['catalogId'] !== ($receipt['roomsProdId'] ?? null)
+                    || $ctx['roomsEditId'] !== ($receipt['roomsEditId'] ?? null)
+                    || hash('sha256', (string)$ctx['catalogSource']) !== ($receipt['cleanedRoomsProdHash'] ?? '')
+                    || hash('sha256', (string)$ctx['roomsEditSource']) !== ($receipt['cleanedRoomsEditHash'] ?? '')) {
+                    throw new \RuntimeException('RoomsCatalog ist seit Bereinigung geaendert. Manuelle Wiederherstellung erforderlich.');
+                }
+                foreach (['Prod', 'Edit'] as $type) {
+                    $original = $this->getScriptContent((int)$receipt['backup'.$type.'Id']);
+                    if (!is_string($original) || $original === ''
+                        || hash('sha256', $original) !== ($receipt['originalRooms'.$type.'Hash'] ?? '')) {
+                        throw new \RuntimeException('RoomsCatalog-' . $type . '-Backup nicht mehr vorhanden.');
+                    }
+                    $currentId = $type === 'Prod' ? $ctx['catalogId'] : $ctx['roomsEditId'];
+                    $targetSource = $type === 'Prod' ? $ctx['catalogSource'] : $ctx['roomsEditSource'];
+                    // Check both source IDs and hashes before any write (done above).
+                    $restoreSources[$type] = $original;
+                }
+                // Restore both catalog scripts BEFORE switching off SystemConfiguration navigation.
+                IPS_SetScriptContent($ctx['roomsEditId'], $restoreSources['Edit']);
+                IPS_SetScriptContent($ctx['catalogId'], $restoreSources['Prod']);
+                if ($this->getScriptContent($ctx['roomsEditId']) !== $restoreSources['Edit']
+                    || $this->getScriptContent($ctx['catalogId']) !== $restoreSources['Prod']) {
+                    throw new \RuntimeException('Catalog-Wiederherstellung konnte nicht verifiziert werden. PROD-Navigation bleibt aktiv.');
+                }
+            }
+            IPS_SetScriptContent((int)$ctx['ids']['prod'], $originalProd);
+            if ($this->getScriptContent((int)$ctx['ids']['prod']) !== $originalProd) {
+                throw new \RuntimeException('PROD-Wiederherstellung fehlgeschlagen.');
+            }
+            $this->WriteAttributeString('SystemNavigationMigrationReceipt', '');
+            $this->WriteAttributeString('SystemNavigationMigrationPreview', '');
+            $this->navigationMigrationMessage('V3.3.5 rueckgaengig gemacht: bisherige Tabs und SystemConfiguration wieder aktiv.');
+        } catch (\Throwable $e) {
+            $this->navigationMigrationMessage('Wiederherstellung blockiert: ' . $e->getMessage());
         }
     }
 
@@ -1085,6 +1582,14 @@ class IPSAlexaHaussteuerung extends IPSModule
 
     private function getActionScriptId(): int
     {
+        // Action is installed below Renderers, not necessarily directly below the instance.
+        // Resolve its real location before trying legacy global fallbacks.
+        $rendererCat = $this->getObjectIDByIdentOrName($this->InstanceID, 'iahRenderers', 'Renderers');
+        $nested = $this->getObjectIDByIdentOrName(
+            $rendererCat, 'iahActionEntry', 'Action (Haus\\Übersicht/Einstellungen Entry)');
+        if ($nested > 0 && IPS_ScriptExists($nested)) {
+            return $nested;
+        }
         $id = @IPS_GetObjectIDByIdent('iahActionEntry', $this->InstanceID);
         if ($id) {
             return (int) $id;
@@ -1140,6 +1645,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->patchActionScriptTileVoiceBridge((int) $id);
         $this->patchActionScriptTileQuietFollowup((int) $id);
         $this->patchActionScriptVisuVoice((int) $id);
+        $this->patchActionScriptNavigationMigration((int) $id);
 
         return (int) $id;
     }
@@ -1150,6 +1656,44 @@ class IPSAlexaHaussteuerung extends IPSModule
      * Die externe HTML-Diagnose benötigt die HTML-Gerätefähigkeit im
      * Routing-Payload – APL allein ist KEIN Nachweis für HTML-Unterstützung.
      */
+    /**
+     * V3.3.5 – Patch only two recognized anchors in previously customized
+     * Alexa Action scripts; never replace an entire installed script.
+     */
+    private function patchActionScriptNavigationMigration(int $scriptId): void
+    {
+        $current = $this->getScriptContent($scriptId);
+        if (!is_string($current) || $current === '') return;
+        $template = @file_get_contents(__DIR__ . '/resources/action_entry.php');
+        if (!is_string($template)) return;
+        $cfgTag = 'IAH_NAVIGATION_CONFIG_V335';
+        $overlayStart = '        // IAH_NAVIGATION_OVERLAY_V335_BEGIN';
+        $overlayEnd = '        // IAH_NAVIGATION_OVERLAY_V335_END';
+        if (str_contains($current, $cfgTag) && str_contains($current, $overlayEnd)) return;
+        $next = $current;
+        if (!str_contains($next, $cfgTag)) {
+            $anchor = "                'launchCatalog' => \$launchCatalog,\n            ];";
+            $replacement = "                'launchCatalog' => \$launchCatalog,\n"
+                . "                // IAH_NAVIGATION_CONFIG_V335: only activated PROD drafts are exposed to Alexa.\n"
+                . "                'navigation' => is_array(\$data['navigation'] ?? null) ? \$data['navigation'] : [],\n            ];";
+            if (substr_count($next, $anchor) !== 1) return;
+            $next = str_replace($anchor, $replacement, $next);
+        }
+        if (!str_contains($next, $overlayEnd)) {
+            $from = strpos($template, $overlayStart);
+            $to = $from === false ? false : strpos($template, $overlayEnd, $from);
+            if ($from === false || $to === false) return;
+            $block = substr($template, $from, $to + strlen($overlayEnd) - $from);
+            $anchor = "        \$ROOMS = iah_merge_global_room_domains((array) require IPS_GetScriptFile(\$S['ROOMS_CATALOG']));";
+            if (substr_count($next, $anchor) !== 1) return;
+            $next = str_replace($anchor, $block, $next);
+        }
+        if (str_contains($next, $cfgTag) && str_contains($next, $overlayEnd)
+            && $next !== $current) {
+            IPS_SetScriptContent($scriptId, $next);
+        }
+    }
+
     private function patchActionScriptExternalHtmlMetadata(int $scriptId): void
     {
         $current=$this->getScriptContent($scriptId);
@@ -1545,6 +2089,7 @@ PHP;
             ['name' => 'HomeAgentVoiceBridge', 'ident' => 'homeAgentVoiceBridgeScript', 'file' => __DIR__ . '/resources/helpers/HomeAgentVoiceBridge.php'],
             ['name' => 'KIHouseController', 'ident' => 'kiHouseControllerScript', 'file' => __DIR__ . '/resources/helpers/KIHouseController.php'],
             ['name' => 'VoiceIntentRouter', 'ident' => 'voiceIntentRouterScript', 'file' => __DIR__ . '/resources/helpers/VoiceIntentRouter.php'],
+            ['name' => 'NavigationRuntime', 'ident' => 'navigationRuntimeScript', 'file' => __DIR__ . '/resources/helpers/NavigationRuntime.php'],
             ['name' => 'ExternalHtmlProbe', 'ident' => 'externalHtmlProbeScript', 'file' => __DIR__ . '/resources/helpers/ExternalHtmlProbe.php'],
         ];
 
@@ -2403,6 +2948,11 @@ PHP;
             return [];
         }
 
+        $settingsConfigId = $this->systemConfigurationScriptIds($settings)['prod'];
+        $system = $this->readConfigurationArrayFromScript($settingsConfigId);
+        if (is_array($system) && is_array($system['navigation'] ?? null)) {
+            $rooms = IAHSystemNavigationMigration::project($rooms, $system['navigation']);
+        }
         return $this->extractRoomsCatalogTabDomains($rooms);
     }
 
