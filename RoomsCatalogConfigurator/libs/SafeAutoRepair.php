@@ -32,6 +32,8 @@ final class RCCSafeAutoRepair
         $bindings=$ai['variables'];
         $heatingFix=self::heatingSetpointAction($row,$scoped,$reservedIds);
         if ($heatingFix!==[]) return $heatingFix;
+        $knxLightFix=self::knxLightFeedback($row,$scoped,$reservedIds);
+        if ($knxLightFix!==[]) return $knxLightFix;
         foreach (self::REQUIRED[$type] as $role) {
             if ((int)($bindings[$role] ?? 0)>0) return [];
         }
@@ -98,6 +100,71 @@ final class RCCSafeAutoRepair
         return ['control'=>(int)array_key_first($candidates)];
     }
 
+
+    /**
+     * KNX 2-bit control DPT2 Value0 is an enable/priority flag, not an
+     * on/off feedback. Replace only when the same scoped DPT2 instance
+     * exposes exactly one separate, read-only Switch Value1 / Funktionswert
+     * with explicit Aus/An profile associations.
+     *
+     * The related legacy "state" field must be changed together with
+     * ai.variables.power and status, so both AI and legacy readers agree.
+     * "control" and all KI rights are left intact.
+     */
+    private static function knxLightFeedback(array $row,array $scoped,array $reservedIds): array
+    {
+        if ((string)($row['aiType']??'')!=='light' || empty($row['kiReadOnly'])) return [];
+        $roles=(array)($row['ai']['variables']??[]);
+        $old=(int)($roles['power']??0);
+        if ($old<=0 || (int)($roles['status']??0)!==$old
+            || (int)($row['state']??0)!==$old
+            || (int)($roles['control']??0)<=0) return [];
+        $scope=[];
+        foreach ($scoped as $v) {
+            $id=(int)($v['id']??0);
+            if ($id>0) $scope[$id]=$v;
+        }
+        $priority=$scope[$old]??null;
+        if (!is_array($priority)
+            || (int)($priority['type']??-1)!==0
+            || strtolower((string)($priority['ident']??''))!=='value0'
+            || !str_contains(strtolower((string)($priority['profile']??'')),'pdpt2')) return [];
+        $names=[];
+        foreach ((array)($priority['associations']??[]) as $a) {
+            $names[]=self::norm((string)($a['name']??''));
+        }
+        if (!in_array('prioritaet',$names,true) || !in_array('keineprioritaet',$names,true)) return [];
+        $candidates=[];
+        foreach ($scope as $id=>$v) {
+            if ($id===$old || isset($reservedIds[$id])
+                || (int)($v['type']??-1)!==0 || !empty($v['action'])
+                || strtolower((string)($v['ident']??''))!=='value1'
+                || !str_contains(strtolower((string)($v['profile']??'')),'switch')
+                || self::norm((string)($v['name']??''))!=='funktionswert') continue;
+            $states=[];
+            foreach ((array)($v['associations']??[]) as $a) {
+                $states[]=['v'=>$a['value']??null,'name'=>self::norm((string)($a['name']??''))];
+            }
+            $hasOn=false;
+            $hasOff=false;
+            foreach ($states as $state) {
+                if ($state['v']===true && in_array($state['name'],['an','ein'],true)) $hasOn=true;
+                if ($state['v']===false && in_array($state['name'],['aus'],true)) $hasOff=true;
+            }
+            if ($hasOn && $hasOff) $candidates[$id]=true;
+        }
+        if (count($candidates)!==1) return [];
+        $id=(int)array_key_first($candidates);
+        return ['power'=>$id,'status'=>$id];
+    }
+
+    private static function norm(string $value): string
+    {
+        $value=mb_strtolower(trim($value),'UTF-8');
+        $value=str_replace(['ä','ö','ü','ß'],['ae','oe','ue','ss'],$value);
+        return preg_replace('/[^a-z0-9]/','',$value)??'';
+    }
+
     private static function credible(string $type,string $role,array $variable): bool
     {
         if ($type!=='blind' && $type!=='window') return true;
@@ -140,6 +207,23 @@ final class RCCSafeAutoRepair
                 || !is_array($item['ai']['variables']??null)
                 || ($item['ai']['review']['status']??'')==='confirmed')
                 throw new RuntimeException('Keine sichere Zuordnung fuer '.$key);
+            $lightFix=(count($bindings)===2
+                && array_key_exists('power',$bindings)
+                && array_key_exists('status',$bindings)
+                && (string)($item['ai']['type']??'')==='light'
+                && !empty($item['kiReadOnly'])
+                && (int)$bindings['power']===(int)$bindings['status']
+                && (int)$bindings['power']>0
+                && (int)($item['ai']['variables']['power']??0)>0
+                && (int)($item['ai']['variables']['power']??0)===(int)($item['ai']['variables']['status']??0)
+                && (int)($item['state']??0)===(int)($item['ai']['variables']['power']??0));
+            if ($lightFix) {
+                $item['state']=(int)$bindings['power'];
+                $item['ai']['variables']['power']=(int)$bindings['power'];
+                $item['ai']['variables']['status']=(int)$bindings['status'];
+                unset($item);
+                continue;
+            }
             foreach ($bindings as $role=>$id) {
                 $existing=(int)($item['ai']['variables'][$role]??0);
                 if ((int)$id<=0 || $existing===(int)$id)
