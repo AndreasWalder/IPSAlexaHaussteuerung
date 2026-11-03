@@ -95,7 +95,7 @@ $roomsList = null;
 $createAction = null;
 $roomDiffList = null;
 foreach ($form['elements'] as $element) {
-    if (str_contains($element['caption'] ?? '', 'V3.1: Raeume')) {
+    if (str_contains($element['caption'] ?? '', 'Raeume & Etagen')) {
         $panel = $element;
         foreach ($element['items'] as $item) {
             if (($item['name'] ?? '') === 'Rooms') $roomsList = $item;
