@@ -3125,7 +3125,11 @@ class RoomsCatalogConfigurator extends IPSModule
             $checked[$key] = $live;
         }
         $catalog = $original;
-        $rooms = isset($catalog['rooms']) && is_array($catalog['rooms']) ? &$catalog['rooms'] : &$catalog;
+        if (isset($catalog['rooms']) && is_array($catalog['rooms'])) {
+            $rooms = &$catalog['rooms'];
+        } else {
+            $rooms = &$catalog;
+        }
         foreach ($checked as $key=>$result) {
             $parts = explode('|',$key,4);
             if (count($parts) !== 4) { echo 'Ungueltiger Geraete-Key.'; return; }
