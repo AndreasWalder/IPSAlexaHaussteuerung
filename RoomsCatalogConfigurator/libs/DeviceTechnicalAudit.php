@@ -129,9 +129,16 @@ final class RCCDeviceTechnicalAudit
             // A writable KNX heating setpoint may legitimately serve as
             // targetTemperature AND control, even when named "Soll".
             // The same ID without an IPS action remains a manual issue.
+            $nameLower=mb_strtolower((string)($v['name']??''),'UTF-8');
+            $nameLower=str_replace(['ä','ö','ü','ß'],['ae','oe','ue','ss'],$nameLower);
             $heatingSetpointControl = $type==='heating' && $role==='control'
-                && (int)($configured['targetTemperature']??0)===$id
-                && !empty($v['action']);
+                && !empty($v['action']) && $typeCode===2
+                && str_contains($profile,'temperature')
+                && (
+                    (int)($configured['targetTemperature']??0)===$id
+                    || str_contains($nameLower,'solltemperatur')
+                    || str_contains($nameLower,'setpoint')
+                );
             if ($heatingSetpointControl) $profileMatches=true;
             if ($profileMatches) $rank=max($rank,120);
             if ($rank < 105) {
