@@ -163,6 +163,13 @@ ck339($unsafeRow['status']==='Manuell pruefen' && !$unsafeRow['manualEligible']
 IPS_SetScriptContent(41,$editAfterManual);
 
 
+
+ck339(RCCDeviceTechnicalAudit::isLiteralArraySource('<?php return ["ok"=>true,"id"=>52];'),
+    'Static RoomsCatalog literal arrays must be writable');
+ck339(!RCCDeviceTechnicalAudit::isLiteralArraySource('<?php $secret=123; return ["s"=>$secret];')
+    && !RCCDeviceTechnicalAudit::isLiteralArraySource('<?php return ["s"=>system("whoami")];'),
+    'Executable PHP may not be rewritten as a static data array');
+
 foreach(array_keys($GLOBALS['inventoryScripts']) as $id) @unlink($GLOBALS['inventoryDir'].'/scripts/'.$id.'.php');
 @rmdir($GLOBALS['inventoryDir'].'/scripts');@rmdir($GLOBALS['inventoryDir']);
 echo "PASS V3.3.9: all types, IPS evidence, explicit approval, stale guard, EDIT-only updates, backups, legacy + diff reporting\n";
