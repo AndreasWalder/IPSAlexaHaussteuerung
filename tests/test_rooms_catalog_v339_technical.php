@@ -226,6 +226,32 @@ ck339(!RCCDeviceTechnicalAudit::isLiteralArraySource('<?php $secret=123; return 
     && !RCCDeviceTechnicalAudit::isLiteralArraySource('<?php return ["s"=>system("whoami")];'),
     'Executable PHP may not be rewritten as a static data array');
 
+
+/** V3.3.12 – an actual simulated module must produce a downloadable,
+ * credential-safe JSON report and never write without provable changes. */
+$mod->properties['RoomsCatalogScriptID']=40;
+IPS_SetScriptContent(40,$editAfterManual);
+IPS_SetScriptContent(41,$editAfterManual);
+$beforeExport=IPS_GetScriptContent(40);
+ob_start();$mod->ExportAIRepairDiagnostics();$download=ob_get_clean();
+$prefix='data:application/json;charset=utf-8;base64,';
+ck339(str_starts_with($download,$prefix),'Diagnostic action did not return a Data-URL for download');
+$json=base64_decode(substr($download,strlen($prefix)),true);
+$report=json_decode($json===false ? '' : $json,true,512,JSON_THROW_ON_ERROR);
+ck339(($report['schema']??'')==='RoomsCatalogSafeRepair/1'
+    && ($report['summary']['total']??0)===5
+    && count($report['devices']??[])===5
+    && ($report['sources']['identical']??false)===true,
+    'Diagnostic report does not cover entire catalog and source hashes');
+ck339(!str_contains($json,'PRIVATE_VALUE_MUST_NOT_BE_CACHED'),
+    'Diagnostic must not expose live IPS variable values');
+ck339(IPS_GetScriptContent(40)===$beforeExport && IPS_GetScriptContent(41)===$beforeExport,
+    'Read-only diagnostic modified scripts');
+ob_start();$mod->ApplySafeAutoRepair();$safeAction=ob_get_clean();
+ck339(str_contains($safeAction,'Keine eindeutigen weiteren Korrekturen')
+    && IPS_GetScriptContent(40)===$beforeExport && IPS_GetScriptContent(41)===$beforeExport,
+    'Safe auto-repair changed catalog without an unambiguous high-confidence mapping');
+
 foreach(array_keys($GLOBALS['inventoryScripts']) as $id) @unlink($GLOBALS['inventoryDir'].'/scripts/'.$id.'.php');
 @rmdir($GLOBALS['inventoryDir'].'/scripts');@rmdir($GLOBALS['inventoryDir']);
 echo "PASS V3.3.9: all types, IPS evidence, explicit approval, stale guard, EDIT-only updates, backups, legacy + diff reporting\n";

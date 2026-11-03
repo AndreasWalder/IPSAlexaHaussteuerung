@@ -89,7 +89,8 @@ final class RCCDeviceTechnicalAudit
                     ['power','status'], ['open','status'], ['motion','status']
                 ];
                 $sharedAction = [
-                    ['control','power'], ['brightness','control'], ['control','status']
+                    ['control','power'], ['brightness','control'], ['control','status'],
+                    ['control','targetTemperature']
                 ];
                 if (!in_array($pair,$allowedShared,true)
                     && !(in_array($pair,$sharedAction,true) && !empty($v['action']))) {
@@ -125,6 +126,13 @@ final class RCCDeviceTechnicalAudit
                     break;
                 }
             }
+            // A writable KNX heating setpoint may legitimately serve as
+            // targetTemperature AND control, even when named "Soll".
+            // The same ID without an IPS action remains a manual issue.
+            $heatingSetpointControl = $type==='heating' && $role==='control'
+                && (int)($configured['targetTemperature']??0)===$id
+                && !empty($v['action']);
+            if ($heatingSetpointControl) $profileMatches=true;
             if ($profileMatches) $rank=max($rank,120);
             if ($rank < 105) {
                 $reasons[] = '#' . $id . ' (' . $role . '): Rolle anhand Name/Profil nicht eindeutig';

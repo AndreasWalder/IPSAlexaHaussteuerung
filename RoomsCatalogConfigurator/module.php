@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/libs/DeviceTechnicalAudit.php';
+require_once __DIR__ . '/libs/SafeAutoRepair.php';
 
 /**
  * ============================================================
@@ -170,6 +171,8 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('TechnicalDevicePreview', '{}');
         $this->RegisterAttributeString('TechnicalDeviceSummary', 'Noch keine technische Geraetepruefung ausgefuehrt.');
         $this->RegisterAttributeString('TechnicalDeviceActionMessage', '');
+        $this->RegisterAttributeString('AutoRepairPreview', '{}');
+        $this->RegisterAttributeString('AutoRepairNotice', 'Noch kein Diagnoseexport erstellt.');
     }
 
     public function ApplyChanges()
@@ -2209,7 +2212,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $candidates = match ($property) {
             'power' => ['state', 'value'],
             'brightness' => ['value'],
-            'position' => ['wert', 'stellung', 'value'],
+            'position' => ['stellung', 'value'], // Jalousie-wert ist Fahrbefehl, KEIN Istpositionswert
             'targetPosition' => ['set'],
             'tilt' => ['tiltId'],
             'moving' => ['moving'],
@@ -2989,6 +2992,242 @@ class RoomsCatalogConfigurator extends IPSModule
     }
 
 
+
+    /**
+     * Read-only export. Deliberately excludes script contents, tokens,
+     * passwords, current variable values and network access information.
+     */
+    private function safeRepairSources(): array
+    {
+        $editId=$this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        $prodId=$this->ReadPropertyInteger('RoomsCatalogScriptID');
+        if ($editId<=0 || $prodId<=0 || $editId===$prodId
+            || !IPS_ScriptExists($editId) || !IPS_ScriptExists($prodId)) {
+            throw new \RuntimeException('EDIT/PROD-Skripte fehlen oder verwenden dieselbe ID.');
+        }
+        $editSource=(string)IPS_GetScriptContent($editId);
+        $prodSource=(string)IPS_GetScriptContent($prodId);
+        if (!RCCDeviceTechnicalAudit::isLiteralArraySource($editSource)
+            || !RCCDeviceTechnicalAudit::isLiteralArraySource($prodSource)) {
+            throw new \RuntimeException('Nicht-statische PHP-Kataloge werden aus Sicherheitsgruenden nicht automatisch veraendert.');
+        }
+        return [
+            'editId'=>$editId,'prodId'=>$prodId,
+            'editSource'=>$editSource,'prodSource'=>$prodSource,
+            'catalog'=>$this->loadRoomsCatalog($editId,'EDIT')
+        ];
+    }
+
+    private function safeRepairPlan(array $catalog): array
+    {
+        $rows=$this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($catalog));
+        $devices=[];
+        $changes=[];
+        $counts=[];
+        $owners=[];
+        // Never attach a candidate that already belongs to another device,
+        // even if it appears only in that device's legacy fields.
+        foreach ($rows as $sourceRow) {
+            $sourceKey=$this->buildCompositeKey($sourceRow);
+            if ($sourceKey===null) continue;
+            $ids=(array)($sourceRow['ai']['variables']??[]);
+            foreach (['state','toggle','value','set','wert','stellung','ist','soll','statusId','controlId'] as $legacyName) {
+                if ((int)($sourceRow[$legacyName]??0)>0) $ids[]=$sourceRow[$legacyName];
+            }
+            foreach ($ids as $rawId) {
+                $id=is_numeric($rawId) ? (int)$rawId : 0;
+                if ($id>0) $owners[$id][$sourceKey]=true;
+            }
+        }
+        foreach ($rows as $row) {
+            $key=$this->buildCompositeKey($row);
+            if ($key===null) continue;
+            $audit=$this->assessTechnicalDevice($row);
+            $scope=$this->getScopedIpsVariables($row);
+            $reserved=[];
+            foreach ($owners as $id=>$deviceOwners) {
+                if (count($deviceOwners)>1 || !isset($deviceOwners[$key])) $reserved[$id]=true;
+            }
+            $bindings=RCCSafeAutoRepair::propose(
+                $row,$scope,
+                fn(array $variable,string $role):int=>$this->suggestionScore($variable,$role),
+                $reserved
+            );
+            if ($bindings!==[]) $changes[$key]=$bindings;
+            $status=(string)($audit['status']??'Unbekannt');
+            $counts[$status]=($counts[$status]??0)+1;
+            $legacy=[];
+            foreach (['state','toggle','value','set','wert','stellung','ist','soll','statusId','controlId','tiltId'] as $field) {
+                $id=(int)($row[$field]??0);
+                if ($id>0) $legacy[$field]=$id;
+            }
+            $ips=[];
+            foreach (array_slice($scope,0,80) as $variable) {
+                $ips[]=array_intersect_key($variable,array_flip([
+                    'id','name','ident','type','profile','action','associations'
+                ]));
+            }
+            $devices[]=[
+                'key'=>$key,'room'=>(string)($row['roomLabel']??''),
+                'device'=>(string)($row['title']??$row['key']??''),
+                'type'=>(string)($row['aiType']??''),
+                'status'=>$status,'reasons'=>(string)($audit['reason']??''),
+                'issueCodes'=>(array)($audit['issueCodes']??[]),
+                'roles'=>(array)($row['ai']['variables']??[]),
+                'stateMapping'=>(array)($row['ai']['stateMapping']??[]),
+                'reviewStatus'=>(string)($row['ai']['review']['status']??''),
+                'kiEnabled'=>!empty($row['kiEnabled']),
+                'kiReadOnly'=>!empty($row['kiReadOnly']),
+                'legacyObjectIds'=>$legacy,
+                'ipsScopeCount'=>count($scope),
+                'ipsScopeTruncated'=>count($scope)>80,
+                'ipsVariables'=>$ips,
+                'safeSuggestedBindings'=>$bindings
+            ];
+        }
+        return ['devices'=>$devices,'changes'=>$changes,'counts'=>$counts];
+    }
+
+    public function ExportAIRepairDiagnostics(): void
+    {
+        try {
+            $sources=$this->safeRepairSources();
+            $plan=$this->safeRepairPlan($sources['catalog']);
+            $report=[
+                'schema'=>'RoomsCatalogSafeRepair/1','createdAt'=>date(DATE_ATOM),
+                'note'=>'Nur Metadaten. Keine Livewerte, Passwoerter oder Aktionstests. Fachliche Pruefung offen.',
+                'sources'=>[
+                    'editId'=>$sources['editId'],'prodId'=>$sources['prodId'],
+                    'editSha256'=>hash('sha256',$sources['editSource']),
+                    'prodSha256'=>hash('sha256',$sources['prodSource']),
+                    'identical'=>$sources['editSource']===$sources['prodSource']
+                ],
+                'summary'=>['total'=>count($plan['devices']),
+                    'statusCounts'=>$plan['counts'],'safeBindingChanges'=>count($plan['changes'])],
+                'devices'=>$plan['devices']
+            ];
+            $signature=hash('sha256',json_encode($plan,JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_UNICODE));
+            $this->WriteAttributeString('AutoRepairPreview',json_encode([
+                'time'=>time(),'editId'=>$sources['editId'],'prodId'=>$sources['prodId'],
+                'editHash'=>hash('sha256',$sources['editSource']),
+                'prodHash'=>hash('sha256',$sources['prodSource']),
+                'signature'=>$signature
+            ],JSON_INVALID_UTF8_SUBSTITUTE));
+            $notice=sprintf('Diagnose fuer %d Geraete erstellt; %d sichere Rollen-Ergaenzungen vorgeschlagen. '
+                .'Schritt 2 innerhalb von zehn Minuten moeglich, nur wenn EDIT/PROD identisch sind. '
+                .'Alle unsicheren Zuordnungen bleiben unveraendert.',
+                count($plan['devices']),count($plan['changes']));
+            $this->WriteAttributeString('AutoRepairNotice',$notice);
+            $this->UpdateFormField('AutoRepairNotice','caption',$notice);
+            $json=json_encode($report,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE
+                |JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR);
+            echo 'data:application/json;charset=utf-8;base64,'.base64_encode($json);
+        } catch (\Throwable $e) {
+            $message='DIAGNOSE FEHLGESCHLAGEN: '.$e->getMessage();
+            $this->WriteAttributeString('AutoRepairNotice',$message);
+            $this->UpdateFormField('AutoRepairNotice','caption',$message);
+            echo 'data:application/json;base64,'.base64_encode(
+                json_encode(['error'=>$message],JSON_INVALID_UTF8_SUBSTITUTE));
+        }
+    }
+
+    public function ApplySafeAutoRepair(): void
+    {
+        try {
+            $preview=json_decode($this->ReadAttributeString('AutoRepairPreview'),true);
+            if (!is_array($preview) || time()-(int)($preview['time']??0)>600) {
+                throw new \RuntimeException('Bitte zuerst eine aktuelle Diagnose herunterladen (max. zehn Minuten).');
+            }
+            $sources=$this->safeRepairSources();
+            if ($sources['editSource']!==$sources['prodSource']) {
+                throw new \RuntimeException('EDIT und PROD unterscheiden sich – bitte zuerst manuell abgleichen.');
+            }
+            foreach (['edit','prod'] as $name) {
+                if ((int)($preview[$name.'Id']??0)!==$sources[$name.'Id']
+                    || !hash_equals((string)($preview[$name.'Hash']??''),
+                        hash('sha256',$sources[$name.'Source']))) {
+                    throw new \RuntimeException('Katalog seit der Diagnose veraendert: '.$name);
+                }
+            }
+            $plan=$this->safeRepairPlan($sources['catalog']);
+            $signature=hash('sha256',json_encode($plan,JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_UNICODE));
+            if (!hash_equals((string)($preview['signature']??''),$signature)) {
+                throw new \RuntimeException('IP-Symcon-Metadaten seit Diagnose veraendert. Abbruch.');
+            }
+            $changes=$plan['changes'];
+            if ($changes===[]) {
+                $message='Keine eindeutigen weiteren Korrekturen. Unklare Rueckmeldungen und Schaltaktionen bleiben zur Pruefung.';
+                $this->WriteAttributeString('AutoRepairNotice',$message);
+                $this->UpdateFormField('AutoRepairNotice','caption',$message);
+                echo $message;
+                return;
+            }
+            $next=RCCSafeAutoRepair::applyBindings($sources['catalog'],$changes);
+            $loss=[];
+            $this->findLostCatalogFields($sources['catalog'],$next,'RoomsCatalogEdit',$loss);
+            if ($loss!==[]) throw new \RuntimeException('Datenverlustpruefung: '.implode('; ',array_slice($loss,0,3)));
+            $nextSource="<?php\nreturn ".var_export($next,true).";\n";
+            if (IPS_GetScriptContent($sources['editId'])!==$sources['editSource']
+                || IPS_GetScriptContent($sources['prodId'])!==$sources['prodSource']) {
+                throw new \RuntimeException('Katalog kurz vor der Sicherung veraendert. Abbruch.');
+            }
+            // Both original scripts must have verifiable independent backups
+            // BEFORE either script is modified.
+            $backups=[];
+            foreach (['edit','prod'] as $name) {
+                $scriptId=$sources[$name.'Id'];
+                $backup=IPS_CreateScript(0);
+                if (!is_int($backup) || $backup<=0) {
+                    throw new \RuntimeException('Sicherung konnte nicht angelegt werden. PROD/EDIT unveraendert.');
+                }
+                IPS_SetParent($backup,IPS_GetParent($scriptId));
+                IPS_SetName($backup,'RoomsCatalog_V3312_before_repair_'.strtoupper($name).'_'.date('Ymd_His').'_'.$backup);
+                IPS_SetScriptContent($backup,$sources[$name.'Source']);
+                if (IPS_GetScriptContent($backup)!==$sources[$name.'Source']) {
+                    throw new \RuntimeException('Backup-Verifikation fehlgeschlagen; keine Uebernahme.');
+                }
+                $backups[$name]=$backup;
+            }
+            if (IPS_GetScriptContent($sources['editId'])!==$sources['editSource']
+                || IPS_GetScriptContent($sources['prodId'])!==$sources['prodSource']) {
+                throw new \RuntimeException('Katalog nach Sicherung veraendert; keine Uebernahme.');
+            }
+            try {
+                foreach (['edit','prod'] as $name) {
+                    IPS_SetScriptContent($sources[$name.'Id'],$nextSource);
+                    if (IPS_GetScriptContent($sources[$name.'Id'])!==$nextSource)
+                        throw new \RuntimeException('Schreibverifikation fehlgeschlagen: '.$name);
+                }
+            } catch (\Throwable $writeError) {
+                $failed=[];
+                foreach (['edit','prod'] as $name) {
+                    try {
+                        IPS_SetScriptContent($sources[$name.'Id'],$sources[$name.'Source']);
+                        if (IPS_GetScriptContent($sources[$name.'Id'])!==$sources[$name.'Source']) $failed[]=$name;
+                    } catch (\Throwable $restoreError) { $failed[]=$name; }
+                }
+                throw new \RuntimeException('Schreibfehler: '.$writeError->getMessage().
+                    ($failed!==[]?' ROLLBACK FEHLER: '.implode(',',$failed):' Alte Inhalte wiederhergestellt.').
+                    ' Backups: '.implode(',',$backups));
+            }
+            $this->WriteAttributeString('AutoRepairPreview','{}');
+            $this->reloadAllFromCatalog();
+            $this->RefreshVisibleLists();
+            $message=sprintf('ERFOLG: %d fehlende technische Leserollen in EDIT und PROD ergaenzt. '
+                .'Backups: EDIT #%d, PROD #%d. KI-Rechte, Werte und Bestaetigungen unveraendert. '
+                .'Bitte ALLE GERAETE TECHNISCH PRUEFEN erneut ausfuehren.',
+                count($changes),$backups['edit'],$backups['prod']);
+            $this->WriteAttributeString('AutoRepairNotice',$message);
+            $this->UpdateFormField('AutoRepairNotice','caption',$message);
+            echo $message;
+        } catch (\Throwable $e) {
+            $message='AUTO-KORREKTUR BLOCKIERT: '.$e->getMessage();
+            $this->WriteAttributeString('AutoRepairNotice',$message);
+            $this->UpdateFormField('AutoRepairNotice','caption',$message);
+            echo $message;
+        }
+    }
+
     private function technicalDeviceSourceSummary(array $snapshot): string
     {
         if ($snapshot === []) {
@@ -3676,6 +3915,17 @@ class RoomsCatalogConfigurator extends IPSModule
                             'caption'=>$this->technicalDeviceSummaryFromSnapshot($this->deviceTechnicalSnapshot())],
                         ['type'=>'Label','name'=>'TechnicalDeviceSourceSummary',
                             'caption'=>$this->technicalDeviceSourceSummary($this->deviceTechnicalSnapshot())],
+                        ['type'=>'Label','caption'=>'V3.3.12: Diagnose mit allen technischen Rollen, Geraeten und IPS-Metadaten als JSON-Datei fuer ChatGPT exportieren. Keine aktuellen Variablenwerte, Zugangsdaten oder Schaltbefehle.'],
+                        ['type'=>'RowLayout','items'=>[
+                            ['type'=>'Button','caption'=>'1 – GESAMTDIAGNOSE FUER CHATGPT HERUNTERLADEN',
+                                'download'=>'RoomsCatalog_ChatGPT_Diagnose.json',
+                                'onClick'=>'RCC_ExportAIRepairDiagnostics($id);'],
+                            ['type'=>'Button','caption'=>'2 – SICHERE AUTO-KORREKTUREN NACH EDIT + PROD',
+                                'confirm'=>'Nur nach dem Diagnoseexport: Eindeutig erkannte fehlende Lesevariablen nach EDIT UND PROD schreiben? Es werden zuerst zwei vollstaendige Backups erstellt. Keine KI-Rechte, Schaltbefehle oder fachlichen Bestaetigungen. Unklare Geraete bleiben offen.',
+                                'onClick'=>'RCC_ApplySafeAutoRepair($id);']
+                        ]],
+                        ['type'=>'Label','name'=>'AutoRepairNotice',
+                            'caption'=>$this->ReadAttributeString('AutoRepairNotice')],
                         [
                             'type'=>'List','name'=>'TechnicalDeviceChecks',
                             'caption'=>'Technische Geraetepruefung (alle Typen)',
@@ -5483,7 +5733,8 @@ class RoomsCatalogConfigurator extends IPSModule
             'light' => 'Licht', 'dimmer' => 'Dimmer', 'blind' => 'Jalousie',
             'heating' => 'Heizung', 'window' => 'Fensterkontakt',
             'switch' => 'Steckdose/Schalter', 'energy' => 'Energiezaehler',
-            'motion' => 'Bewegungsmelder', 'fan' => 'Lueftung', 'generic' => 'Sonstiges'
+            'motion' => 'Bewegungsmelder', 'illuminance' => 'Helligkeitssensor (Lux)',
+            'fan' => 'Lueftung', 'generic' => 'Sonstiges'
         ];
         if (!$isNew) $typeCaptions = [''=>'Bisheriges Datenmodell (unveraendert)'] + $typeCaptions;
         $path = $this->guidedTypeLocation($editorType);
@@ -5523,7 +5774,8 @@ class RoomsCatalogConfigurator extends IPSModule
             'control' => 'Steuerungsvariable', 'temperature' => 'Isttemperatur',
             'targetTemperature' => 'Solltemperatur', 'open' => 'Fensterstatus',
             'powerWatts' => 'Leistung (W)', 'energy' => 'Verbrauch/Zaehlerstand',
-            'motion' => 'Bewegung', 'status' => 'Geraetestatus (z.B. Offen/Geschlossen)',
+            'motion' => 'Bewegung', 'illuminance' => 'Beleuchtungsstaerke (Lux)',
+            'status' => 'Geraetestatus (z.B. Offen/Geschlossen)',
             'action' => 'Aktion (z.B. Auf/Ab/Stop)'
         ];
         $aiItems = [['type'=>'Label','caption'=>'Nur die zum Geraetetyp passenden Variablen auswaehlen. Bei unbekannter Bedeutung keine Statuswerte raten.']];
@@ -5531,7 +5783,7 @@ class RoomsCatalogConfigurator extends IPSModule
             $controls = [];
             foreach ($pair as $property) {
                 $controls[] = ['type'=>'SelectVariable','name'=>self::AI_VARIABLE_FIELDS[$property],
-                    'caption'=>$variableCaptions[$property],
+                    'caption'=>$variableCaptions[$property] ?? $property,
                     'visible'=>in_array($property,self::AI_TYPE_FIELDS[$editorType] ?? [],true)];
             }
             $aiItems[] = ['type'=>'RowLayout','items'=>$controls];
