@@ -52,3 +52,38 @@ Heizung, Lüftung und Szenen live überprüfen.
 
 Die Download-Schaltfläche verwendet die in IP-Symcon 7.0+
 unterstützte `Button.download`-Funktion mit einer Data-URL.
+
+## Nachprüfung anhand des Exports vom 4. November 2026 (V3.3.13)
+Der erste V3.3.12-Export meldete 167 Geräte, 124 technisch plausibel,
+43 manuell prüfen, 0 Vorschläge. Dabei waren jedoch **für alle Geräte**
+`roles: []`, `stateMapping: []`, `reviewStatus: ""` ausgegeben.
+Ursache: `buildEntryRow` wandelt verschachtelte `ai`-Metadaten
+für IPS-Formulare in JSON-Strings um; der Diagnoseexport hatte diese
+Strings anders als der technische Prüfer nicht wieder decodiert.
+Damit waren die Rollendaten im Export falsch leer und der konservative
+Auto-Reparaturplan zu streng auf null eingeschränkt.
+
+V3.3.13 decodiert die vorhandenen Daten für die **Analyse**, ohne
+Katalogdaten zu verändern. Der Export zeigt nun ausdrücklich die
+ursprünglichen `ai.variables`, `ai.stateMapping`, `ai.review.status`
+und die Zahl der Geräte mit exportierten Rollen.
+
+In den 43 offenen Fällen waren 26 Jalousien, 10 Heizungen, drei
+Lichter, drei Lüfter und ein Dimmer. Bei zehn Heizungen war
+`ai.variables.control` identisch zur nur lesbaren Solltemperatur,
+während im gleichen KNX-Kontext jeweils eine eindeutig als
+`Solltemperatur` bezeichnete Float-Variable mit echter Schreibaktion
+vorhanden war. Bei *noch nicht fachlich bestätigten* und *KI nur lesen*
+konfigurierten Geräten kann V3.3.13 diese technische `control`-
+Zuordnung mit neuer Vorschau, Sicherungen und Hash-Kontrolle
+korrekt umhängen. Die alte `targetTemperature`-Rückmeldung, Legacy-
+IDs, KI-Rechte und Bestätigungen werden **nicht** verändert.
+
+Die übrigen blinden Jalousie-Rückmeldungen werden **nicht** aus
+Steuerungsbefehlen oder 0/100-Profiltexten erfunden. Auch für
+zweideutige KNX-Funktionswerte und unklare Dimmer-Skalierung bleibt
+eine weitere fachliche/technische Zuordnung nötig.
+
+**Wichtig:** Vor erneuter Durchführung einer automatischen Reparatur
+zuerst V3.3.13 einspielen und erneut die Gesamtdiagnose exportieren.
+Das alte V3.3.12-JSON liefert nicht sämtliche Rollendaten.

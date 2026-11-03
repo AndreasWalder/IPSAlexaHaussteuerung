@@ -30,6 +30,8 @@ final class RCCSafeAutoRepair
             || ($ai['review']['status'] ?? '')==='confirmed'
             || !isset(self::REQUIRED[$type])) return [];
         $bindings=$ai['variables'];
+        $heatingFix=self::heatingSetpointAction($row,$scoped,$reservedIds);
+        if ($heatingFix!==[]) return $heatingFix;
         foreach (self::REQUIRED[$type] as $role) {
             if ((int)($bindings[$role] ?? 0)>0) return [];
         }
@@ -52,6 +54,48 @@ final class RCCSafeAutoRepair
         if ($top===null || $top['score']<135
             || $top['score']-(int)($ranked[1]['score']??0)<25) return [];
         return [$top['role']=>$top['id']];
+    }
+
+    /**
+     * The KNX readable targetTemperature and the writable setpoint are
+     * sometimes two different variables in the same anchored scope.
+     * Only substitute a currently UNWRITABLE control mapping when the
+     * matching read-only targetTemperature ID is identical, a unique
+     * writable temperature setpoint is present, and KI is read-only.
+     */
+    private static function heatingSetpointAction(array $row,array $scoped,array $reservedIds): array
+    {
+        if ((string)($row['aiType']??'')!=='heating' || empty($row['kiReadOnly'])) return [];
+        $vars=(array)($row['ai']['variables']??[]);
+        $current=(int)($vars['control']??0);
+        $target=(int)($vars['targetTemperature']??0);
+        $measured=(int)($vars['temperature']??0);
+        if ($current<=0 || $target!==$current || $measured<=0
+            || (int)($row['soll']??0)!==$current
+            || (int)($row['ist']??0)!==$measured) return [];
+        $scopeById=[];
+        foreach ($scoped as $v) {
+            $id=(int)($v['id']??0);
+            if($id>0) $scopeById[$id]=$v;
+        }
+        $old=$scopeById[$current]??null;
+        if (!is_array($old) || (int)($old['type']??-1)!==2
+            || !empty($old['action'])
+            || !str_contains(strtolower((string)($old['profile']??'')),'temperature')) return [];
+        $candidates=[];
+        foreach ($scopeById as $id=>$v) {
+            if ($id===$current || $id===$measured || isset($reservedIds[$id])
+                || (int)($v['type']??-1)!==2 || empty($v['action'])) continue;
+            $name=mb_strtolower((string)($v['name']??''),'UTF-8');
+            $profile=strtolower((string)($v['profile']??''));
+            if (!str_contains($profile,'temperature')) continue;
+            $normalized=str_replace(['ä','ö','ü','ß'],['ae','oe','ue','ss'],$name);
+            if (str_contains($normalized,'solltemperatur') || str_contains($normalized,'setpoint')) {
+                $candidates[$id]=true;
+            }
+        }
+        if (count($candidates)!==1) return [];
+        return ['control'=>(int)array_key_first($candidates)];
     }
 
     private static function credible(string $type,string $role,array $variable): bool
@@ -97,8 +141,17 @@ final class RCCSafeAutoRepair
                 || ($item['ai']['review']['status']??'')==='confirmed')
                 throw new RuntimeException('Keine sichere Zuordnung fuer '.$key);
             foreach ($bindings as $role=>$id) {
-                if ((int)($item['ai']['variables'][$role]??0)>0 || (int)$id<=0)
-                    throw new RuntimeException('Rolle bereits belegt: '.$key.'/'.$role);
+                $existing=(int)($item['ai']['variables'][$role]??0);
+                if ((int)$id<=0 || $existing===(int)$id)
+                    throw new RuntimeException('Rolle nicht sicher zu ersetzen: '.$key.'/'.$role);
+                // Only this exact legacy KNX setpoint case is an authorized
+                // replacement. All other changes must be strictly additive.
+                if ($existing>0 && !(
+                    $role==='control'
+                    && (string)($item['ai']['type']??'')==='heating'
+                    && $existing===(int)($item['ai']['variables']['targetTemperature']??0)
+                    && !empty($item['kiReadOnly'])
+                )) throw new RuntimeException('Rolle bereits belegt: '.$key.'/'.$role);
                 $item['ai']['variables'][$role]=(int)$id;
             }
             unset($item);
