@@ -20,7 +20,9 @@ $ellipsis = static function(?string $s, int $max) {
 $iconUrl = static function(string $file, string $baseUrl, string $token): string {
     $path = IPS_GetKernelDir().'user'.DIRECTORY_SEPARATOR.'icons'.DIRECTORY_SEPARATOR.$file;
     $v = @filemtime($path) ?: 1;
-    return rtrim($baseUrl,'/').'/hook/icons?f='.rawurlencode($file).'&token='.rawurlencode($token).'&v='.$v;
+    // Das fruehere /hook/icons konnte von anderen Instanzen verwaltet oder
+    // entfernt werden. Die Modul-Instanz registriert ihren eigenen Hook.
+    return rtrim($baseUrl,'/').'/hook/iah-alexa-icons?f='.rawurlencode($file).'&token='.rawurlencode($token).'&v='.$v;
 };
 
 if ($baseUrl === '' || $token === '') { throw new Exception('baseUrl oder token fehlt'); }
@@ -62,7 +64,13 @@ $headerIconFile = $resolve($catalog['headerIcon'] ?? null, (string) ($catalogDef
 $alexaName = $ucwords($alexa);
 $subtitleText = str_replace('{{alexa}}', $alexaName, $subtitleTpl);
 
-$sanitizeTile = static function ($entry) {
+// Bestehende benutzerdefinierte Tiles behalten ihre Farben/Titel.
+$defaultTileIcons = [];
+foreach ((array)($catalogDefaults['tiles'] ?? []) as $entry) {
+    if (!is_array($entry) || !isset($entry['id'])) continue;
+    $defaultTileIcons[(string)$entry['id']] = (string)($entry['icon'] ?? '');
+}
+$sanitizeTile = static function ($entry) use ($defaultTileIcons) {
     if (!is_array($entry)) {
         return null;
     }
@@ -77,6 +85,9 @@ $sanitizeTile = static function ($entry) {
         $tile['subtitle'] = $subtitle;
     }
     $iconFile = trim((string) ($entry['icon'] ?? ''));
+    if ($iconFile === '') {
+        $iconFile = (string)($defaultTileIcons[$id] ?? '');
+    }
     if ($iconFile !== '') {
         $tile['icon'] = $iconFile;
     }
