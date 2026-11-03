@@ -1576,6 +1576,14 @@ class IPSAlexaHaussteuerung extends IPSModule
 
     private function getActionScriptId(): int
     {
+        // Action is installed below Renderers, not necessarily directly below the instance.
+        // Resolve its real location before trying legacy global fallbacks.
+        $rendererCat = $this->getObjectIDByIdentOrName($this->InstanceID, 'iahRenderers', 'Renderers');
+        $nested = $this->getObjectIDByIdentOrName(
+            $rendererCat, 'iahActionEntry', 'Action (Haus\\Übersicht/Einstellungen Entry)');
+        if ($nested > 0 && IPS_ScriptExists($nested)) {
+            return $nested;
+        }
         $id = @IPS_GetObjectIDByIdent('iahActionEntry', $this->InstanceID);
         if ($id) {
             return (int) $id;
