@@ -106,6 +106,62 @@ final class IAHSystemNavigationMigration
         ];
     }
 
+
+    /** Re-check live EDIT navigation without relying on already deleted legacy tabs. */
+    public static function updatedProductive(array $prod, array $edit, array $catalog, ?callable $objectExists = null): array
+    {
+        $new = $edit['navigation'] ?? null;
+        $old = $prod['navigation'] ?? null;
+        if (!is_array($new) || !is_array($old)
+            || ($new['schemaVersion'] ?? 0) !== 1
+            || ($old['mode'] ?? '') !== 'active'
+            || !is_array($new['items'] ?? null)
+            || !is_array($old['items'] ?? null)) {
+            throw new RuntimeException('PROD/EDIT-Navigation nicht bereit.');
+        }
+        foreach ($old['items'] as $key => $entry) {
+            $current = $new['items'][$key] ?? null;
+            if (!is_array($entry) || !is_array($current)
+                || ($entry['legacyPath'] ?? '') !== ($current['legacyPath'] ?? '')
+                || ($entry['legacyDefinition'] ?? null) !== ($current['legacyDefinition'] ?? null)
+                || ($entry['tabKey'] ?? '') !== ($current['tabKey'] ?? '')) {
+                throw new RuntimeException('Bestehenden importierten Tab nicht loeschen oder Quellidentitaet aendern: ' . $key);
+            }
+        }
+        $rooms = isset($catalog['rooms']) && is_array($catalog['rooms']) ? $catalog['rooms'] : $catalog;
+        $replaceable = [];
+        foreach ($new['items'] as $entry) {
+            if (is_array($entry) && ($entry['legacyPath'] ?? '') !== '') {
+                $replaceable[(string)$entry['legacyPath']] = true;
+            }
+        }
+        $seen = [];
+        foreach ($new['items'] as $key => $entry) {
+            if (!is_array($entry)) throw new RuntimeException('Ungueltiger Tab: ' . $key);
+            if (empty($entry['enabled'])) continue;
+            $room = (string)($entry['roomKey'] ?? '');
+            $domain = (string)($entry['domainKey'] ?? '');
+            $title = trim((string)($entry['title'] ?? ''));
+            $id = (int)($entry['objectId'] ?? 0);
+            if ($room === '' || !isset($rooms[$room]) || $domain === '' || $title === ''
+                || $id <= 0 || ($objectExists !== null && !$objectExists($id))) {
+                throw new RuntimeException('Ungueltiger Raum/Bereich/Titel oder IPS-ID: ' . $key);
+            }
+            $target = mb_strtolower($room . '/' . $domain . '/' . $title,'UTF-8');
+            if (isset($seen[$target])) throw new RuntimeException('Doppelter Navigationstitel: '.$target);
+            $seen[$target] = true;
+            $path = $room . '/domains/' . $domain . '/tabs/' . $title;
+            if (isset($rooms[$room]['domains'][$domain]['tabs'][$title]) && !isset($replaceable[$path])) {
+                throw new RuntimeException('Navigation wuerde andere Tab-Daten ueberschreiben: '.$path);
+            }
+        }
+        $new['mode'] = 'active';
+        $new['activatedAt'] = $old['activatedAt'] ?? gmdate('c');
+        $new['updatedAt'] = gmdate('c');
+        $prod['navigation'] = $new;
+        return $prod;
+    }
+
     public static function prepareProductive(array $prod, array $edit, array $catalog): array
     {
         if (!is_array($edit['navigation'] ?? null)) {
