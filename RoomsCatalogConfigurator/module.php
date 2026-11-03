@@ -3138,6 +3138,11 @@ class RoomsCatalogConfigurator extends IPSModule
         $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
         if ($editId <= 0 || !IPS_ScriptExists($editId)) return;
         $originalSource = IPS_GetScriptContent($editId);
+        if (!RCCDeviceTechnicalAudit::isLiteralArraySource((string)$originalSource)) {
+            echo 'RoomsCatalogEdit enthaelt dynamisches PHP; automatische Uebernahme gesperrt, '
+                .'um Skriptlogik nicht zu verlieren.';
+            return;
+        }
         $original = $this->loadRoomsCatalog($editId,'EDIT');
         $flat = $this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($original));
         $byKey = [];
