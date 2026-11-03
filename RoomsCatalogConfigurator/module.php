@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/libs/DeviceTechnicalAudit.php';
+
 declare(strict_types=1);
 
 /**
@@ -161,6 +163,10 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('BulkPreview', '{}');
         $this->RegisterAttributeString('MigrationReadinessReport', 'Noch nicht geprüft.');
         $this->RegisterAttributeString('MigrationReadinessDetails', '{}');
+        $this->RegisterAttributeString('TechnicalDeviceSnapshot', '{}');
+        $this->RegisterAttributeString('TechnicalDevicePreview', '{}');
+        $this->RegisterAttributeString('TechnicalDeviceSummary', 'Noch keine technische Geraetepruefung ausgefuehrt.');
+        $this->RegisterAttributeString('TechnicalDeviceActionMessage', '');
     }
 
     public function ApplyChanges()
@@ -2817,6 +2823,379 @@ class RoomsCatalogConfigurator extends IPSModule
 
 
     /** Kein Schreibzugriff: KI-Freigabe und Modellbereitschaft sind getrennt. */
+
+    /**
+     * Technical audit is read-only. No live values, passwords, switching,
+     * or automatic semantic confirmation. The bounded IPS scanner is reused.
+     */
+    private function assessTechnicalDevice(array $row): array
+    {
+        $key = $this->buildCompositeKey($row);
+        $type = (string)($row['aiType'] ?? '');
+        $base = [
+            'key'=>(string)$key,
+            'room'=>(string)($row['roomLabel'] ?? $row['roomKey'] ?? ''),
+            'title'=>(string)($row['title'] ?? $row['key'] ?? ''),
+            'type'=>$type,
+            'selected'=>false,
+            'manuallyConfirmed'=>!empty($row['aiReviewed']),
+            'fingerprint'=>'',
+            'manualEligible'=>false,
+            'roleCount'=>0
+        ];
+        if ($key === null || !array_key_exists($type,self::AI_TYPE_FIELDS) || $type === 'generic') {
+            return $base + [
+                'status'=>$type === '' ? 'Legacy' : 'Manuell pruefen',
+                'reason'=>$type === '' ? 'Kein ai.type hinterlegt – Legacy-Import pruefen'
+                    : 'Unbekannter/unspezifischer Geraetetyp, manuell zuordnen'
+            ];
+        }
+        $variables = $this->getScopedIpsVariables($row);
+        $assessment = RCCDeviceTechnicalAudit::assess(
+            $row,
+            array_intersect_key(self::AI_VARIABLE_FIELDS,array_fill_keys(self::AI_TYPE_FIELDS[$type],true)),
+            $variables,
+            $this->minimumReadingRoles($type),
+            fn(array $variable,string $property): int => $this->suggestionScore($variable,$property),
+            fn(int $id): bool => function_exists('IPS_VariableExists') && IPS_VariableExists($id)
+        );
+        return array_merge($base,$assessment);
+    }
+
+    /** Field names only – never include device values or secrets in diff reports. */
+    private function deviceDiffReport(array $prod, array $edit): array
+    {
+        $rows = [];
+        $counts = ['new'=>0,'removed'=>0,'changed'=>0];
+        foreach ($this->buildDiffEntries($prod,$edit) as $row) {
+            if (!is_array($row)) continue;
+            $changed = (string)($row['diffKeys'] ?? '');
+            $kind = $changed === 'new' ? 'new' : ($changed === 'removed' ? 'removed' : 'changed');
+            $counts[$kind]++;
+            $rows[] = [
+                'room'=>(string)($row['roomLabel'] ?? $row['roomKey'] ?? ''),
+                'title'=>(string)($row['title'] ?? $row['key'] ?? ''),
+                'type'=>$kind,
+                'path'=>(string)$this->buildCompositeKey($row),
+                'fields'=>$changed
+            ];
+        }
+        return ['rows'=>$rows,'counts'=>$counts];
+    }
+
+    private function deviceTechnicalSnapshot(): array
+    {
+        $stored = json_decode($this->ReadAttributeString('TechnicalDeviceSnapshot'),true);
+        if (!is_array($stored) || !is_array($stored['rows'] ?? null)
+            || !is_string($stored['editHash'] ?? null)
+            || !is_string($stored['prodHash'] ?? null)
+            || time() - (int)($stored['time'] ?? 0) > 3600) return [];
+        $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        $prodId = $this->ReadPropertyInteger('RoomsCatalogScriptID');
+        if ($editId <= 0 || $prodId <= 0
+            || !IPS_ScriptExists($editId) || !IPS_ScriptExists($prodId)
+            || !hash_equals($stored['editHash'],hash('sha256',(string)IPS_GetScriptContent($editId)))
+            || !hash_equals($stored['prodHash'],hash('sha256',(string)IPS_GetScriptContent($prodId)))) {
+            return [];
+        }
+        return $stored;
+    }
+
+    private function technicalDeviceSummaryFromSnapshot(array $snapshot): string
+    {
+        if ($snapshot === []) {
+            return 'Pruefung fehlt oder ist veraltet. Bitte "ALLE GERAETE TECHNISCH PRUEFEN" ausfuehren.';
+        }
+        $stats = (array)($snapshot['counts'] ?? []);
+        $diff = (array)($snapshot['diffCounts'] ?? []);
+        return sprintf(
+            '%d Geraete geprueft: %d technisch plausibel, %d manuell pruefen, '
+            .'%d ungueltig, %d Legacy; %d bereits fachlich bestaetigt. '
+            .'EDIT/PROD: %d neu, %d entfernt, %d geaendert. '
+            .'Technisch plausibel bedeutet NICHT am echten Geraet bestaetigt.',
+            count($snapshot['rows']),
+            (int)($stats['Technisch plausibel'] ?? 0),
+            (int)($stats['Manuell pruefen'] ?? 0),
+            (int)($stats['Ungueltig'] ?? 0),
+            (int)($stats['Legacy'] ?? 0),
+            (int)($stats['Manuell bestaetigt'] ?? 0),
+            (int)($diff['new'] ?? 0),(int)($diff['removed'] ?? 0),
+            (int)($diff['changed'] ?? 0)
+        );
+    }
+
+    public function RunTechnicalDeviceAudit(): void
+    {
+        $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        $prodId = $this->ReadPropertyInteger('RoomsCatalogScriptID');
+        if ($editId <= 0 || $prodId <= 0 || !IPS_ScriptExists($editId) || !IPS_ScriptExists($prodId)) {
+            echo 'RoomsCatalogEdit und RoomsCatalog PROD muessen beide vorhanden sein.';
+            return;
+        }
+        $editSource = IPS_GetScriptContent($editId);
+        $prodSource = IPS_GetScriptContent($prodId);
+        $catalog = $this->loadRoomsCatalog($editId,'EDIT');
+        $prodCatalog = $this->loadRoomsCatalog($prodId,'PROD');
+        $rows = $this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($catalog));
+        $prodRows = $this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($prodCatalog));
+        $results = [];
+        $stats = ['Technisch plausibel'=>0,'Manuell pruefen'=>0,'Ungueltig'=>0,'Legacy'=>0,'Manuell bestaetigt'=>0];
+        $legacyRows = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) continue;
+            $result = $this->assessTechnicalDevice($row);
+            $stats[$result['status']] = ($stats[$result['status']] ?? 0) + 1;
+            if ($result['manuallyConfirmed']) $stats['Manuell bestaetigt']++;
+            $results[] = $result;
+            if ($result['status'] === 'Legacy') {
+                $legacyRows[] = [
+                    'path'=>(string)($result['key'] ?? ''),
+                    'title'=>(string)($result['title'] ?? ''),
+                    'room'=>(string)($result['room'] ?? ''),
+                    'message'=>'Typisierung im Bereich "Altgeraete ins neue Modell uebernehmen"'
+                ];
+            }
+        }
+        $diff = $this->deviceDiffReport($prodRows,$rows);
+        // A scan is a read-only snapshot. Avoid a false current snapshot if
+        // the EDIT script was changed during a long inventory read.
+        if ($editSource !== IPS_GetScriptContent($editId) || $prodSource !== IPS_GetScriptContent($prodId)) {
+            echo 'Katalog waehrend der Geraetepruefung veraendert. Bitte erneut starten.';
+            return;
+        }
+        $snapshot = [
+            'version'=>1,'time'=>time(),
+            'editHash'=>hash('sha256',$editSource),
+            'prodHash'=>hash('sha256',$prodSource),
+            'rows'=>$results,'counts'=>$stats,'legacyRows'=>$legacyRows,
+            'diffRows'=>$diff['rows'],'diffCounts'=>$diff['counts']
+        ];
+        $this->WriteAttributeString('TechnicalDeviceSnapshot',json_encode($snapshot,JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_UNICODE));
+        $this->WriteAttributeString('TechnicalDevicePreview','{}');
+        $summary = $this->technicalDeviceSummaryFromSnapshot($snapshot);
+        $this->WriteAttributeString('TechnicalDeviceSummary',$summary);
+        $this->UpdateFormField('TechnicalDeviceSummary','caption',$summary);
+        $this->UpdateFormField('TechnicalDeviceChecks','values',json_encode($results,JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_UNICODE));
+        $this->UpdateFormField('TechnicalLegacyDevices','values',json_encode($legacyRows,JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_UNICODE));
+        $this->UpdateFormField('TechnicalDiffRows','values',json_encode($diff['rows'],JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_UNICODE));
+        $this->UpdateFormField('TechnicalDeviceActionMessage','caption','Ergebnisse nur gelesen – keine EDIT/PROD-Aenderungen.');
+        echo $summary;
+    }
+
+    /** Auswahl ist nur UI-Metadatum und muss im urspruenglichen Snapshot liegen. */
+    public function MarkTechnicalDevice(string $key,bool $selected): void
+    {
+        $snapshot = $this->deviceTechnicalSnapshot();
+        if ($snapshot === []) {
+            echo 'Geraetepruefung fehlt oder ist veraltet. Bitte neu starten.';
+            return;
+        }
+        $found = false;
+        foreach ($snapshot['rows'] as &$row) {
+            if ($row['key'] !== $key) continue;
+            $row['selected'] = $selected && !in_array($row['status'],['Legacy','Ungueltig'],true)
+                && !empty($row['manualEligible']);
+            $found = true;
+            break;
+        }
+        unset($row);
+        if (!$found) return;
+        $this->WriteAttributeString('TechnicalDeviceSnapshot',json_encode($snapshot,JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_UNICODE));
+        $this->WriteAttributeString('TechnicalDevicePreview','{}');
+        $this->UpdateFormField('TechnicalDeviceChecks','values',json_encode($snapshot['rows'],JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_UNICODE));
+    }
+
+    public function SelectTechnicalDevices(bool $select): void
+    {
+        $snapshot = $this->deviceTechnicalSnapshot();
+        if ($snapshot === []) {
+            echo 'Bitte zuerst technische Geraetepruefung ausfuehren.';
+            return;
+        }
+        foreach ($snapshot['rows'] as &$row) {
+            $row['selected'] = $select && $row['status'] === 'Technisch plausibel'
+                && !empty($row['manualEligible']);
+        }
+        unset($row);
+        $this->WriteAttributeString('TechnicalDeviceSnapshot',json_encode($snapshot,JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_UNICODE));
+        $this->WriteAttributeString('TechnicalDevicePreview','{}');
+        $this->UpdateFormField('TechnicalDeviceChecks','values',json_encode($snapshot['rows'],JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_UNICODE));
+        echo $select ? 'Technisch plausible Geraete markiert – fachliche Bestaetigung bleibt separat.'
+            : 'Alle technischen Markierungen aufgehoben.';
+    }
+
+    private function previewTechnicalDeviceAction(string $mode,bool $manualAttested): void
+    {
+        $this->WriteAttributeString('TechnicalDevicePreview','{}');
+        if ($mode === 'manual' && !$manualAttested) {
+            echo 'Manuelle Bestaetigung erfordert die ausdrueckliche Erklaerung, alle markierten Geraete '
+                .'und ihre Werte am echten System selbst getestet zu haben.';
+            return;
+        }
+        $snapshot = $this->deviceTechnicalSnapshot();
+        if ($snapshot === []) { echo 'Geraetepruefung veraltet – erneut ausfuehren.'; return; }
+        $targets = [];
+        foreach ($snapshot['rows'] as $item) {
+            if (empty($item['selected'])) continue;
+            if (empty($item['manualEligible']) || ($mode === 'technical'
+                && $item['status'] !== 'Technisch plausibel')) {
+                echo 'Markierte Geraete enthalten ungueltige oder noch ungepruefte IPS-Zuordnungen.';
+                return;
+            }
+            $targets[$item['key']] = $item['fingerprint'];
+        }
+        if ($targets === []) { echo 'Bitte zuerst passende Geraete markieren.'; return; }
+        $preview = [
+            'mode'=>$mode, 'time'=>time(), 'editHash'=>$snapshot['editHash'],
+            'prodHash'=>$snapshot['prodHash'], 'keys'=>$targets
+        ];
+        $this->WriteAttributeString('TechnicalDevicePreview',json_encode($preview,JSON_INVALID_UTF8_SUBSTITUTE));
+        $message = sprintf('Vorschau: %d Geraete, %s. Nur RoomsCatalogEdit; '
+            .'bestehende KI-Freigaben und PROD bleiben unveraendert.',
+            count($targets),
+            $mode === 'manual' ? 'nach ausdruecklich bestaetigtem echtem Geraetetest fachlich bestaetigen'
+                : 'technische Pruefmetadaten speichern (keine fachliche Bestaetigung)');
+        $this->UpdateFormField('TechnicalDeviceActionMessage','caption',$message);
+        echo $message;
+    }
+
+    public function PreviewTechnicalDeviceReview(): void
+    {
+        $this->previewTechnicalDeviceAction('technical',false);
+    }
+
+    public function PreviewManualDeviceConfirmation(bool $physicalTestDone=false): void
+    {
+        $this->previewTechnicalDeviceAction('manual',$physicalTestDone);
+    }
+
+    public function ApplyTechnicalDeviceReview(): void
+    {
+        $this->applyTechnicalDeviceAction('technical',false);
+    }
+
+    public function ApplyManualDeviceConfirmation(bool $physicalTestDone=false): void
+    {
+        $this->applyTechnicalDeviceAction('manual',$physicalTestDone);
+    }
+
+    /**
+     * Protected EDIT-only transactional write with full source backup.
+     * Do not touch the existing review.status unless a user explicitly states
+     * every selected device was physically checked.
+     */
+    private function applyTechnicalDeviceAction(string $mode,bool $physicalTestDone): void
+    {
+        if ($mode === 'manual' && !$physicalTestDone) {
+            echo 'Manuelle Bestaetigung ohne tatsaechlichen Geraetetest gesperrt.';
+            return;
+        }
+        $preview = json_decode($this->ReadAttributeString('TechnicalDevicePreview'),true);
+        $snapshot = $this->deviceTechnicalSnapshot();
+        if (!is_array($preview) || $snapshot === []
+            || ($preview['mode'] ?? '') !== $mode
+            || time() - (int)($preview['time'] ?? 0) > 600
+            || ($preview['editHash'] ?? '') !== ($snapshot['editHash'] ?? '')
+            || ($preview['prodHash'] ?? '') !== ($snapshot['prodHash'] ?? '')
+            || !is_array($preview['keys'] ?? null) || $preview['keys'] === []) {
+            echo 'Pruefvorschau nicht mehr aktuell; bitte technische Analyse wiederholen.';
+            return;
+        }
+        $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        if ($editId <= 0 || !IPS_ScriptExists($editId)) return;
+        $originalSource = IPS_GetScriptContent($editId);
+        $original = $this->loadRoomsCatalog($editId,'EDIT');
+        $flat = $this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($original));
+        $byKey = [];
+        foreach ($flat as $row) {
+            $key = $this->buildCompositeKey($row);
+            if ($key !== null) $byKey[$key] = $row;
+        }
+        $checked = [];
+        foreach ($preview['keys'] as $key=>$fingerprint) {
+            if (!isset($byKey[$key])) { echo 'Geraetezeile fehlt: Pruefung wiederholen.'; return; }
+            $live = $this->assessTechnicalDevice($byKey[$key]);
+            if (($live['fingerprint'] ?? '') !== $fingerprint
+                || empty($live['manualEligible'])
+                || ($mode === 'technical' && $live['status'] !== 'Technisch plausibel')
+                || in_array($live['status'],['Ungueltig','Legacy'],true)) {
+                echo 'Geraet ' . $key . ' wurde veraendert oder ist nicht pruefbar. Keine Daten geschrieben.';
+                return;
+            }
+            $checked[$key] = $live;
+        }
+        $catalog = $original;
+        $rooms = isset($catalog['rooms']) && is_array($catalog['rooms']) ? &$catalog['rooms'] : &$catalog;
+        foreach ($checked as $key=>$result) {
+            $parts = explode('|',$key,4);
+            if (count($parts) !== 4) { echo 'Ungueltiger Geraete-Key.'; return; }
+            [$room,$domain,$group,$device] = $parts;
+            if (!isset($rooms[$room]['domains'][$domain])) { echo 'Quellpfad nicht vorhanden.'; return; }
+            if (in_array($domain,['heizung','jalousie'],true)) {
+                if (!isset($rooms[$room]['domains'][$domain][$device])) { echo 'Quellgeraet fehlt.'; return; }
+                $cfg = &$rooms[$room]['domains'][$domain][$device];
+            } else {
+                if (!isset($rooms[$room]['domains'][$domain][$group][$device])) { echo 'Quellgeraet fehlt.'; return; }
+                $cfg = &$rooms[$room]['domains'][$domain][$group][$device];
+            }
+            if (!is_array($cfg['ai'] ?? null)) { echo 'ai-Struktur fehlt.'; return; }
+            $review = is_array($cfg['ai']['review'] ?? null) ? $cfg['ai']['review'] : [];
+            $review['technical'] = [
+                'status'=>'validated', 'at'=>time(),
+                'fingerprint'=>$result['fingerprint'],
+                'source'=>'IP-Symcon Namen, Profile, Datentypen und Aktionen'
+            ];
+            if ($mode === 'manual') {
+                $review['status'] = 'confirmed';
+                $review['confirmedAt'] = time();
+                $review['confirmationMethod'] = 'user_verified_on_real_device';
+            }
+            $cfg['ai']['review'] = $review;
+            unset($cfg);
+        }
+        unset($rooms);
+        $loss = [];
+        $this->findLostCatalogFields($original,$catalog,'RoomsCatalogEdit',$loss);
+        if ($loss !== []) {
+            echo 'Datenverlustpruefung abgebrochen: '.implode('; ',array_slice($loss,0,3));
+            return;
+        }
+        $nextSource = "<?php\nreturn ".var_export($catalog,true).";\n";
+        if ($originalSource !== IPS_GetScriptContent($editId)) {
+            echo 'RoomsCatalogEdit wurde zwischenzeitlich geaendert. Keine Uebernahme.';
+            return;
+        }
+        if (!function_exists('IPS_CreateScript') || !function_exists('IPS_SetParent')
+            || !function_exists('IPS_SetName') || !function_exists('IPS_GetParent')) {
+            echo 'Automatische Backup-Funktionen fehlen; aus Sicherheitsgruenden nichts gespeichert.';
+            return;
+        }
+        $backupId = IPS_CreateScript(0);
+        if (!is_int($backupId) || $backupId <= 0) { echo 'Backup konnte nicht erstellt werden.'; return; }
+        IPS_SetParent($backupId, IPS_GetParent($editId));
+        IPS_SetName($backupId,'RoomsCatalogEdit_Backup_Technical_V339_'.date('Ymd_His').'_'.$backupId);
+        IPS_SetScriptContent($backupId,$originalSource);
+        if (IPS_GetScriptContent($backupId) !== $originalSource) {
+            echo 'Backup-Verifikation fehlgeschlagen, EDIT unveraendert.';
+            return;
+        }
+        IPS_SetScriptContent($editId,$nextSource);
+        if (IPS_GetScriptContent($editId) !== $nextSource) {
+            IPS_SetScriptContent($editId,$originalSource);
+            echo 'EDIT konnte nicht verifiziert werden; urspruenglicher Inhalt wiederhergestellt.';
+            return;
+        }
+        $this->WriteAttributeString('TechnicalDevicePreview','{}');
+        $this->WriteAttributeString('TechnicalDeviceSnapshot','{}');
+        $this->reloadAllFromCatalog();
+        $this->RefreshVisibleLists();
+        $message = count($checked).' Geraete '.($mode === 'manual'
+            ? 'nach manueller Pruef-Erklaerung bestaetigt' : 'technisch protokolliert')
+            .'. Nur EDIT geaendert, KI-Freigaben/PROD unveraendert. Backup #'.$backupId.'.';
+        $this->UpdateFormField('TechnicalDeviceActionMessage','caption',$message);
+        echo $message;
+    }
+
     private function catalogMigrationStatistics(array $edit, array $prod, bool $validateVariables = false): array
     {
         $summary = [
