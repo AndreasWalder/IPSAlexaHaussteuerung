@@ -3129,7 +3129,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 'prodHash'=>hash('sha256',$sources['prodSource']),
                 'signature'=>$signature
             ],JSON_INVALID_UTF8_SUBSTITUTE));
-            $notice=sprintf('Diagnose fuer %d Geraete erstellt; %d sichere Rollen-Ergaenzungen vorgeschlagen. '
+            $notice=sprintf('Diagnose fuer %d Geraete erstellt; %d eindeutige technische Korrekturen vorgeschlagen. '
                 .'Schritt 2 innerhalb von zehn Minuten moeglich, nur wenn EDIT/PROD identisch sind. '
                 .'Alle unsicheren Zuordnungen bleiben unveraendert.',
                 count($plan['devices']),count($plan['changes']));
@@ -3181,6 +3181,9 @@ class RoomsCatalogConfigurator extends IPSModule
             $next=RCCSafeAutoRepair::applyBindings($sources['catalog'],$changes);
             $loss=[];
             $this->findLostCatalogFields($sources['catalog'],$next,'RoomsCatalogEdit',$loss);
+            // Authorized replacements are the known KNX heating setpoint or
+            // a fully checked KNX DPT2 light-feedback repair. All other
+            // existing fields and permissions remain unchanged.
             // All replacements are limited to a control field that formerly
             // held the same read-only ID as targetTemperature. The exact
             // original value and full destination are checked against the plan.
@@ -3198,6 +3201,28 @@ class RoomsCatalogConfigurator extends IPSModule
                 [$room,$domain,$group,$device]=explode('|',$key,4);
                 $approved[]='RoomsCatalogEdit.'.$room.'.domains.'.$domain.'.'.$device
                     .'.ai.variables.control:';
+            }
+            // KNX DPT2 light-only repair: the existing "state" was
+            // incorrectly a KNX priority bit (Value0). The *same*
+            // repair must replace both typed power/status and legacy state
+            // with the read-only Boolean Funktionswert (Value1).
+            foreach ($flat as $flatRow) {
+                $key=$this->buildCompositeKey($flatRow);
+                if ($key===null || !isset($changes[$key]['power'],$changes[$key]['status'])) continue;
+                $oldAi=$flatRow['ai']??null;
+                if (is_string($oldAi)) $oldAi=json_decode($oldAi,true);
+                if (!is_array($oldAi) || ($oldAi['type']??'')!=='light'
+                    || empty($flatRow['kiReadOnly'])
+                    || (int)$changes[$key]['power']!==(int)$changes[$key]['status']) continue;
+                $oldState=(int)($flatRow['state']??0);
+                $oldPower=(int)($oldAi['variables']['power']??0);
+                $oldStatus=(int)($oldAi['variables']['status']??0);
+                if ($oldState<=0 || $oldState!==$oldPower || $oldState!==$oldStatus) continue;
+                [$room,$domain,$group,$device]=explode('|',$key,4);
+                $base='RoomsCatalogEdit.'.$room.'.domains.'.$domain.'.'.$group.'.'.$device.'.';
+                foreach (['state:','ai.variables.power:','ai.variables.status:'] as $field) {
+                    $approved[]=$base.$field;
+                }
             }
             $loss=array_values(array_filter($loss,static function(string $error)use($approved):bool {
                 foreach($approved as $prefix) if(str_starts_with($error,$prefix)) return false;

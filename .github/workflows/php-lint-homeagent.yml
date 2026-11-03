@@ -103,6 +103,8 @@ jobs:
         run: php tests/test_rooms_catalog_v339_technical.php
       - name: Test V3.3.12 safe repair proposals, heating setpoint mapping and diagnostics form
         run: php tests/test_rooms_catalog_v3312_safe_repair.php
+      - name: Test V3.3.14 KNX light real switch feedback vs priority bit and guarded repair
+        run: php tests/test_rooms_catalog_v3314_knx_light_feedback.php
       - name: Test V3.3.11 safe catalog-to-system UI migration and typed metadata
         run: php tests/test_rooms_catalog_v3311_migration.php
       - name: Test V3.3.3 lossless SystemConfiguration staging and navigation inventory
