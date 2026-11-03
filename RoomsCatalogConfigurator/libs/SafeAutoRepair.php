@@ -22,7 +22,7 @@ final class RCCSafeAutoRepair
         'powerWatts'=>[1,2]
     ];
 
-    public static function propose(array $row, array $scoped, callable $score): array
+    public static function propose(array $row, array $scoped, callable $score, array $reservedIds=[]): array
     {
         $ai=$row['ai'] ?? null;
         $type=(string)($row['aiType'] ?? '');
@@ -38,7 +38,7 @@ final class RCCSafeAutoRepair
         foreach ($scoped as $variable) {
             $id=(int)($variable['id']??0);
             $kind=(int)($variable['type']??-1);
-            if ($id<=0 || in_array($id,$used,true)) continue;
+            if ($id<=0 || in_array($id,$used,true) || isset($reservedIds[$id])) continue;
             foreach (self::REQUIRED[$type] as $role) {
                 if (!in_array($kind,self::TYPES[$role]??[],true)) continue;
                 if (!self::credible($type,$role,$variable)) continue;
