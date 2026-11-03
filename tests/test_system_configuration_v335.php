@@ -32,6 +32,32 @@ function IPS_ObjectExists(int $id): bool
     return in_array($id, [53544,44390,38806,58379,57001],true);
 }
 
+
+$legacyAction = <<<'PHP'
+<?php
+function localCustomizedAction() { return 'do not remove'; }
+function exampleConfig()
+{
+    $launchCatalog = [];
+    return [
+                'launchCatalog' => $launchCatalog,
+            ];
+}
+        $ROOMS = iah_merge_global_room_domains((array) require IPS_GetScriptFile($S['ROOMS_CATALOG']));
+PHP;
+$GLOBALS['sc333Objects'][508] = ['parent'=>507,'name'=>'Customized Action','ident'=>'customActionTest'];
+IPS_SetScriptContent(508, $legacyAction);
+$patch = new ReflectionMethod(IPSAlexaHaussteuerung::class,'patchActionScriptNavigationMigration');
+$patch->invoke($module,508);
+$patchedAction = IPS_GetScriptContent(508);
+sc335_assert(str_contains($patchedAction,'IAH_NAVIGATION_CONFIG_V335')
+    && str_contains($patchedAction,'IAH_NAVIGATION_OVERLAY_V335_END')
+    && str_contains($patchedAction,"return 'do not remove'"),
+    'Legacy action was not safely patched or custom PHP was lost');
+$patch->invoke($module,508);
+sc335_assert(IPS_GetScriptContent(508)===$patchedAction,
+    'Action patch must be idempotent');
+
 $prodOld = IPS_GetScriptContent(501);
 $catalogOld = IPS_GetScriptContent(502);
 $catalogEditOld = IPS_GetScriptContent(503);
