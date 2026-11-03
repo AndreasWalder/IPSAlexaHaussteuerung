@@ -3111,7 +3111,7 @@ class RoomsCatalogConfigurator extends IPSModule
             || ($preview['editHash'] ?? '') !== ($snapshot['editHash'] ?? '')
             || ($preview['prodHash'] ?? '') !== ($snapshot['prodHash'] ?? '')
             || !is_array($preview['keys'] ?? null) || $preview['keys'] === []) {
-            echo 'Pruefvorschau nicht mehr aktuell; bitte technische Analyse wiederholen.';
+            echo 'Pruefvorschau veraltet oder nicht mehr aktuell; bitte technische Analyse wiederholen.';
             return;
         }
         $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
