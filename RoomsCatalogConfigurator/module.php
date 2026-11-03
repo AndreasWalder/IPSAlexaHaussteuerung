@@ -3647,6 +3647,11 @@ class RoomsCatalogConfigurator extends IPSModule
                             'V3.3.9: Alle Geraetetypen aus echten IPS-Instanz-/Variablenmetadaten pruefen. '
                             .'Keine Livewerte, keine Schaltbefehle, keine KI-Freigaben. '
                             .'Technisch plausibel ist noch KEINE fachliche Bestaetigung.'],
+                        ['type'=>'Label','caption'=>
+                            'WICHTIG BEI GEANDERTEN KATALOGZAHLEN: Zuerst DIESE technische Pruefung '
+                            .'ausfuehren. Sie vergleicht mit dem gespeicherten alten Migrationsbericht. '
+                            .'Erst danach die Migrationspruefung erneut starten, sonst geht der alte '
+                            .'Vergleichsstand verloren. Keine EDIT-/PROD-Uebernahme vor der Ursachenpruefung.'],
                         ['type'=>'Button','caption'=>'ALLE GERAETE TECHNISCH PRUEFEN',
                             'onClick'=>'RCC_RunTechnicalDeviceAudit($id);'],
                         ['type'=>'Label','name'=>'TechnicalDeviceSummary',
