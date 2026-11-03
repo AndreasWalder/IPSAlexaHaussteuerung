@@ -3021,6 +3021,21 @@ class RoomsCatalogConfigurator extends IPSModule
     private function safeRepairPlan(array $catalog): array
     {
         $rows=$this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($catalog));
+        // buildEntryRow serializes nested ai to a JSON string for IPS form lists.
+        // Normalize it BEFORE generating metadata, ownership or repair plans.
+        // Otherwise every export misleadingly shows roles=[] and every repair
+        // proposal is silently suppressed, despite typed devices in the source.
+        foreach ($rows as &$entry) {
+            if (is_string($entry['ai']??null)) {
+                $decoded=json_decode($entry['ai'],true);
+                if (!is_array($decoded)) {
+                    throw new \RuntimeException('Geraet hat unlesbare ai-Metadaten: '
+                        .(string)($this->buildCompositeKey($entry)??'unbekannt'));
+                }
+                $entry['ai']=$decoded;
+            }
+        }
+        unset($entry);
         $devices=[];
         $changes=[];
         $counts=[];
@@ -3103,7 +3118,8 @@ class RoomsCatalogConfigurator extends IPSModule
                     'identical'=>$sources['editSource']===$sources['prodSource']
                 ],
                 'summary'=>['total'=>count($plan['devices']),
-                    'statusCounts'=>$plan['counts'],'safeBindingChanges'=>count($plan['changes'])],
+                    'statusCounts'=>$plan['counts'],'safeBindingChanges'=>count($plan['changes']),
+                    'typedRolesExported'=>count(array_filter($plan['devices'],static fn(array $d):bool=>($d['roles']??[])!==[]))],
                 'devices'=>$plan['devices']
             ];
             $signature=hash('sha256',json_encode($plan,JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_UNICODE));
@@ -3165,6 +3181,28 @@ class RoomsCatalogConfigurator extends IPSModule
             $next=RCCSafeAutoRepair::applyBindings($sources['catalog'],$changes);
             $loss=[];
             $this->findLostCatalogFields($sources['catalog'],$next,'RoomsCatalogEdit',$loss);
+            // All replacements are limited to a control field that formerly
+            // held the same read-only ID as targetTemperature. The exact
+            // original value and full destination are checked against the plan.
+            $approved=[];
+            $flat=$this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($sources['catalog']));
+            foreach ($flat as $flatRow) {
+                $key=$this->buildCompositeKey($flatRow);
+                if ($key===null || !isset($changes[$key]['control'])) continue;
+                $oldAi=$flatRow['ai']??null;
+                if (is_string($oldAi)) $oldAi=json_decode($oldAi,true);
+                if (!is_array($oldAi) || ($oldAi['type']??'')!=='heating') continue;
+                $oldControl=(int)($oldAi['variables']['control']??0);
+                $oldTarget=(int)($oldAi['variables']['targetTemperature']??0);
+                if ($oldControl<=0 || $oldControl!==$oldTarget) continue;
+                [$room,$domain,$group,$device]=explode('|',$key,4);
+                $approved[]='RoomsCatalogEdit.'.$room.'.domains.'.$domain.'.'.$device
+                    .'.ai.variables.control:';
+            }
+            $loss=array_values(array_filter($loss,static function(string $error)use($approved):bool {
+                foreach($approved as $prefix) if(str_starts_with($error,$prefix)) return false;
+                return true;
+            }));
             if ($loss!==[]) throw new \RuntimeException('Datenverlustpruefung: '.implode('; ',array_slice($loss,0,3)));
             $nextSource="<?php\nreturn ".var_export($next,true).";\n";
             if (IPS_GetScriptContent($sources['editId'])!==$sources['editSource']
@@ -3213,7 +3251,7 @@ class RoomsCatalogConfigurator extends IPSModule
             $this->WriteAttributeString('AutoRepairPreview','{}');
             $this->reloadAllFromCatalog();
             $this->RefreshVisibleLists();
-            $message=sprintf('ERFOLG: %d fehlende technische Leserollen in EDIT und PROD ergaenzt. '
+            $message=sprintf('ERFOLG: %d sichere technische Rollen-Zuordnungen in EDIT und PROD korrigiert. '
                 .'Backups: EDIT #%d, PROD #%d. KI-Rechte, Werte und Bestaetigungen unveraendert. '
                 .'Bitte ALLE GERAETE TECHNISCH PRUEFEN erneut ausfuehren.',
                 count($changes),$backups['edit'],$backups['prod']);
