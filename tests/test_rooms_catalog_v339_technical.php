@@ -63,9 +63,19 @@ function ck339(bool $test,string $reason): void { if(!$test)throw new RuntimeExc
 
 $beforeEdit=IPS_GetScriptContent(41);
 $beforeProd=IPS_GetScriptContent(40);
+ob_start();$mod->AuditMigrationReadiness();ob_end_clean();
 ob_start();$mod->RunTechnicalDeviceAudit();$summary=ob_get_clean();
 $scan=json_decode($mod->ReadAttributeString('TechnicalDeviceSnapshot'),true,512,JSON_THROW_ON_ERROR);
 ck339(count($scan['rows'])===5,'Not all devices were scanned');
+ck339(($scan['source']['typed']??-1)===4 && ($scan['source']['legacy']??-1)===1,
+    'Typed/Legacy source audit should match the previous migration audit');
+ck339(($scan['source']['editId']??0)===41 && ($scan['source']['prodId']??0)===40,
+    'Source script IDs not shown');
+ck339(($scan['issueCounts']['missing_ips']??0)>=1,
+    'Structured reasons missing for invalid IPS variable');
+ck339(str_contains($mod->updates['TechnicalDeviceSourceSummary.caption']??'','EDIT #41')
+    && str_contains($mod->updates['TechnicalDeviceSourceSummary.caption']??'','PROD #40'),
+    'Source labels with real script IDs missing');
 ck339(($scan['diffCounts']['new']??null)===1 && $scan['diffCounts']['changed']>=1,
     'Device diff report does not distinguish new and changed entries');
 ck339(count($scan['legacyRows'])===1 && $scan['legacyRows'][0]['title']==='Alt-Licht',
@@ -161,6 +171,52 @@ ck339($unsafeRow['status']==='Manuell pruefen' && !$unsafeRow['manualEligible']
     && str_contains($unsafeRow['reason'],'IPS-Aktion'),
     'Writable KI device with no action was wrongly approved as technically safe');
 IPS_SetScriptContent(41,$editAfterManual);
+
+// Reproduce the reported sudden 8 -> 67 Legacy pattern on a small fixture.
+// The classifier must highlight an actual external EDIT change, not silently
+// contradict an older cached migration summary.
+$priorData = json_decode($mod->ReadAttributeString('MigrationReadinessDetails'),true,512,JSON_THROW_ON_ERROR);
+ck339(($priorData['statistics']['typed']??-1)===4,'Old audit baseline missing');
+$changedSource=$confirmed;
+unset($changedSource['wohnzimmer']['domains']['dimmer']['dimmers']['dimmer']['ai']);
+IPS_SetScriptContent(41,'<?php return '.var_export($changedSource,true).';');
+ob_start();$mod->RunTechnicalDeviceAudit();ob_end_clean();
+$changedAudit=json_decode($mod->ReadAttributeString('TechnicalDeviceSnapshot'),true,512,JSON_THROW_ON_ERROR);
+$sourceLabel=$mod->updates['TechnicalDeviceSourceSummary.caption']??'';
+ck339(($changedAudit['source']['typed']??-1)===3
+    && ($changedAudit['source']['legacy']??-1)===2
+    && ($changedAudit['source']['previousAudit']['changed']??false) === true
+    && str_contains($sourceLabel,'Vorher: 4 typisiert, 1 Legacy')
+    && str_contains($sourceLabel,'Jetzt: 3 typisiert, 2 Legacy'),
+    'Changed catalog must explain old vs new typed/legacy figures');
+IPS_SetScriptContent(41,$editAfterManual);
+
+// A misconfigured module must never write to PROD through an EDIT alias.
+$mod->properties['RoomsCatalogScriptID']=41;
+ob_start();$mod->RunTechnicalDeviceAudit();ob_end_clean();
+$sameIdSummary=$mod->updates['TechnicalDeviceSourceSummary.caption']??'';
+ck339(str_contains($sameIdSummary,'DIESELBE Skript-ID'),
+    'Same PROD/EDIT script ID must produce a clear configuration warning');
+$mod->MarkTechnicalDevice('wohnzimmer|licht|switches|decke',true);
+ob_start();$mod->PreviewTechnicalDeviceReview();ob_end_clean();
+$sameBefore=IPS_GetScriptContent(41);
+ob_start();$mod->ApplyTechnicalDeviceReview();$sameMessage=ob_get_clean();
+ck339(str_contains($sameMessage,'SICHERHEITSSTOPP')
+    && IPS_GetScriptContent(41)===$sameBefore,
+    'Technical approval wrote data into a shared PROD/EDIT script');
+$mod->properties['RoomsCatalogScriptID']=40;
+
+// Missing a required typed role must be shown as INCOMPLETE, not as an
+// unavailable/broken IP-Symcon variable; it can never be confirmed blindly.
+$incomplete=RCCDeviceTechnicalAudit::assess(
+    ['aiType'=>'heating'], ['temperature'=>'aiTemperatureId'],
+    [['id'=>91001,'name'=>'Ist','ident'=>'Ist','profile'=>'~Temperature','type'=>2]],
+    [['temperature']], static fn(array $var,string $role):int=>120,static fn(int $id):bool=>true);
+ck339($incomplete['status']==='Manuell pruefen' && !$incomplete['manualEligible']
+    && in_array('missing_required_role',$incomplete['issueCodes'],true),
+    'Missing typed role should request mapping, not claim defective hardware');
+
+
 
 
 
