@@ -3435,6 +3435,104 @@ class RoomsCatalogConfigurator extends IPSModule
                     ],
                 ],
                 [
+                    'type'=>'ExpansionPanel',
+                    'caption'=>'Geraetepruefung & Migrationsabschluss',
+                    'expanded'=>true,
+                    'items'=>[
+                        ['type'=>'Label','caption'=>
+                            'V3.3.9: Alle Geraetetypen aus echten IPS-Instanz-/Variablenmetadaten pruefen. '
+                            .'Keine Livewerte, keine Schaltbefehle, keine KI-Freigaben. '
+                            .'Technisch plausibel ist noch KEINE fachliche Bestaetigung.'],
+                        ['type'=>'Button','caption'=>'ALLE GERAETE TECHNISCH PRUEFEN',
+                            'onClick'=>'RCC_RunTechnicalDeviceAudit($id);'],
+                        ['type'=>'Label','name'=>'TechnicalDeviceSummary',
+                            'caption'=>$this->technicalDeviceSummaryFromSnapshot($this->deviceTechnicalSnapshot())],
+                        [
+                            'type'=>'List','name'=>'TechnicalDeviceChecks',
+                            'caption'=>'Technische Geraetepruefung (alle Typen)',
+                            'rowCount'=>15,'loadValuesFromConfiguration'=>false,
+                            'add'=>false,'delete'=>false,
+                            'columns'=>[
+                                ['caption'=>'Auswahl','name'=>'selected','width'=>'80px','edit'=>['type'=>'CheckBox'],'add'=>false],
+                                ['caption'=>'Raum','name'=>'room','width'=>'120px','save'=>false,'quickFilter'=>true,'add'=>''],
+                                ['caption'=>'Geraet','name'=>'title','width'=>'170px','save'=>false,'quickFilter'=>true,'add'=>''],
+                                ['caption'=>'Typ','name'=>'type','width'=>'95px','save'=>false,'quickFilter'=>true,'add'=>''],
+                                ['caption'=>'Technischer Stand','name'=>'status','width'=>'145px','save'=>false,'quickFilter'=>true,'add'=>''],
+                                ['caption'=>'Manuell bestaetigt','name'=>'manuallyConfirmed','width'=>'110px','save'=>false,'add'=>false],
+                                ['caption'=>'Rollen','name'=>'roleCount','width'=>'65px','save'=>false,'add'=>0],
+                                ['caption'=>'Grund / offener Punkt','name'=>'reason','width'=>'auto','save'=>false,'add'=>''],
+                                ['caption'=>'Interner Schluessel','name'=>'key','visible'=>false,'save'=>false,'add'=>''],
+                                ['caption'=>'Signatur','name'=>'fingerprint','visible'=>false,'save'=>false,'add'=>'']
+                            ],
+                            'values'=>(array)($this->deviceTechnicalSnapshot()['rows'] ?? []),
+                            'onEdit'=>'RCC_MarkTechnicalDevice($id, (string)($TechnicalDeviceChecks["key"] ?? ""), '
+                                .'(bool)($TechnicalDeviceChecks["selected"] ?? false));'
+                        ],
+                        ['type'=>'RowLayout','items'=>[
+                            ['type'=>'Button','caption'=>'TECHNISCH PLAUSIBLE MARKIEREN',
+                                'onClick'=>'RCC_SelectTechnicalDevices($id, true);'],
+                            ['type'=>'Button','caption'=>'MARKIERUNGEN AUFHEBEN',
+                                'onClick'=>'RCC_SelectTechnicalDevices($id, false);']
+                        ]],
+                        ['type'=>'Label','caption'=>
+                            'Schritt A – Bei technisch plausiblen Geraeten nur die Pruefmetadaten nach EDIT speichern. '
+                            .'Die fachliche Bestaetigung bleibt offen.'],
+                        ['type'=>'RowLayout','items'=>[
+                            ['type'=>'Button','caption'=>'TECHNISCHE UEBERNAHME VORSCHAU',
+                                'onClick'=>'RCC_PreviewTechnicalDeviceReview($id);'],
+                            ['type'=>'Button','caption'=>'TECHNISCHE ERGEBNISSE NACH EDIT SPEICHERN',
+                                'confirm'=>'Markierte technisch plausible Geraete nur als TECHNISCH geprueft nach EDIT schreiben? Alle bisherigen Freigaben und PROD bleiben unveraendert.',
+                                'onClick'=>'RCC_ApplyTechnicalDeviceReview($id);']
+                        ]],
+                        ['type'=>'Label','caption'=>
+                            'Schritt B – NUR wenn du jede markierte Zuordnung, Statusbedeutung '
+                            .'und Steuerfunktion am ECHTEN Geraet geprueft hast:'],
+                        ['type'=>'CheckBox','name'=>'TechnicalDevicesPhysicallyChecked',
+                            'caption'=>'Ich habe ALLE markierten Geraete und die Zuordnungen tatsaechlich am System geprueft.',
+                            'value'=>false],
+                        ['type'=>'RowLayout','items'=>[
+                            ['type'=>'Button','caption'=>'MANUELLE BESTAETIGUNG VORSCHAU',
+                                'onClick'=>'RCC_PreviewManualDeviceConfirmation($id, (bool)$TechnicalDevicesPhysicallyChecked);'],
+                            ['type'=>'Button','caption'=>'GEPRUEFTE GERAETE NACH EDIT BESTAETIGEN',
+                                'confirm'=>'Wirklich alle markierten Geraete am echten System inkl. Soll/Ist, Ein/Aus, Offen/Geschlossen und Aktionen geprueft? Erst dann wird ai.review.status=confirmed gesetzt.',
+                                'onClick'=>'RCC_ApplyManualDeviceConfirmation($id, (bool)$TechnicalDevicesPhysicallyChecked);']
+                        ]],
+                        ['type'=>'Label','name'=>'TechnicalDeviceActionMessage',
+                            'caption'=>$this->ReadAttributeString('TechnicalDeviceActionMessage')],
+                        ['type'=>'ExpansionPanel','caption'=>'Legacy-Geraete – noch nicht typisiert',
+                            'expanded'=>false,'items'=>[
+                                ['type'=>'Label','caption'=>'Nur lesende Liste. Die sichere Typisierung erfolgt unter Geraete erkennen, inventarisieren und reparieren.'],
+                                ['type'=>'List','name'=>'TechnicalLegacyDevices','caption'=>'Legacy-Katalogeintraege',
+                                    'rowCount'=>12,'loadValuesFromConfiguration'=>false,
+                                    'add'=>false,'delete'=>false,
+                                    'columns'=>[
+                                        ['caption'=>'Raum','name'=>'room','width'=>'135px','save'=>false,'add'=>''],
+                                        ['caption'=>'Geraet','name'=>'title','width'=>'180px','save'=>false,'add'=>''],
+                                        ['caption'=>'Katalogpfad','name'=>'path','width'=>'290px','save'=>false,'add'=>''],
+                                        ['caption'=>'Hinweis','name'=>'message','width'=>'auto','save'=>false,'add'=>'']
+                                    ],
+                                    'values'=>(array)($this->deviceTechnicalSnapshot()['legacyRows'] ?? [])
+                                ]
+                            ]],
+                        ['type'=>'ExpansionPanel','caption'=>'EDIT/PROD-Unterschiede – alle Eintraege',
+                            'expanded'=>false,'items'=>[
+                                ['type'=>'Label','caption'=>'Vollstaendige Liste: nur Namen geaenderter Felder, keine konkreten Werte oder Geheimnisse. Vor Produktivuebernahme jede Aenderung bewerten.'],
+                                ['type'=>'List','name'=>'TechnicalDiffRows','caption'=>'Neue, entfernte und geaenderte Eintraege',
+                                    'rowCount'=>15,'loadValuesFromConfiguration'=>false,
+                                    'add'=>false,'delete'=>false,
+                                    'columns'=>[
+                                        ['caption'=>'Raum','name'=>'room','width'=>'120px','save'=>false,'add'=>''],
+                                        ['caption'=>'Geraet','name'=>'title','width'=>'150px','save'=>false,'add'=>''],
+                                        ['caption'=>'Art','name'=>'type','width'=>'90px','save'=>false,'add'=>''],
+                                        ['caption'=>'Betroffene Felder','name'=>'fields','width'=>'220px','save'=>false,'add'=>''],
+                                        ['caption'=>'Katalogpfad','name'=>'path','width'=>'auto','save'=>false,'add'=>'']
+                                    ],
+                                    'values'=>(array)($this->deviceTechnicalSnapshot()['diffRows'] ?? [])
+                                ]
+                            ]]
+                    ]
+                ],
+                [
                     'type' => 'ExpansionPanel',
                     'caption' => 'Raeume & Etagen',
                     'expanded' => true,
