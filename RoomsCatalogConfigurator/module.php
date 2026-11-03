@@ -144,6 +144,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterPropertyString('DiscoveryExtraRootIds', '');
 
         $this->RegisterAttributeString('RuntimeEntries', '[]');
+        $this->RegisterAttributeString('RuntimeEditHash', '');
         $this->RegisterAttributeString('FilterRoom', '');
         $this->RegisterAttributeString('FilterDomain', '');
         $this->RegisterAttributeString('FilterGroup', '');
@@ -2925,6 +2926,7 @@ class RoomsCatalogConfigurator extends IPSModule
 
     public function GetConfigurationForm()
     {
+        $this->ensureRuntimeCatalogCurrent();
         $entriesProd  = $this->getProdEntries();
         $entriesEdit  = $this->getRuntimeEntries();
         $filterAI = $this->ReadAttributeString('FilterAI');
@@ -3507,6 +3509,21 @@ class RoomsCatalogConfigurator extends IPSModule
     // Interne Logik
     // =====================================================================
 
+    /**
+     * External writes from navigation migration can invalidate RuntimeEntries
+     * and leave a stale "tabs" filter. Compare EDIT's actual source hash first.
+     */
+    private function ensureRuntimeCatalogCurrent(): void
+    {
+        $id = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        if ($id <= 0 || !function_exists('IPS_GetScriptContent') || !IPS_ScriptExists($id)) return;
+        $source = IPS_GetScriptContent($id);
+        if (!is_string($source)) return;
+        if ($this->ReadAttributeString('RuntimeEditHash') !== hash('sha256',$source)) {
+            $this->reloadAllFromCatalog();
+        }
+    }
+
     private function reloadAllFromCatalog(): void
     {
         $this->learnedModuleTemplateCache = [];
@@ -3519,6 +3536,7 @@ class RoomsCatalogConfigurator extends IPSModule
         if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) {
             $this->logDebug('reloadAllFromCatalog: kein gültiges ScriptID gesetzt');
             $this->WriteAttributeString('RuntimeEntries', '[]');
+            $this->WriteAttributeString('RuntimeEditHash', '');
             return;
         }
 
@@ -3527,6 +3545,7 @@ class RoomsCatalogConfigurator extends IPSModule
         if ($catalog === []) {
             $this->logDebug('reloadAllFromCatalog: Katalog leer oder ungültig');
             $this->WriteAttributeString('RuntimeEntries', '[]');
+            $this->WriteAttributeString('RuntimeEditHash', '');
             return;
         }
 
@@ -3537,6 +3556,10 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->logDebug('reloadAllFromCatalog: erzeugte Einträge=' . count($entries));
 
         $this->WriteAttributeString('RuntimeEntries', json_encode($entries));
+        if (function_exists('IPS_GetScriptContent')) {
+            $source = IPS_GetScriptContent($scriptId);
+            if (is_string($source)) $this->WriteAttributeString('RuntimeEditHash',hash('sha256',$source));
+        }
     }
 
     private function loadRoomsCatalog(int $scriptId, string $mode): array
@@ -4465,6 +4488,7 @@ class RoomsCatalogConfigurator extends IPSModule
      */
     private function RefreshVisibleLists(): void
     {
+        $this->ensureRuntimeCatalogCurrent();
         $edit = $this->getRuntimeEntries();
         $prod = $this->getProdEntries();
         $filters = $this->normalizeCurrentFilters($edit,$prod);
