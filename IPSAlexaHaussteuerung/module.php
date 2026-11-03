@@ -95,6 +95,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterAttributeString('SystemNavigationImportPreview', '');
         $this->RegisterAttributeString('RoomsCatalogAutoPreview', '');
         $this->RegisterAttributeString('RoomsCatalogAutoNotice', 'Noch keine Vorschau.');
+        $this->RegisterAttributeString('RoomsCatalogAutoReceipt', '');
         $this->RegisterAttributeString('SystemNavigationEditorNotice', '');
         $this->RegisterAttributeString('LaunchIconDiagnostics', '');
         $this->RegisterAttributeString('SystemNavigationMigrationPreview', '');
@@ -434,6 +435,9 @@ class IPSAlexaHaussteuerung extends IPSModule
                 ['type'=>'Button','caption'=>'2 – GEPRUEFTE KORREKTUREN NACH PROD UEBERNEHMEN',
                     'confirm'=>'ACHTUNG: Vier komplette Skripte werden zuerst einzeln gesichert, danach werden RoomsCatalog + RoomsCatalogEdit UND SystemConfiguration + SystemConfigurationEdit aktualisiert. Bestehende KI-Rechte und fremde Systemeinstellungen werden nicht geaendert. Nur nach gepruefter Vorschau fortfahren!',
                     'onClick'=>'IAH_ApplyRoomsCatalogAutoMigration($id);'],
+                ['type'=>'Button','caption'=>'NOTFALL: LETZTE AUTOKORREKTUR ZURUECKSETZEN',
+                    'confirm'=>'ACHTUNG: Alle vier Skripte auf den unmittelbar vor der letzten automatischen Korrektur gesicherten Stand zuruecksetzen? Nur moeglich, wenn sich seither keines der Skripte geaendert hat. Neue Sicherung wird angelegt.',
+                    'onClick'=>'IAH_RollbackRoomsCatalogAutoMigration($id);'],
             ]
         ];
     }
@@ -608,6 +612,13 @@ class IPSAlexaHaussteuerung extends IPSModule
                 }
                 throw $e;
             }
+            $receipt=['stage'=>'applied','time'=>time(),'backups'=>$backups,'original'=>[],'installed'=>[]];
+            foreach ($sources as $name=>$source) {
+                $receipt['original'][$name]=['id'=>$source['id'],
+                    'hash'=>hash('sha256',$source['source'])];
+                $receipt['installed'][$name]=hash('sha256',$writes[$name]);
+            }
+            $this->WriteAttributeString('RoomsCatalogAutoReceipt',json_encode($receipt));
             $this->WriteAttributeString('RoomsCatalogAutoPreview','');
             $r=$plan['report'];
             $this->roomsCatalogAutoMessage(sprintf(
@@ -621,6 +632,58 @@ class IPSAlexaHaussteuerung extends IPSModule
             ));
         } catch (\Throwable $e) {
             $this->roomsCatalogAutoMessage('MIGRATION ABGEBROCHEN: '.$e->getMessage());
+        }
+    }
+
+
+    public function RollbackRoomsCatalogAutoMigration(): void
+    {
+        try {
+            $receipt=json_decode($this->ReadAttributeString('RoomsCatalogAutoReceipt'),true);
+            if (!is_array($receipt) || ($receipt['stage']??'')!=='applied') {
+                throw new \RuntimeException('Keine abgeschlossene automatische Migration zum Zuruecksetzen gefunden.');
+            }
+            $ctx=$this->roomsCatalogAutoContext();
+            $original=[];
+            foreach ($ctx as $name=>$entry) {
+                if ((int)($receipt['original'][$name]['id']??0)!==$entry['id']
+                    || !hash_equals((string)($receipt['installed'][$name]??''),
+                        hash('sha256',$entry['source']))) {
+                    throw new \RuntimeException($name.' wurde seit der Migration geaendert – '
+                        .'kein automatischer Rollback, um neuere Daten nicht zu verlieren.');
+                }
+                $backupId=(int)($receipt['backups'][$name]??0);
+                $backupSource=$this->getScriptContent($backupId);
+                if (!is_string($backupSource) || !hash_equals(
+                    (string)($receipt['original'][$name]['hash']??''),
+                    hash('sha256',$backupSource))) {
+                    throw new \RuntimeException('Originalbackup fehlt oder hat sich geaendert: '.$name);
+                }
+                $original[$name]=$backupSource;
+            }
+            foreach ($ctx as $name=>$entry) {
+                $this->createNavigationCatalogBackup(
+                    $entry['id'],'RoomsAutoV3311_before_rollback_'.$name,$entry['source']);
+            }
+            try {
+                foreach (['systemEdit','catalogEdit','systemProd','catalogProd'] as $name) {
+                    IPS_SetScriptContent($ctx[$name]['id'],$original[$name]);
+                    if ($this->getScriptContent($ctx[$name]['id'])!==$original[$name]) {
+                        throw new \RuntimeException('Rueckschreiben fehlgeschlagen: '.$name);
+                    }
+                }
+            } catch (\Throwable $e) {
+                foreach ($ctx as $name=>$entry) IPS_SetScriptContent($entry['id'],$entry['source']);
+                throw $e;
+            }
+            $receipt['stage']='rolled_back';
+            $this->WriteAttributeString('RoomsCatalogAutoReceipt',json_encode($receipt));
+            $this->WriteAttributeString('RoomsCatalogAutoPreview','');
+            $this->roomsCatalogAutoMessage('ROLLBACK ERFOLGREICH: Alle vier Skripte auf die '
+                .'verifizierten Original-Backups zurueckgesetzt. KI-Rechte und weitere Werte '
+                .'entsprechen dem gesicherten Vorzustand.');
+        } catch (\Throwable $e) {
+            $this->roomsCatalogAutoMessage('ROLLBACK BLOCKIERT: '.$e->getMessage());
         }
     }
 
