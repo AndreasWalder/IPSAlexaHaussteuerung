@@ -93,6 +93,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterAttributeString('SystemConfigurationInventory', '');
         $this->RegisterAttributeString('SystemNavigationImportPreview', '');
         $this->RegisterAttributeString('SystemNavigationEditorNotice', '');
+        $this->RegisterAttributeString('LaunchIconDiagnostics', '');
         $this->RegisterAttributeString('SystemNavigationMigrationPreview', '');
         $this->RegisterAttributeString('SystemNavigationMigrationReceipt', '');
         $this->RegisterAttributeString('SystemNavigationMigrationNotice', '');
@@ -645,7 +646,9 @@ class IPSAlexaHaussteuerung extends IPSModule
             $roomOptions[] = ['caption' => 'global', 'value' => 'global'];
         }
         $migrationFinished = $this->systemNavigationMigrationCompleted();
-        $rows = IAHSystemNavigationEditor::rows($edit);
+        $published = $this->readConfigurationArrayFromScript((int)($context['ids']['prod'] ?? 0));
+        $objectExists = function_exists('IPS_ObjectExists') ? 'IPS_ObjectExists' : null;
+        $rows = IAHSystemNavigationEditor::rows($edit, $published, $objectExists);
         $rowData = [
             'entryKey' => '($SystemNavigationEditRows["entryKey"] ?? "")',
             'revision' => '($SystemNavigationEditRows["revision"] ?? "")',
@@ -690,7 +693,7 @@ class IPSAlexaHaussteuerung extends IPSModule
                 'add' => '', 'edit' => ['type' => 'ValidationTextBox']],
             ['name' => 'enabled', 'caption' => 'Aktiv', 'width' => '65px',
                 'add' => true, 'edit' => ['type' => 'CheckBox']],
-            ['name' => 'review', 'caption' => 'Pruefung', 'width' => '105px', 'add' => '', 'save' => false],
+            ['name' => 'review', 'caption' => 'Status', 'width' => '125px', 'add' => '', 'save' => false],
             ['name' => 'legacyPath', 'caption' => 'Herkunft', 'width' => '290px',
                 'add' => '', 'save' => false, 'visible' => !$migrationFinished],
             ['name' => 'entryKey', 'caption' => 'Interne ID', 'width' => '150px',
@@ -899,7 +902,9 @@ class IPSAlexaHaussteuerung extends IPSModule
     public function ReloadSystemNavigationEditor(): void
     {
         $context = $this->navigationEditorContext();
-        $rows = IAHSystemNavigationEditor::rows($context['edit'] ?? []);
+        $published = $this->readConfigurationArrayFromScript((int)($context['ids']['prod'] ?? 0));
+        $objectExists = function_exists('IPS_ObjectExists') ? 'IPS_ObjectExists' : null;
+        $rows = IAHSystemNavigationEditor::rows($context['edit'] ?? [], $published, $objectExists);
         $this->UpdateFormField('SystemNavigationEditRows', 'values', json_encode($rows, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
         $this->UpdateFormField('SystemNavigationEditorSummary', 'caption', $this->systemNavigationEditorSummary($context));
     }
@@ -1830,6 +1835,80 @@ class IPSAlexaHaussteuerung extends IPSModule
     }
 
 
+
+    /**
+     * Keine externen Netzwerkaufrufe und keine Ausgabe des Tokens.
+     * Der Test unterscheidet fehlende Dateinamen, WebHook und HTTPS.
+     */
+    public function CheckLaunchIcons(): void
+    {
+        $tiles = (array)($this->readLaunchCatalogProperty()['tiles'] ?? []);
+        $defaultIcons = [];
+        foreach ((array)($this->launchCatalogDefaults()['tiles'] ?? []) as $item) {
+            if (is_array($item) && isset($item['id'])) {
+                $defaultIcons[(string)$item['id']] = (string)($item['icon'] ?? '');
+            }
+        }
+        $dir = rtrim(IPS_GetKernelDir(), '/\\') . DIRECTORY_SEPARATOR . 'user'
+            . DIRECTORY_SEPARATOR . 'icons';
+        $files = [];
+        foreach ($tiles as $tile) {
+            if (!is_array($tile)) continue;
+            $name = trim((string)($tile['icon'] ?? ''));
+            if ($name === '') {
+                $name = $defaultIcons[(string)($tile['id'] ?? '')] ?? '';
+            }
+            if ($name !== '') $files[$name] = true;
+        }
+        foreach ([
+            $this->ReadPropertyString('LaunchLogo'),
+            $this->ReadPropertyString('LaunchHomeIcon'),
+            $this->ReadPropertyString('LaunchHeaderIcon')
+        ] as $name) {
+            $name = trim($name);
+            if ($name !== '') $files[$name] = true;
+        }
+        $missing = [];
+        foreach (array_keys($files) as $name) {
+            if ($name !== basename($name) || !is_file($dir . DIRECTORY_SEPARATOR . $name)) {
+                $missing[] = $name;
+            }
+        }
+        sort($missing);
+        $hookState = 'nicht eingerichtet';
+        $controllers = function_exists('IPS_GetInstanceListByModuleID')
+            ? (array)IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}')
+            : [];
+        $helper = $this->getObjectIDByIdentOrName($this->InstanceID, 'iahHelper', 'Alexa new devices helper');
+        $target = $this->getObjectIDByIdentOrName($helper, 'iahAlexaIconsHook', 'AlexaIconsHook');
+        foreach ($controllers as $controller) {
+            $hooks = json_decode((string)@IPS_GetProperty((int)$controller, 'Hooks'), true);
+            if (!is_array($hooks)) continue;
+            foreach ($hooks as $hook) {
+                if (($hook['Hook'] ?? '') !== '/hook/iah-alexa-icons') continue;
+                $hookState = $target > 0 && (int)($hook['TargetID'] ?? 0) === $target
+                    ? 'korrekt registriert' : 'belegt von anderem Skript';
+                break 2;
+            }
+        }
+        $scheme = strtolower((string)parse_url($this->ReadPropertyString('BaseUrl'), PHP_URL_SCHEME));
+        $https = $scheme === 'https';
+        $token = trim($this->ReadPropertyString('Token')) !== '';
+        $summary = sprintf(
+            'Kachel-Icons: %d/%d Dateien vorhanden. Icon-WebHook: %s. HTTPS: %s. Token gesetzt: %s.',
+            count($files)-count($missing), count($files), $hookState,
+            $https ? 'ja' : 'nein', $token ? 'ja' : 'nein'
+        );
+        if ($missing !== []) {
+            $summary .= ' Fehlende Dateien unter user/icons/: ' . implode(', ', $missing) . '.';
+        } elseif (!$https) {
+            $summary .= ' Alexa benoetigt einen von aussen erreichbaren HTTPS-Endpunkt fuer die Bilder.';
+        }
+        $this->WriteAttributeString('LaunchIconDiagnostics', $summary);
+        $this->UpdateFormField('LaunchIconDiagnostics', 'caption', $summary);
+        echo $summary;
+    }
+
     /**
      * Diagnose-Shell und WebHooks automatisch bei Uebernehmen bereitstellen.
      * Vorhandene Fremd-Hooks werden NIEMALS ueberschrieben.
@@ -1908,6 +1987,9 @@ class IPSAlexaHaussteuerung extends IPSModule
             // /hook/alexa-html-debug aus alten Tests oder anderen Modulen
             // werden nicht angeruehrt.
             '/hook/iah-alexa-shell' => $icons,
+            // Exklusiver Endpunkt fuer Kachel-Icons; vorhandene
+            // /hook/icons-Registrierungen bleiben unangetastet.
+            '/hook/iah-alexa-icons' => $icons,
             '/hook/iah-alexa-html-debug' => $receiver,
             '/hook/iah-alexa-tile-credential' => $tileCredential
         ] as $name => $target) {
