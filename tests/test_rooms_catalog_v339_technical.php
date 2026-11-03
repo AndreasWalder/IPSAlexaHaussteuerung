@@ -384,6 +384,44 @@ $beforeCapabilityCheck=IPS_GetScriptContent(40);
 ck339(IPS_GetScriptContent(40)===$beforeCapabilityCheck,
     'Classifier unexpectedly wrote production script');
 
+
+/** V3.3.16 – user-facing discrepancy between migration report and
+ * previous technical snapshot must be explainable by exact field names,
+ * without copying PHP source bodies or current IPS variable values. */
+$beforeDiff=IPS_GetScriptContent(41);
+ck339($beforeDiff===IPS_GetScriptContent(40),'Diff fixture must start with identical scripts');
+ob_start();$mod->ExportAIRepairDiagnostics();$identicalData=ob_get_clean();
+$exportPrefix='data:application/json;charset=utf-8;base64,';
+$identicalJson=base64_decode(substr($identicalData,strlen($exportPrefix)),true);
+$identicalReport=json_decode($identicalJson===false?'':$identicalJson,true,512,JSON_THROW_ON_ERROR);
+ck339(($identicalReport['editProdComparison']['total']??null)===0
+    && ($identicalReport['editProdComparison']['counts']['changed']??null)===0,
+    'A byte-identical PROD/EDIT pair should have no reported device differences');
+$editDiff=require $GLOBALS['inventoryDir'].'/scripts/41.php';
+$editDiff['wohnzimmer']['domains']['heizung']['wohnzimmer']['ai']['review']['technical']=['status'=>'validated'];
+IPS_SetScriptContent(41,'<?php return '.var_export($editDiff,true).';');
+ob_start();$mod->ExportAIRepairDiagnostics();$differentData=ob_get_clean();
+$differentJson=base64_decode(substr($differentData,strlen($exportPrefix)),true);
+$differentReport=json_decode($differentJson===false?'':$differentJson,true,512,JSON_THROW_ON_ERROR);
+$diffItem=$differentReport['editProdComparison']['items'][0]??null;
+ck339(($differentReport['sources']['identical']??true)===false
+    && ($differentReport['editProdComparison']['total']??0)===1
+    && ($differentReport['editProdComparison']['counts']['changed']??0)===1
+    && ($diffItem['path']??'')==='wohnzimmer|heizung|heizung|wohnzimmer'
+    && in_array('ai.review.technical',$diffItem['changedFields']??[],true),
+    'Diagnostic must export changed AI review metadata field paths, not just a generic ai diff: '
+        .json_encode($diffItem));
+ck339(!str_contains($differentJson,'PRIVATE_VALUE_MUST_NOT_BE_CACHED')
+    && !str_contains($differentJson,"'status' => 'validated'"),
+    'Export must not leak live variable data or raw source PHP');
+$originalProd=IPS_GetScriptContent(40);
+$originalEdit=IPS_GetScriptContent(41);
+ob_start();$mod->ApplySafeAutoRepair();$refusal=ob_get_clean();
+ck339(str_contains($refusal,'EDIT und PROD unterscheiden sich')
+    && IPS_GetScriptContent(40)===$originalProd
+    && IPS_GetScriptContent(41)===$originalEdit,
+    'Repair MUST refuse any outstanding EDIT/PROD diff, without writing');
+
 foreach(array_keys($GLOBALS['inventoryScripts']) as $id) @unlink($GLOBALS['inventoryDir'].'/scripts/'.$id.'.php');
 @rmdir($GLOBALS['inventoryDir'].'/scripts');@rmdir($GLOBALS['inventoryDir']);
 echo "PASS V3.3.9: all types, IPS evidence, explicit approval, stale guard, EDIT-only updates, backups, legacy + diff reporting\n";
