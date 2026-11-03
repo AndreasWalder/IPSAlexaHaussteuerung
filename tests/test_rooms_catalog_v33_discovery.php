@@ -88,10 +88,13 @@ $mod->WriteAttributeString('FilterAI', 'all');
 $form = json_decode($mod->GetConfigurationForm(), true, 512, JSON_THROW_ON_ERROR);
 $panel = null;
 foreach ($form['elements'] as $element) {
-    if (str_contains($element['caption'] ?? '', 'V3.3')
-        && str_contains($element['caption'] ?? '', 'Geraeteinventur')) $panel = $element;
+    if (($element['caption'] ?? '') !== 'Geraete erkennen, inventarisieren und reparieren') continue;
+    foreach ($element['items'] as $child) {
+        if (($child['caption'] ?? '') === 'IP-Symcon-Geraeteinventur') $panel = $child;
+    }
 }
-check33(is_array($panel), 'V3.3 configuration panel is missing');
+check33(is_array($panel) && ($panel['expanded'] ?? true) === false,
+    'V3.3 discovery must remain available collapsed for future devices');
 $panelJson = json_encode($panel, JSON_THROW_ON_ERROR);
 foreach (['DiscoveryRootId','DiscoveryExtraRootIds','DiscoveredDevices','RCC_ScanNewDevices',
     'RCC_UpdateDiscoveryCandidate','RCC_SelectDiscoveredDevices','RCC_ApplyDiscoveredDevices',
