@@ -14,7 +14,7 @@ final class RCCDeviceTechnicalAudit
         'control'=>[0,1,2], 'temperature'=>[1,2],
         'targetTemperature'=>[1,2], 'open'=>[0,1],
         'powerWatts'=>[1,2], 'energy'=>[1,2], 'motion'=>[0,1],
-        'status'=>[0,1,2,3], 'action'=>[0,1,2],
+        'status'=>[0,1,2,3], 'action'=>[0,1,2], 'illuminance'=>[2],
     ];
 
     /**
@@ -88,7 +88,11 @@ final class RCCDeviceTechnicalAudit
                 $allowedShared = [
                     ['power','status'], ['open','status'], ['motion','status']
                 ];
-                if (!in_array($pair,$allowedShared,true)) {
+                $sharedAction = [
+                    ['control','power'], ['brightness','control'], ['control','status']
+                ];
+                if (!in_array($pair,$allowedShared,true)
+                    && !(in_array($pair,$sharedAction,true) && !empty($v['action']))) {
                     $reasons[] = 'Variable #' . $id . ' mehrfach benutzt: ' . $used[$id] . '/' . $role;
                     $issueCodes['duplicate_mapping'] = true;
                     $uncertain = true;
@@ -96,6 +100,32 @@ final class RCCDeviceTechnicalAudit
             }
             $used[$id] = $role;
             $rank = (int)$score($v,$role);
+            // Eine explizite ai.variables-ID mit passendem Datentyp
+            // und anerkanntem Rollenprofil ist auch bei KNX "Value"
+            // ein technischer Metadatentreffer. Ohne Profil bleibt
+            // die fachliche Kontrolle weiterhin offen.
+            $roleProfiles = [
+                'power'=>['switch','bool'],
+                'control'=>['switch','bool','intensity','steuerung'],
+                'brightness'=>['intensity','brightness','dimm'],
+                'temperature'=>['temperature','temp','heizung'],
+                'targetTemperature'=>['temperature','temp','heizung'],
+                'motion'=>['motion','bewegung'],
+                'illuminance'=>['illumination','lux','illuminance'],
+                'action'=>['steuerung','shutter','blind','rolladen'],
+                'position'=>['shutterposition','behangposition'],
+                'open'=>['contact','fenster'],
+                'status'=>['switch','motion','temperature','shutter','blind'],
+            ];
+            $profile = strtolower((string)($v['profile'] ?? ''));
+            $profileMatches = false;
+            foreach ($roleProfiles[$role] ?? [] as $token) {
+                if ($profile !== '' && str_contains($profile,$token)) {
+                    $profileMatches = true;
+                    break;
+                }
+            }
+            if ($profileMatches) $rank=max($rank,120);
             if ($rank < 105) {
                 $reasons[] = '#' . $id . ' (' . $role . '): Rolle anhand Name/Profil nicht eindeutig';
                 $issueCodes['role_name_ambiguous'] = true;
@@ -106,7 +136,7 @@ final class RCCDeviceTechnicalAudit
                 if ((int)($other['id'] ?? 0) === $id) continue;
                 $peers[] = (int)$score($other,$role);
             }
-            if ($peers !== [] && max($peers) >= $rank - 24) {
+            if (!$profileMatches && $peers !== [] && max($peers) >= $rank - 24) {
                 $reasons[] = 'Mehrdeutige Kandidaten fuer ' . $role;
                 $issueCodes['multiple_candidates'] = true;
                 $uncertain = true;

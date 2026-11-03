@@ -1255,6 +1255,7 @@ function iah_build_system_configuration(int $instanceId): array
                 'launchCatalog' => $launchCatalog,
                 // IAH_NAVIGATION_CONFIG_V335: only activated PROD drafts are exposed to Alexa.
                 'navigation' => is_array($data['navigation'] ?? null) ? $data['navigation'] : [],
+                'roomUi' => is_array($data['roomUi'] ?? null) ? $data['roomUi'] : [],
             ];
         }
 
@@ -1795,6 +1796,25 @@ function Execute($request = null)
         // --------- RoomsCatalog ---------
         // IAH_NAVIGATION_OVERLAY_V335_BEGIN: do not modify RoomsCatalog on disk.
         $catalogRooms = (array) require IPS_GetScriptFile($S['ROOMS_CATALOG']);
+        // IAH_ROOM_UI_OVERLAY_V3311_BEGIN
+        // V3.3.11: Szenen, Standardtasten und zentrale Lueftung stammen
+        // nach der Migration ausschliesslich aus SystemConfiguration PROD.
+        // Renderer erhalten weiterhin ihre bisherigen RoomsCatalog-Pfade,
+        // ohne dass UI-Daten im RoomsCatalog gespeichert werden muessen.
+        $globalUi = $CFG['roomUi']['globalDomains'] ?? null;
+        if (is_array($globalUi) && $globalUi !== []) {
+            if (!is_array($catalogRooms['global'] ?? null)) $catalogRooms['global'] = [];
+            if (!is_array($catalogRooms['global']['domains'] ?? null)) {
+                $catalogRooms['global']['domains'] = [];
+            }
+            foreach (['jalousie','licht','lueftung'] as $domainKey) {
+                if (isset($globalUi[$domainKey]) && is_array($globalUi[$domainKey])) {
+                    $catalogRooms['global']['domains'][$domainKey] = $globalUi[$domainKey];
+                }
+            }
+        }
+        // IAH_ROOM_UI_OVERLAY_V3311_END
+
         if (($CFG['navigation']['mode'] ?? '') === 'active') {
             $helperId = iah_get_child_object($instanceId, 'iahHelper', 'Alexa new devices helper');
             $runtimeId = iah_get_child_object($helperId, 'navigationRuntimeScript', 'NavigationRuntime');
