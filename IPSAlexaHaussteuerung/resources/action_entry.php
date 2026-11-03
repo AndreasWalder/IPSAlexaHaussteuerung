@@ -1253,6 +1253,8 @@ function iah_build_system_configuration(int $instanceId): array
                 'missing' => $missing,
                 'rendererDomains' => $rendererDomains,
                 'launchCatalog' => $launchCatalog,
+                // IAH_NAVIGATION_CONFIG_V335: only activated PROD drafts are exposed to Alexa.
+                'navigation' => is_array($data['navigation'] ?? null) ? $data['navigation'] : [],
             ];
         }
 
@@ -1791,7 +1793,28 @@ function Execute($request = null)
         $log('debug','AE(main)', $ACTIONS_ENABLED);
 
         // --------- RoomsCatalog ---------
-        $ROOMS = iah_merge_global_room_domains((array) require IPS_GetScriptFile($S['ROOMS_CATALOG']));
+        // IAH_NAVIGATION_OVERLAY_V335_BEGIN: do not modify RoomsCatalog on disk.
+        $catalogRooms = (array) require IPS_GetScriptFile($S['ROOMS_CATALOG']);
+        if (($CFG['navigation']['mode'] ?? '') === 'active') {
+            $helperId = iah_get_child_object($instanceId, 'iahHelper', 'Alexa new devices helper');
+            $runtimeId = iah_get_child_object($helperId, 'navigationRuntimeScript', 'NavigationRuntime');
+            if ($runtimeId <= 0 || !IPS_ScriptExists($runtimeId)) {
+                IPS_LogMessage('Alexa', 'V3.3.5 Navigationshelfer fehlt; bitte Modul aktualisieren.');
+                return TellResponse::CreatePlainText('Navigation vorübergehend nicht verfügbar.');
+            }
+            try {
+                $navigationHelper = require IPS_GetScriptFile($runtimeId);
+                if (!is_array($navigationHelper) || !is_callable($navigationHelper['project'] ?? null)) {
+                    throw new RuntimeException('navigation projection missing');
+                }
+                $catalogRooms = $navigationHelper['project']($catalogRooms, $CFG['navigation']);
+            } catch (Throwable $e) {
+                IPS_LogMessage('Alexa', 'V3.3.5 Navigation projektion fehlgeschlagen: '.get_class($e));
+                return TellResponse::CreatePlainText('Navigation vorübergehend nicht verfügbar.');
+            }
+        }
+        $ROOMS = iah_merge_global_room_domains($catalogRooms);
+        // IAH_NAVIGATION_OVERLAY_V335_END
         $externalPages = iah_build_external_page_catalog($ROOMS, $pageMappings, $launchCatalog);
         if (!is_array($ROOMS) || $ROOMS === []) {
             return TellResponse::CreatePlainText('Fehler: RoomsCatalog leer oder ungültig.');

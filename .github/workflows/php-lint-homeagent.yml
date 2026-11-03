@@ -47,6 +47,8 @@ jobs:
           php -l IPSAlexaHaussteuerung/src/AlexaLogTrait.php
           php -l IPSAlexaHaussteuerung/src/SystemConfigurationManager.php
           php -l IPSAlexaHaussteuerung/src/SystemNavigationEditor.php
+          php -l IPSAlexaHaussteuerung/src/SystemNavigationMigration.php
+          php -l IPSAlexaHaussteuerung/resources/helpers/NavigationRuntime.php
           php -l RoomsCatalogConfigurator/module.php
       - name: Check Alexa HTML diagnostic JavaScript syntax
         run: |
@@ -96,6 +98,8 @@ jobs:
         run: php tests/test_system_configuration_v333.php
       - name: Test V3.3.4 navigation EDIT editor, backup and stale preview protections
         run: php tests/test_system_configuration_v334.php
+      - name: Test V3.3.5 controlled migration, runtime navigation and reversible cleanup
+        run: php tests/test_system_configuration_v335.php
       - name: Test Symcon IPSList checkbox callbacks and filtered multi-selection
         run: php tests/test_rooms_catalog_ipslist_multiselect.php
       - name: Test RoomsCatalog quick search for IPS object IDs and parent instance IDs
