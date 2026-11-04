@@ -1107,7 +1107,7 @@ $twoBlindRows=array_values(array_filter((array)($sharedTable['values']??[]),
 ck339(count($twoBlindRows)===2
     && ($twoBlindRows[0]['checkStatus']??'')==='Pruefen (Mehrfach-ID)'
     && ($twoBlindRows[1]['checkStatus']??'')==='Pruefen (Mehrfach-ID)',
-    'Ambiguous shared feedback should be orange and visible in BOTH device editor rows');
+    'Ambiguous shared feedback should be orange and visible in BOTH device editor rows: '.json_encode($twoBlindRows));
 ck339(IPS_GetScriptContent(41)===$beforeSharedEdit
     && IPS_GetScriptContent(40)===$beforeSharedProd,
     'Auditing shared KNX variable IDs must NEVER rewrite EDIT or PROD');
