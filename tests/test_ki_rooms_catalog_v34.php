@@ -53,7 +53,7 @@ $catalog = ['rooms'=>[
                     'review'=>['status'=>'confirmed']]])),
             'gefährlich'=>$confirmed($typed('blind',['position'=>1100,'targetPosition'=>1101,'action'=>1101]))
         ],
-        'heizung'=>['heizkreis'=>$confirmed($typed('heating',['temperature'=>400,'targetTemperature'=>401]))],
+        'heizung'=>['heizkreis'=>$confirmed($typed('heating',['targetTemperature'=>401],['ist'=>400]))],
         'sensoren'=>['fenster'=>['nord'=>$typed('window',['open'=>500])],
             'bewegung'=>['flur'=>$typed('motion',['motion'=>700])]],
         'energie'=>['zaehler'=>['netz'=>$typed('energy',['powerWatts'=>600,'energy'=>601])]],
