@@ -3380,7 +3380,7 @@ class RoomsCatalogConfigurator extends IPSModule
         // Optional/demonstrably missing status semantics are an advisory;
         // non-existing variables, unsafe writable rights are critical.
         $onlySemantics=count(array_filter($notes,static fn(string $v): bool=>
-            str_contains($v,'Offen/Geschlossen-Werte der Jalousie fehlen oder sind gleich.'))===count($notes);
+            str_contains($v,'Offen/Geschlossen-Werte der Jalousie fehlen oder sind gleich.')))===count($notes);
         return [
             'status'=>$onlySemantics?'Pruefen (Hinweis)':'Pruefen',
             'reason'=>implode('; ',array_slice($notes,0,4)),
