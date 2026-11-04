@@ -2273,15 +2273,76 @@ function Execute($request = null)
         $homeAgentDedicatedIntent = strcasecmp((string) $intentName, 'HomeAgentFrageIntent') === 0;
         $homeAgentEnabled = (bool) ($propsEarly['HomeAgentVoiceEnabled'] ?? false)
             && (string) ($propsEarly['KIVoiceMode'] ?? 'RoomsCatalog') !== 'Classic';
-        if (($iahVoiceDecision['category']??'') === 'clarify' && $homeAgentDedicatedIntent) {
+
+        // IAH_KI_GATE_POLICY_BEGIN
+        // Reine Entscheidung ohne Nebenwirkungen: im Regressionstest isoliert
+        // aus dem produktiven Action-Template ausgefuehrt.
+        // Eine erkannte Freitext-Frage darf nicht durch veraltete APL-/Launch-
+        // Flags wieder auf die Startkachel fallen. Navigation und echte APL-
+        // Befehle bleiben getrennt und duerfen niemals als Frage schalten.
+        $iahKiGatePolicy = static function (array $ctx): array {
+            $intent = (string)($ctx['intent'] ?? '');
+            $category = (string)($ctx['category'] ?? '');
+            $dedicated = strcasecmp($intent, 'HomeAgentFrageIntent') === 0;
+            if (in_array($category, ['navigation', 'apl_navigation', 'apl_action', 'clarify'], true)) {
+                return ['allowed'=>false, 'reason'=>'navigation_or_clarification'];
+            }
+            // Dieser Intent existiert nur als Alexa-IntentRequest mit
+            // AMAZON.SearchQuery; die Klassifikation hat die Frage bestaetigt.
+            // Insbesondere darf $request->type im PHP-SDK keine Frage sperren.
+            if ($dedicated && $category === 'query') {
+                return ['allowed'=>true, 'reason'=>'dedicated_question_priority'];
+            }
+            $apl = (bool)($ctx['aplEvent'] ?? false)
+                || (int)($ctx['aplArgsCount'] ?? 0) > 0;
+            $legacyNav = (string)($ctx['legacyNav'] ?? '') !== '';
+            if ($apl || $legacyNav) {
+                return ['allowed'=>false, 'reason'=>$apl ? 'apl_event' : 'legacy_navigation'];
+            }
+            // Auch GetHaus-Fragen (z. B. "Wie warm ist es im Buero?")
+            // erhalten Vorrang vor dem klassischen ROUTE_ALL-Renderer.
+            if ($category === 'query') {
+                return ['allowed'=>true, 'reason'=>'recognized_question_priority'];
+            }
+            if (!empty($ctx['launch']) || !empty($ctx['back']) || !empty($ctx['exit'])) {
+                return ['allowed'=>false, 'reason'=>'launch_back_or_exit'];
+            }
+            if ($dedicated || !empty($ctx['kiEnabled'])) {
+                return ['allowed'=>true, 'reason'=>'existing_voice_path'];
+            }
+            return ['allowed'=>false, 'reason'=>'legacy_without_ki'];
+        };
+        // IAH_KI_GATE_POLICY_END
+        $iahVoiceCategory = (string)($iahVoiceDecision['category'] ?? '');
+        $iahKiGate = $iahKiGatePolicy([
+            'intent'=>$intentName,
+            'category'=>$iahVoiceCategory,
+            'aplEvent'=>$iahVoiceIsAplEvent,
+            'aplArgsCount'=>count((array)($APL['args'] ?? [])),
+            'legacyNav'=>$iahLegacyNavKey,
+            'launch'=>$IS_LAUNCH,
+            'back'=>$IS_BACK,
+            'exit'=>$wantsExit,
+            'kiEnabled'=>$homeAgentEnabled
+        ]);
+        if ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {
+            $log('info', 'HomeAgentVoice.route_gate', [
+                'category'=>$iahVoiceCategory,
+                'intent'=>$intentName,
+                'allowed'=>(bool)$iahKiGate['allowed'],
+                'reason'=>(string)$iahKiGate['reason'],
+                'kiEnabled'=>$homeAgentEnabled,
+                'aplEvent'=>$iahVoiceIsAplEvent,
+                'aplArgsCount'=>count((array)($APL['args'] ?? [])),
+                'launch'=>(bool)$IS_LAUNCH,
+                'back'=>(bool)$IS_BACK,
+                'legacyNavigation'=>$iahLegacyNavKey !== ''
+            ]);
+        }
+        if ($iahVoiceCategory === 'clarify' && $homeAgentDedicatedIntent) {
             return $kiAlexaKeepOpen('Möchtest du eine Kachel öffnen, Geräte abfragen oder etwas schalten? Bitte sage es genauer.');
         }
-        if (!$IS_LAUNCH && !$IS_BACK && !$wantsExit
-            && !in_array((string)($iahVoiceDecision['category']??''), ['navigation','apl_navigation','apl_action','clarify'], true)
-            && !$iahVoiceIsAplEvent
-            && ($homeAgentDedicatedIntent || empty($APL['args']))
-            && ($homeAgentDedicatedIntent || $homeAgentEnabled)
-            && ($iahLegacyNavKey === '')) {
+        if ((bool)$iahKiGate['allowed']) {
             $homeAgentStarted = microtime(true);
             // AMAZON.SearchQuery liefert die Äußerung im Slot "Frage", nicht im Request-Text.
             $homeAgentSpokenQuestion = $homeAgentDedicatedIntent
@@ -2302,7 +2363,7 @@ function Execute($request = null)
             // "KI-Kommandos"-Schalters an OpenAI senden. Ein Legacy-Intent
             // darf nur mit einer expliziten Frage zur KI gelangen; einfache
             // Schaltbefehle verarbeitet weiterhin die klassische Steuerung.
-            $homeAgentShouldRoute = $homeAgentDedicatedIntent
+            $homeAgentShouldRoute = $homeAgentDedicatedIntent || $iahVoiceCategory === 'query'
                 || ($homeAgentSpokenQuestion !== '' && $isHomeAgentQuestion);
             if ($homeAgentShouldRoute) {
                 $log('info', 'HomeAgentVoice.received', [
@@ -2312,12 +2373,12 @@ function Execute($request = null)
                 $log('debug', 'HomeAgentVoice.recognized_text', ['chars' => mb_strlen($homeAgentSpokenQuestion, 'UTF-8')]);
                 if (!$homeAgentEnabled) {
                     $log('warn', 'HomeAgentVoice.disabled');
-                    if ($homeAgentDedicatedIntent) {
+                    if ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {
                         return $kiAlexaKeepOpen('Der KI-Hausassistent ist noch nicht aktiviert.');
                     }
                 } elseif ($homeAgentSpokenQuestion === '' || $homeAgentSpokenQuestion === '?') {
                     $log('warn', 'HomeAgentVoice.missing_text', ['intent' => $intentName]);
-                    if ($homeAgentDedicatedIntent) {
+                    if ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {
                         return $kiAlexaKeepOpen('Ich habe keine Frage verstanden. Bitte versuche es erneut.');
                     }
                 } else {
@@ -2394,15 +2455,22 @@ function Execute($request = null)
                         'backend'=>$kiVoiceMode,'success'=>false,
                         'durationMs'=>(int)round((microtime(true)-$homeAgentStarted)*1000),
                         'model'=>(string)($propsEarly['KIModelSelection']??'gpt-6-luna')]);
-                    if ($homeAgentDedicatedIntent) {
-                        // Kein versehentliches Umschalten durch ein anderes Alexa-Routing.
+                    if ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {
+                        // Erkannte Fragen duerfen beim KI-Fehler keine Kachel ausloesen.
                         return $kiAlexaKeepOpen('Der Hausassistent ist gerade nicht erreichbar.');
                     }
                 }
-            } elseif ($homeAgentDedicatedIntent) {
-                $log('warn', 'HomeAgentVoice.not_routed', ['intent' => $intentName]);
+            } elseif ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {
+                $log('warn', 'HomeAgentVoice.not_routed', [
+                    'intent'=>$intentName, 'category'=>$iahVoiceCategory,
+                    'reason'=>'no_question_text'
+                ]);
                 return $kiAlexaKeepOpen('Bitte stelle deine Frage noch einmal.');
             }
+        } elseif ($iahVoiceCategory === 'query') {
+            // Statt still auf main_launch zurueckzufallen den Grund nennen.
+            $log('warn', 'HomeAgentVoice.query_blocked', ['reason'=>(string)$iahKiGate['reason']]);
+            return $kiAlexaKeepOpen('Die Frage wurde erkannt, konnte aber nicht an die KI weitergeleitet werden.');
         }
         // HOME_AGENT_VOICE_HOOK_END
 
