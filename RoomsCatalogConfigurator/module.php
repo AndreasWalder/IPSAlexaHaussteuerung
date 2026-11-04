@@ -190,6 +190,90 @@ class RoomsCatalogConfigurator extends IPSModule
     // Public API (Buttons / Events)
     // =====================================================================
 
+    /**
+     * User-requested clean slate for transient checks, inventories and
+     * one-time approval previews. This method NEVER writes a catalog script,
+     * never changes module settings or KI permissions, and does not undo
+     * already saved technical/manual review data in EDIT or PROD.
+     */
+    public function ResetAllCheckCaches(): void
+    {
+        $emptyCaches = [
+            'SuggestionPreview'=>'{}',
+            'DiscoveryCandidates'=>'{}',
+            'DiscoveryInventory'=>'{}',
+            'DiscoveryAuditReport'=>'Noch keine Vollstaendigkeitspruefung.',
+            'LegacyMigrationPreview'=>'{}',
+            'BulkPreview'=>'{}',
+            'MigrationReadinessReport'=>'Noch nicht geprueft.',
+            'MigrationReadinessDetails'=>'{}',
+            'TechnicalDeviceSnapshot'=>'{}',
+            'TechnicalDevicePreview'=>'{}',
+            'TechnicalDeviceSummary'=>'Noch keine technische Geraetepruefung ausgefuehrt.',
+            'TechnicalDeviceActionMessage'=>'',
+            'AutoRepairPreview'=>'{}',
+            'AutoRepairNotice'=>'Noch kein Diagnoseexport erstellt.'
+        ];
+        foreach ($emptyCaches as $name=>$value) {
+            $this->WriteAttributeString($name,$value);
+        }
+
+        // Only transient choices and selections are reset; the configured
+        // RoomsCatalogEdit/PROD IDs and discovery roots stay unchanged.
+        foreach ([
+            'FilterRoom'=>'', 'FilterDomain'=>'', 'FilterGroup'=>'',
+            'FilterAI'=>'all',
+            'BulkDeviceType'=>'keep','BulkAIMode'=>'keep',
+            'BulkSuggestions'=>'yes','BulkReview'=>'keep'
+        ] as $name=>$value) {
+            $this->WriteAttributeString($name,$value);
+        }
+        $this->ipsInstanceLookupCache=[];
+        $this->learnedModuleTemplateCache=[];
+
+        // Reconstruct the editor list from the persisted EDIT catalog. This
+        // clears pending checkboxes without discarding catalog contents.
+        $this->WriteAttributeString('RuntimeEntries','[]');
+        $this->WriteAttributeString('RuntimeEditHash','');
+        $this->reloadAllFromCatalog();
+        $this->RefreshVisibleLists();
+
+        foreach ([
+            'TechnicalDeviceSummary'=>'Noch keine technische Geraetepruefung ausgefuehrt.',
+            'TechnicalDeviceSourceSummary'=>'Katalogquellen noch nicht geprueft – bitte technische Pruefung ausfuehren.',
+            'TechnicalDeviceActionMessage'=>'',
+            'AutoRepairNotice'=>'Noch kein Diagnoseexport erstellt.',
+            'MigrationReadinessReport'=>'Noch keine aktuelle Migrationspruefung ausgefuehrt.',
+            'DiscoverySummary'=>'Noch keine Geraeteinventur gestartet.',
+            'DiscoveryAudit'=>'Noch keine Vollstaendigkeitspruefung.'
+        ] as $name=>$label) {
+            $this->UpdateFormField($name,'caption',$label);
+        }
+        foreach ([
+            'TechnicalDeviceChecks','TechnicalLegacyDevices','TechnicalDiffRows',
+            'Suggestions','DiscoveryInventoryList','DiscoveredDevices','LegacyDevices'
+        ] as $name) {
+            $this->UpdateFormField($name,'values','[]');
+        }
+        $this->UpdateFormField('TechnicalDevicesPhysicallyChecked','value',false);
+        $this->UpdateFormField('FilterAI','value','all');
+        foreach ([
+            'BulkDeviceType'=>'keep','BulkAIMode'=>'keep',
+            'BulkSuggestions'=>'yes','BulkReview'=>'keep'
+        ] as $name=>$value) {
+            $this->UpdateFormField($name,'value',$value);
+        }
+
+        $message='Pruef-Zwischenspeicher zurueckgesetzt: technische Pruefungen, '
+            .'Migrationsberichte, Inventur, Vorschauen und Markierungen geloescht. '
+            .'RoomsCatalogEdit, RoomsCatalog PROD, Geraetedaten, KI-Freigaben '
+            .'und bereits gespeicherte Bestaetigungen sind UNVERAENDERT. '
+            .'Bestehende EDIT/PROD-Unterschiede bleiben bestehen.';
+        $this->UpdateFormField('ResetCheckCachesNotice','caption',$message);
+        $this->logDebug('ResetAllCheckCaches: nur temporaere Pruefattribute geloescht; keine Katalog-Skripte geschrieben.');
+        echo $message;
+    }
+
     public function ReloadCatalog()
     {
         $this->logDebug('ReloadCatalog: Button gedrückt');
@@ -4075,6 +4159,18 @@ class RoomsCatalogConfigurator extends IPSModule
 
         $form = [
             'elements' => [
+                [
+                    'type'=>'RowLayout',
+                    'items'=>[
+                        ['type'=>'Button',
+                            'caption'=>'ALLE PRUEFUNGEN UND ZWISCHENSPEICHER ZURUECKSETZEN',
+                            'confirm'=>'Alle bisherigen Analyse-/Inventurberichte, Diagnose- und Reparaturvorschauen sowie Markierungen im RoomsCatalogConfigurator verwerfen? Gespeicherte EDIT/PROD-Geraetedaten, Freigaben und manuelle Bestaetigungen bleiben unveraendert. Bestehende EDIT/PROD-Unterschiede werden NICHT rueckgaengig gemacht.',
+                            'onClick'=>'RCC_ResetAllCheckCaches($id);']
+                    ]
+                ],
+                ['type'=>'Label','name'=>'ResetCheckCachesNotice','caption'=>
+                    'Setzt nur temporäre Prüfungen, Suchergebnisse und Markierungen zurück; '
+                    .'kein Zurücksetzen gespeicherter Geräte-, Freigabe- oder PROD-Daten.'],
                 [
                     'type'=>'Label',
                     'name'=>'CatalogSummary',
