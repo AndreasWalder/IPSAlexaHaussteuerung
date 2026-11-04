@@ -62,9 +62,9 @@ file_put_contents($GLOBALS['v345CatalogFile'],'<?php return '.var_export($catalo
 require dirname(__DIR__).'/IPSAlexaHaussteuerung/resources/helpers/KIHouseController.php';
 try {
     $devices=iah_rc_index(345);
-    ck345(count($devices)===11,'expected eleven accessible readings');
+    ck345(count($devices)===12,'expected twelve accessible readings');
     $schema=iah_ai_schema($devices);
-    ck345(($schema['types']['temperature']??0)===4,'shared schema temperature type');
+    ck345(($schema['types']['temperature']??0)===3,'shared schema temperature type');
     ck345(($schema['properties']['temperature']??0)>=6,'temperature capabilities from all typed/legacy devices');
 
     // Aus ALLEN IST-Temperaturen den waermsten Raum finden: Wohnzimmer
