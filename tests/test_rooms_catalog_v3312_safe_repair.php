@@ -64,7 +64,7 @@ ck312($unsafe['status']==='Manuell pruefen'
     && in_array('no_action',$unsafe['issueCodes'],true),
     'Missing IPS write action must still block a heating control role');
 $source=file_get_contents(__DIR__.'/../RoomsCatalogConfigurator/module.php');
-ck312(str_contains($source,"'illuminance' => 'Beleuchtungsstaerke (Lux)'")
+ck312((RCCDeviceTypeRegistry::propertyCaptions()['illuminance'] ?? '') === 'Beleuchtungsstaerke (Lux)'
     && str_contains($source,'RCC_ExportAIRepairDiagnostics')
     && str_contains($source,'RCC_ApplySafeAutoRepair')
     && str_contains($source,"'download'=>'RoomsCatalog_ChatGPT_Diagnose.json'"),
