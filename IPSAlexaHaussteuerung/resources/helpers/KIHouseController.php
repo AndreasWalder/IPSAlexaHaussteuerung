@@ -75,7 +75,21 @@ function iah_rc_scope_read_query(array $devices, array $args, string $spoken): a
             }
         }
     }
-    if (count($foundRooms) === 1) $args['room'] = (string)reset($foundRooms);
+    if (count($foundRooms) === 1) {
+        $args['room'] = (string)reset($foundRooms);
+        // Das Modell liefert einen Raum gelegentlich faelschlich als name.
+        // Nur den exakt erkannten Raumbegriff aus dem Namensfilter entfernen.
+        $roomName = iah_rc_norm((string)($args['name'] ?? ''));
+        foreach ($devices as $dev) {
+            if ($dev['roomKey'] !== $args['room']) continue;
+            foreach (array_merge([$dev['room'],$dev['roomKey']], $dev['roomAliases'] ?? []) as $label) {
+                if ($roomName!=='' && $roomName===iah_rc_norm((string)$label)) {
+                    unset($args['name']);
+                    break 2;
+                }
+            }
+        }
+    }
     return $args;
 }
 /** Keine freien KNX-Befehle/Enums: nur sichere, explizite Zielrollen. */
