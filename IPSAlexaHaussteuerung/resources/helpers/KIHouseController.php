@@ -281,15 +281,30 @@ function iah_rc_write(array $dev, mixed $value, string $property = ''): array
         return ['ok'=>false,'reason'=>'Aktion fehlgeschlagen','name'=>$dev['name']];
     }
 }
+/** Antworten bleiben auch bei vielen typisierten Eigenschaften valides JSON. */
+function iah_rc_bounded_rows(array $rows): array
+{
+    $result=[];
+    $bytes=0;
+    foreach ($rows as $row) {
+        $encoded=json_encode($row,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
+        $length=is_string($encoded) ? strlen($encoded) : 0;
+        if (count($result)>=50 || $bytes+$length>9500) break;
+        $result[]=$row;
+        $bytes+=$length+1;
+    }
+    return $result;
+}
 function iah_rc_tool(array $devices, string $name, array $args, bool $allowWrites, string $spoken): array
 {
     if ($name === 'get_devices') {
         $found=iah_rc_find($devices,$args);
-        return ['count'=>count($found),'truncated'=>count($found)>60,
-            'devices'=>array_map(static fn($d):array=>['deviceKey'=>$d['id'],'name'=>$d['name'],
+        $rows=array_map(static fn($d):array=>['deviceKey'=>$d['id'],'name'=>$d['name'],
                 'room'=>$d['room'],'type'=>$d['type'],'writable'=>$d['writable'],
                 'properties'=>array_keys($d['reads']),
-                'writableProperties'=>array_keys($d['writeRoles'])],array_slice($found,0,60))];
+                'writableProperties'=>array_keys($d['writeRoles'])],$found);
+        $rows=iah_rc_bounded_rows($rows);
+        return ['count'=>count($found),'truncated'=>count($found)>count($rows),'devices'=>$rows];
     }
     if ($name === 'get_states') {
         $found=iah_rc_find($devices,$args);$active=0;$entries=[];$eligible=0;
@@ -298,13 +313,11 @@ function iah_rc_tool(array $devices, string $name, array $args, bool $allowWrite
             $row=iah_rc_state($dev);
             $on=$row['state']==='an'
                 || in_array('an',array_intersect_key((array)($row['properties']??[]),
-                    array_flip(['power','motion'])),true);
+                    array_flip(['power','status','motion'])),true);
             if($on)$active++;
-            if (!$onlyActive || $on) {
-                $eligible++;
-                if(count($entries)<60)$entries[]=$row;
-            }
+            if (!$onlyActive || $on) { $eligible++; $entries[]=$row; }
         }
+        $entries=iah_rc_bounded_rows($entries);
         return ['matched'=>count($found),'activeBooleanDevices'=>$active,
             'shown'=>count($entries),'truncated'=>$eligible>count($entries),
             'devices'=>$entries];
