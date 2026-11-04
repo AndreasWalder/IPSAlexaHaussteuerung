@@ -99,8 +99,10 @@ $ui=json_encode($form,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
 foreach(['TechnicalDeviceChecks','TechnicalLegacyDevices','TechnicalDiffRows',
     'RCC_PreviewTechnicalDeviceReview','RCC_ApplyTechnicalDeviceReview',
     'RCC_PreviewManualDeviceConfirmation','RCC_ApplyManualDeviceConfirmation'] as $token) {
-    ck339(str_contains($ui,$token),'V3.3.9 UI control missing: '.$token);
+    ck339(!str_contains($ui,$token),'Obsolete advanced controls must not clutter the simple UI: '.$token);
 }
+ck339(str_contains($ui,'EDIT NACH PROD UEBERNEHMEN'),
+    'Simple complete EDIT to PROD publishing action is missing');
 ck339(str_contains($summary,'EDIT/PROD:'),'Summary missing diff categories');
 
 $mod->SelectTechnicalDevices(true);
