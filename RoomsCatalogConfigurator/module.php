@@ -2330,7 +2330,11 @@ class RoomsCatalogConfigurator extends IPSModule
             'power' => ['state', 'value'],
             'brightness' => ['value'],
             'position' => ['stellung', 'value'], // Jalousie-wert ist Fahrbefehl, KEIN Istpositionswert
-            'targetPosition' => ['set'],
+            // Ein altes "set" ist gerade bei KNX-Jalousien oft eine
+            // Steuerangabe und KEINE eigenstaendige IPS-Sollpositionsvariable.
+            // Zielposition nur aus ai.variables.targetPosition uebernehmen,
+            // niemals einen Legacy-Wert (z.B. 1) als IPS-ID erfinden.
+            'targetPosition' => [],
             'tilt' => ['tiltId'],
             'moving' => ['moving'],
             'control' => ['toggle', 'set', 'controlId', 'soll', 'eingestellt'],
@@ -3371,7 +3375,13 @@ class RoomsCatalogConfigurator extends IPSModule
         $errors=$this->validateEntries([$row]);
         $notes=array_map(static function(string $error): string {
             $start=strpos($error,': ');
-            return $start!==false ? substr($error,$start+2) : $error;
+            $text=$start!==false ? substr($error,$start+2) : $error;
+            if (preg_match('/ungueltige KI-Variable targetPosition \\(([-0-9]+)\\)/',$text,$match)===1) {
+                return 'Optionale Sollposition: IPS-Variable #'.$match[1]
+                    .' existiert nicht. Im Geraeteeditor unter Sollposition '
+                    .'"Keine" waehlen oder eine gueltige Sollpositionsvariable auswaehlen.';
+            }
+            return $text;
         },$errors);
         if ($notes===[]) return [
             'status'=>'OK', 'reason'=>'Keine offensichtlichen Konfigurationsprobleme erkannt.',
@@ -5790,9 +5800,9 @@ class RoomsCatalogConfigurator extends IPSModule
                     'onClick'=>'RCC_CheckRoomsCatalog($id);'],
                 ['type'=>'Label','name'=>'CatalogCheckDebugSummary',
                     'caption'=>$this->ReadAttributeString('CatalogCheckDebugSummary')],
-                ['type'=>'TextArea','name'=>'CatalogCheckDebugOutput',
+                ['type'=>'ValidationTextBox','name'=>'CatalogCheckDebugOutput',
                     'caption'=>'Debug-Ausgabe (alles markieren und hier einfuegen)',
-                    'rows'=>15,
+                    'multiline'=>true,'width'=>'100%',
                     'value'=>$this->ReadAttributeString('CatalogCheckDebugOutput')]
             ]
         ];
