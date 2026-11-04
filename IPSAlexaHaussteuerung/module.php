@@ -2702,6 +2702,22 @@ PHP;
                     $content = str_replace('// IAH_DEVICETYPE_REGISTRY_INSERT',
                         'if (!class_exists(\'RCCDeviceTypeRegistry\', false)) {' . "\n"
                         . $registry . "\n" . '}', $content);
+
+                    // Wie bei der zentralen Typ-Registry laeuft die Query-Engine
+                    // im erzeugten Symcon-Skript ohne Modul-Dateipfade.
+                    $queryFile = __DIR__ . '/resources/helpers/HouseQueryEngine.php';
+                    $query = is_file($queryFile) ? file_get_contents($queryFile) : false;
+                    if (!is_string($query)
+                        || !str_contains($query, 'function iah_ai_query_house(')
+                        || !str_contains($content, '// IAH_HOUSE_QUERY_ENGINE_INSERT')) {
+                        IPS_LogMessage('Alexa', 'KIHouseController nicht erneuert: KI-Query-Engine fehlt.');
+                        return (int)$id;
+                    }
+                    $query = preg_replace('/^<\\?php\\s*declare\\(strict_types=1\\);\\s*/', '', $query);
+                    if (!is_string($query)) return (int)$id;
+                    $content = str_replace('// IAH_HOUSE_QUERY_ENGINE_INSERT',
+                        'if (!function_exists(\'iah_ai_query_house\')) {' . "\n"
+                        . $query . "\n" . '}', $content);
                 }
                 IPS_SetScriptContent($id, $content);
             }
