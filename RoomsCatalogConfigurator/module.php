@@ -3645,9 +3645,10 @@ class RoomsCatalogConfigurator extends IPSModule
             };
             if ($kind===null) continue;
             $numeric=$assoc['Value'];
-            if (!is_int($numeric) && !(is_string($numeric) && preg_match('/^-?\d+$/D',$numeric)===1)) {
-                return null;
-            }
+            $isExactInt=is_int($numeric)
+                || (is_float($numeric) && is_finite($numeric) && floor($numeric)===$numeric)
+                || (is_string($numeric) && preg_match('/^-?\d+$/D',$numeric)===1);
+            if (!$isExactInt) return null;
             $value=(int)$numeric;
             if (isset($values[$kind]) && $values[$kind]!==$value) return null;
             $values[$kind]=$value;
@@ -3680,7 +3681,8 @@ class RoomsCatalogConfigurator extends IPSModule
                 $old=(array)($ai['stateMapping']??[]);
                 // 0/100 are the old command/position endpoint convention.
                 // Do not silently replace an explicitly custom state enum.
-                if (($old['open']??null)!==0 || ($old['closed']??null)!==100
+                if (!in_array($old['open']??null,[0,'0'],true)
+                    || !in_array($old['closed']??null,[100,'100'],true)
                     || ($known['open']===0 && $known['closed']===100)) continue;
                 $plan[]=[
                     'roomKey'=>(string)$roomKey,'key'=>(string)$key,
@@ -3775,8 +3777,8 @@ class RoomsCatalogConfigurator extends IPSModule
                 $leaf=&$rooms[$item['roomKey']]['domains']['jalousie'][$item['key']];
                 if (!is_array($leaf) || !is_array($leaf['ai']??null)
                     || (int)($leaf['ai']['variables']['status']??0)!==$item['statusId']
-                    || ($leaf['ai']['stateMapping']['open']??null)!==0
-                    || ($leaf['ai']['stateMapping']['closed']??null)!==100) {
+                    || !in_array($leaf['ai']['stateMapping']['open']??null,[0,'0'],true)
+                    || !in_array($leaf['ai']['stateMapping']['closed']??null,[100,'100'],true)) {
                     throw new \RuntimeException('Unerwartete Geraeteaenderung, EDIT bleibt unveraendert.');
                 }
                 $leaf['ai']['stateMapping']['open']=$item['new']['open'];
