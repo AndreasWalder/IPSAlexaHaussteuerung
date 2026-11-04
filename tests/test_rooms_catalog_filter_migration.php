@@ -102,26 +102,15 @@ auditCheck(is_array($catalogSummary)
     && !str_contains((string)($catalogSummary['caption']??''),'KI nur lesen: 1'),
     'Summary should not use old confusing KI wording');
 $ui=json_encode($form,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-auditCheck(str_contains($ui,'Datenstand und KI-Berechtigungen')
-    && str_contains($ui,'MODELL, IPS-VARIABLEN UND MIGRATION PRUEFEN'),
-    'Migration audit UI missing');
 $top=array_column($form['elements'],'caption');
 auditCheck(in_array('Raeume & Etagen',$top,true)
     && in_array('RoomsCatalog Scripts',$top,true)
     && in_array('Geraete bearbeiten (RoomsCatalog EDIT)',$top,true)
-    && in_array('Weitere Funktionen (Experten): Pruefen, Migration und PROD',$top,true)
-    && !in_array('Geraete erkennen, inventarisieren und reparieren',$top,true)
-    && !in_array('Variablenzuordnungen pruefen',$top,true),
-    'Only rooms, script settings, devices and collapsed experts should be visible');
-$expert=array_values(array_filter($form['elements'],
-    static fn(array $row):bool =>
-        ($row['caption']??'')==='Weitere Funktionen (Experten): Pruefen, Migration und PROD'))[0];
-auditCheck($expert['expanded']===false
-    && str_contains(json_encode($expert),'RCC_ScanNewDevices')
-    && str_contains(json_encode($expert),'RCC_AnalyzeLegacyDevices')
-    && str_contains(json_encode($expert),'RCC_ApplyScopedProdPublish')
-    && ($form['actions']??[])===[],
-    'Advanced operations must stay reachable only under collapsed experts');
+    && str_contains($ui,'EDIT NACH PROD UEBERNEHMEN')
+    && !str_contains($ui,'BEREICHSWEISE PROD-UEBERNAHME')
+    && !str_contains($ui,'Weitere Funktionen (Experten)')
+    && !str_contains($ui,'MODELL, IPS-VARIABLEN UND MIGRATION PRUEFEN'),
+    'Simple form must retain normal device editing and only one publish button');
 
 $prodBefore=IPS_GetScriptContent(40);
 $editBefore=IPS_GetScriptContent(41);
@@ -142,20 +131,11 @@ $updated['bad']['domains']['heizung']['bad']['ai']=[
 IPS_SetScriptContent(40,auditCatalog($updated));
 IPS_SetScriptContent(41,auditCatalog($updated));
 $allDone=auditReadForm($mod);
-$reportField=auditFind($allDone,'MigrationReadinessReport');
-auditCheck(str_contains((string)($reportField['caption']??''),'Datenstand erneut pruefen'),
-    'Migration report must expire when EDIT changes outside the configurator');
-$compact=null;
-$findNestedAudit=function(array $nodes)use(&$findNestedAudit,&$compact):void {
-    foreach($nodes as $node) {
-        if(($node['caption']??'')==='Geraete erkennen, inventarisieren und reparieren') $compact=$node;
-        if(is_array($node['items']??null)) $findNestedAudit($node['items']);
-    }
-};
-$findNestedAudit($allDone['elements']);
-auditCheck(!str_contains(json_encode($compact),'RCC_AnalyzeLegacyDevices')
-    && str_contains(json_encode($compact),'RCC_ScanNewDevices'),
-    'Fully typed catalog should hide only obsolete legacy migration, not new-device scanner');
+$allDoneUi=json_encode($allDone,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+auditCheck(!str_contains($allDoneUi,'RCC_AnalyzeLegacyDevices')
+    && !str_contains($allDoneUi,'RCC_ScanNewDevices')
+    && str_contains($allDoneUi,'EDIT NACH PROD UEBERNEHMEN'),
+    'Legacy inventory and migration controls should stay out of the simplified UI');
 ob_start();$mod->AuditMigrationReadiness();$doneReport=ob_get_clean();
 auditCheck(str_contains($doneReport,'Katalog-Modell technisch konsistent'),
     'All-confirmed migration should be recognized without granting KI writes');
