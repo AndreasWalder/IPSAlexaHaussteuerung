@@ -73,23 +73,23 @@ function iah_ai_condition_matches(mixed $actual, string $operator, mixed $expect
 {
     if ($operator === '') return true;
     $normalized = static function(mixed $value):mixed {
-        if (is_bool($value)) return $value ? 'true' : 'false';
+        if (is_bool($value)) return $value ? 'active' : 'inactive';
         if (is_string($value)) {
             $text = iah_rc_norm($value);
             return match ($text) {
-                'ein','eingeschaltet','aktiv','true','on','an' => 'an',
-                'aus','ausgeschaltet','inaktiv','false','off' => 'aus',
-                'offen','geoeffnet','open' => 'offen',
-                'geschlossen','zu','closed' => 'geschlossen',
+                'ein','eingeschaltet','aktiv','true','on','an',
+                'offen','geoeffnet','open' => 'active',
+                'aus','ausgeschaltet','inaktiv','false','off',
+                'geschlossen','zu','closed' => 'inactive',
                 default => $text
             };
         }
         return $value;
     };
-    if ($operator === 'active') return in_array($normalized($actual),['an','offen'],true)
-        || $actual === true || (is_numeric($actual) && !is_bool($actual) && (float)$actual > 0);
-    if ($operator === 'inactive') return in_array($normalized($actual),['aus','geschlossen'],true)
-        || $actual === false || (is_numeric($actual) && !is_bool($actual) && (float)$actual <= 0);
+    if ($operator === 'active') return $normalized($actual)==='active'
+        || (is_numeric($actual) && !is_bool($actual) && (float)$actual > 0);
+    if ($operator === 'inactive') return $normalized($actual)==='inactive'
+        || (is_numeric($actual) && !is_bool($actual) && (float)$actual <= 0);
     if (in_array($operator,['eq','neq'],true)) {
         $a=$normalized($actual);$b=$normalized($expected);
         $equal = $a === $b || (is_numeric($a) && is_numeric($b) && (float)$a === (float)$b);
