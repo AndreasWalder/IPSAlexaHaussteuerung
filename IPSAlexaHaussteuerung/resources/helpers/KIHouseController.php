@@ -513,10 +513,10 @@ function iah_rc_http(array $payload,string $apiKey,float $deadline): array
 }
 /** Für beide KI-Modelle mit einem Unit-Test überprüfbare API-Parameter. */
 function iah_rc_chat_payload(string $model,array $messages,array $tools,int $round,
-    bool $preferRead=false, bool $finalAnswer=false): array
+    bool $preferRead=false, bool $finalAnswer=false, string $preferredReadTool='get_states'): array
 {
     $toolChoice=$round===0
-        ? ($preferRead ? ['type'=>'function','function'=>['name'=>'get_states']] : 'required')
+        ? ($preferRead ? ['type'=>'function','function'=>['name'=>$preferredReadTool]] : 'required')
         : ($finalAnswer ? 'none' : 'auto');
     $payload=['model'=>$model,'messages'=>$messages,'tools'=>$tools,
         'tool_choice'=>$toolChoice,'max_completion_tokens'=>200];
