@@ -53,7 +53,7 @@ $catalog = ['rooms'=>[
                     'review'=>['status'=>'confirmed']]])),
             'gefährlich'=>$confirmed($typed('blind',['position'=>1100,'targetPosition'=>1101,'action'=>1101]))
         ],
-        'heizung'=>['heizkreis'=>$confirmed($typed('heating',['temperature'=>400,'targetTemperature'=>401]))],
+        'heizung'=>['heizkreis'=>$confirmed($typed('heating',['targetTemperature'=>401],['ist'=>400]))],
         'sensoren'=>['fenster'=>['nord'=>$typed('window',['open'=>500])],
             'bewegung'=>['flur'=>$typed('motion',['motion'=>700])]],
         'energie'=>['zaehler'=>['netz'=>$typed('energy',['powerWatts'=>600,'energy'=>601])]],
@@ -75,6 +75,24 @@ try {
     if(count($room)!==12)throw new RuntimeException('Room alias not matched');
     $window=iah_rc_find($devices,['type'=>'window']);
     if(count($window)!==1)throw new RuntimeException('Typed sensor not found');
+    // Reproduziert die drei echten Alexa-Leseanfragen vom 04.11.2026.
+    $win=iah_rc_tool($devices,'get_states',['domain'=>'fenster','only_active'=>true],false,'welche fenster sind offen');
+    if($win['matched']!==1 || $win['shown']!==1 || $win['filtersUsed']['type']!=='window'
+        || $win['statusSummary']['offen']!==1) throw new RuntimeException('Window read scope');
+    $temp=iah_rc_tool($devices,'get_states',['domain'=>'temperatur','name'=>'Büro'],false,'wie warm ist es im Büro');
+    if($temp['matched']!==1 || $temp['temperatureAvailable']!==1
+        || $temp['filtersUsed']['room']!=='buero'
+        || $temp['devices'][0]['properties']['temperature']!==21.5) throw new RuntimeException('Heating legacy read scope');
+    $blinds=iah_rc_tool($devices,'get_states',['domain'=>'fenster'],false,'welche jalousien sind zu');
+    if($blinds['matched']!==2 || $blinds['statusSummary']['offen']!==1
+        || $blinds['statusSummary']['geschlossen']!==0
+        || $blinds['statusSummary']['unbekannt']!==1) throw new RuntimeException('Blind state summary');
+    $tools=[['type'=>'function','function'=>['name'=>'get_states']]];
+    $messages=[['role'=>'user','content'=>'welche jalousien sind zu']];
+    $first=iah_rc_chat_payload('gpt-6-luna',$messages,$tools,0,true,true);
+    $last=iah_rc_chat_payload('gpt-6-luna',$messages,$tools,1,true,true);
+    if($first['tool_choice']['function']['name']!=='get_states' || $last['tool_choice']!=='none')
+        throw new RuntimeException('Read question tool call policy');
     $blind=$devices['buero/jalousie/jalousie/sued'];
     $state=iah_rc_state($blind);
     if($state['properties']['position']!==52 || $state['properties']['targetPosition']!==45
