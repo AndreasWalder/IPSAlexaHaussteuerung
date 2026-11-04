@@ -588,6 +588,7 @@ function iah_rc_voice(string $text,array $cfg): array
                 $props+['only_active'=>['type'=>'boolean']]),
             $make('get_devices','Inventar fuer eindeutige deviceKeys und kontrollierte Schreibfreigaben (keine Livewerte).',$props)
         ];
+        $tools[0]['function']['parameters']['required']=['property'];
         if($allowWrites){
             $tools[]=$make('set_device','Aendert EIN eindeutig bestimmtes, explizit freigegebenes und fachlich bestaetigtes Geraet. property optional: power als Boolean, brightness/targetPosition 0-100, targetTemperature 6-30. Zuerst get_devices fuer deviceKey und writableProperties. Keine KNX-Fahrbefehle oder frei erfundenen IDs.',
                 $props+['property'=>['type'=>'string'],'value'=>['type'=>['boolean','number']]]);
@@ -634,10 +635,13 @@ function iah_rc_voice(string $text,array $cfg): array
             ['role'=>'system','content'=>$planningRules],
             ['role'=>'user','content'=>mb_substr($text,0,500,'UTF-8')]
         ];
-        for($round=0;$round<2;$round++){
+        // Zwei Runden sind ueblich; eine dritte erlaubt es der KI,
+        // eine unpassende Datenabfrage gezielt zu korrigieren.
+        for($round=0;$round<3;$round++){
             iah_rc_log('openai.start',['round'=>$round+1]);
             $model=(string)($cfg['model']??'gpt-6-luna');
-            $request=iah_rc_chat_payload($model,$messages,$tools,$round,$preferRead,true);
+            $request=iah_rc_chat_payload($model,$messages,$tools,$round,
+                $preferRead,$round>=2,'query_house');
             $response=iah_rc_http($request,$key,$deadline);
             $costReport('api',['callId'=>'round-'.$round,'response'=>[
                 'model'=>(string)($response['model']??($cfg['model']??'')),
@@ -653,16 +657,19 @@ function iah_rc_voice(string $text,array $cfg): array
                 iah_rc_log('answer',['durationMs'=>round((microtime(true)-$started)*1000),'text'=>$answer]);
                 return $costFinish(['handled'=>true,'answer'=>$answer]);
             }
-            if($round>0)throw new RuntimeException('Zu viele Tool-Runden');
+            if($round>=2)throw new RuntimeException('Zu viele Tool-Runden');
             $messages[]=$msg;
             foreach(array_slice($calls,0,3) as $call){
                 $name=(string)($call['function']['name']??'');
                 $args=json_decode((string)($call['function']['arguments']??'{}'),true);
                 if(!is_array($args)||!in_array($name,array_column(array_column($tools,'function'),'name'),true))
                     throw new RuntimeException('Ungültiger Werkzeugaufruf');
-                $result=iah_rc_tool($devices,$name,$args,$allowWrites,$text);
+                $result=$name==='query_house'
+                    ? iah_ai_query_house($devices,$args,$text)
+                    : iah_rc_tool($devices,$name,$args,$allowWrites,$text);
                 $diagnostic=['name'=>$name,'ok'=>$result['ok']??true];
-                foreach (['matched','shown','truncated','temperatureAvailable','statusSummary','filtersUsed','count'] as $field)
+                foreach (['matched','shown','truncated','temperatureAvailable','statusSummary','filtersUsed','count',
+                    'operation','property','groupBy','matchedReadings','groups','totalCount','error'] as $field)
                     if (array_key_exists($field,$result)) $diagnostic[$field]=$result[$field];
                 iah_rc_log('tool',$diagnostic);
                 $messages[]=['role'=>'tool','tool_call_id'=>(string)$call['id'],
