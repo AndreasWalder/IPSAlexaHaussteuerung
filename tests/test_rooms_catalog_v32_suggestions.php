@@ -84,19 +84,11 @@ $mod->WriteAttributeString('RuntimeEntries', json_encode([$baseRow], JSON_THROW_
 $mod->WriteAttributeString('RuntimeEditHash',hash('sha256',IPS_GetScriptContent(21)));
 $mod->WriteAttributeString('FilterAI', 'all');
 $form = json_decode($mod->GetConfigurationForm(), true, 512, JSON_THROW_ON_ERROR);
-$suggestionPanel = null;
-$findSuggestions32=function(array $nodes)use(&$findSuggestions32,&$suggestionPanel):void {
-    foreach ($nodes as $node) {
-        if (($node['caption']??'')==='Variablenzuordnungen pruefen') $suggestionPanel=$node;
-        if (isset($node['items']) && is_array($node['items'])) $findSuggestions32($node['items']);
-    }
-};
-$findSuggestions32($form['elements']);
-ok32(is_array($suggestionPanel) && ($suggestionPanel['expanded'] ?? true) === false,
-    'Safe V3.2 suggestions must remain available in the collapsed diagnostics area');
-$formText = json_encode($suggestionPanel, JSON_THROW_ON_ERROR);
-ok32(str_contains($formText, 'RCC_AnalyzeSelectedDevice') && str_contains($formText, 'RCC_ApplySelectedSuggestions'), 'V3.2 buttons missing');
-ok32(str_contains($formText, 'Suggestions'), 'Suggestion preview list missing');
+$formText=json_encode($form,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+ok32(!str_contains($formText,'Variablenzuordnungen pruefen')
+    && !str_contains($formText,'RCC_AnalyzeSelectedDevice')
+    && str_contains($formText,'EDIT NACH PROD UEBERNEHMEN'),
+    'Obsolete suggestion UI must not clutter the simple catalog editor');
 
 ob_start(); $mod->AnalyzeSelectedDevice(); $analysis = ob_get_clean();
 ok32(str_contains($analysis, 'eindeutige Vorschlaege'), 'Analysis not executed');
