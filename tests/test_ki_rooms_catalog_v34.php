@@ -39,6 +39,8 @@ $catalog = ['rooms'=>[
     'buero'=>['display'=>'Büro','aliases'=>['Arbeitszimmer','Office'],'floor'=>'OG','domains'=>[
         'licht'=>['switches'=>[
             'legacy'=>['title'=>'Altlicht','state'=>100,'toggle'=>101,'kiReadOnly'=>false],
+            'future'=>['title'=>'Unbekanntes Schema','state'=>100,'toggle'=>101,
+                'ai'=>['version'=>2,'type'=>'light','variables'=>['power'=>100]]],
             'led'=>$confirmed($typed('light',['power'=>200,'control'=>201],['title'=>'LED']))
         ],'dimmers'=>[
             'tisch'=>$confirmed($typed('dimmer',['power'=>900,'brightness'=>901,'control'=>902]))
@@ -101,6 +103,19 @@ try {
     if($no['ok']??false)throw new RuntimeException('Ambiguous device must not actuate');
     $no=iah_rc_tool($devices,'set_device',['deviceKey'=>$blind['id'],'value'=>101],true,'Jalousie auf 101');
     if($no['ok']??false)throw new RuntimeException('Blind range');
+    $many=[];
+    for($i=0;$i<100;$i++) {
+        $copy=$devices['buero/licht/switches/led'];
+        $copy['id']='duplicate-'.$i;
+        $copy['name']=str_repeat('Testgeraet',5).$i;
+        $many[$copy['id']]=$copy;
+    }
+    foreach (['get_devices','get_states'] as $tool) {
+        $result=iah_rc_tool($many,$tool,[],false,'Liste');
+        $json=json_encode($result,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        if (!$result['truncated'] || strlen($json)>=12000 || count($result['devices'])>=100)
+            throw new RuntimeException('Unbounded tool answer: '.$tool);
+    }
     $yes=iah_rc_tool($devices,'set_device',['deviceKey'=>$blind['id'],'property'=>'targetPosition','value'=>40],true,'Jalousie auf 40');
     if(!($yes['ok']??false))throw new RuntimeException('Confirmed targetPosition action');
     $yes=iah_rc_tool($devices,'set_device',['deviceKey'=>'buero/heizung/heizung/heizkreis','value'=>22.5],true,'Heizung auf 22,5');
