@@ -282,7 +282,10 @@ final class RCCDeviceTechnicalAudit
                 // Profile proves the meaning for this audit only; do NOT
                 // write assumed numeric values into the RoomsCatalog.
                 $semanticEvidence='profile_derived_not_saved';
-            } elseif ($semanticSource!==null) {
+            } elseif ($discrete!==null) {
+                // A status variable with missing enum labels is unresolved.
+                // A plain position (%) without endpoint labels is still a
+                // valid numeric readback, not a status-enum error.
                 $semanticEvidence='unconfirmed';
                 if (!$positionEvidence) {
                     $reasons[]='Offen/Geschlossen ohne eindeutige Profil-Assoziationen';
