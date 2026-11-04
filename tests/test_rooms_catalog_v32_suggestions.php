@@ -85,14 +85,13 @@ $mod->WriteAttributeString('RuntimeEditHash',hash('sha256',IPS_GetScriptContent(
 $mod->WriteAttributeString('FilterAI', 'all');
 $form = json_decode($mod->GetConfigurationForm(), true, 512, JSON_THROW_ON_ERROR);
 $suggestionPanel = null;
-foreach ($form['elements'] as $element) {
-    if (($element['caption'] ?? '') !== 'Geraete erkennen, inventarisieren und reparieren') continue;
-    foreach ($element['items'] as $child) {
-        if (($child['caption'] ?? '') === 'Variablenzuordnungen pruefen') {
-            $suggestionPanel = $child;
-        }
+$findSuggestions32=function(array $nodes)use(&$findSuggestions32,&$suggestionPanel):void {
+    foreach ($nodes as $node) {
+        if (($node['caption']??'')==='Variablenzuordnungen pruefen') $suggestionPanel=$node;
+        if (isset($node['items']) && is_array($node['items'])) $findSuggestions32($node['items']);
     }
-}
+};
+$findSuggestions32($form['elements']);
 ok32(is_array($suggestionPanel) && ($suggestionPanel['expanded'] ?? true) === false,
     'Safe V3.2 suggestions must remain available in the collapsed diagnostics area');
 $formText = json_encode($suggestionPanel, JSON_THROW_ON_ERROR);
