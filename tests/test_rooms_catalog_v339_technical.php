@@ -364,10 +364,10 @@ ck339($capMethod->invoke($mod, ['aiType'=>'blind','wert'=>55194],
 
 $newForm=json_decode($mod->GetConfigurationForm(),true,512,JSON_THROW_ON_ERROR);
 $serialized=json_encode($newForm,JSON_UNESCAPED_UNICODE);
-ck339(str_contains($serialized,'"name":"capability"'),
-    'Technical device table missing explicit capability column');
-ck339(str_contains($serialized,'Funktionsumfang'),
-    'Technical capability must be visible in the technical audit list');
+ck339(!str_contains($serialized,'"name":"capability"')
+    && !str_contains($serialized,'Funktionsumfang')
+    && str_contains($serialized,'EDIT NACH PROD UEBERNEHMEN'),
+    'Technical analysis UI must be removed from the simple configurator');
 $oldSnapshot=['rows'=>[1,2,3],'counts'=>['Technisch plausibel'=>1,'Manuell pruefen'=>2],
     'capabilityCounts'=>[
         'Technisch plausibel (nicht fachlich bestaetigt)'=>1,
