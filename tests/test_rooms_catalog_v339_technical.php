@@ -720,6 +720,115 @@ ck339(IPS_GetScriptContent(40)===$catalogSourceBeforeSimpleUI
     && IPS_GetScriptContent(41)===$editSourceBeforeSimpleUI,
     'Reorganized UI and profile checks must be read-only');
 
+
+/** V3.3.20: field-only Jalousie position transfer must work even when
+ * the rest of the device is NOT technically complete. No other AI data
+ * or controller settings may leak from EDIT to PROD. */
+$positionProd=$catalog;
+$positionEdit=$catalog;
+$positionOriginal=$positionProd['wc']['domains']['jalousie']['fenster'];
+$positionEdit['wc']['domains']['jalousie']['fenster']['ai']['variables']['position']=59001;
+$positionEdit['wc']['domains']['jalousie']['fenster']['aiPositionId']=59001;
+$positionEdit['wc']['domains']['jalousie']['fenster']['ai']['stateMapping']=[];
+$positionEdit['wc']['domains']['jalousie']['fenster']['ai']['review']['technical']=['status'=>'validated'];
+$positionEdit['wc']['domains']['jalousie']['fenster']['title']='NICHT NACH PROD KOPIEREN';
+$positionEdit['wc']['domains']['jalousie']['fenster']['kiEnabled']=true;
+addInvVar(59001,17426,'Position','POS02',1,'~Shutter',false);
+IPS_SetScriptContent(40,'<?php return '.var_export($positionProd,true).';');
+IPS_SetScriptContent(41,'<?php return '.var_export($positionEdit,true).';');
+(new ReflectionMethod(RoomsCatalogConfigurator::class,'reloadAllFromCatalog'))->invoke($mod);
+$singleKey='wc|jalousie|jalousie|fenster';
+$singleForm=json_decode($mod->GetConfigurationForm(),true,512,JSON_THROW_ON_ERROR);
+$singleFormText=json_encode($singleForm,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+ck339(str_contains($singleFormText,'NUR EINE JALOUSIE-POSITIONS-ID')
+    && str_contains($singleFormText,'RCC_PreviewSinglePositionProd')
+    && str_contains($singleFormText,'RCC_ApplySinglePositionProd')
+    && str_contains($singleFormText,$singleKey),
+    'Field-only position transfer not exposed as a selectable per-device action');
+$beforePositionProd=IPS_GetScriptContent(40);
+$beforePositionEdit=IPS_GetScriptContent(41);
+ob_start();$mod->SaveEditToProd();$wholeDeviceBlocked=ob_get_clean();
+ck339(str_contains($wholeDeviceBlocked,'Veröffentlichung abgebrochen')
+    && IPS_GetScriptContent(40)===$beforePositionProd,
+    'Known invalid open/closed status must still block full-device publishing');
+$singleOption='wc|jalousie|jalousie|fenster';
+$mod->SetSinglePositionProdKey($singleOption);
+ob_start();$mod->PreviewSinglePositionProd($singleOption);$previewPosition=ob_get_clean();
+ck339(str_contains($previewPosition,'EINZELFELD GÜLTIG')
+    && str_contains($previewPosition,'59001')
+    && IPS_GetScriptContent(40)===$beforePositionProd,
+    'Individual valid position should preview despite incomplete open/closed mapping: '.$previewPosition);
+$oldBackupNumber=count($GLOBALS['inventoryScripts']);
+ob_start();$mod->ApplySinglePositionProd($singleOption);$appliedPosition=ob_get_clean();
+ck339(str_contains($appliedPosition,'ERFOLG')
+    && count($GLOBALS['inventoryScripts'])===$oldBackupNumber+1
+    && IPS_GetScriptContent(41)===$beforePositionEdit,
+    'Single field not applied with verified backup or changed EDIT: '.$appliedPosition);
+$nowPosition=require $GLOBALS['inventoryDir'].'/scripts/40.php';
+$pubLeaf=$nowPosition['wc']['domains']['jalousie']['fenster'];
+ck339(($pubLeaf['ai']['variables']['position']??0)===59001
+    && ($pubLeaf['aiPositionId']??0)===59001,
+    'Only the intended position binding should be written');
+unset($pubLeaf['aiPositionId']);
+$comparison=$positionOriginal;
+$comparison['ai']['variables']['position']=59001;
+ck339($pubLeaf===$comparison
+    && $nowPosition['wohnzimmer']===$positionProd['wohnzimmer']
+    && $nowPosition['wc']['display']===$positionProd['wc']['display'],
+    'Field-only position write changed room, command, title, status, AI review or KI rights');
+ck339($positionEdit['wc']['domains']['jalousie']['fenster']['ai']['stateMapping']===[],
+    'Field-only copy must not correct or alter incomplete EDIT data');
+$beforeSecondApply=IPS_GetScriptContent(40);
+ob_start();$mod->ApplySinglePositionProd($singleOption);$replayBlocked=ob_get_clean();
+ck339(str_contains($replayBlocked,'Bitte zuerst') && IPS_GetScriptContent(40)===$beforeSecondApply,
+    'Committed preview cannot be replayed');
+
+$posChangedAgain=$positionEdit;
+$posChangedAgain['wc']['domains']['jalousie']['fenster']['ai']['variables']['position']=59002;
+$posChangedAgain['wc']['domains']['jalousie']['fenster']['aiPositionId']=59002;
+addInvVar(59002,17426,'Position','POS03',1,'~Shutter',true);
+IPS_SetScriptContent(41,'<?php return '.var_export($posChangedAgain,true).';');
+ob_start();$mod->PreviewSinglePositionProd($singleOption);$commandRefusal=ob_get_clean();
+ck339(str_contains($commandRefusal,'EINZELFELD GESPERRT')
+    && str_contains($commandRefusal,'beschreibbar')
+    && IPS_GetScriptContent(40)===$beforeSecondApply,
+    'Writable command variable should not be published as real position');
+$posChangedAgain['wc']['domains']['jalousie']['fenster']['ai']['variables']['position']=59001;
+$posChangedAgain['wc']['domains']['jalousie']['fenster']['aiPositionId']=59003;
+addInvVar(59003,17426,'Position','POS04',0,'~Switch');
+IPS_SetScriptContent(41,'<?php return '.var_export($posChangedAgain,true).';');
+ob_start();$mod->PreviewSinglePositionProd($singleOption);$conflictRefusal=ob_get_clean();
+ck339(str_contains($conflictRefusal,'EINZELFELD GESPERRT')
+    && str_contains($conflictRefusal,'unterschiedliche neue IDs'),
+    'Inconsistent typed/legacy position IDs must not be silently chosen');
+$posChangedAgain['wc']['domains']['jalousie']['fenster']['ai']['variables']['position']=59004;
+$posChangedAgain['wc']['domains']['jalousie']['fenster']['aiPositionId']=59004;
+addInvVar(59004,17426,'Position','POS05',0,'~Switch');
+IPS_SetScriptContent(41,'<?php return '.var_export($posChangedAgain,true).';');
+ob_start();$mod->PreviewSinglePositionProd($singleOption);$wrongType=ob_get_clean();
+ck339(str_contains($wrongType,'Integer-/Float-Wert'),
+    'Boolean position must not pass isolated field verification');
+
+$posChangedAgain['wc']['domains']['jalousie']['fenster']['ai']['variables']['position']=59005;
+$posChangedAgain['wc']['domains']['jalousie']['fenster']['aiPositionId']=59005;
+addInvVar(59005,17426,'Position','POS06',1,'~Shutter');
+IPS_SetScriptContent(41,'<?php return '.var_export($posChangedAgain,true).';');
+ob_start();$mod->PreviewSinglePositionProd($singleOption);$validAgain=ob_get_clean();
+ck339(str_contains($validAgain,'EINZELFELD GÜLTIG'), 'Fresh valid field preview missing');
+$staleOrigin=IPS_GetScriptContent(40);
+IPS_SetScriptContent(41,IPS_GetScriptContent(41)."\n");
+ob_start();$mod->ApplySinglePositionProd($singleOption);$stalePosition=ob_get_clean();
+ck339(str_contains($stalePosition,'seit Vorschau veraendert')
+    && IPS_GetScriptContent(40)===$staleOrigin,
+    'Stale edit hash must block field-only PROD write');
+ob_start();$mod->PreviewSinglePositionProd($singleOption);ob_end_clean();
+ob_start();$mod->ResetAllCheckCaches();ob_end_clean();
+ob_start();$mod->ApplySinglePositionProd($singleOption);$afterResetPosition=ob_get_clean();
+ck339(str_contains($afterResetPosition,'Bitte zuerst')
+    && IPS_GetScriptContent(40)===$staleOrigin,
+    'Reset must invalidate old field-only approvals without writing');
+
+
 foreach(array_keys($GLOBALS['inventoryScripts']) as $id) @unlink($GLOBALS['inventoryDir'].'/scripts/'.$id.'.php');
 @rmdir($GLOBALS['inventoryDir'].'/scripts');@rmdir($GLOBALS['inventoryDir']);
 echo "PASS V3.3.9: all types, IPS evidence, explicit approval, stale guard, EDIT-only updates, backups, legacy + diff reporting\n";
