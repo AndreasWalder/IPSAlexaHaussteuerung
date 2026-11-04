@@ -2263,9 +2263,13 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         $group = (string)($row['group'] ?? '');
         $fields = match ($group) {
-            'heizung' => ['ist','soll','eingestellt'],
+            'heizung' => ['ist','aiTemperatureId','soll','eingestellt'],
             'dimmers' => ['value','state'],
             'jalousie' => ['wert'],
+            // Ein Luefter hat nicht zwingend ein getrenntes Statusobjekt.
+            // Die Steuerungs-ID darf als abfragbarer Soll-/Befehlswert
+            // dienen; echter physischer Status ist damit NICHT bewiesen.
+            'fans' => ['aiPowerId','aiControlId','state','toggle','value'],
             default => ['state','value']
         };
         foreach ($fields as $field) if ((int)($row[$field] ?? 0)>0) return (int)$row[$field];
@@ -2275,7 +2279,8 @@ class RoomsCatalogConfigurator extends IPSModule
     private function aiWriteId(array $row): int
     {
         return match ((string)($row['group'] ?? '')) {
-            'switches','fans' => (int)($row['toggle'] ?? 0),
+            'switches' => (int)($row['toggle'] ?: ($row['aiControlId']??0)),
+            'fans' => (int)($row['aiControlId'] ?: ($row['toggle']??0)),
             'dimmers' => (int)($row['set'] ?? 0),
             'heizung' => (int)($row['soll'] ?? $row['eingestellt'] ?? 0),
             default => 0
@@ -6443,7 +6448,7 @@ class RoomsCatalogConfigurator extends IPSModule
         foreach (self::AI_STATE_FIELDS as $property=>$field) {
             $show = in_array($type,['blind','window'],true)
                 ? in_array($property,['open','closed'],true)
-                : (in_array($type,['light','dimmer','switch','fan','motion'],true)
+                : (in_array($type,['light','dimmer','switch','motion'],true)
                     && in_array($property,['on','off'],true));
             $this->UpdateFormField($field,'visible',$show);
         }
@@ -6564,7 +6569,7 @@ class RoomsCatalogConfigurator extends IPSModule
         foreach ($stateFields as $property=>$caption) {
             $visible = in_array($editorType,['blind','window'],true)
                 ? in_array($property,['open','closed'],true)
-                : (in_array($editorType,['light','dimmer','switch','fan','motion'],true)
+                : (in_array($editorType,['light','dimmer','switch','motion'],true)
                     && in_array($property,['on','off'],true));
             $controls[] = ['type'=>'ValidationTextBox','name'=>self::AI_STATE_FIELDS[$property],
                 'caption'=>$caption . ' (z.B. true/false, 0/100)','visible'=>$visible];
