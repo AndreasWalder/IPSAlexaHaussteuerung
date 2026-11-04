@@ -1,0 +1,64 @@
+{
+  "intents": [
+    {
+      "name": "HausWelcheIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "welche {Frage}"
+      ]
+    },
+    {
+      "name": "HausWieIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "wie {Frage}"
+      ]
+    },
+    {
+      "name": "HausWasIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "was {Frage}"
+      ]
+    },
+    {
+      "name": "HausIstIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "ist {Frage}"
+      ]
+    },
+    {
+      "name": "HausSindIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "sind {Frage}"
+      ]
+    }
+  ]
+}
