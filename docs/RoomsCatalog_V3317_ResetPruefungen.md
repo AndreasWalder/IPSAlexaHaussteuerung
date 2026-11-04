@@ -27,7 +27,7 @@ Der aktuelle Gerätekatalog wird danach direkt aus dem bestehenden EDIT-Skript *
 - Die Modul-Einstellungen einschließlich Sucheinstellungen/Script-IDs und SystemConfiguration bleiben bestehen.
 - Es werden keine Geräte geschaltet und keine Backups gelöscht.
 
-**Wichtig zum aktuellen Datenstand:** Der hochgeladene Diagnoseexport vom 04.11.2026 enthält 167 Geräte mit 129 technisch plausiblen, 38 offen und 13 echten EDIT/PROD-Unterschieden. Darunter sind acht Dimmer mit Änderung `ai.variables.power`, vier Lüfter (einschließlich einer gespeicherten fachlichen Bestätigung) und ein weiterer Dimmer Sauna (im Achterblock enthalten). Diese Änderungen sind echte Skript-Differenzen, keine alten Prüf-Snapshots: Der neue Reset lässt sie **absichtlich unverändert**.
+**Wichtig zum aktuellen Datenstand:** Der hochgeladene Diagnoseexport vom 04.11.2026 enthält 167 Geräte mit 129 technisch plausiblen, 38 offen und 13 echten EDIT/PROD-Unterschieden. Darunter sind neun Dimmer mit Änderung `ai.variables.power` (einschließlich Sauna) und vier Lüfter (einschließlich einer gespeicherten fachlichen Bestätigung). Diese Änderungen sind echte Skript-Differenzen, keine alten Prüf-Snapshots: Der neue Reset lässt sie **absichtlich unverändert**.
 
 Die beim Update des Reset-Buttons angezeigten Ergebnisse werden erst nach einer bewusst neu gestarteten Geräte-/Migrationsprüfung aktualisiert.
 
