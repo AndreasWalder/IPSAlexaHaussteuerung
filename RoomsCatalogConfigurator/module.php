@@ -177,6 +177,9 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('PartialProdPublishNotice', 'Noch keine bereichsweise PROD-Vorschau ausgefuehrt.');
         $this->RegisterAttributeString('PartialProdPublishRows', '[]');
         $this->RegisterAttributeString('PartialProdSelectedDomain', '');
+        $this->RegisterAttributeString('SinglePositionSelectedKey', '');
+        $this->RegisterAttributeString('SinglePositionProdPreview', '{}');
+        $this->RegisterAttributeString('SinglePositionProdNotice', 'Noch keine einzelne Positionsaenderung geprueft.');
     }
 
     public function ApplyChanges()
@@ -220,7 +223,10 @@ class RoomsCatalogConfigurator extends IPSModule
             'PartialProdPublishPreview'=>'{}',
             'PartialProdPublishNotice'=>'Noch keine bereichsweise PROD-Vorschau ausgefuehrt.',
             'PartialProdPublishRows'=>'[]',
-            'PartialProdSelectedDomain'=>''
+            'PartialProdSelectedDomain'=>'',
+            'SinglePositionSelectedKey'=>'',
+            'SinglePositionProdPreview'=>'{}',
+            'SinglePositionProdNotice'=>'Noch keine einzelne Positionsaenderung geprueft.'
         ];
         foreach ($emptyCaches as $name=>$value) {
             $this->WriteAttributeString($name,$value);
@@ -252,6 +258,7 @@ class RoomsCatalogConfigurator extends IPSModule
             'TechnicalDeviceActionMessage'=>'',
             'AutoRepairNotice'=>'Noch kein Diagnoseexport erstellt.',
             'PartialProdPublishNotice'=>'Noch keine bereichsweise PROD-Vorschau ausgefuehrt.',
+            'SinglePositionProdNotice'=>'Noch keine einzelne Positionsaenderung geprueft.',
             'MigrationReadinessReport'=>'Noch keine aktuelle Migrationspruefung ausgefuehrt.',
             'DiscoverySummary'=>'Noch keine Geraeteinventur gestartet.',
             'DiscoveryAudit'=>'Noch keine Vollstaendigkeitspruefung.'
@@ -268,6 +275,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->UpdateFormField('TechnicalDevicesPhysicallyChecked','value',false);
         $this->UpdateFormField('FilterAI','value','all');
         $this->UpdateFormField('PartialProdDomain','value','');
+        $this->UpdateFormField('SinglePositionKey','value','');
         foreach ([
             'BulkDeviceType'=>'keep','BulkAIMode'=>'keep',
             'BulkSuggestions'=>'yes','BulkReview'=>'keep'
@@ -3053,6 +3061,292 @@ class RoomsCatalogConfigurator extends IPSModule
             $this->WriteAttributeString('PartialProdPublishNotice',$message);
             $this->UpdateFormField('PartialProdPublishNotice','caption',$message);
             echo $message;
+        }
+    }
+
+
+    /** Candidate choices derived from current EDIT/PROD, never from a stale form row. */
+    private function singlePositionProdOptions(array $edit,array $prod): array
+    {
+        $options=[['caption'=>'Bitte geaenderte Jalousie auswaehlen','value'=>'']];
+        foreach ($this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($edit)) as $row) {
+            if (($row['domain']??'')!=='jalousie') continue;
+            $key=$this->buildCompositeKey($row);
+            if ($key===null) continue;
+            $before=$this->scopedProdLeaf($prod,$row);
+            $after=$this->scopedProdLeaf($edit,$row);
+            if (!is_array($before) || !is_array($after)) continue;
+            $oldNested=(int)($before['ai']['variables']['position']??0);
+            $newNested=(int)($after['ai']['variables']['position']??0);
+            $oldFlat=(int)($before['aiPositionId']??0);
+            $newFlat=(int)($after['aiPositionId']??0);
+            if ($oldNested===$newNested && $oldFlat===$newFlat) continue;
+            $options[]=[
+                'value'=>$key,
+                'caption'=>(string)($row['roomLabel']??$row['roomKey'])
+                    .' / '.(string)($row['title']??$row['key'])
+                    .' (Positions-ID geaendert)'
+            ];
+        }
+        return $options;
+    }
+
+    /**
+     * Check precisely ONE changed position binding – not the whole shutter.
+     * A valid IPS variable ID is still not a confirmed physical position.
+     * Missing open/closed status mappings deliberately do NOT block a
+     * field-only import. No command, KI rights or review status is copied.
+     */
+    private function singlePositionProdPlan(array $edit,array $prod,string $key): array
+    {
+        if ($key==='' || substr_count($key,'|')!==3 || strlen($key)>320) {
+            throw new \RuntimeException('Bitte eine geaenderte Jalousie auswaehlen.');
+        }
+        $parts=explode('|',$key,4);
+        if ($parts[1]!=='jalousie' || $parts[2]!=='jalousie') {
+            throw new \RuntimeException('Diese Einzelfeld-Uebernahme gilt nur fuer Jalousie-Positionen.');
+        }
+        $row=null;
+        foreach ($this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($edit)) as $entry) {
+            if ($this->buildCompositeKey($entry)===$key) {
+                if ($row!==null) throw new \RuntimeException('Geraeteschluessel mehrfach vorhanden.');
+                $row=$entry;
+            }
+        }
+        if ($row===null) throw new \RuntimeException('Jalousie in EDIT nicht vorhanden.');
+        $before=$this->scopedProdLeaf($prod,$row);
+        $after=$this->scopedProdLeaf($edit,$row);
+        if (!is_array($before) || !is_array($after)) {
+            throw new \RuntimeException('Keine Felduebernahme fuer neue/entfernte Geraete.');
+        }
+        if (($before['ai']['review']['status']??'')==='confirmed') {
+            throw new \RuntimeException('PROD-Geraet bereits fachlich bestaetigt. Positionsaenderung gesondert pruefen.');
+        }
+        if (($after['ai']['type']??'')!=='blind' || ($before['ai']['type']??'')!=='blind') {
+            throw new \RuntimeException('EDIT/PROD haben keinen eindeutigen Jalousie-Geraetetyp.');
+        }
+        $oldNested=(int)($before['ai']['variables']['position']??0);
+        $newNested=(int)($after['ai']['variables']['position']??0);
+        $oldFlat=(int)($before['aiPositionId']??0);
+        $newFlat=(int)($after['aiPositionId']??0);
+        $changed=[];
+        if ($newNested!==$oldNested) $changed['ai.variables.position']=$newNested;
+        if ($newFlat!==$oldFlat && array_key_exists('aiPositionId',$after)) {
+            $changed['aiPositionId']=$newFlat;
+        }
+        if ($changed===[]) throw new \RuntimeException('Keine geaenderte Positions-ID vorhanden.');
+        $distinct=array_unique(array_values($changed));
+        if (count($distinct)!==1) {
+            throw new \RuntimeException('aiPositionId und ai.variables.position enthalten unterschiedliche neue IDs.');
+        }
+        $id=(int)reset($distinct);
+        if ($id<=0 || !function_exists('IPS_VariableExists') || !IPS_VariableExists($id)) {
+            throw new \RuntimeException('Neue Positions-ID existiert nicht als IP-Symcon-Variable.');
+        }
+        foreach (['wert','controlId','statusId','tiltId'] as $field) {
+            if ((int)($after[$field]??0)===$id && $field!=='statusId') {
+                throw new \RuntimeException('Position darf nicht dieselbe ID wie der Fahrbefehl/Lamellenwert sein.');
+            }
+        }
+        foreach (['action','control','tilt','targetPosition'] as $role) {
+            if ((int)($after['ai']['variables'][$role]??0)===$id) {
+                throw new \RuntimeException('Positions-ID ist bereits als Fahraktion, Sollposition oder Lamellenwert belegt.');
+            }
+        }
+        foreach (['wert','controlId'] as $field) {
+            if ((int)($before[$field]??0)===$id) {
+                throw new \RuntimeException('Der neue Positionswert ist die bestehende Fahraktion.');
+            }
+        }
+
+        if (!function_exists('IPS_GetVariable') || !function_exists('IPS_GetObject')) {
+            throw new \RuntimeException('IP-Symcon-Variablenmetadaten nicht abrufbar.');
+        }
+        $variable=IPS_GetVariable($id);
+        $object=IPS_GetObject($id);
+        if (!is_array($variable) || !is_array($object)
+            || (int)($object['ObjectType']??-1)!==2
+            || !in_array((int)($variable['VariableType']??-1),[1,2],true)) {
+            throw new \RuntimeException('Positionsvariable muss ein vorhandener Integer-/Float-Wert sein.');
+        }
+        $action=(int)($variable['VariableCustomAction']??0);
+        $hasAction=$action!==1 && ($action>1 || (int)($variable['VariableAction']??0)>0);
+        if ($hasAction || (function_exists('HasAction') && HasAction($id))) {
+            throw new \RuntimeException('Neue ID ist beschreibbar; ein Fahrbefehl ist keine sichere Positionsrueckmeldung.');
+        }
+        $name=mb_strtolower((string)($object['ObjectName']??''),'UTF-8');
+        $ident=mb_strtolower((string)($object['ObjectIdent']??''),'UTF-8');
+        $profile=strtolower((string)($variable['VariableCustomProfile']??'')
+            ?: (string)($variable['VariableProfile']??''));
+        $hints=$name.' '.$ident.' '.$profile;
+        if (str_contains($hints,'lamelle') || str_contains($hints,'tilt')
+            || str_contains($hints,'steuerung') || str_contains($hints,'action')
+            || str_contains($hints,'befehl') || str_contains($hints,'beschatten')) {
+            throw new \RuntimeException('Neue ID sieht wie Lamellen- oder Steuerwert aus, nicht wie Istposition.');
+        }
+        if (!str_contains($hints,'position') && !str_contains($hints,'stellung')
+            && !str_contains($hints,'shutter') && !str_contains($hints,'behangen')
+            && !str_contains($hints,'prozent') && !str_contains($hints,'intensity')) {
+            throw new \RuntimeException('Variablenname/Profil lassen keine Istposition erkennen. Bitte Zuordnung pruefen.');
+        }
+        $fields=[];
+        if (isset($before['ai']['variables']) || isset($after['ai']['variables'])) {
+            $fields[]='ai.variables.position';
+        }
+        if (array_key_exists('aiPositionId',$before) || array_key_exists('aiPositionId',$after)) {
+            $fields[]='aiPositionId';
+        }
+        return [
+            'key'=>$key,
+            'oldId'=>$oldNested?:$oldFlat,
+            'newId'=>$id,
+            'name'=>(string)($object['ObjectName']??''),
+            'profile'=>$profile,
+            'hasAction'=>$hasAction,
+            'type'=>(int)$variable['VariableType'],
+            'fields'=>$fields,
+            'device'=>(string)($row['title']??$row['key']),
+            'room'=>(string)($row['roomLabel']??$row['roomKey'])
+        ];
+    }
+
+    /** Preserve the original PROD leaf byte-for-byte except named fields. */
+    private function singlePositionProdCopy(array $prod,array $plan): array
+    {
+        $next=$prod;
+        if (isset($next['rooms']) && is_array($next['rooms'])) $rooms=&$next['rooms'];
+        else $rooms=&$next;
+        [$room,$domain,$group,$key]=explode('|',(string)$plan['key'],4);
+        $leaf=&$rooms[$room]['domains'][$domain][$key];
+        if (!is_array($leaf) || ($leaf['ai']['type']??'')!=='blind') {
+            throw new \RuntimeException('PROD-Jalousie seit Vorschau nicht mehr vorhanden.');
+        }
+        foreach ($plan['fields'] as $field) {
+            if ($field==='aiPositionId') $leaf['aiPositionId']=(int)$plan['newId'];
+            elseif ($field==='ai.variables.position') $leaf['ai']['variables']['position']=(int)$plan['newId'];
+            else throw new \RuntimeException('Nicht freigegebene Felduebernahme: '.$field);
+        }
+        unset($leaf,$rooms);
+        return $next;
+    }
+
+    public function SetSinglePositionProdKey(string $key): void
+    {
+        $this->WriteAttributeString('SinglePositionSelectedKey',$key);
+        $this->WriteAttributeString('SinglePositionProdPreview','{}');
+        $notice='Bitte fuer dieses einzelne Positionsfeld eine neue Vorschau starten.';
+        $this->WriteAttributeString('SinglePositionProdNotice',$notice);
+        $this->UpdateFormField('SinglePositionProdNotice','caption',$notice);
+    }
+
+    public function PreviewSinglePositionProd(string $key): void
+    {
+        $this->WriteAttributeString('SinglePositionProdPreview','{}');
+        try {
+            $sources=$this->scopedProdSources();
+            $plan=$this->singlePositionProdPlan($sources['edit'],$sources['prod'],$key);
+            $preview=[
+                'time'=>time(),'key'=>$key,
+                'editId'=>$sources['editId'],'prodId'=>$sources['prodId'],
+                'editHash'=>hash('sha256',$sources['editSource']),
+                'prodHash'=>hash('sha256',$sources['prodSource']),
+                'planHash'=>hash('sha256',json_encode($plan,
+                    JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR))
+            ];
+            $this->WriteAttributeString('SinglePositionProdPreview',
+                json_encode($preview,JSON_THROW_ON_ERROR));
+            $notice=sprintf('EINZELFELD GÜLTIG: %s / %s: Position #%d → #%d. '
+                .'Nur %s wird in PROD geaendert; andere Geraete- und Statusfelder, '
+                .'KI-Rechte und Bestätigungen bleiben unberuehrt. '
+                .'Eine physische Istposition wurde dadurch NICHT bestaetigt. '
+                .'Vorschau 10 Minuten gueltig.',
+                $plan['room'],$plan['device'],$plan['oldId'],$plan['newId'],
+                implode(' + ',$plan['fields']));
+            $this->WriteAttributeString('SinglePositionProdNotice',$notice);
+            $this->UpdateFormField('SinglePositionProdNotice','caption',$notice);
+            echo $notice;
+        } catch (\Throwable $error) {
+            $notice='EINZELFELD GESPERRT: '.$error->getMessage();
+            $this->WriteAttributeString('SinglePositionProdNotice',$notice);
+            $this->UpdateFormField('SinglePositionProdNotice','caption',$notice);
+            echo $notice;
+        }
+    }
+
+    public function ApplySinglePositionProd(string $key): void
+    {
+        try {
+            $preview=json_decode($this->ReadAttributeString('SinglePositionProdPreview'),true);
+            if (!is_array($preview) || !isset($preview['time'])
+                || (int)$preview['time']>time()
+                || time()-(int)$preview['time']>600
+                || ($preview['key']??'')!==$key) {
+                throw new \RuntimeException('Bitte zuerst die aktuelle Vorschau fuer genau dieses Geraet ausfuehren.');
+            }
+            $sources=$this->scopedProdSources();
+            foreach (['edit','prod'] as $source) {
+                if ((int)($preview[$source.'Id']??0)!==$sources[$source.'Id']
+                    || !hash_equals((string)($preview[$source.'Hash']??''),
+                        hash('sha256',$sources[$source.'Source']))) {
+                    throw new \RuntimeException('EDIT/PROD seit Vorschau veraendert – bitte neu pruefen.');
+                }
+            }
+            $plan=$this->singlePositionProdPlan($sources['edit'],$sources['prod'],$key);
+            $planHash=hash('sha256',json_encode($plan,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
+            if (!hash_equals((string)($preview['planHash']??''),$planHash)) {
+                throw new \RuntimeException('IPS-Metadaten oder Feldzuordnung seit Vorschau geaendert.');
+            }
+            $next=$this->singlePositionProdCopy($sources['prod'],$plan);
+            if ($next===$sources['prod']) throw new \RuntimeException('Keine tatsaechliche Positionsaenderung.');
+            if (IPS_GetScriptContent($sources['editId'])!==$sources['editSource']
+                || IPS_GetScriptContent($sources['prodId'])!==$sources['prodSource']) {
+                throw new \RuntimeException('Kataloge kurz vor Backup veraendert.');
+            }
+            $backup=IPS_CreateScript(0);
+            if (!is_int($backup) || $backup<=0) {
+                throw new \RuntimeException('PROD-Backup konnte nicht erzeugt werden.');
+            }
+            IPS_SetParent($backup,IPS_GetParent($sources['prodId']));
+            IPS_SetName($backup,'RoomsCatalog_Einzelposition_Backup_'.date('Ymd_His').'_'.$backup);
+            IPS_SetScriptContent($backup,$sources['prodSource']);
+            if (IPS_GetScriptContent($backup)!==$sources['prodSource']) {
+                throw new \RuntimeException('Backup-Verifikation fehlgeschlagen, PROD unveraendert.');
+            }
+            if (IPS_GetScriptContent($sources['editId'])!==$sources['editSource']
+                || IPS_GetScriptContent($sources['prodId'])!==$sources['prodSource']) {
+                throw new \RuntimeException('Kataloge nach Backup veraendert. Keine Uebernahme.');
+            }
+            $php="<?php\nreturn ".var_export($next,true).";\n";
+            try {
+                IPS_SetScriptContent($sources['prodId'],$php);
+                if (IPS_GetScriptContent($sources['prodId'])!==$php) {
+                    throw new \RuntimeException('PROD-Schreibverifikation fehlgeschlagen.');
+                }
+            } catch (\Throwable $writeError) {
+                try {
+                    IPS_SetScriptContent($sources['prodId'],$sources['prodSource']);
+                    $restored=IPS_GetScriptContent($sources['prodId'])===$sources['prodSource'];
+                } catch (\Throwable $restoreError) { $restored=false; }
+                throw new \RuntimeException('Schreibfehler: '.$writeError->getMessage()
+                    .($restored?' PROD wiederhergestellt.':' ACHTUNG: PROD-Wiederherstellung nicht bestaetigt!')
+                    .' Backup #'.$backup);
+            }
+            $this->WriteAttributeString('SinglePositionProdPreview','{}');
+            $notice=sprintf('ERFOLG: Nur %s / %s: %s nach PROD uebernommen '
+                .'(ID #%d). PROD-Backup #%d. Sonstige Jalousie- und KI-Daten '
+                .'unveraendert; EDIT weiterhin unveraendert.',
+                $plan['room'],$plan['device'],implode(' + ',$plan['fields']),
+                $plan['newId'],$backup);
+            $this->WriteAttributeString('SinglePositionProdNotice',$notice);
+            $this->UpdateFormField('SinglePositionProdNotice','caption',$notice);
+            $this->reloadAllFromCatalog();
+            $this->RefreshVisibleLists();
+            echo $notice;
+        } catch (\Throwable $error) {
+            $notice='EINZELFELD-PROD GESPERRT: '.$error->getMessage();
+            $this->WriteAttributeString('SinglePositionProdNotice',$notice);
+            $this->UpdateFormField('SinglePositionProdNotice','caption',$notice);
+            echo $notice;
         }
     }
 
