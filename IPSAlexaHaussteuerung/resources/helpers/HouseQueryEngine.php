@@ -237,8 +237,16 @@ function iah_ai_query_house(array $devices, array $args, string $spoken = ''): a
     } else $primary=$rows[0]??null;
     $visible=iah_rc_bounded_rows(array_slice($rows,0,$limit));
     $truncated=count($rows)>count($visible);
+    $filtersUsed=$filters;
+    if ($rooms!==[]) $filtersUsed['rooms']=$rooms;
+    if ($indoorOnly) $filtersUsed['indoor_only']=true;
+    if ($condition!=='') {
+        $filtersUsed['condition']=$condition;
+        if ($expected!==null) $filtersUsed['value']=$expected;
+    }
     $result=['ok'=>true,'operation'=>$operation,'property'=>$property,
-        'groupBy'=>$groupBy,'matchedDevices'=>count($found),'withProperty'=>$validDevices,
+        'groupBy'=>$groupBy,'filtersUsed'=>$filtersUsed,
+        'matchedDevices'=>count($found),'withProperty'=>$validDevices,
         'matchedReadings'=>$measurements,'groups'=>count($rows),
         'totalCount'=>$totalCount,'truncated'=>$truncated,
         'roomSensorAggregation'=>$groupBy==='room' ? 'mean_of_distinct_measurements' : 'none',
