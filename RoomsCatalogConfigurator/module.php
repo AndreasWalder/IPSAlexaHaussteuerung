@@ -175,6 +175,8 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('AutoRepairNotice', 'Noch kein Diagnoseexport erstellt.');
         $this->RegisterAttributeString('PartialProdPublishPreview', '{}');
         $this->RegisterAttributeString('PartialProdPublishNotice', 'Noch keine bereichsweise PROD-Vorschau ausgefuehrt.');
+        $this->RegisterAttributeString('PartialProdPublishRows', '[]');
+        $this->RegisterAttributeString('PartialProdSelectedDomain', '');
     }
 
     public function ApplyChanges()
@@ -214,7 +216,11 @@ class RoomsCatalogConfigurator extends IPSModule
             'TechnicalDeviceSummary'=>'Noch keine technische Geraetepruefung ausgefuehrt.',
             'TechnicalDeviceActionMessage'=>'',
             'AutoRepairPreview'=>'{}',
-            'AutoRepairNotice'=>'Noch kein Diagnoseexport erstellt.'
+            'AutoRepairNotice'=>'Noch kein Diagnoseexport erstellt.',
+            'PartialProdPublishPreview'=>'{}',
+            'PartialProdPublishNotice'=>'Noch keine bereichsweise PROD-Vorschau ausgefuehrt.',
+            'PartialProdPublishRows'=>'[]',
+            'PartialProdSelectedDomain'=>''
         ];
         foreach ($emptyCaches as $name=>$value) {
             $this->WriteAttributeString($name,$value);
@@ -245,6 +251,7 @@ class RoomsCatalogConfigurator extends IPSModule
             'TechnicalDeviceSourceSummary'=>'Katalogquellen noch nicht geprueft – bitte technische Pruefung ausfuehren.',
             'TechnicalDeviceActionMessage'=>'',
             'AutoRepairNotice'=>'Noch kein Diagnoseexport erstellt.',
+            'PartialProdPublishNotice'=>'Noch keine bereichsweise PROD-Vorschau ausgefuehrt.',
             'MigrationReadinessReport'=>'Noch keine aktuelle Migrationspruefung ausgefuehrt.',
             'DiscoverySummary'=>'Noch keine Geraeteinventur gestartet.',
             'DiscoveryAudit'=>'Noch keine Vollstaendigkeitspruefung.'
@@ -253,12 +260,14 @@ class RoomsCatalogConfigurator extends IPSModule
         }
         foreach ([
             'TechnicalDeviceChecks','TechnicalLegacyDevices','TechnicalDiffRows',
-            'Suggestions','DiscoveryInventoryList','DiscoveredDevices','LegacyDevices'
+            'Suggestions','DiscoveryInventoryList','DiscoveredDevices','LegacyDevices',
+            'PartialProdPublishRows'
         ] as $name) {
             $this->UpdateFormField($name,'values','[]');
         }
         $this->UpdateFormField('TechnicalDevicesPhysicallyChecked','value',false);
         $this->UpdateFormField('FilterAI','value','all');
+        $this->UpdateFormField('PartialProdDomain','value','');
         foreach ([
             'BulkDeviceType'=>'keep','BulkAIMode'=>'keep',
             'BulkSuggestions'=>'yes','BulkReview'=>'keep'
@@ -2908,13 +2917,26 @@ class RoomsCatalogConfigurator extends IPSModule
         $rows=[];
         foreach ($plan['approved'] as $r) $rows[]=$r;
         foreach ($plan['skipped'] as $r) $rows[]=$r;
-        $this->UpdateFormField('PartialProdPublishRows','values',
-            json_encode($rows,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE));
+        $json=json_encode($rows,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
+        $this->WriteAttributeString('PartialProdPublishRows',$json);
+        $this->UpdateFormField('PartialProdPublishRows','values',$json);
+    }
+
+    public function SetScopedProdDomain(string $area): void
+    {
+        $this->WriteAttributeString('PartialProdSelectedDomain',$area);
+        $this->WriteAttributeString('PartialProdPublishPreview','{}');
+        $this->WriteAttributeString('PartialProdPublishRows','[]');
+        $this->WriteAttributeString('PartialProdPublishNotice','Bitte fuer diesen Bereich eine neue Vorschau erstellen.');
+        $this->UpdateFormField('PartialProdPublishRows','values','[]');
+        $this->UpdateFormField('PartialProdPublishNotice','caption',
+            'Bitte fuer diesen Bereich eine neue Vorschau erstellen.');
     }
 
     public function PreviewScopedProdPublish(string $area): void
     {
         $this->WriteAttributeString('PartialProdPublishPreview','{}');
+        $this->WriteAttributeString('PartialProdSelectedDomain',$area);
         try {
             $sources=$this->scopedProdSources();
             $plan=$this->scopedProdPlan($sources['edit'],$sources['prod'],$area);
@@ -5082,9 +5104,48 @@ class RoomsCatalogConfigurator extends IPSModule
                     'onClick' => 'RCC_DiscardEditChanges($id);'
                 ],
                 [
+                    'type'=>'ExpansionPanel',
+                    'caption'=>'BEREICHSWEISE PROD-UEBERNAHME – NUR GUELTIGE GERAETE',
+                    'expanded'=>true,
+                    'items'=>[
+                        ['type'=>'Label','caption'=>
+                            'Unabhaengig von anderen Bereichen: Nur neue/geaenderte und technisch plausible '
+                            .'Geraete des ausgewaehlten Bereichs nach PROD. Ungueltige Geraete werden '
+                            .'einzeln gesperrt, Jalousien ohne ECHTE Rueckmeldung niemals uebernommen. '
+                            .'Keine Geraete-Loeschungen, keine KI-Schreibrechte-Erweiterungen und '
+                            .'keine Aenderung an anderen Bereichen oder Raum-Metadaten.'],
+                        ['type'=>'Select','name'=>'PartialProdDomain',
+                            'caption'=>'Bereich fuer die PROD-Teiluebernahme',
+                            'options'=>$this->scopedProdDomainOptions($entriesEdit),
+                            'value'=>$this->ReadAttributeString('PartialProdSelectedDomain'),
+                            'onChange'=>'RCC_SetScopedProdDomain($id, (string)$PartialProdDomain);'],
+                        ['type'=>'RowLayout','items'=>[
+                            ['type'=>'Button','caption'=>'1 – GUELTIGE AENDERUNGEN IM BEREICH PRUEFEN',
+                                'onClick'=>'RCC_PreviewScopedProdPublish($id, (string)$PartialProdDomain);'],
+                            ['type'=>'Button','caption'=>'2 – NUR GUELTIGE AENDERUNGEN NACH PROD',
+                                'confirm'=>'Nur die in der aktuellen Bereichsvorschau als GUELTIG markierten Geraete nach PROD uebernehmen? Ungueltige Jalousien und andere Bereiche bleiben unangetastet. Vorher PROD-Backup; EDIT bleibt unveraendert.',
+                                'onClick'=>'RCC_ApplyScopedProdPublish($id, (string)$PartialProdDomain);']
+                        ]],
+                        ['type'=>'Label','name'=>'PartialProdPublishNotice',
+                            'caption'=>$this->ReadAttributeString('PartialProdPublishNotice')],
+                        ['type'=>'List','name'=>'PartialProdPublishRows',
+                            'caption'=>'Bereichs-Vorschau: gueltig / gesperrt',
+                            'rowCount'=>12,'loadValuesFromConfiguration'=>false,
+                            'add'=>false,'delete'=>false,
+                            'columns'=>[
+                                ['caption'=>'Raum/Bereich/Gruppe/Key','name'=>'key','width'=>'270px','save'=>false,'add'=>''],
+                                ['caption'=>'Geraet','name'=>'title','width'=>'180px','save'=>false,'add'=>''],
+                                ['caption'=>'Ergebnis','name'=>'status','width'=>'90px','save'=>false,'add'=>''],
+                                ['caption'=>'Grund','name'=>'reason','width'=>'auto','save'=>false,'add'=>'']
+                            ],
+                            'values'=>json_decode($this->ReadAttributeString('PartialProdPublishRows'),true)??[]
+                        ]
+                    ]
+                ],
+                [
                     'type'    => 'Button',
-                    'caption' => 'EDIT NACH PROD UEBERNEHMEN',
-                    'confirm' => 'Aenderungen produktiv uebernehmen? Es wird zuvor ein Backup angelegt.',
+                    'caption' => 'GESAMTEN EDIT-KATALOG NACH PROD (NUR WENN ALLES GUELTIG)',
+                    'confirm' => 'ALLE Bereiche gemeinsam nach PROD uebernehmen? Bei einer einzigen ungueltigen Jalousie wird dies weiterhin blockiert. Fuer Teiluebernahme bitte den Bereichs-Assistenten verwenden.',
                     'onClick' => 'RCC_SaveEditToProd($id);'
                 ]
             ]
