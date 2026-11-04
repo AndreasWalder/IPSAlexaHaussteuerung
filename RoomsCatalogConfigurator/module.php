@@ -227,6 +227,9 @@ class RoomsCatalogConfigurator extends IPSModule
             'AutoRepairNotice'=>'Noch kein Diagnoseexport erstellt.',
             'CatalogCheckDebugOutput'=>'',
             'CatalogCheckDebugSummary'=>'Noch keine RoomsCatalog-Pruefung ausgefuehrt.',
+            'KnxStatusRepairPreview'=>'{}',
+            'KnxStatusRepairPreviewText'=>'',
+            'KnxStatusRepairSummary'=>'Noch keine KNX-Statuskorrektur geprueft.',
             'PartialProdPublishPreview'=>'{}',
             'PartialProdPublishNotice'=>'Noch keine bereichsweise PROD-Vorschau ausgefuehrt.',
             'PartialProdPublishRows'=>'[]',
@@ -265,6 +268,7 @@ class RoomsCatalogConfigurator extends IPSModule
             'TechnicalDeviceActionMessage'=>'',
             'AutoRepairNotice'=>'Noch kein Diagnoseexport erstellt.',
             'CatalogCheckDebugSummary'=>'Noch keine RoomsCatalog-Pruefung ausgefuehrt.',
+            'KnxStatusRepairSummary'=>'Noch keine KNX-Statuskorrektur geprueft.',
             'PartialProdPublishNotice'=>'Noch keine bereichsweise PROD-Vorschau ausgefuehrt.',
             'SinglePositionProdNotice'=>'Noch keine einzelne Positionsaenderung geprueft.',
             'MigrationReadinessReport'=>'Noch keine aktuelle Migrationspruefung ausgefuehrt.',
@@ -283,6 +287,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->UpdateFormField('TechnicalDevicesPhysicallyChecked','value',false);
         $this->UpdateFormField('FilterAI','value','all');
         $this->UpdateFormField('CatalogCheckDebugOutput','value','');
+        $this->UpdateFormField('KnxStatusRepairPreviewText','value','');
         $this->UpdateFormField('PartialProdDomain','value','');
         $this->UpdateFormField('SinglePositionKey','value','');
         foreach ([
@@ -3902,6 +3907,7 @@ class RoomsCatalogConfigurator extends IPSModule
             $this->WriteAttributeString('PartialProdPublishPreview','{}');
             $this->WriteAttributeString('SinglePositionProdPreview','{}');
             $this->WriteAttributeString('AutoRepairPreview','{}');
+            $this->WriteAttributeString('KnxStatusRepairPreview','{}');
             $this->logDebug('SaveEditToProd: vollstaendiger EDIT-Skriptinhalt 1:1 nach PROD, Backup #'.$backup);
             echo 'ERFOLG: Gesamter RoomsCatalog EDIT 1:1 nach PROD kopiert. '
                 .'Alle Raeume, Geraete, Variablen, KI-Freigaben und auch unvollstaendige '
