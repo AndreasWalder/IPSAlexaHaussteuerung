@@ -106,13 +106,13 @@ class RoomsCatalogConfigurator extends IPSModule
         'light' => ['power', 'status', 'control'],
         'dimmer' => ['power', 'brightness', 'status', 'control'],
         'blind' => ['position', 'targetPosition', 'tilt', 'status', 'moving', 'action', 'control'],
-        'heating' => ['temperature', 'targetTemperature', 'status', 'control'],
+        'heating' => ['temperature', 'targetTemperature', 'control'],
         'window' => ['open', 'status'],
         'switch' => ['power', 'powerWatts', 'energy', 'status', 'control'],
         'energy' => ['powerWatts', 'energy', 'status'],
         'motion' => ['motion', 'status'],
         'illuminance' => ['illuminance'],
-        'fan' => ['power', 'status', 'control'],
+        'fan' => ['power', 'control'],
         'generic' => ['power', 'status', 'action', 'control']
     ];
 
@@ -1171,7 +1171,10 @@ class RoomsCatalogConfigurator extends IPSModule
     private function minimumReadingRoles(string $type): array
     {
         return match ($type) {
-            'light','switch','fan' => [['power','status']],
+            'light','switch' => [['power','status']],
+            // Bei Lueftern darf ein einziges beschreibbares Ein/Aus-Signal
+            // sowohl Steuerwert als auch angezeigter Wert sein.
+            'fan' => [['power','control']],
             'dimmer' => [['brightness']],
             'blind' => [['position','status']],
             'heating' => [['temperature']],
@@ -5189,6 +5192,49 @@ class RoomsCatalogConfigurator extends IPSModule
         }
         $form['elements'] = $remaining;
 
+        // V3.3.19: Alltag zuerst. Genau die Bereiche, die man zur normalen
+        // Pflege braucht, werden sichtbar dargestellt; alle vorhandenen
+        // Diagnose-/Migrations-/Freigabeaktionen bleiben erreichbar, aber
+        // standardmaessig vollstaendig zugeklappt.
+        $everyday=['Raeume & Etagen','RoomsCatalog Scripts',
+            'Geraete bearbeiten (RoomsCatalog EDIT)'];
+        $main=[];
+        $expert=[];
+        foreach ($form['elements'] as $index=>$element) {
+            $caption=(string)($element['caption']??'');
+            if ($index<=2 || in_array($caption,$everyday,true)) {
+                if (in_array($caption,$everyday,true)) {
+                    $element['expanded']=true;
+                }
+                $main[]=$element;
+            } else {
+                if (($element['type']??'')==='ExpansionPanel') {
+                    $element['expanded']=false;
+                }
+                $expert[]=$element;
+            }
+        }
+        // Move standalone actions too; hiding only the elements would
+        // leave the page cluttered below the core device list.
+        foreach ($form['actions']??[] as $action) {
+            if (($action['type']??'')==='ExpansionPanel') $action['expanded']=false;
+            $expert[]=$action;
+        }
+        $form['actions']=[];
+        if ($expert!==[]) {
+            $main[]=[
+                'type'=>'ExpansionPanel',
+                'caption'=>'Weitere Funktionen (Experten): Pruefen, Migration und PROD',
+                'expanded'=>false,
+                'items'=>array_merge([[
+                    'type'=>'Label',
+                    'caption'=>'Erweiterte Diagnose, Inventur, Massenbearbeitung und PROD-Teiluebernahme. '
+                        .'Alle bestehenden Funktionen bleiben vorhanden, sind aber im Alltag ausgeblendet.'
+                ]],$expert)
+            ];
+        }
+        $form['elements']=$main;
+
         return json_encode($form);
     }
 
@@ -6484,17 +6530,25 @@ class RoomsCatalogConfigurator extends IPSModule
             ]
         ];
         $variableCaptions = [
-            'power' => 'Ein/Aus (Rueckmeldung)', 'brightness' => 'Helligkeit',
+            'power' => $editorType==='fan'
+                ? 'Ein/Aus-Wert (optional; darf dieselbe ID wie Steuerung sein)'
+                : 'Ein/Aus (Rueckmeldung)', 'brightness' => 'Helligkeit',
             'position' => 'Istposition', 'targetPosition' => 'Sollposition',
             'tilt' => 'Lamellenwinkel', 'moving' => 'Fahrstatus',
-            'control' => 'Steuerungsvariable', 'temperature' => 'Isttemperatur',
+            'control' => $editorType==='fan' ? 'Steuerung (Ein/Aus)' : 'Steuerungsvariable',
+            'temperature' => 'Isttemperatur',
             'targetTemperature' => 'Solltemperatur', 'open' => 'Fensterstatus',
             'powerWatts' => 'Leistung (W)', 'energy' => 'Verbrauch/Zaehlerstand',
             'motion' => 'Bewegung', 'illuminance' => 'Beleuchtungsstaerke (Lux)',
             'status' => 'Geraetestatus (z.B. Offen/Geschlossen)',
             'action' => 'Aktion (z.B. Auf/Ab/Stop)'
         ];
-        $aiItems = [['type'=>'Label','caption'=>'Nur die zum Geraetetyp passenden Variablen auswaehlen. Bei unbekannter Bedeutung keine Statuswerte raten.']];
+        $typeHint = match ($editorType) {
+            'fan' => 'Luefter: Steuerungsvariable reicht aus. Ein/Aus-Wert ist optional und darf dieselbe ID haben. Ohne separate Rueckmeldung ist der tatsaechliche Laufzustand nicht bestaetigt.',
+            'heating' => 'Heizung: nur Isttemperatur, Solltemperatur und Steuerung. Steuerung darf dieselbe beschreibbare Solltemperatur-Variable sein. Kein zusaetzlicher Geraetestatus.',
+            default => 'Nur benoetigte Variablen auswaehlen. Eine fehlende optionale Rueckmeldung ist kein Konfigurationsfehler.'
+        };
+        $aiItems = [['type'=>'Label','caption'=>$typeHint]];
         foreach (array_chunk(array_keys(self::AI_VARIABLE_FIELDS), 2) as $pair) {
             $controls = [];
             foreach ($pair as $property) {
@@ -6551,7 +6605,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 $extra[]=['type'=>'ValidationTextBox','name'=>$name,'caption'=>$name];
             }
         }
-        $items[]=['type'=>'ExpansionPanel','caption'=>'Weitere Felder / Objekt-IDs','expanded'=>true,
+        $items[]=['type'=>'ExpansionPanel','caption'=>'Weitere Felder / Objekt-IDs (Experten)','expanded'=>false,
             'items'=>$extra!==[]?$extra:[['type'=>'Label','caption'=>'Keine weiteren Eigenschaften vorhanden']]];
         return json_encode($items,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
     }
