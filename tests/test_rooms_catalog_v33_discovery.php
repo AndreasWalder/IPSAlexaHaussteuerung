@@ -87,12 +87,13 @@ $mod->WriteAttributeString('RuntimeEntries', '[]');
 $mod->WriteAttributeString('FilterAI', 'all');
 $form = json_decode($mod->GetConfigurationForm(), true, 512, JSON_THROW_ON_ERROR);
 $panel = null;
-foreach ($form['elements'] as $element) {
-    if (($element['caption'] ?? '') !== 'Geraete erkennen, inventarisieren und reparieren') continue;
-    foreach ($element['items'] as $child) {
-        if (($child['caption'] ?? '') === 'IP-Symcon-Geraeteinventur') $panel = $child;
+$findInventory33=function(array $nodes)use(&$findInventory33,&$panel):void {
+    foreach ($nodes as $node) {
+        if (($node['caption']??'')==='IP-Symcon-Geraeteinventur') $panel=$node;
+        if (isset($node['items']) && is_array($node['items'])) $findInventory33($node['items']);
     }
-}
+};
+$findInventory33($form['elements']);
 check33(is_array($panel) && ($panel['expanded'] ?? true) === false,
     'V3.3 discovery must remain available collapsed for future devices');
 $panelJson = json_encode($panel, JSON_THROW_ON_ERROR);
