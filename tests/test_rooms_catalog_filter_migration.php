@@ -145,8 +145,14 @@ $allDone=auditReadForm($mod);
 $reportField=auditFind($allDone,'MigrationReadinessReport');
 auditCheck(str_contains((string)($reportField['caption']??''),'Datenstand erneut pruefen'),
     'Migration report must expire when EDIT changes outside the configurator');
-$compact=array_values(array_filter($allDone['elements'],
-    static fn(array $row):bool => ($row['caption']??'')==='Geraete erkennen, inventarisieren und reparieren'))[0];
+$compact=null;
+$findNestedAudit=function(array $nodes)use(&$findNestedAudit,&$compact):void {
+    foreach($nodes as $node) {
+        if(($node['caption']??'')==='Geraete erkennen, inventarisieren und reparieren') $compact=$node;
+        if(is_array($node['items']??null)) $findNestedAudit($node['items']);
+    }
+};
+$findNestedAudit($allDone['elements']);
 auditCheck(!str_contains(json_encode($compact),'RCC_AnalyzeLegacyDevices')
     && str_contains(json_encode($compact),'RCC_ScanNewDevices'),
     'Fully typed catalog should hide only obsolete legacy migration, not new-device scanner');
