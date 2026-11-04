@@ -141,6 +141,52 @@ guidedOk($movedCatalog['bad']['aliases'] === ['Bad']
     'Move deleted room metadata');
 guidedOk((require $GLOBALS['guidedTemp'] . '/scripts/50.php') === $catalog, 'PROD modified on move');
 
+
+/** V3.3.24: A stale invalid optional targetPosition must show an
+ * explicit warning instead of silently looking like "Keine", and
+ * selecting "Keine" must remove the nested ai.variables key. */
+$oldBlind=$movedCatalog['kueche']['domains']['jalousie']['beleuchtung'];
+$withInvalidTarget=$movedCatalog;
+$withInvalidTarget['kueche']['domains']['jalousie']['beleuchtung']['ai']['variables']['targetPosition']=1;
+$withInvalidTarget['kueche']['domains']['jalousie']['beleuchtung']['ai']['variables']['position']=50101;
+$withInvalidTarget['kueche']['domains']['jalousie']['beleuchtung']['ai']['keepCustomRole']=true;
+IPS_SetScriptContent(51,'<?php return '.var_export($withInvalidTarget,true).';');
+(new ReflectionMethod(RoomsCatalogConfigurator::class,'reloadAllFromCatalog'))->invoke($mod);
+$invalidForm=json_decode($mod->GetEntryEditForm('kueche','jalousie','jalousie','beleuchtung'),
+    true,512,JSON_THROW_ON_ERROR);
+$invalidChoice=findGuidedField($invalidForm,'aiTargetPositionId');
+guidedOk(($invalidChoice['value']??-1)===0
+    && str_contains(json_encode($invalidForm,JSON_UNESCAPED_UNICODE),'targetPosition (#1)')
+    && str_contains(json_encode($invalidForm,JSON_UNESCAPED_UNICODE),'ungueltige Variablen-IDs'),
+    'Invalid ID 1 must be disclosed but the dropdown should be explicitly preset to Keine');
+$prodBeforeClearing=IPS_GetScriptContent(50);
+ob_start();
+$mod->SaveToEdit(json_encode([
+    'editorOriginalKey'=>'kueche|jalousie|jalousie|beleuchtung',
+    'roomKey'=>'kueche','title'=>'Badlicht','key'=>'beleuchtung',
+    'aiType'=>'blind','aiTargetPositionId'=>0,
+],JSON_THROW_ON_ERROR));
+$clearOutcome=ob_get_clean();
+$afterClearing=require $GLOBALS['guidedTemp'].'/scripts/51.php';
+$clearLeaf=$afterClearing['kueche']['domains']['jalousie']['beleuchtung'];
+guidedOk(!array_key_exists('targetPosition',$clearLeaf['ai']['variables'])
+    && ($clearLeaf['ai']['variables']['position']??0)===50101
+    && ($clearLeaf['ai']['keepCustomRole']??false)===true,
+    'Choosing Keine must remove exactly targetPosition and preserve other AI and legacy fields');
+guidedOk(IPS_GetScriptContent(50)===$prodBeforeClearing,
+    'Clearing an optional role in EDIT must not modify PROD');
+$validTarget=50101;
+ob_start();
+$mod->SaveToEdit(json_encode([
+    'editorOriginalKey'=>'kueche|jalousie|jalousie|beleuchtung',
+    'roomKey'=>'kueche','title'=>'Badlicht','key'=>'beleuchtung',
+    'aiType'=>'blind','aiTargetPositionId'=>$validTarget,
+],JSON_THROW_ON_ERROR));
+ob_end_clean();
+$afterAssign=require $GLOBALS['guidedTemp'].'/scripts/51.php';
+guidedOk(($afterAssign['kueche']['domains']['jalousie']['beleuchtung']['ai']['variables']['targetPosition']??0)===$validTarget,
+    'Selecting an explicit valid targetPosition must still store its chosen ID');
+
 foreach (array_keys($GLOBALS['guidedScripts']) as $id) @unlink($GLOBALS['guidedTemp'] . '/scripts/' . $id . '.php');
 @rmdir($GLOBALS['guidedTemp'] . '/scripts');
 @rmdir($GLOBALS['guidedTemp']);

@@ -2402,8 +2402,14 @@ class RoomsCatalogConfigurator extends IPSModule
             if (!in_array($property, self::AI_TYPE_FIELDS[$type], true)) continue;
             if (!array_key_exists($field, $row)) continue;
             $value = (int)$row[$field];
-            if ($value > 0 || array_key_exists($property, $variables)) {
+            if ($value > 0) {
                 $variables[$property] = $value;
+            } else {
+                // A SelectVariable selection of "Keine" (0) must DELETE
+                // the old nested binding rather than leave an explicit
+                // 0 or accidentally retain the previous invalid ID.
+                // Only currently edited, type-compatible roles are touched.
+                unset($variables[$property]);
             }
         }
         if ($variables !== [] || array_key_exists('variables', $ai)) $ai['variables'] = $variables;
@@ -7181,12 +7187,39 @@ class RoomsCatalogConfigurator extends IPSModule
             default => 'Nur benoetigte Variablen auswaehlen. Eine fehlende optionale Rueckmeldung ist kein Konfigurationsfehler.'
         };
         $aiItems = [['type'=>'Label','caption'=>$typeHint]];
+        $invalidBindings=[];
+        foreach (self::AI_VARIABLE_FIELDS as $property=>$field) {
+            if (!in_array($property,self::AI_TYPE_FIELDS[$editorType] ?? [],true)) continue;
+            $id=(int)($row[$field]??0);
+            if ($id>0 && !IPS_VariableExists($id)) {
+                $invalidBindings[$property]=$id;
+            }
+        }
+        if ($invalidBindings!==[]) {
+            $invalidText=[];
+            foreach ($invalidBindings as $property=>$id) {
+                $invalidText[]=$property.' (#'.$id.')';
+            }
+            $aiItems[]=['type'=>'Label','caption'=>
+                'ACHTUNG: Im EDIT-Katalog sind ungueltige Variablen-IDs gespeichert: '
+                .implode(', ',$invalidText).'. Der IP-Symcon-Auswahldialog kann dafuer '
+                .'"Keine" anzeigen, obwohl noch eine alte ID im Katalog steht. '
+                .'Beim Speichern werden diese nicht mehr existierenden Zuordnungen '
+                .'entfernt, sofern du keine neue gueltige Variable auswaehlst.'];
+        }
         foreach (array_chunk(array_keys(self::AI_VARIABLE_FIELDS), 2) as $pair) {
             $controls = [];
             foreach ($pair as $property) {
-                $controls[] = ['type'=>'SelectVariable','name'=>self::AI_VARIABLE_FIELDS[$property],
+                $control=['type'=>'SelectVariable','name'=>self::AI_VARIABLE_FIELDS[$property],
                     'caption'=>$variableCaptions[$property] ?? $property,
                     'visible'=>in_array($property,self::AI_TYPE_FIELDS[$editorType] ?? [],true)];
+                if (isset($invalidBindings[$property])) {
+                    // What the selector actually shows ("Keine") is the
+                    // initial value we submit on confirmation, never the
+                    // stale, non-existing IPS-ID.
+                    $control['value']=0;
+                }
+                $controls[]=$control;
             }
             $aiItems[] = ['type'=>'RowLayout','items'=>$controls];
         }
