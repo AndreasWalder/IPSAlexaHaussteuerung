@@ -61,6 +61,64 @@ $mod->properties=['RoomsCatalogScriptID'=>40,'RoomsCatalogEditScriptID'=>41];
 (new ReflectionMethod(RoomsCatalogConfigurator::class,'reloadAllFromCatalog'))->invoke($mod);
 function ck339(bool $test,string $reason): void { if(!$test)throw new RuntimeException($reason); }
 
+/** V3.3.25 – real KNX profile roles and safe shared dimmer signals. */
+$assessV25=static function(string $type,array $variables,array $metadata,array $roles):array {
+    $fields=[];
+    $row=['aiType'=>$type];
+    foreach($variables as $role=>$id) {
+        $field='ai'.ucfirst($role).'Id';
+        $fields[$role]=$field;
+        $row[$field]=$id;
+    }
+    return RCCDeviceTechnicalAudit::assess($row,$fields,$metadata,$roles,
+        static fn(array $v,string $role):int=>90,
+        static fn(int $id):bool=>$id!==99999);
+};
+$dimmerOne=['id'=>80201,'name'=>'Helligkeit','profile'=>'~Intensity.100',
+    'type'=>1,'action'=>false,'associations'=>[]];
+$dim= $assessV25('dimmer',['power'=>80201,'brightness'=>80201],
+    [$dimmerOne],[['brightness']]);
+ck339($dim['status']==='Technisch plausibel'
+    && !in_array('wrong_type',$dim['issueCodes'],true)
+    && !in_array('duplicate_mapping',$dim['issueCodes'],true),
+    'KNX dimmer using one read-only integer percentage for power + brightness must pass');
+$dimmerWrong=$assessV25('dimmer',['power'=>99999,'brightness'=>80201],
+    [$dimmerOne],[['brightness']]);
+ck339($dimmerWrong['status']==='Ungueltig'
+    && in_array('missing_ips',$dimmerWrong['issueCodes'],true),
+    'Relaxed dimmer check must not hide missing IPS variable');
+$position=['id'=>80301,'name'=>'Position','profile'=>'~Shutter',
+    'type'=>1,'action'=>false,'associations'=>[]];
+$tilt=['id'=>80302,'name'=>'Position (Lamelle)','profile'=>'~Lamella',
+    'type'=>1,'action'=>false,'associations'=>[]];
+$posOnly=$assessV25('blind',['position'=>80301,'tilt'=>80302],
+    [$position,$tilt],[['position','status']]);
+ck339($posOnly['status']==='Technisch plausibel'
+    && ($posOnly['statusSemanticEvidence']??'')==='position_only'
+    && !empty($posOnly['positionFeedbackIndependent']),
+    'KNX actual position + lamella must be valid without optional open/closed status');
+$enum=['id'=>80303,'name'=>'Status','profile'=>'~ShutterStatus.KNX',
+    'type'=>1,'action'=>false,'associations'=>[
+        ['value'=>0,'name'=>'Geöffnet'],['value'=>1,'name'=>'Geschlossen']]];
+$statusOnly=$assessV25('blind',['status'=>80303],[$enum],[['position','status']]);
+ck339($statusOnly['status']==='Technisch plausibel'
+    && ($statusOnly['statusSemanticEvidence']??'')==='profile_derived_not_saved',
+    'Known distinct enum associations must suffice without writing values to RoomsCatalog');
+$brokenStatus=RCCDeviceTechnicalAudit::assess(
+    ['aiType'=>'blind','aiStatusId'=>80303,'aiOpenValue'=>100,'aiClosedValue'=>0],
+    ['status'=>'aiStatusId'],[$enum],[['position','status']],
+    static fn(array $v,string $role):int=>90, static fn(int $id):bool=>true);
+ck339($brokenStatus['status']==='Manuell pruefen'
+    && in_array('state_mapping_conflict',$brokenStatus['issueCodes'],true),
+    'Explicit open/closed mapping conflicting with KNX enum must remain visible');
+$command=['id'=>80304,'name'=>'Aktion','profile'=>'~Shutter',
+    'type'=>1,'action'=>true,'associations'=>[]];
+$wrongPosition=$assessV25('blind',['position'=>80304,'action'=>80304],
+    [$command],[['position','status']]);
+ck339($wrongPosition['status']==='Manuell pruefen'
+    && in_array('position_command_collision',$wrongPosition['issueCodes'],true),
+    'Same KNX action and actual position is not an independent feedback');
+
 /** V3.3.23: don't infer KNX blind targetPosition from legacy
  * set values, and don't create unsupported IPS form elements. */
 $legacyTargetReader=new ReflectionMethod(RoomsCatalogConfigurator::class,'legacyAIVariable');
@@ -984,6 +1042,74 @@ ob_start();$mod->SaveEditToProd();$unsafeRefusal=ob_get_clean();
 ck339(str_contains($unsafeRefusal,'statisches PHP-Array')
     && IPS_GetScriptContent(40)===$prodBeforeEmpty,
     'Dynamic executable PHP must never be copied into a production catalog');
+
+
+/** V3.3.25 – real cross-device duplicate feedback and profile labels. */
+$sharedCatalog=$catalog;
+$sharedCatalog['wc']['domains']['jalousie']['zweites_fenster']=[
+    'title'=>'Zweite eigenstaendige Jalousie',
+    'kiEnabled'=>true,'kiReadOnly'=>true,
+    'ai'=>[
+        'version'=>2,'type'=>'blind',
+        'variables'=>[
+            'status'=>39138,'action'=>14327,
+            'position'=>55194,'tilt'=>36899
+        ],
+        'stateMapping'=>['open'=>0,'closed'=>1],
+        'review'=>['status'=>'pending']
+    ]
+];
+IPS_SetScriptContent(41,'<?php return '.var_export($sharedCatalog,true).';');
+IPS_SetScriptContent(40,'<?php return '.var_export($catalog,true).';');
+(new ReflectionMethod(RoomsCatalogConfigurator::class,'reloadAllFromCatalog'))->invoke($mod);
+$beforeSharedEdit=IPS_GetScriptContent(41);
+$beforeSharedProd=IPS_GetScriptContent(40);
+ob_start();$mod->CheckRoomsCatalog();$sharedNotice=ob_get_clean();
+$sharedJson=$mod->ReadAttributeString('CatalogCheckDebugOutput');
+$sharedReport=json_decode($sharedJson,true,512,JSON_THROW_ON_ERROR);
+$duplicateGroups=$sharedReport['sharedFeedbackAssignments']??[];
+$byRole=array_column($duplicateGroups,null,'role');
+ck339(($sharedReport['statistics']['devicesWithSharedFeedback']??0)===2
+    && ($sharedReport['statistics']['sharedFeedbackGroups']??0)===3
+    && isset($byRole['status'],$byRole['position'],$byRole['tilt'])
+    && ($byRole['status']['id']??0)===39138,
+    'Every cross-device shared status, position and tilt must be reported as potential misbinding');
+$sharedProblems=$sharedReport['problems']??[];
+$duplicateRows=array_values(array_filter($sharedProblems,static fn(array $row):bool=>
+    in_array($row['path']??'',[
+        'wc|jalousie|jalousie|fenster',
+        'wc|jalousie|jalousie|zweites_fenster'
+    ],true)));
+ck339(count($duplicateRows)===2
+    && count($duplicateRows[0]['sharedFeedbackWarnings']??[])===3
+    && count($duplicateRows[1]['sharedFeedbackWarnings']??[])===3,
+    'Both devices must receive explicit duplicate-feedback warning');
+$statusBinding=array_values(array_filter($duplicateRows[0]['bindings']??[],
+    static fn(array $binding):bool=>($binding['role']??'')==='status'))[0]??[];
+ck339(($statusBinding['associations']??[])===[
+    ['value'=>0,'name'=>'Offen'],['value'=>1,'name'=>'Geschlossen']
+] && str_contains($sharedJson,'"statusSemanticEvidence"')
+    && !str_contains($sharedJson,'PRIVATE_VALUE_MUST_NOT_BE_CACHED'),
+    'JSON must include exact bounded profile associations but never current IPS values');
+$sharedForm=json_decode($mod->GetConfigurationForm(),true,512,JSON_THROW_ON_ERROR);
+$sharedTable=null;
+$findSharedTable=function(array $nodes) use (&$findSharedTable,&$sharedTable):void {
+    foreach($nodes as $node) {
+        if(($node['name']??'')==='Entries')$sharedTable=$node;
+        if(isset($node['items']) && is_array($node['items']))$findSharedTable($node['items']);
+    }
+};
+$findSharedTable($sharedForm['elements']);
+$twoBlindRows=array_values(array_filter((array)($sharedTable['values']??[]),
+    static fn(array $row):bool=>in_array(($row['key']??''),
+        ['fenster','zweites_fenster'],true)));
+ck339(count($twoBlindRows)===2
+    && ($twoBlindRows[0]['checkStatus']??'')==='Pruefen (Mehrfach-ID)'
+    && ($twoBlindRows[1]['checkStatus']??'')==='Pruefen (Mehrfach-ID)',
+    'Ambiguous shared feedback should be orange and visible in BOTH device editor rows');
+ck339(IPS_GetScriptContent(41)===$beforeSharedEdit
+    && IPS_GetScriptContent(40)===$beforeSharedProd,
+    'Auditing shared KNX variable IDs must NEVER rewrite EDIT or PROD');
 
 foreach(array_keys($GLOBALS['inventoryScripts']) as $id) @unlink($GLOBALS['inventoryDir'].'/scripts/'.$id.'.php');
 @rmdir($GLOBALS['inventoryDir'].'/scripts');@rmdir($GLOBALS['inventoryDir']);
