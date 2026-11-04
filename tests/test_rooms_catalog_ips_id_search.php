@@ -51,11 +51,18 @@ function idAssert(bool $valid, string $message): void {
 }
 function listFromForm(array $form, string $name): array
 {
-    foreach ($form['elements'] as $panel) {
-        foreach ($panel['items'] ?? [] as $item) {
-            if (($item['name'] ?? '') === $name) return $item;
+    $find=function(array $elements)use(&$find,$name):?array {
+        foreach($elements as $node) {
+            if (($node['name']??'')===$name) return $node;
+            if (is_array($node['items']??null)) {
+                $match=$find($node['items']);
+                if ($match!==null) return $match;
+            }
         }
-    }
+        return null;
+    };
+    $found=$find($form['elements']);
+    if ($found!==null) return $found;
     throw new RuntimeException('List ' . $name . ' missing');
 }
 function rowByKey(array $values, string $key): array
