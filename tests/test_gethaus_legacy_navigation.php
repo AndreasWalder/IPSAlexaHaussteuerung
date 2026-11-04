@@ -68,11 +68,14 @@ tGet($simulate('jalousie','','','',['GetHaus','licht'])==='','APL clicks stay se
 tGet($simulate('Photovoltaik','','','',[],[
     'pv'=>['route'=>'pv','title'=>'Photovoltaik','roomDomain'=>'pv']
 ])==='pv','Dynamic renderer title routes directly');
-tGet(str_contains($action,'&& ($iahLegacyNavKey === \'\')'),
-    'KI interception must explicitly reject local legacy navigation');
-tGet(str_contains($action,'$homeAgentShouldRoute = $homeAgentDedicatedIntent')
-    && str_contains($action,'&& $isHomeAgentQuestion'),
-    'Legacy questions must require an actual question, not a lone tile');
+// Die Prioritaet wird jetzt an der reinen Gate-Policy statt an einer
+// einzelnen Inline-if-Bedingung geprueft (V3.4.2).
+tGet(str_contains($action, "'legacyNav'=>\$iahLegacyNavKey")
+    && str_contains($action, "if ((bool)\$iahKiGate['allowed'])"),
+    'KI interception must use the routing policy with local navigation');
+tGet(str_contains($action, "\$homeAgentShouldRoute = \$homeAgentDedicatedIntent || \$iahVoiceCategory === 'query'")
+    && str_contains($action, '&& $isHomeAgentQuestion'),
+    'Legacy questions must still require explicit query recognition, not a lone tile');
 $module=file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/module.php');
 tGet(str_contains($module,'patchActionScriptVoiceNavigation((int) $id)'),
     'Update must patch downstream UI navigation in existing Action scripts');
