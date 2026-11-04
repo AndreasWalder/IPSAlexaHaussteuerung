@@ -3418,6 +3418,18 @@ class RoomsCatalogConfigurator extends IPSModule
     private function classifyTechnicalCapability(
         array $row,array $assessment,array $scoped,array $explicit
     ): string {
+        if (($row['aiType']??'')==='fan'
+            && ($assessment['status']??'')==='Technisch plausibel') {
+            $control=(int)($explicit['control']??0);
+            $power=(int)($explicit['power']??0);
+            $status=(int)($explicit['status']??0);
+            // Steuerwert ist kein bestaetigter Istzustand: auch bei
+            // derselben gemeinsamen ID eindeutig als solcher ausweisen.
+            if ($control>0 && ($power<=0 || $power===$control)
+                && ($status<=0 || $status===$control)) {
+                return 'Nur Steuerungswert (kein separater Iststatus)';
+            }
+        }
         if (($assessment['status']??'')==='Technisch plausibel') {
             return 'Technisch plausibel (nicht fachlich bestaetigt)';
         }
