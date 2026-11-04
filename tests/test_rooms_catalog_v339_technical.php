@@ -661,14 +661,15 @@ $beforeInvalid=IPS_GetScriptContent(40);
 $beforeInvalidBackup=count($GLOBALS['inventoryScripts']);
 ob_start();$mod->PreviewScopedProdPublish('jalousie');$blindPreview=ob_get_clean();
 $blindPlan=json_decode($mod->ReadAttributeString('PartialProdPublishRows'),true,512,JSON_THROW_ON_ERROR);
-ck339(str_contains($blindPreview,'0 gueltige Aenderungen')
-    && count($blindPlan)===1 && $blindPlan[0]['status']==='Gesperrt',
-    'Blind with missing real state mapping must not pass partial validator');
-ob_start();$mod->ApplyScopedProdPublish('jalousie');$blindBlocked=ob_get_clean();
-ck339(str_contains($blindBlocked,'KEINE UEBERNAHME')
-    && IPS_GetScriptContent(40)===$beforeInvalid
-    && count($GLOBALS['inventoryScripts'])===$beforeInvalidBackup,
-    'No valid blind may cause zero PROD writes or backups: '.$blindBlocked);
+ck339(str_contains($blindPreview,'1 gueltige Aenderungen')
+    && count($blindPlan)===1 && $blindPlan[0]['status']==='Gueltig',
+    'Independent KNX position is sufficient without optional status semantics');
+ob_start();$mod->ApplyScopedProdPublish('jalousie');$blindApplied=ob_get_clean();
+ck339(str_contains($blindApplied,'ERFOLG: 1')
+    && count($GLOBALS['inventoryScripts'])===$beforeInvalidBackup+1,
+    'Real position feedback should allow legacy scoped publication: '.$blindApplied);
+// Restore simulated PROD so later tests still start from unchanged WC baseline.
+IPS_SetScriptContent(40,$beforeInvalid);
 
 // Scope all valid OTHER domains, while leaving Jalousie and invalid Licht untouched.
 $extraEdit=$domainEdit;
