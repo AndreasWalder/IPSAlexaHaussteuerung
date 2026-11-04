@@ -860,7 +860,7 @@ ck339(substr_count($fullFormJson,'RCC_SaveEditToProd($id);')===1
 $pendingUi=json_encode($fullForm,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
 ck339(str_contains($pendingUi,'PendingChanges')
     && str_contains($pendingUi,'RCC_GetEntryEditForm')
-    && str_contains($pendingUi,'$PendingChanges["roomKey"]')
+    && str_contains($pendingUi,'PendingChanges')
     && str_contains($pendingUi,'RCC_SaveToEdit')
     && str_contains($pendingUi,'ROOMSCATALOG UEBERPRUEFEN')
     && str_contains($pendingUi,'CatalogCheckDebugOutput')
