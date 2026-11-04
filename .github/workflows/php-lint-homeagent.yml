@@ -35,6 +35,7 @@ jobs:
           php -l IPSAlexaHaussteuerung/resources/action_entry.php
           php -l IPSAlexaHaussteuerung/resources/helpers/HomeAgentVoiceBridge.php
           php -l IPSAlexaHaussteuerung/resources/helpers/KIHouseController.php
+          php -l IPSAlexaHaussteuerung/resources/helpers/HouseQueryEngine.php
           php -l IPSAlexaHaussteuerung/resources/helpers/VoiceIntentRouter.php
           php -l IPSAlexaHaussteuerung/resources/helpers/ExternalHtmlProbe.php
           php -l IPSAlexaHaussteuerung/resources/helpers/ExternalHtmlBrowserReceiver.php
@@ -87,6 +88,8 @@ jobs:
         run: php tests/test_ki_rooms_catalog_v34.php
       - name: Test V3.4.4 centralized properties, read-only new types and on-request timestamps
         run: php tests/test_device_property_registry_v344.php
+      - name: Test V3.4.5 AI natural-language data queries, room temperatures and safe aggregate tools
+        run: php tests/test_ai_house_query_v345.php
       - name: Test V3.4.2 Alexa question priority over stale APL/UI fallback
         run: php tests/test_alexa_voice_question_priority_v342.php
       - name: Test V3.4.3 Alexa direct W-question capture and no-slot fallback
