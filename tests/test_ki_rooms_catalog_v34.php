@@ -79,7 +79,7 @@ try {
     $win=iah_rc_tool($devices,'get_states',['domain'=>'fenster','only_active'=>true],false,'welche fenster sind offen');
     if($win['matched']!==1 || $win['shown']!==1 || $win['filtersUsed']['type']!=='window'
         || $win['statusSummary']['offen']!==1) throw new RuntimeException('Window read scope');
-    $temp=iah_rc_tool($devices,'get_states',['domain'=>'temperatur','name'=>'heizung'],false,'wie warm ist es im Büro');
+    $temp=iah_rc_tool($devices,'get_states',['domain'=>'temperatur','name'=>'Büro'],false,'wie warm ist es im Büro');
     if($temp['matched']!==1 || $temp['temperatureAvailable']!==1
         || $temp['filtersUsed']['room']!=='buero'
         || $temp['devices'][0]['properties']['temperature']!==21.5) throw new RuntimeException('Heating legacy read scope');
