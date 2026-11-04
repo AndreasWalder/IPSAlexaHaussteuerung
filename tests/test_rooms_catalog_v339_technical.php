@@ -119,6 +119,49 @@ ck339($wrongPosition['status']==='Manuell pruefen'
     && in_array('position_command_collision',$wrongPosition['issueCodes'],true),
     'Same KNX action and actual position is not an independent feedback');
 
+/** V3.3.26: the uploaded 2026-11-04 KNX diagnostic. */
+$saunaControl=['id'=>80744,'name'=>'Sauna Deckenlicht','profile'=>'~Intensity.100',
+    'type'=>1,'action'=>true,'associations'=>[]];
+$saunaFeedback=['id'=>80506,'name'=>'Value','profile'=>'~Scaling.KNX',
+    'type'=>1,'action'=>true,'associations'=>[]];
+$saunaAudit=$assessV25('dimmer',
+    ['control'=>80744,'brightness'=>80506,'power'=>80506],
+    [$saunaControl,$saunaFeedback],[['brightness']]);
+ck339($saunaAudit['status']==='Technisch plausibel'
+    && !in_array('duplicate_mapping',$saunaAudit['issueCodes'],true),
+    'Sauna ~Scaling.KNX is a valid shared Integer percent feedback with separate control');
+$bueroAudit=RCCDeviceTechnicalAudit::assess(
+    ['aiType'=>'blind','aiActionId'=>88160,'aiPositionId'=>88429,
+        'aiOpenValue'=>'0','aiClosedValue'=>'100'],
+    ['action'=>'aiActionId','position'=>'aiPositionId'],
+    [
+        ['id'=>88160,'name'=>'Büro 100%','profile'=>'Rolladen_Steuerung',
+            'type'=>1,'action'=>true,'associations'=>[]],
+        ['id'=>88429,'name'=>'Wert','profile'=>'~ShutterPosition.100',
+            'type'=>1,'action'=>true,'associations'=>[
+                ['value'=>0,'name'=>'Geöffnet'],['value'=>25,'name'=>'25%'],
+                ['value'=>100,'name'=>'Geschlossen']]]
+    ],[['position','status']],
+    static fn(array $v,string $role):int=>90,
+    static fn(int $id):bool=>true);
+ck339($bueroAudit['status']==='Technisch plausibel'
+    && ($bueroAudit['statusSemanticEvidence']??'')==='profile_confirmed'
+    && !empty($bueroAudit['positionFeedbackIndependent']),
+    'Büro separate writable position with explicit 0/100 profile associations must pass');
+$realStatusAudit=RCCDeviceTechnicalAudit::assess(
+    ['aiType'=>'blind','aiStatusId'=>80303,'aiOpenValue'=>'0','aiClosedValue'=>'100'],
+    ['status'=>'aiStatusId'],
+    [['id'=>80303,'name'=>'Status','profile'=>'~ShutterStatus.KNX',
+      'type'=>1,'action'=>false,'associations'=>[
+          ['value'=>0,'name'=>'N/A'],['value'=>1,'name'=>'Geöffnet'],
+          ['value'=>2,'name'=>'Geschlossen']]]],
+    [['status','position']],
+    static fn(array $v,string $role):int=>90,
+    static fn(int $id):bool=>true);
+ck339($realStatusAudit['status']==='Manuell pruefen'
+    && in_array('state_mapping_conflict',$realStatusAudit['issueCodes'],true),
+    'A genuine 0/100 vs status 1/2 contradiction must NOT be hidden');
+
 /** V3.3.23: don't infer KNX blind targetPosition from legacy
  * set values, and don't create unsupported IPS form elements. */
 $legacyTargetReader=new ReflectionMethod(RoomsCatalogConfigurator::class,'legacyAIVariable');
@@ -1112,6 +1155,67 @@ ck339(count($twoBlindRows)===2
 ck339(IPS_GetScriptContent(41)===$beforeSharedEdit
     && IPS_GetScriptContent(40)===$beforeSharedProd,
     'Auditing shared KNX variable IDs must NEVER rewrite EDIT or PROD');
+
+
+/** V3.3.26 – guarded preview and explicit EDIT-only status repair. */
+addInvVar(60100,17426,'Status KNX','Status',1,'~ShutterStatus.KNX');
+$repairFixture=$catalog;
+$repairFixture['wc']['domains']['jalousie']['fenster']['ai']['variables']['status']=60100;
+$repairFixture['wc']['domains']['jalousie']['fenster']['ai']['stateMapping']=[
+    'open'=>0,'closed'=>100
+];
+IPS_SetScriptContent(41,'<?php return '.var_export($repairFixture,true).';');
+IPS_SetScriptContent(40,'<?php return '.var_export($catalog,true).';');
+(new ReflectionMethod(RoomsCatalogConfigurator::class,'reloadAllFromCatalog'))->invoke($mod);
+$editBeforeRepair=IPS_GetScriptContent(41);
+$prodBeforeRepair=IPS_GetScriptContent(40);
+$backupsBeforeRepair=count($GLOBALS['inventoryScripts']);
+ob_start();$mod->PreviewKnxStatusRepair();$proposalText=ob_get_clean();
+$proposal=json_decode($mod->ReadAttributeString('KnxStatusRepairPreview'),true,512,JSON_THROW_ON_ERROR);
+ck339(count($proposal['plan']??[])===1
+    && ($proposal['plan'][0]['statusId']??null)===60100
+    && ($proposal['plan'][0]['new']??[])===['open'=>1,'closed'=>2],
+    'Preview must derive 1/2 from the actual ~ShutterStatus.KNX associations');
+ck339(IPS_GetScriptContent(41)===$editBeforeRepair
+    && IPS_GetScriptContent(40)===$prodBeforeRepair
+    && count($GLOBALS['inventoryScripts'])===$backupsBeforeRepair,
+    'Preview must be strictly read-only and create no backup');
+$repairForm=json_decode($mod->GetConfigurationForm(),true,512,JSON_THROW_ON_ERROR);
+$repairUi=json_encode($repairForm,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+ck339(str_contains($repairUi,'RCC_PreviewKnxStatusRepair')
+    && str_contains($repairUi,'RCC_ApplyKnxStatusRepair')
+    && str_contains($repairUi,'KnxStatusRepairPreviewText'),
+    'Simple configurator must expose a guarded preview/apply inside diagnosis panel');
+IPS_SetScriptContent(41,$editBeforeRepair."\n");
+ob_start();$mod->ApplyKnxStatusRepair();$staleOutcome=ob_get_clean();
+ck339(str_contains($staleOutcome,'ABGEBROCHEN')
+    && IPS_GetScriptContent(41)===$editBeforeRepair."\n"
+    && count($GLOBALS['inventoryScripts'])===$backupsBeforeRepair,
+    'A concurrent EDIT change must abort even with a valid stored preview');
+IPS_SetScriptContent(41,$editBeforeRepair);
+ob_start();$mod->PreviewKnxStatusRepair();ob_end_clean();
+ob_start();$mod->ApplyKnxStatusRepair();$repairOutcome=ob_get_clean();
+$repaired=require $GLOBALS['inventoryDir'].'/scripts/41.php';
+$actual=$repaired['wc']['domains']['jalousie']['fenster'];
+$originalLeaf=$repairFixture['wc']['domains']['jalousie']['fenster'];
+ck339(str_contains($repairOutcome,'ERFOLG: 1')
+    && $actual['ai']['stateMapping']===['open'=>1,'closed'=>2]
+    && $actual['ai']['variables']===$originalLeaf['ai']['variables']
+    && ($actual['ai']['review']['status']??'')==='pending'
+    && $actual['kiEnabled']===$originalLeaf['kiEnabled']
+    && $actual['kiReadOnly']===$originalLeaf['kiReadOnly']
+    && IPS_GetScriptContent(40)===$prodBeforeRepair
+    && count($GLOBALS['inventoryScripts'])===$backupsBeforeRepair+1,
+    'Only status mapping in EDIT may change; roles, KI rights and PROD must not change');
+$backupKey=array_key_last($GLOBALS['inventoryScripts']);
+ck339(IPS_GetScriptContent($backupKey)===$editBeforeRepair,
+    'EDIT backup must preserve the exact original PHP source');
+$repaired['wc']['domains']['jalousie']['fenster']['ai']['stateMapping']=['open'=>3,'closed'=>4];
+IPS_SetScriptContent(41,'<?php return '.var_export($repaired,true).';');
+ob_start();$mod->PreviewKnxStatusRepair();ob_end_clean();
+$custom=json_decode($mod->ReadAttributeString('KnxStatusRepairPreview'),true,512,JSON_THROW_ON_ERROR);
+ck339(($custom['plan']??[])===[],
+    'Custom non-legacy 3/4 mapping must NEVER be silently rewritten');
 
 foreach(array_keys($GLOBALS['inventoryScripts']) as $id) @unlink($GLOBALS['inventoryDir'].'/scripts/'.$id.'.php');
 @rmdir($GLOBALS['inventoryDir'].'/scripts');@rmdir($GLOBALS['inventoryDir']);
