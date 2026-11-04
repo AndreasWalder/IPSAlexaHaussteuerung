@@ -18,6 +18,53 @@ function iah_rc_norm(string $text): string
     return trim(preg_replace('/[^a-z0-9]+/u', ' ', str_replace(
         ['ä', 'ö', 'ü', 'ß'], ['ae', 'oe', 'ue', 'ss'], $text)) ?? '');
 }
+/** V3.4: Explizite Rollen; Steuerbefehle sind keine bestaetigten Istwerte. */
+function iah_rc_type_roles(): array
+{
+    return [
+        'light'=>['power','status','control'],
+        'dimmer'=>['power','brightness','status','control'],
+        'blind'=>['position','targetPosition','tilt','status','moving','action','control'],
+        'heating'=>['temperature','targetTemperature','control'],
+        'window'=>['open','status'],
+        'switch'=>['power','powerWatts','energy','status','control'],
+        'energy'=>['powerWatts','energy','status'],
+        'motion'=>['motion','status'],
+        'illuminance'=>['illuminance'],
+        'fan'=>['power','control'],
+        'generic'=>['power','status','action','control']
+    ];
+}
+function iah_rc_aliases(mixed $aliases): array
+{
+    if (is_string($aliases)) $aliases = explode(',', $aliases);
+    if (!is_array($aliases)) return [];
+    return array_values(array_filter(array_map(
+        static fn($value): string => is_string($value) ? trim($value) : '', $aliases
+    ), static fn(string $value): bool => $value !== ''));
+}
+/** Keine freien KNX-Befehle/Enums: nur sichere, explizite Zielrollen. */
+function iah_rc_write_roles(string $type, array $ids): array
+{
+    $candidates = match ($type) {
+        'light','switch','fan' => ['power'=>'control'],
+        'dimmer' => ['power'=>'control','brightness'=>'brightness'],
+        'heating' => ['targetTemperature'=>'targetTemperature'],
+        'blind' => ['targetPosition'=>'targetPosition'],
+        default => []
+    };
+    $writable = [];
+    foreach ($candidates as $role => $source) {
+        $id = (int)($ids[$source] ?? 0);
+        if ($id <= 0 || !IPS_VariableExists($id) || !function_exists('HasAction') || !HasAction($id)) continue;
+        $variableType = (int)(IPS_GetVariable($id)['VariableType'] ?? -1);
+        if ($role === 'power' ? $variableType !== 0 : !in_array($variableType,[1,2],true)) continue;
+        // Insbesondere Jalousie-Fahraktion und Istposition niemals als Sollposition verwenden.
+        if ($type === 'blind' && ($id === ($ids['position'] ?? 0) || $id === ($ids['action'] ?? 0))) continue;
+        $writable[$role] = $id;
+    }
+    return $writable;
+}
 function iah_rc_index(int $scriptId): array
 {
     if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) throw new RuntimeException('RoomsCatalog-Skript fehlt');
@@ -28,21 +75,33 @@ function iah_rc_index(int $scriptId): array
     if (!is_array($rooms)) throw new RuntimeException('RoomsCatalog ist ungültig');
     if (is_array($rooms['rooms'] ?? null)) $rooms = $rooms['rooms'];
     $devices = [];
+    $knownTypes = iah_rc_type_roles();
     foreach ($rooms as $roomKey => $room) {
         if (!is_array($room) || $roomKey === 'global') continue;
         $roomName = (string)($room['display'] ?? $roomKey);
         $floor = (string)($room['floor'] ?? '');
+        $roomAliases = iah_rc_aliases($room['aliases'] ?? []);
         $domains = (array)($room['domains'] ?? []);
         foreach ($domains as $domain => $groups) {
             if (!is_array($groups)) continue;
-            $sets = [];
-            if (in_array($domain, ['heizung', 'jalousie'], true)) $sets[$domain] = $groups;
-            if ($domain === 'licht') foreach (['switches', 'dimmers', 'status'] as $g)
-                if (is_array($groups[$g] ?? null)) $sets[$g] = $groups[$g];
-            if ($domain === 'lueftung' && is_array($groups['fans'] ?? null)) $sets['fans'] = $groups['fans'];
+            // Heizung/Jalousie sind flach; alle anderen Geraetebereiche gruppiert.
+            $sets = in_array($domain, ['heizung','jalousie'], true) ? [$domain=>$groups] : [];
+            if ($sets === []) foreach ($groups as $group => $items)
+                if (is_array($items)) $sets[(string)$group] = $items;
             foreach ($sets as $group => $items) {
                 foreach ($items as $key => $dev) {
                     if (!is_array($dev) || (array_key_exists('kiEnabled',$dev) && !$dev['kiEnabled'])) continue;
+                    $ai = is_array($dev['ai'] ?? null) ? $dev['ai'] : [];
+                    $type = (string)($ai['type'] ?? '');
+                    $typed = isset($knownTypes[$type]) && (int)($ai['version'] ?? 0) === 1
+                        && is_array($ai['variables'] ?? null);
+                    // Ein explizites, aber unbekanntes Schema niemals als Legacy interpretieren.
+                    if (array_key_exists('type',$ai) && !$typed) continue;
+                    $legacy = ($domain === 'licht' && in_array($group,['switches','dimmers','status'],true))
+                        || ($domain === 'heizung' && $group === 'heizung')
+                        || ($domain === 'jalousie' && $group === 'jalousie')
+                        || ($domain === 'lueftung' && $group === 'fans');
+                    if (!$typed && !$legacy) continue;
                     $readFields = match ($group) {
                         'heizung' => ['ist','soll','eingestellt'],
                         'jalousie' => ['wert'],
@@ -50,28 +109,55 @@ function iah_rc_index(int $scriptId): array
                         'status' => ['value'],
                         default => ['state','value']
                     };
-                    $readId = 0;
-                    foreach ($readFields as $field) if ((int)($dev[$field] ?? 0) > 0) {
-                        $readId = (int)$dev[$field]; break;
+                    $reads = [];
+                    $writeRoles = [];
+                    if ($typed) {
+                        $mapped = [];
+                        foreach ($knownTypes[$type] as $role) {
+                            $variableId = $ai['variables'][$role] ?? null;
+                            if ((!is_int($variableId) && !(is_string($variableId) && ctype_digit($variableId)))
+                                || (int)$variableId <= 0 || !IPS_VariableExists((int)$variableId)) continue;
+                            $mapped[$role] = (int)$variableId;
+                        }
+                        foreach ($mapped as $role => $variableId)
+                            if (!in_array($role,['action','control'],true)) $reads[$role] = $variableId;
+                        // Ein Fan mit nur control meldet einen Befehlswert, keinen Istzustand.
+                        if ($type === 'fan' && !isset($reads['power']) && isset($mapped['control']))
+                            $reads['commandValue'] = $mapped['control'];
+                        if ($reads === []) continue;
+                        if (($ai['review']['status'] ?? '') === 'confirmed'
+                            && ($dev['kiEnabled'] ?? false) === true
+                            && array_key_exists('kiReadOnly',$dev) && $dev['kiReadOnly'] === false)
+                            $writeRoles = iah_rc_write_roles($type,$mapped);
+                        $readId = (int)reset($reads);
+                    } else {
+                        $readId = 0;
+                        foreach ($readFields as $field) if ((int)($dev[$field] ?? 0) > 0) {
+                            $readId = (int)$dev[$field]; break;
+                        }
                     }
                     if ($readId <= 0 || !IPS_VariableExists($readId)) continue;
-                    $writeId = match ($group) {
+                    $writeId = $typed ? (int)(reset($writeRoles) ?: 0) : match ($group) {
                         'switches', 'fans' => (int)($dev['toggle'] ?? 0),
                         'dimmers' => (int)($dev['set'] ?? 0),
                         'heizung' => (int)($dev['soll'] ?? $dev['eingestellt'] ?? 0),
                         default => 0
                     };
-                    $writable = array_key_exists('kiReadOnly',$dev) && !$dev['kiReadOnly']
+                    $writable = $typed ? $writeRoles !== [] : (array_key_exists('kiReadOnly',$dev) && !$dev['kiReadOnly']
                         && in_array($group,['switches','fans','dimmers','heizung'],true)
                         && $writeId > 0 && IPS_VariableExists($writeId)
-                        && function_exists('HasAction') && HasAction($writeId);
+                        && function_exists('HasAction') && HasAction($writeId));
                     $id = (string)$roomKey . '/' . $domain . '/' . $group . '/' . $key;
                     $devices[$id] = [
                         'id' => $id, 'name' => (string)($dev['title'] ?? $key),
                         'room' => $roomName, 'roomKey' => (string)$roomKey,
                         'floor' => $floor, 'domain' => (string)$domain, 'group' => (string)$group,
-                        'synonyms' => array_filter(array_map('trim',explode(',',(string)($dev['synonyms'] ?? '')))),
+                        'roomAliases' => $roomAliases,
+                        'synonyms' => iah_rc_aliases($dev['synonyms'] ?? ''),
                         'read' => $readId, 'write' => $writeId, 'writable' => $writable,
+                        'typed' => $typed, 'type' => $typed ? $type : (string)$group,
+                        'reads' => $reads, 'writeRoles' => $writeRoles,
+                        'stateMapping' => $typed && is_array($ai['stateMapping'] ?? null) ? $ai['stateMapping'] : [],
                         'setpoint' => (int)($dev['eingestellt'] ?? $dev['soll'] ?? 0),
                         'min' => is_numeric($dev['min'] ?? null) ? (float)$dev['min'] : null,
                         'max' => is_numeric($dev['max'] ?? null) ? (float)$dev['max'] : null
@@ -89,12 +175,12 @@ function iah_rc_find(array $devices, array $filters): array
     if ($deviceKey !== '') return isset($devices[$deviceKey]) ? [$devices[$deviceKey]] : [];
     foreach ($devices as $dev) {
         $ok = true;
-        foreach (['name','room','floor','domain','group'] as $field) {
+        foreach (['name','room','floor','domain','group','type'] as $field) {
             $wanted = iah_rc_norm((string)($filters[$field] ?? ''));
             if ($wanted === '' || $wanted === 'all' || $wanted === 'alle') continue;
             $choices = $field === 'name'
                 ? array_merge([$dev['name'],$dev['id']],$dev['synonyms'])
-                : ($field === 'room' ? [$dev['room'],$dev['roomKey']] : [$dev[$field]]);
+                : ($field === 'room' ? array_merge([$dev['room'],$dev['roomKey']],$dev['roomAliases'] ?? []) : [$dev[$field]]);
             $match = false;
             foreach ($choices as $choice) {
                 $value = iah_rc_norm((string)$choice);
@@ -108,28 +194,81 @@ function iah_rc_find(array $devices, array $filters): array
 }
 function iah_rc_state(array $dev): array
 {
-    $v = GetValue($dev['read']);
+    $v = !empty($dev['typed']) ? null : GetValue($dev['read']);
     $state = is_bool($v) ? ($v ? 'an' : 'aus') : $v;
     $out = ['deviceKey'=>$dev['id'],'name'=>$dev['name'],'room'=>$dev['room'],
-        'floor'=>$dev['floor'],'type'=>$dev['group'],'state'=>$state,'writable'=>$dev['writable']];
+        'floor'=>$dev['floor'],'type'=>$dev['type'] ?? $dev['group'],'state'=>$state,'writable'=>$dev['writable']];
+    if (!empty($dev['typed'])) {
+        $properties=[];
+        foreach ($dev['reads'] as $role=>$id) {
+            if (!IPS_VariableExists($id)) continue;
+            try { $raw=GetValue($id); } catch (Throwable $e) { continue; }
+            $mapped=$raw;
+            $meanings = match ($dev['type']) {
+                'blind','window' => in_array($role,['status','open'],true)
+                    ? ['open'=>'offen','closed'=>'geschlossen'] : [],
+                'light','dimmer','switch','motion' => in_array($role,['power','status','motion'],true)
+                    ? ['on'=>'an','off'=>'aus'] : [],
+                default => []
+            };
+            foreach ($meanings as $key=>$label) {
+                $expected=$dev['stateMapping'][$key] ?? null;
+                if ($expected !== null && get_debug_type($expected) === get_debug_type($raw) && $expected === $raw) {
+                    $mapped=$label;
+                    break;
+                }
+            }
+            if (is_bool($mapped) && in_array($role,['power','motion','commandValue'],true))
+                $mapped=$mapped ? 'an' : 'aus';
+            $properties[$role]=$mapped;
+        }
+        $out['properties']=$properties;
+        $out['availableProperties']=array_keys($properties);
+        $firstRole=array_key_first($dev['reads']);
+        $out['state']=$properties[$firstRole] ?? 'nicht verfügbar';
+        if (isset($properties['commandValue']) && !isset($properties['power'])) {
+            $out['state']='Istzustand nicht bestätigt';
+            $out['stateSource']='nur Steuerungswert';
+        }
+        return $out;
+    }
     if ($dev['group'] === 'heizung' && $dev['setpoint'] > 0 && IPS_VariableExists($dev['setpoint']))
         $out['targetTemperature'] = GetValue($dev['setpoint']);
     return $out;
 }
-function iah_rc_write(array $dev, mixed $value): array
+function iah_rc_write(array $dev, mixed $value, string $property = ''): array
 {
     if (!$dev['writable']) return ['ok'=>false,'reason'=>'Dieses Gerät ist nur lesbar'];
-    $id = (int)$dev['write'];
+    if (!empty($dev['typed'])) {
+        $roles=$dev['writeRoles'];
+        if ($property === '') {
+            if (count($roles) === 1) $property=(string)array_key_first($roles);
+            elseif (is_bool($value) && isset($roles['power'])) $property='power';
+            elseif (is_numeric($value) && !is_bool($value) && isset($roles['brightness'])) $property='brightness';
+        }
+        if (!array_key_exists($property,$roles))
+            return ['ok'=>false,'reason'=>'Eigenschaft ist nicht eindeutig oder nicht zum Schalten freigegeben'];
+        $id=(int)$roles[$property];
+    } else {
+        if ($property !== '') return ['ok'=>false,'reason'=>'Eigenschaften nur bei typisierten Geräten unterstützt'];
+        $id=(int)$dev['write'];
+    }
     if (!IPS_VariableExists($id) || !HasAction($id)) return ['ok'=>false,'reason'=>'Keine Schaltaktion'];
     $type = (int)(IPS_GetVariable($id)['VariableType'] ?? -1);
-    if (in_array($dev['group'],['switches','fans'],true)) {
+    $role = !empty($dev['typed']) ? $property : $dev['group'];
+    if (in_array($role,['switches','fans','power'],true)) {
         if ($type !== 0 || !is_bool($value)) return ['ok'=>false,'reason'=>'Booleanwert erwartet'];
-    } elseif (in_array($dev['group'],['dimmers','heizung'],true)) {
+    } elseif (in_array($role,['dimmers','heizung','brightness','targetTemperature','targetPosition'],true)) {
         if (!in_array($type,[1,2],true) || !is_numeric($value) || is_bool($value))
             return ['ok'=>false,'reason'=>'Numerischer Sollwert erwartet'];
         $num=(float)$value;
-        $min=$dev['min'] ?? ($dev['group']==='dimmers'?0:6);
-        $max=$dev['max'] ?? ($dev['group']==='dimmers'?100:30);
+        if (!empty($dev['typed'])) {
+            $min=$role==='targetTemperature'?6:0;
+            $max=$role==='targetTemperature'?30:100;
+        } else {
+            $min=$dev['min'] ?? ($dev['group']==='dimmers'?0:6);
+            $max=$dev['max'] ?? ($dev['group']==='dimmers'?100:30);
+        }
         if (!is_finite($num) || $num<$min || $num>$max)
             return ['ok'=>false,'reason'=>'Wert liegt außerhalb des erlaubten Bereichs'];
         $value=$type===1?(int)round($num):$num;
@@ -148,23 +287,33 @@ function iah_rc_tool(array $devices, string $name, array $args, bool $allowWrite
         $found=iah_rc_find($devices,$args);
         return ['count'=>count($found),'truncated'=>count($found)>60,
             'devices'=>array_map(static fn($d):array=>['deviceKey'=>$d['id'],'name'=>$d['name'],
-                'room'=>$d['room'],'type'=>$d['group'],'writable'=>$d['writable']],array_slice($found,0,60))];
+                'room'=>$d['room'],'type'=>$d['type'],'writable'=>$d['writable'],
+                'properties'=>array_keys($d['reads']),
+                'writableProperties'=>array_keys($d['writeRoles'])],array_slice($found,0,60))];
     }
     if ($name === 'get_states') {
-        $found=iah_rc_find($devices,$args);$active=0;$entries=[];$onlyActive=(bool)($args['only_active']??false);
+        $found=iah_rc_find($devices,$args);$active=0;$entries=[];$eligible=0;
+        $onlyActive=(bool)($args['only_active']??false);
         foreach ($found as $dev) {
-            $row=iah_rc_state($dev);$on=$row['state']==='an';if($on)$active++;
-            if (!$onlyActive || $on) if(count($entries)<60)$entries[]=$row;
+            $row=iah_rc_state($dev);
+            $on=$row['state']==='an'
+                || in_array('an',array_intersect_key((array)($row['properties']??[]),
+                    array_flip(['power','motion'])),true);
+            if($on)$active++;
+            if (!$onlyActive || $on) {
+                $eligible++;
+                if(count($entries)<60)$entries[]=$row;
+            }
         }
         return ['matched'=>count($found),'activeBooleanDevices'=>$active,
-            'shown'=>count($entries),'truncated'=>count($found)>count($entries),
+            'shown'=>count($entries),'truncated'=>$eligible>count($entries),
             'devices'=>$entries];
     }
     if (!$allowWrites) return ['ok'=>false,'reason'=>'KI-Schaltbefehle global nicht freigegeben'];
     if ($name === 'set_device') {
         $found=iah_rc_find($devices,$args);
         if (count($found)!==1) return ['ok'=>false,'reason'=>count($found)?'Gerätename ist mehrdeutig':'Gerät nicht gefunden','matches'=>count($found)];
-        return iah_rc_write($found[0],$args['value']??null);
+        return iah_rc_write($found[0],$args['value']??null,(string)($args['property']??''));
     }
     if ($name === 'set_multiple') {
         if (!preg_match('/\b(alle|alles|sämtliche|saemtliche|gesamten)\b/ui',$spoken))
@@ -238,17 +387,18 @@ function iah_rc_voice(string $text,array $cfg): array
         $props=[
             'deviceKey'=>['type'=>'string'],'name'=>['type'=>'string'],'room'=>['type'=>'string'],
             'floor'=>['type'=>'string'],'domain'=>['type'=>'string'],'group'=>['type'=>'string'],
+            'type'=>['type'=>'string'],
         ];
         $make=static fn(string $n,string $d,array $p):array=>['type'=>'function','function'=>[
             'name'=>$n,'description'=>$d,'parameters'=>['type'=>'object','properties'=>$p]]];
         $tools=[
-            $make('get_states','Liest aktuelle Gerätezustände; für eingeschaltete Lichter domain=licht, only_active=true.',
+            $make('get_states','Liest aktuelle Geraete-Eigenschaften aus RoomsCatalog PROD: z.B. Temperatur, Sollwert, Position, Status, Lux und Verbrauch. Nur explizite Rueckmeldungen sind Istwerte. Fuer eingeschaltete Lichter domain=licht und only_active=true.',
                 $props+['only_active'=>['type'=>'boolean']]),
-            $make('get_devices','Listet Geräte mit eindeutigen deviceKeys und Schreibrechten.',$props)
+            $make('get_devices','Listet Geraete mit eindeutigen deviceKeys, verfuegbaren Eigenschaften und freigegebenen Schreib-Eigenschaften.',$props)
         ];
         if($allowWrites){
-            $tools[]=$make('set_device','Schaltet EIN einzelnes ausdrücklich freigegebenes Gerät. Boolean für Licht/Lüfter, Zahlen für Dimmer/Heizung. Gerät eindeutig angeben.',
-                $props+['value'=>['type'=>['boolean','number']]]);
+            $tools[]=$make('set_device','Aendert EIN eindeutig bestimmtes, explizit freigegebenes und fachlich bestaetigtes Geraet. property optional: power als Boolean, brightness/targetPosition 0-100, targetTemperature 6-30. Zuerst get_devices fuer deviceKey und writableProperties. Keine KNX-Fahrbefehle oder frei erfundenen IDs.',
+                $props+['property'=>['type'=>'string'],'value'=>['type'=>['boolean','number']]]);
             $tools[]=$make('set_multiple','Schaltet bis zu 15 freigegebene Lampen/Lüfter, nur wenn der Nutzer ausdrücklich ALLE verlangt.',
                 $props+['value'=>['type'=>'boolean']]);
         }
@@ -256,7 +406,7 @@ function iah_rc_voice(string $text,array $cfg): array
         $uiDomain=preg_match('/^[a-z0-9_-]{2,50}$/D',$uiDomain) ? $uiDomain : '';
         $uiHint=$uiDomain!=='' ? ' Aktueller Alexa-UI-Bereich: '.$uiDomain.'. Dieser Bereich ist ausschließlich ein Kontext für unvollständige Fragen und gewährt keine Schreibrechte.' : '';
         $messages=[
-            ['role'=>'system','content'=>'Du bist eine deutsche Alexa-Haussteuerung. Alle Hausdaten nur über die Werkzeuge. Keine erfundenen Geräte, keine Schaltbestätigung ohne Werkzeugerfolg. Maximal '.$maxWords.' Wörter, ein kurzer deutscher Satz. Bei Abfragen niemals schalten. Bei unklaren Geräten nachfragen. Eine an IP-Symcon gesendete Aktion ist noch keine bestätigte Rückmeldung.'.$uiHint],
+            ['role'=>'system','content'=>'Du bist eine deutsche Alexa-Haussteuerung. Alle Hausdaten nur ueber die Werkzeuge aus RoomsCatalog PROD. Geraete koennen mehrere Eigenschaften besitzen; Status, Sollwert und Steuerbefehl unterscheiden. Ein reiner Steuerwert ist KEIN bestaetigter Istzustand. Keine erfundenen Geraete oder Einheiten, keine Schaltbestaetigung ohne Werkzeugerfolg. Maximal '.$maxWords.' Woerter, ein kurzer deutscher Satz. Bei Abfragen niemals schalten. Bei unklaren Geraeten nachfragen. Eine an IP-Symcon gesendete Aktion ist noch keine bestaetigte Rueckmeldung.'.$uiHint],
             ['role'=>'user','content'=>mb_substr($text,0,500,'UTF-8')]
         ];
         for($round=0;$round<2;$round++){
