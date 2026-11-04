@@ -86,22 +86,11 @@ $mod->properties = [
 $mod->WriteAttributeString('RuntimeEntries', '[]');
 $mod->WriteAttributeString('FilterAI', 'all');
 $form = json_decode($mod->GetConfigurationForm(), true, 512, JSON_THROW_ON_ERROR);
-$panel = null;
-$findInventory33=function(array $nodes)use(&$findInventory33,&$panel):void {
-    foreach ($nodes as $node) {
-        if (($node['caption']??'')==='IP-Symcon-Geraeteinventur') $panel=$node;
-        if (isset($node['items']) && is_array($node['items'])) $findInventory33($node['items']);
-    }
-};
-$findInventory33($form['elements']);
-check33(is_array($panel) && ($panel['expanded'] ?? true) === false,
-    'V3.3 discovery must remain available collapsed for future devices');
-$panelJson = json_encode($panel, JSON_THROW_ON_ERROR);
-foreach (['DiscoveryRootId','DiscoveryExtraRootIds','DiscoveredDevices','RCC_ScanNewDevices',
-    'RCC_UpdateDiscoveryCandidate','RCC_SelectDiscoveredDevices','RCC_ApplyDiscoveredDevices',
-    'RCC_AuditDiscoveryCoverage','DiscoverySummary'] as $part) {
-    check33(str_contains($panelJson, $part), 'V3.3 editor missing: ' . $part);
-}
+$ui=json_encode($form,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+check33(!str_contains($ui,'IP-Symcon-Geraeteinventur')
+    && !str_contains($ui,'RCC_ScanNewDevices')
+    && str_contains($ui,'EDIT NACH PROD UEBERNEHMEN'),
+    'Discovery controls must be absent from simplified UI while APIs remain callable');
 
 $editBefore = IPS_GetScriptContent(31);
 ob_start(); $mod->ScanNewDevices(); $scanMessage = ob_get_clean();
