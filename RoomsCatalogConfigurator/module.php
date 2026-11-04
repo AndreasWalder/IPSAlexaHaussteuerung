@@ -3376,7 +3376,53 @@ class RoomsCatalogConfigurator extends IPSModule
      * publication blocker. Reuse existing validation reasons so that red
      * rows explain WHY they are highlighted.
      */
-    private function catalogCheckHint(array $row): array
+    /**
+     * Cross-device KNX feedback audit (catalog bindings only).
+     * The same IPS ID may intentionally represent a group controller, so
+     * this is a *warning*, never an automatic write or publish blocker.
+     */
+    private function sharedFeedbackAssignments(array $rows): array
+    {
+        $index=[];
+        foreach ($rows as $row) {
+            if ((string)($row['aiType']??'')!=='blind') continue;
+            $key=$this->buildCompositeKey($row);
+            if ($key===null) continue;
+            $ai=$row['ai']??[];
+            if (is_string($ai)) $ai=json_decode($ai,true)??[];
+            $bindings=is_array($ai) && is_array($ai['variables']??null)
+                ? $ai['variables'] : [];
+            foreach (['status','position','tilt'] as $role) {
+                $id=(int)($bindings[$role]??0);
+                if ($id<=0) continue;
+                $index[$id.'|'.$role][$key]=[
+                    'path'=>$key,'room'=>(string)($row['roomLabel']??$row['roomKey']??''),
+                    'device'=>(string)($row['title']??$row['key']??''),
+                    'role'=>$role,'id'=>$id
+                ];
+            }
+        }
+        $warnings=[];
+        $byDevice=[];
+        foreach ($index as $members) {
+            if (count($members)<2) continue;
+            $sample=reset($members);
+            $warning=[
+                'id'=>$sample['id'],'role'=>$sample['role'],
+                'devices'=>array_values($members),
+                'reason'=>'Mehrere unterschiedliche Jalousien verwenden dieselbe KNX-'
+                    .$sample['role'].'-Rueckmeldung #'.$sample['id']
+                    .'. Nur bei nachweislich gemeinsamem Geraet korrekt.'
+            ];
+            $warnings[]=$warning;
+            foreach ($members as $member) {
+                $byDevice[$member['path']][]=$warning['reason'];
+            }
+        }
+        return ['groups'=>$warnings,'byDevice'=>$byDevice];
+    }
+
+    private function catalogCheckHint(array $row,array $sharedWarnings=[]): array
     {
         $errors=$this->validateEntries([$row]);
         $notes=array_map(static function(string $error): string {
@@ -3389,10 +3435,20 @@ class RoomsCatalogConfigurator extends IPSModule
             }
             return $text;
         },$errors);
-        if ($notes===[]) return [
-            'status'=>'OK', 'reason'=>'Keine offensichtlichen Konfigurationsprobleme erkannt.',
-            'severity'=>'ok','codes'=>[]
-        ];
+        if ($notes===[]) {
+            if ($sharedWarnings!==[]) {
+                return [
+                    'status'=>'Pruefen (Mehrfach-ID)',
+                    'reason'=>implode('; ',array_unique($sharedWarnings)),
+                    'severity'=>'warning','codes'=>$sharedWarnings
+                ];
+            }
+            return [
+                'status'=>'OK','reason'=>'Keine offensichtlichen Konfigurationsprobleme erkannt.',
+                'severity'=>'ok','codes'=>[]
+            ];
+        }
+        $notes=array_merge($notes,$sharedWarnings);
         // Optional/demonstrably missing status semantics are an advisory;
         // non-existing variables, unsafe writable rights are critical.
         $onlySemantics=count(array_filter($notes,static fn(string $v): bool=>
@@ -3424,12 +3480,17 @@ class RoomsCatalogConfigurator extends IPSModule
             $editCatalog=$this->loadRoomsCatalog($editId,'EDIT');
             $prodCatalog=$this->loadRoomsCatalog($prodId,'PROD');
             $rows=$this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($editCatalog));
+            $shared=$this->sharedFeedbackAssignments($rows);
             $stats=['total'=>count($rows),'ok'=>0,'warning'=>0,'error'=>0,
                 'technicallyPlausible'=>0,'technicallyNeedsReview'=>0,'technicallyInvalid'=>0,
-                'notManuallyConfirmed'=>0];
+                'notManuallyConfirmed'=>0,
+                'sharedFeedbackGroups'=>count($shared['groups']),
+                'devicesWithSharedFeedback'=>count($shared['byDevice'])];
             $problems=[];
             foreach ($rows as $row) {
-                $hint=$this->catalogCheckHint($row);
+                $path=$this->buildCompositeKey($row);
+                $sharedWarnings=$shared['byDevice'][(string)$path]??[];
+                $hint=$this->catalogCheckHint($row,$sharedWarnings);
                 $technical=$this->assessTechnicalDevice($row);
                 $status=(string)($technical['status']??'Manuell pruefen');
                 if ($status==='Technisch plausibel') $stats['technicallyPlausible']++;
@@ -3464,6 +3525,24 @@ class RoomsCatalogConfigurator extends IPSModule
                             ? HasAction($n)
                             : ((int)($v['VariableCustomAction']??0)>0
                                 || (int)($v['VariableAction']??0)>0);
+                        $binding['associations']=[];
+                        if ($binding['profile']!=='' && function_exists('IPS_GetVariableProfile')) {
+                            try {
+                                $profileData=IPS_GetVariableProfile($binding['profile']);
+                                foreach (array_slice((array)($profileData['Associations']??[]),0,32)
+                                    as $association) {
+                                    if (!is_array($association)) continue;
+                                    $value=$association['Value']??null;
+                                    if (!is_int($value) && !is_float($value) && !is_string($value)) continue;
+                                    $binding['associations'][]=[
+                                        'value'=>$value,
+                                        'name'=>mb_substr((string)($association['Name']??''),0,80)
+                                    ];
+                                }
+                            } catch (\Throwable $ignored) {
+                                // A missing profile is diagnostic, not a catalog failure.
+                            }
+                        }
                     }
                     $bindings[]=$binding;
                 }
@@ -3477,6 +3556,9 @@ class RoomsCatalogConfigurator extends IPSModule
                     'technicalStatus'=>$status,
                     'technicalReasons'=>(string)($technical['reason']??''),
                     'technicalIssueCodes'=>array_values((array)($technical['issueCodes']??[])),
+                    'statusSemanticEvidence'=>(string)($technical['statusSemanticEvidence']??''),
+                    'positionFeedbackIndependent'=>!empty($technical['positionFeedbackIndependent']),
+                    'sharedFeedbackWarnings'=>$sharedWarnings,
                     'capability'=>(string)($technical['capability']??''),
                     'confirmed'=>!empty($row['aiReviewed']),
                     'kiEnabled'=>!empty($row['kiEnabled']),
@@ -3496,17 +3578,20 @@ class RoomsCatalogConfigurator extends IPSModule
                 'statistics'=>$stats,
                 'editProdDifferences'=>$diff,
                 'roomMetadataDifferences'=>$roomDiff,
+                'sharedFeedbackAssignments'=>$shared['groups'],
                 'problems'=>$problems
             ];
             $json=json_encode($report,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE
                 |JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR);
             $summary=sprintf('%d Geraete: %d OK, %d Hinweise, %d Fehler; '
                 .'%d technisch offen/ungueltig; %d Geraete- und %d Raumdifferenzen EDIT/PROD. '
+                .'%d doppelt zugeordnete Rueckmeldegruppen bei %d Geraeten. '
                 .'Die Diagnose kann unten kopiert und hier eingefuegt werden. '
                 .'Keine automatische Korrektur, keine PROD-Sperre.',
                 $stats['total'],$stats['ok'],$stats['warning'],$stats['error'],
                 $stats['technicallyNeedsReview']+$stats['technicallyInvalid'],
-                (int)$diff['total'],count($roomDiff));
+                (int)$diff['total'],count($roomDiff),
+                $stats['sharedFeedbackGroups'],$stats['devicesWithSharedFeedback']);
             $this->WriteAttributeString('CatalogCheckDebugOutput',$json);
             $this->WriteAttributeString('CatalogCheckDebugSummary',$summary);
             $this->UpdateFormField('CatalogCheckDebugOutput','value',$json);
@@ -5003,7 +5088,9 @@ class RoomsCatalogConfigurator extends IPSModule
         }
 
         $visibleProd    = $this->filterByAI($this->applyFilters($entriesEdit, $filterRoom, $filterDomain, $filterGroup), $filterAI);
-        $visibleProd    = array_map(fn(array $r): array => $this->decorateRow($r), $visibleProd);
+        $sharedDisplay=$this->sharedFeedbackAssignments($entriesEdit)['byDevice'];
+        $visibleProd    = array_map(fn(array $r): array => $this->decorateRow($r,
+            $sharedDisplay[(string)$this->buildCompositeKey($r)]??[]), $visibleProd);
         $diffEntriesAll = $this->buildDiffEntries($entriesProd, $entriesEdit);
         $visibleDiff    = $this->filterByAI($this->applyFilters($diffEntriesAll, $filterRoom, $filterDomain, $filterGroup), $filterAI);
         $visibleDiff    = array_map(fn(array $r): array => $this->decorateIpsIds($r), $visibleDiff);
@@ -6861,7 +6948,9 @@ class RoomsCatalogConfigurator extends IPSModule
         }
 
         $visible = $this->filterByAI($this->applyFilters($edit, $room, $domain, $group), $ai);
-        $visible = array_map(fn(array $row): array => $this->decorateRow($row), $visible);
+        $sharedDisplay=$this->sharedFeedbackAssignments($edit)['byDevice'];
+        $visible = array_map(fn(array $row): array => $this->decorateRow($row,
+            $sharedDisplay[(string)$this->buildCompositeKey($row)]??[]), $visible);
         $diff = $this->buildDiffEntries($prod, $edit);
         $visibleDiff = $this->filterByAI($this->applyFilters($diff, $room, $domain, $group), $ai);
         $visibleDiff = array_map(fn(array $row): array => $this->decorateIpsIds($row), $visibleDiff);
@@ -6941,13 +7030,13 @@ class RoomsCatalogConfigurator extends IPSModule
         }));
     }
 
-    private function decorateRow(array $row): array
+    private function decorateRow(array $row,array $sharedWarnings=[]): array
     {
         $enabled = !empty($row['kiEnabled']);
         $readOnly = !empty($row['kiReadOnly']);
         $row['kiStatus'] = !$enabled ? 'Ohne KI' : ($readOnly ? 'Nur lesen' : 'Schaltbar');
         $row['rowColor'] = !$enabled ? '#EEEEEE' : ($readOnly ? '#E2F2FF' : '#DDF4DE');
-        $check=$this->catalogCheckHint($row);
+        $check=$this->catalogCheckHint($row,$sharedWarnings);
         $row['checkStatus']=$check['status'];
         $row['checkDetails']=$check['reason'];
         if ($check['severity']==='error') {

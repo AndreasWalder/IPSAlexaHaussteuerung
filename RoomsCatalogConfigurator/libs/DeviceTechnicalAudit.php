@@ -68,7 +68,15 @@ final class RCCDeviceTechnicalAudit
             }
             $v = $snapshot[$id];
             $typeCode = (int)($v['type'] ?? -1);
-            if (!in_array($typeCode,self::VALID_TYPES[$role] ?? [],true)) {
+            $profile = strtolower((string)($v['profile'] ?? ''));
+            // KNX-Dimmer often have ONE percentage variable (~Intensity.100)
+            // for both brightness and the logical on/off reading.
+            $sharedDimmerIntensity=$type==='dimmer'
+                && in_array($typeCode,[1,2],true)
+                && (int)($configured['brightness']??0)===$id
+                && self::isIntensityProfile($profile);
+            if (!in_array($typeCode,self::VALID_TYPES[$role] ?? [],true)
+                && !($role==='power' && $sharedDimmerIntensity)) {
                 $reasons[] = 'Datentyp von #' . $id . ' passt nicht zu ' . $role;
                 $issueCodes['wrong_type'] = true;
                 $critical = true;
@@ -92,7 +100,11 @@ final class RCCDeviceTechnicalAudit
                     ['control','power'], ['brightness','control'], ['control','status'],
                     ['control','targetTemperature']
                 ];
+                $sharedDimmerRole=$sharedDimmerIntensity
+                    && in_array($used[$id],['power','brightness','status'],true)
+                    && in_array($role,['power','brightness','status'],true);
                 if (!in_array($pair,$allowedShared,true)
+                    && !$sharedDimmerRole
                     && !(in_array($pair,$sharedAction,true) && !empty($v['action']))) {
                     $reasons[] = 'Variable #' . $id . ' mehrfach benutzt: ' . $used[$id] . '/' . $role;
                     $issueCodes['duplicate_mapping'] = true;
@@ -107,6 +119,7 @@ final class RCCDeviceTechnicalAudit
             // die fachliche Kontrolle weiterhin offen.
             $roleProfiles = [
                 'power'=>['switch','bool'],
+                'tilt'=>['lamella','lamelle','tilt'],
                 'control'=>['switch','bool','intensity','steuerung'],
                 'brightness'=>['intensity','brightness','dimm'],
                 'temperature'=>['temperature','temp','heizung'],
@@ -114,11 +127,10 @@ final class RCCDeviceTechnicalAudit
                 'motion'=>['motion','bewegung'],
                 'illuminance'=>['illumination','lux','illuminance'],
                 'action'=>['steuerung','shutter','blind','rolladen'],
-                'position'=>['shutterposition','behangposition'],
+                'position'=>['shutterposition','behangposition','shutter','position','rolladen','jalousie'],
                 'open'=>['contact','fenster'],
-                'status'=>['switch','motion','temperature','shutter','blind'],
+                'status'=>['switch','motion','temperature','shutter','blind','rolladen','jalousie'],
             ];
-            $profile = strtolower((string)($v['profile'] ?? ''));
             $profileMatches = false;
             foreach ($roleProfiles[$role] ?? [] as $token) {
                 if ($profile !== '' && str_contains($profile,$token)) {
@@ -152,7 +164,10 @@ final class RCCDeviceTechnicalAudit
                     || ($role==='power'
                         && (int)($configured['control']??0)===$id)
                 );
-            if ($fanControlSignal) $profileMatches=true;
+            if ($fanControlSignal || ($sharedDimmerIntensity
+                && in_array($role,['power','brightness','status'],true))) {
+                $profileMatches=true;
+            }
             if ($profileMatches) $rank=max($rank,120);
             if ($rank < 105) {
                 $reasons[] = '#' . $id . ' (' . $role . '): Rolle anhand Name/Profil nicht eindeutig';
@@ -197,38 +212,76 @@ final class RCCDeviceTechnicalAudit
             }
         }
 
-        // A profile-derived association may substantiate numeric enum labels,
-        // but a position (%) alone does not prove 0=open or 100=closed.
+        // KNX has independent roles:
+        // Position = 0..100 percent, Tilt = lamella angle, Action = command,
+        // Status = a (possibly different) enum with profile associations.
+        // Never compare 0/100 *position* against the Status enum or
+        // manufacture missing open/closed values from a percent reading.
+        $positionId=(int)($configured['position']??0);
+        $actionId=(int)($configured['action']??$configured['control']??0);
+        $targetId=(int)($configured['targetPosition']??0);
+        $positionCollides=$positionId>0
+            && ($positionId===$actionId || $positionId===$targetId);
+        if ($type==='blind' && $positionCollides) {
+            $reasons[]='Istposition #'.$positionId.' mit Fahraktion oder Sollposition identisch; echte Rueckmeldung nicht nachgewiesen';
+            $issueCodes['position_command_collision']=true;
+            $uncertain=true;
+        }
+        $positionEvidence=isset($evidence['position'])
+            && !$positionCollides && empty($evidence['position']['action']);
+        $semanticEvidence='not_applicable';
         if (in_array($type,['blind','window'],true)) {
-            $mapping = [
-                'open'=>trim((string)($row['aiOpenValue'] ?? '')),
-                'closed'=>trim((string)($row['aiClosedValue'] ?? ''))
+            $mapping=[
+                'open'=>trim((string)($row['aiOpenValue']??'')),
+                'closed'=>trim((string)($row['aiClosedValue']??''))
             ];
-            $status = $evidence['status'] ?? $evidence['open'] ?? null;
-            $associations = is_array($status) ? (array)($status['associations'] ?? []) : [];
-            if ($mapping['open'] === '' || $mapping['closed'] === ''
-                || $mapping['open'] === $mapping['closed']) {
-                $reasons[]='Offen/Geschlossen-Werte nicht explizit und unterschiedlich hinterlegt';
-                $issueCodes['state_mapping_missing'] = true;
-                $uncertain = true;
-            } elseif ($associations !== []) {
-                $known = [];
-                foreach ($associations as $association) {
-                    if (!is_array($association)) continue;
-                    $value = (string)($association['value'] ?? '');
-                    $label = self::normalize((string)($association['name'] ?? ''));
-                    if ($value === $mapping['open'] && in_array($label,['offen','geoeffnet','open'],true)) $known['open']=true;
-                    if ($value === $mapping['closed'] && in_array($label,['geschlossen','closed'],true)) $known['closed']=true;
+            $discrete=$evidence['status']??$evidence['open']??null;
+            $associations=is_array($discrete)
+                ? (array)($discrete['associations']??[]) : [];
+            $profileStates=self::openClosedAssociationValues($associations);
+            $hasMapping=$mapping['open']!=='' || $mapping['closed']!=='';
+            if ($hasMapping && ($mapping['open']==='' || $mapping['closed']===''
+                || $mapping['open']===$mapping['closed'])) {
+                $reasons[]='Explizite Offen/Geschlossen-Zuordnung ist unvollstaendig oder gleich';
+                $issueCodes['state_mapping_conflict']=true;
+                $uncertain=true;
+                $semanticEvidence='conflict';
+            } elseif ($hasMapping && $profileStates!==[]
+                && ($mapping['open']!==$profileStates['open']
+                    || $mapping['closed']!==$profileStates['closed'])) {
+                $reasons[]='Explizite Offen/Geschlossen-Zuordnung widerspricht KNX-Statusprofil';
+                $issueCodes['state_mapping_conflict']=true;
+                $uncertain=true;
+                $semanticEvidence='conflict';
+            } elseif ($hasMapping && $profileStates!==[]) {
+                $semanticEvidence='profile_confirmed';
+            } elseif ($hasMapping) {
+                $semanticEvidence='unconfirmed';
+                // If a distinct *position* is available this is optional
+                // status semantics; without it, enum meaning must be reviewed.
+                if (!$positionEvidence) {
+                    $reasons[]='Keine Status-Profilassoziationen fuer Offen/Geschlossen; am Geraet pruefen';
+                    $issueCodes['state_associations_missing']=true;
+                    $uncertain=true;
                 }
-                if (count($known) !== 2) {
-                    $reasons[]='Profil-Assoziationen bestaetigen Offen/Geschlossen-Werte nicht';
-                    $issueCodes['state_mapping_conflict'] = true;
-                    $uncertain = true;
+            } elseif ($profileStates!==[]) {
+                // Profile proves the meaning for this audit only; do NOT
+                // write assumed numeric values into the RoomsCatalog.
+                $semanticEvidence='profile_derived_not_saved';
+            } elseif ($discrete!==null) {
+                $semanticEvidence='unconfirmed';
+                if (!$positionEvidence) {
+                    $reasons[]='Offen/Geschlossen ohne eindeutige Profil-Assoziationen';
+                    $issueCodes['state_associations_missing']=true;
+                    $uncertain=true;
                 }
+            } elseif (!$positionEvidence) {
+                $semanticEvidence='missing';
+                $reasons[]='Keine getrennt lesbare Position und keine nachgewiesene Offen/Geschlossen-Rueckmeldung';
+                $issueCodes['state_mapping_missing']=true;
+                $uncertain=true;
             } else {
-                $reasons[]='Keine Profil-Assoziationen fuer Offen/Geschlossen; am realen Geraet pruefen';
-                $issueCodes['state_associations_missing'] = true;
-                $uncertain = true;
+                $semanticEvidence='position_only';
             }
         }
 
@@ -244,11 +297,10 @@ final class RCCDeviceTechnicalAudit
                 : 'ID, Instanz, Datentyp, Rollenname und benoetigte Rueckmeldungen plausibel.',
             'roleCount'=>count($configured),
             'issueCodes'=>array_keys($issueCodes),
-            'manualEligible'=>!$critical && !$missingRequired && !$unusableAction && $configured !== [] && $snapshot !== []
-                && (!in_array($type,['blind','window'],true)
-                    || (trim((string)($row['aiOpenValue'] ?? '')) !== ''
-                        && trim((string)($row['aiClosedValue'] ?? '')) !== ''
-                        && (string)($row['aiOpenValue'] ?? '') !== (string)($row['aiClosedValue'] ?? ''))),
+            'manualEligible'=>!$critical && !$uncertain && !$missingRequired
+                && !$unusableAction && $configured !== [] && $snapshot !== [],
+            'statusSemanticEvidence'=>$semanticEvidence,
+            'positionFeedbackIndependent'=>$positionEvidence,
             'fingerprint'=>$fingerprint,
             'semanticReviewRequired'=>in_array($type,['blind','window'],true)
                 || in_array('action',array_keys($configured),true)
@@ -282,6 +334,39 @@ final class RCCDeviceTechnicalAudit
             return false;
         }
         return $hasReturn;
+    }
+
+    private static function isIntensityProfile(string $profile): bool
+    {
+        return str_contains($profile,'intensity')
+            || str_contains($profile,'brightness') || str_contains($profile,'dimm');
+    }
+
+    /**
+     * Only exact, non-ambiguous enum labels give reliable status meanings.
+     * A numeric percent value from a position variable is NEVER used here.
+     */
+    private static function openClosedAssociationValues(array $associations): array
+    {
+        $values=[];
+        foreach ($associations as $association) {
+            if (!is_array($association)) continue;
+            $label=self::normalize((string)($association['name']??''));
+            $kind=match ($label) {
+                'offen','geoeffnet','open'=>'open',
+                'geschlossen','closed'=>'closed',
+                default=>null
+            };
+            if ($kind===null) continue;
+            $value=$association['value']??null;
+            if (!is_scalar($value) || is_bool($value)) continue;
+            $string=(string)$value;
+            if (isset($values[$kind]) && $values[$kind]!==$string) return [];
+            $values[$kind]=$string;
+        }
+        if (!isset($values['open'],$values['closed'])
+            || $values['open']===$values['closed']) return [];
+        return $values;
     }
 
     private static function normalize(string $text): string
