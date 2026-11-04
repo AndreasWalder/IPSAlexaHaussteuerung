@@ -45,6 +45,13 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
 
 ## Alexa + Home Agent (experimentelle MCP-Sprachantworten)
 
+**V3.4.0 – KI + RoomsCatalog:** Der `KIHouseController` wertet nun die
+typisierten Geräte und mehrere Status-/Mess-/Sollwerte pro Gerät aus,
+einschließlich Fensterkontakten, Bewegungsmeldern, Energiezählern und
+Jalousiepositionen. Neue Schreibaktionen benötigen eine fachliche
+Bestätigung und die bisherigen Freigaben. Siehe
+[V3.4 – Typisierte KI-Geräte](docs/KI_RoomsCatalog_V34.md).
+
 **Neu:** Freitext-Intent `HomeAgentFrageIntent` mit `AMAZON.SearchQuery`-Slot `Frage`, damit Alexa längere Hausfragen tatsächlich übermittelt. [Alexa-Setup und Debugging](docs/HomeAgent_Alexa_Setup.md) · [Intent-Vorlage](docs/HomeAgentFrageIntent.json). Der Intent muss in der Alexa Developer Console angelegt und das Sprachmodell neu gebaut werden.
 
 
