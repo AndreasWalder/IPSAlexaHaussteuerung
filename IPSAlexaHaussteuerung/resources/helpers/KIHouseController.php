@@ -256,7 +256,7 @@ function iah_rc_find(array $devices, array $filters): array
  */
 function iah_rc_wants_last_change(string $spoken): bool
 {
-    return preg_match('/\\b(?:wann|seit\\s+wann|wie\\s+lange|zuletzt|letzte[rsn]?|geaendert|geaendert|gewechselt|aktualisiert|letzter\\s+wechsel|letzte\\s+statusaenderung)\\b/ui',
+    return preg_match('/\\b(?:wann|seit\\s+wann|wie\\s+lange|zuletzt|letzte[rsn]?|geändert|geaendert|gewechselt|aktualisiert|letzter\\s+wechsel|letzte\\s+statusaenderung)\\b/ui',
         $spoken) === 1;
 }
 function iah_rc_last_change(array $dev): ?array
