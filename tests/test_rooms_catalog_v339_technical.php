@@ -501,6 +501,115 @@ ck339(IPS_GetScriptContent(40)===$resetOriginalProd
     && IPS_GetScriptContent(41)===$resetOriginalEdit,
     'Reset should be idempotent and preserve catalog scripts');
 
+
+/**
+ * V3.3.18: Publish ONLY technically valid selected domains, without
+ * ever copying invalid blind state mappings or unrelated bad devices.
+ */
+$domainProd=$catalog;
+$domainEdit=$catalog;
+$domainProd['wohnzimmer']['display']='Wohnzimmer PROD'; // preserve room metadata
+$domainEdit['wohnzimmer']['display']='Wohnzimmer EDIT'; // never copied by partial publication
+$domainProd['wohnzimmer']['domains']['licht']['switches']['decke']['title']='Vorige Decke';
+$domainEdit['wohnzimmer']['domains']['licht']['switches']['decke']['title']='Neue Decke';
+$domainEdit['wohnzimmer']['domains']['licht']['switches']['defekt']['title']='Ungueltige neue Zuordnung';
+unset($domainEdit['wohnzimmer']['domains']['licht']['switches']['alt']); // destructive removal forbidden
+$domainEdit['wc']['domains']['jalousie']['fenster']['ai']['stateMapping']=[];
+$domainEdit['wc']['domains']['jalousie']['fenster']['title']='Ungültige Jalousie in EDIT';
+IPS_SetScriptContent(40,'<?php return '.var_export($domainProd,true).';');
+IPS_SetScriptContent(41,'<?php return '.var_export($domainEdit,true).';');
+(new ReflectionMethod(RoomsCatalogConfigurator::class,'reloadAllFromCatalog'))->invoke($mod);
+
+$partialForm=json_decode($mod->GetConfigurationForm(),true,512,JSON_THROW_ON_ERROR);
+$partialUI=json_encode($partialForm,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+ck339(str_contains($partialUI,'RCC_PreviewScopedProdPublish')
+    && str_contains($partialUI,'RCC_ApplyScopedProdPublish')
+    && str_contains($partialUI,'BEREICHSWEISE PROD-UEBERNAHME')
+    && str_contains($partialUI,'__all_without_jalousie__')
+    && str_contains($partialUI,'GESAMTEN EDIT-KATALOG NACH PROD'),
+    'Domain-level publication controls and full-publish warning missing');
+
+$originalPartialProd=IPS_GetScriptContent(40);
+$originalPartialEdit=IPS_GetScriptContent(41);
+ob_start();$mod->SaveEditToProd();$legacyBlocked=ob_get_clean();
+ck339(str_contains($legacyBlocked,'Veröffentlichung abgebrochen')
+    && IPS_GetScriptContent(40)===$originalPartialProd,
+    'Legacy full publish must still block on unverified blind values');
+ob_start();$mod->PreviewScopedProdPublish('licht');$partialPreview=ob_get_clean();
+$planRows=json_decode($mod->ReadAttributeString('PartialProdPublishRows'),true,512,JSON_THROW_ON_ERROR);
+$approvedRows=array_values(array_filter($planRows,static fn(array $row):bool=>($row['status']??'')==='Gueltig'));
+$rejectedRows=array_values(array_filter($planRows,static fn(array $row):bool=>($row['status']??'')==='Gesperrt'));
+ck339(str_contains($partialPreview,'1 gueltige Aenderungen')
+    && count($approvedRows)===1
+    && $approvedRows[0]['key']==='wohnzimmer|licht|switches|decke'
+    && count($rejectedRows)===2,
+    'Licht scope should accept only good light and reject invalid and removed devices: '.json_encode($planRows));
+$beforePartialBackupCount=count($GLOBALS['inventoryScripts']);
+ob_start();$mod->ApplyScopedProdPublish('licht');$publishedLight=ob_get_clean();
+ck339(str_contains($publishedLight,'ERFOLG: 1')
+    && count($GLOBALS['inventoryScripts'])===$beforePartialBackupCount+1
+    && IPS_GetScriptContent(41)===$originalPartialEdit,
+    'Selective publication did not create verified backup or unexpectedly modified EDIT: '.$publishedLight);
+$afterLight=require $GLOBALS['inventoryDir'].'/scripts/40.php';
+ck339($afterLight['wohnzimmer']['domains']['licht']['switches']['decke']['title']==='Neue Decke'
+    && $afterLight['wohnzimmer']['domains']['licht']['switches']['defekt']['title']===$domainProd['wohnzimmer']['domains']['licht']['switches']['defekt']['title']
+    && isset($afterLight['wohnzimmer']['domains']['licht']['switches']['alt'])
+    && $afterLight['wohnzimmer']['display']==='Wohnzimmer PROD'
+    && $afterLight['wc']['domains']['jalousie']['fenster']===$domainProd['wc']['domains']['jalousie']['fenster'],
+    'Invalid light, deleted device, room metadata or wrong blind leaked into PROD');
+
+$beforeInvalid=IPS_GetScriptContent(40);
+$beforeInvalidBackup=count($GLOBALS['inventoryScripts']);
+ob_start();$mod->PreviewScopedProdPublish('jalousie');$blindPreview=ob_get_clean();
+$blindPlan=json_decode($mod->ReadAttributeString('PartialProdPublishRows'),true,512,JSON_THROW_ON_ERROR);
+ck339(str_contains($blindPreview,'0 gueltige Aenderungen')
+    && count($blindPlan)===1 && $blindPlan[0]['status']==='Gesperrt',
+    'Blind with missing real state mapping must not pass partial validator');
+ob_start();$mod->ApplyScopedProdPublish('jalousie');$blindBlocked=ob_get_clean();
+ck339(str_contains($blindBlocked,'KEINE UEBERNAHME')
+    && IPS_GetScriptContent(40)===$beforeInvalid
+    && count($GLOBALS['inventoryScripts'])===$beforeInvalidBackup,
+    'No valid blind may cause zero PROD writes or backups: '.$blindBlocked);
+
+// Scope all valid OTHER domains, while leaving Jalousie and invalid Licht untouched.
+$extraEdit=$domainEdit;
+$extraEdit['wohnzimmer']['domains']['dimmer']['dimmers']['dimmer']['title']='Dimmer in EDIT';
+IPS_SetScriptContent(41,'<?php return '.var_export($extraEdit,true).';');
+ob_start();$mod->PreviewScopedProdPublish('__all_without_jalousie__');$multiPreview=ob_get_clean();
+$multiPlan=json_decode($mod->ReadAttributeString('PartialProdPublishRows'),true,512,JSON_THROW_ON_ERROR);
+$multiValid=array_values(array_filter($multiPlan,static fn(array $row):bool=>($row['status']??'')==='Gueltig'));
+ck339(count($multiValid)===1 && $multiValid[0]['key']==='wohnzimmer|dimmer|dimmers|dimmer',
+    'All-without-blind scope should publish one technically sound dimmer only: '.json_encode($multiPlan));
+$beforeMultiEdit=IPS_GetScriptContent(41);
+ob_start();$mod->ApplyScopedProdPublish('__all_without_jalousie__');$multiApplied=ob_get_clean();
+$afterMulti=require $GLOBALS['inventoryDir'].'/scripts/40.php';
+ck339(str_contains($multiApplied,'ERFOLG: 1')
+    && $afterMulti['wohnzimmer']['domains']['dimmer']['dimmers']['dimmer']['title']==='Dimmer in EDIT'
+    && $afterMulti['wc']['domains']['jalousie']['fenster']===$domainProd['wc']['domains']['jalousie']['fenster']
+    && IPS_GetScriptContent(41)===$beforeMultiEdit,
+    'All-valid non-blind scope touched a blind or failed dimmer publication');
+
+// A different selection, re-edited catalog, and cleared cache all invalidate previews.
+ob_start();$mod->PreviewScopedProdPublish('licht');ob_end_clean();
+$beforeStale=IPS_GetScriptContent(40);
+$staleSource=IPS_GetScriptContent(41)."\n";
+IPS_SetScriptContent(41,$staleSource);
+ob_start();$mod->ApplyScopedProdPublish('licht');$staleBlocked=ob_get_clean();
+ck339(str_contains($staleBlocked,'hat sich seit der Vorschau veraendert')
+    && IPS_GetScriptContent(40)===$beforeStale,
+    'Stale preview should be blocked without modifying PROD: '.$staleBlocked);
+ob_start();$mod->PreviewScopedProdPublish('licht');ob_end_clean();
+ob_start();$mod->ApplyScopedProdPublish('heizung');$wrongDomain=ob_get_clean();
+ck339(str_contains($wrongDomain,'fuer denselben Bereich')
+    && IPS_GetScriptContent(40)===$beforeStale,
+    'Preview approved for one domain cannot be replayed for another domain');
+ob_start();$mod->ResetAllCheckCaches();ob_end_clean();
+ob_start();$mod->ApplyScopedProdPublish('licht');$resetBlocked=ob_get_clean();
+ck339(str_contains($resetBlocked,'Bitte zuerst eine aktuelle Bereichs-Vorschau')
+    && IPS_GetScriptContent(40)===$beforeStale,
+    'Reset must invalidate all partial PROD publish approvals');
+
+
 foreach(array_keys($GLOBALS['inventoryScripts']) as $id) @unlink($GLOBALS['inventoryDir'].'/scripts/'.$id.'.php');
 @rmdir($GLOBALS['inventoryDir'].'/scripts');@rmdir($GLOBALS['inventoryDir']);
 echo "PASS V3.3.9: all types, IPS evidence, explicit approval, stale guard, EDIT-only updates, backups, legacy + diff reporting\n";

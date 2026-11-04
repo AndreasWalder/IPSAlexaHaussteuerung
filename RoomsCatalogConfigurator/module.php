@@ -173,6 +173,10 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('TechnicalDeviceActionMessage', '');
         $this->RegisterAttributeString('AutoRepairPreview', '{}');
         $this->RegisterAttributeString('AutoRepairNotice', 'Noch kein Diagnoseexport erstellt.');
+        $this->RegisterAttributeString('PartialProdPublishPreview', '{}');
+        $this->RegisterAttributeString('PartialProdPublishNotice', 'Noch keine bereichsweise PROD-Vorschau ausgefuehrt.');
+        $this->RegisterAttributeString('PartialProdPublishRows', '[]');
+        $this->RegisterAttributeString('PartialProdSelectedDomain', '');
     }
 
     public function ApplyChanges()
@@ -212,7 +216,11 @@ class RoomsCatalogConfigurator extends IPSModule
             'TechnicalDeviceSummary'=>'Noch keine technische Geraetepruefung ausgefuehrt.',
             'TechnicalDeviceActionMessage'=>'',
             'AutoRepairPreview'=>'{}',
-            'AutoRepairNotice'=>'Noch kein Diagnoseexport erstellt.'
+            'AutoRepairNotice'=>'Noch kein Diagnoseexport erstellt.',
+            'PartialProdPublishPreview'=>'{}',
+            'PartialProdPublishNotice'=>'Noch keine bereichsweise PROD-Vorschau ausgefuehrt.',
+            'PartialProdPublishRows'=>'[]',
+            'PartialProdSelectedDomain'=>''
         ];
         foreach ($emptyCaches as $name=>$value) {
             $this->WriteAttributeString($name,$value);
@@ -243,6 +251,7 @@ class RoomsCatalogConfigurator extends IPSModule
             'TechnicalDeviceSourceSummary'=>'Katalogquellen noch nicht geprueft – bitte technische Pruefung ausfuehren.',
             'TechnicalDeviceActionMessage'=>'',
             'AutoRepairNotice'=>'Noch kein Diagnoseexport erstellt.',
+            'PartialProdPublishNotice'=>'Noch keine bereichsweise PROD-Vorschau ausgefuehrt.',
             'MigrationReadinessReport'=>'Noch keine aktuelle Migrationspruefung ausgefuehrt.',
             'DiscoverySummary'=>'Noch keine Geraeteinventur gestartet.',
             'DiscoveryAudit'=>'Noch keine Vollstaendigkeitspruefung.'
@@ -251,12 +260,14 @@ class RoomsCatalogConfigurator extends IPSModule
         }
         foreach ([
             'TechnicalDeviceChecks','TechnicalLegacyDevices','TechnicalDiffRows',
-            'Suggestions','DiscoveryInventoryList','DiscoveredDevices','LegacyDevices'
+            'Suggestions','DiscoveryInventoryList','DiscoveredDevices','LegacyDevices',
+            'PartialProdPublishRows'
         ] as $name) {
             $this->UpdateFormField($name,'values','[]');
         }
         $this->UpdateFormField('TechnicalDevicesPhysicallyChecked','value',false);
         $this->UpdateFormField('FilterAI','value','all');
+        $this->UpdateFormField('PartialProdDomain','value','');
         foreach ([
             'BulkDeviceType'=>'keep','BulkAIMode'=>'keep',
             'BulkSuggestions'=>'yes','BulkReview'=>'keep'
@@ -2688,6 +2699,355 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RefreshVisibleLists();
     }
 
+
+    /**
+     * EDIT -> PROD by explicit domain only. Never validates or copies
+     * unrelated domains, removes devices, or modifies room metadata.
+     * Pending/unverified KNX blind commands never pass as state feedback.
+     */
+    private function scopedProdSources(): array
+    {
+        $editId=$this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        $prodId=$this->ReadPropertyInteger('RoomsCatalogScriptID');
+        if ($editId<=0 || $prodId<=0 || $editId===$prodId
+            || !IPS_ScriptExists($editId) || !IPS_ScriptExists($prodId)) {
+            throw new \RuntimeException('Es muessen zwei unterschiedliche gueltige EDIT- und PROD-Skripte konfiguriert sein.');
+        }
+        $editSource=(string)IPS_GetScriptContent($editId);
+        $prodSource=(string)IPS_GetScriptContent($prodId);
+        if (!RCCDeviceTechnicalAudit::isLiteralArraySource($editSource)
+            || !RCCDeviceTechnicalAudit::isLiteralArraySource($prodSource)) {
+            throw new \RuntimeException('Nur statische PHP-Array-Kataloge werden bereichsweise sicher uebernommen.');
+        }
+        $edit=$this->loadRoomsCatalog($editId,'EDIT');
+        $prod=$this->loadRoomsCatalog($prodId,'PROD');
+        if ($edit===[] || $prod===[]) {
+            throw new \RuntimeException('EDIT oder PROD ist leer beziehungsweise konnte nicht gelesen werden.');
+        }
+        return compact('editId','prodId','editSource','prodSource','edit','prod');
+    }
+
+    private function scopedProdDomainOptions(array $entries): array
+    {
+        $options=[
+            ['caption'=>'Bitte Bereich auswaehlen','value'=>''],
+            ['caption'=>'ALLE GUELTIGEN BEREICHE OHNE JALOUSIE','value'=>'__all_without_jalousie__']
+        ];
+        $labels=['licht'=>'Licht','heizung'=>'Heizung','jalousie'=>'Jalousie (nur gueltige Rueckmeldungen)',
+            'lueftung'=>'Lueftung','energie'=>'Energie','sensoren'=>'Sensoren',
+            'sicherheit'=>'Sicherheit','information'=>'Information','bewaesserung'=>'Bewaesserung'];
+        $domains=[];
+        foreach ($entries as $row) {
+            $key=(string)($row['domain']??'');
+            if ($key!=='' && $key!=='global') $domains[$key]=true;
+        }
+        ksort($domains);
+        foreach (array_keys($domains) as $key) {
+            $options[]=['caption'=>$labels[$key]??ucfirst($key),'value'=>$key];
+        }
+        return $options;
+    }
+
+    /** Return an original device leaf, not the flattened/form's virtual fields. */
+    private function scopedProdLeaf(array $catalog,array $row): ?array
+    {
+        $room=(string)($row['roomKey']??'');
+        $domain=(string)($row['domain']??'');
+        $group=(string)($row['group']??'');
+        $key=(string)($row['key']??'');
+        $rooms=$this->roomMap($catalog);
+        $domainData=$rooms[$room]['domains'][$domain]??null;
+        if (!is_array($domainData)) return null;
+        $leaf=in_array($domain,['heizung','jalousie'],true)
+            ? ($domainData[$key]??null)
+            : ($domainData[$group][$key]??null);
+        return is_array($leaf)?$leaf:null;
+    }
+
+    /**
+     * Build a complete, explainable decision from current source scripts.
+     * Only NEW/CHANGED individual devices can be accepted; deletions and
+     * room changes are never part of a partial publish.
+     */
+    private function scopedProdPlan(array $edit,array $prod,string $area): array
+    {
+        $editRows=$this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($edit));
+        $prodRows=$this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($prod));
+        $domains=array_fill_keys(array_filter(array_column($editRows,'domain')),true);
+        if ($area==='' || ($area!=='__all_without_jalousie__' && !isset($domains[$area]))) {
+            throw new \InvalidArgumentException('Bitte einen vorhandenen Bereich auswaehlen.');
+        }
+        $inScope=static fn(string $domain):bool => $area==='__all_without_jalousie__'
+            ? ($domain!=='jalousie' && $domain!=='global')
+            : ($domain===$area);
+
+        $oldRows=[];
+        foreach ($prodRows as $row) {
+            $key=$this->buildCompositeKey($row);
+            if ($key!==null) $oldRows[$key]=$row;
+        }
+        $newKeys=[];
+        $approved=[];
+        $skipped=[];
+        $unchanged=0;
+        $allowedRooms=$this->roomMap($prod);
+        foreach ($editRows as $row) {
+            $key=$this->buildCompositeKey($row);
+            if ($key===null || !$inScope((string)($row['domain']??''))) continue;
+            if (isset($newKeys[$key])) {
+                $skipped[]=['key'=>$key,'domain'=>(string)$row['domain'],
+                    'title'=>(string)($row['title']??$key),
+                    'reason'=>'Doppelter Geraeteschluessel in EDIT.','status'=>'Gesperrt'];
+                continue;
+            }
+            $newKeys[$key]=true;
+            $old=$this->scopedProdLeaf($prod,$row);
+            $new=$this->scopedProdLeaf($edit,$row);
+            if ($new===null) {
+                $skipped[]=['key'=>$key,'domain'=>(string)$row['domain'],
+                    'title'=>(string)($row['title']??$key),
+                    'reason'=>'Geraet in EDIT nicht eindeutig gefunden.','status'=>'Gesperrt'];
+                continue;
+            }
+            if ($old!==null && $old===$new) { $unchanged++; continue; }
+
+            $reason='';
+            $room=(string)($row['roomKey']??'');
+            if (!isset($allowedRooms[$room]['domains'])
+                || !is_array($allowedRooms[$room]['domains'])) {
+                $reason='Raum in PROD nicht vorhanden; neue Raeume bitte separat pruefen.';
+            } elseif ($room==='global') {
+                $reason='Globale System-/UI-Eintraege gehoeren nicht in den Geraetekatalog.';
+            } elseif ($old!==null && !empty($old['ai']['review']['status'])
+                && $old['ai']['review']['status']==='confirmed'
+                && ($new['ai']['review']['status']??'')!=='confirmed') {
+                $reason='Bereits bestaetigte Geraetezuordnung wuerde zurueckgesetzt.';
+            } elseif (!empty($new['kiEnabled']) && empty($new['kiReadOnly'])
+                && ($old===null || empty($old['kiEnabled']) || !empty($old['kiReadOnly']))) {
+                $reason='Neue KI-Schaltfreigabe: nur im gesonderten Freigabeprozess uebernehmen.';
+            } else {
+                $errors=$this->validateEntries([$row],true);
+                if ($errors!==[]) {
+                    $reason=implode('; ',array_slice($errors,0,2));
+                } else {
+                    $assessment=$this->assessTechnicalDevice($row);
+                    if (($assessment['status']??'')!=='Technisch plausibel') {
+                        $reason=(string)($assessment['reason']??'Variable/Status nicht eindeutig geprueft.');
+                    }
+                }
+            }
+            // Blind: commands (e.g. 0=Open, 100=Close) are NOT a real
+            // position or closed/open reading. Even if generic validation
+            // passes, proof of a distinct readback is mandatory.
+            if ($reason==='' && (string)$row['domain']==='jalousie') {
+                $roles=(array)($new['ai']['variables']??[]);
+                $feedback=(int)($roles['position']??$roles['status']??0);
+                $action=(int)($roles['action']??0);
+                if ($feedback<=0 || ($action>0 && $feedback===$action)) {
+                    $reason='Jalousie ohne eigenstaendige, gepruefte Rueckmeldevariable.';
+                }
+            }
+            if ($reason!=='') {
+                $skipped[]=[
+                    'key'=>$key,'domain'=>(string)$row['domain'],
+                    'title'=>(string)($row['title']??$key),'reason'=>$reason,'status'=>'Gesperrt'
+                ];
+                continue;
+            }
+            $approved[]=[
+                'key'=>$key,'domain'=>(string)$row['domain'],
+                'title'=>(string)($row['title']??$key),
+                'change'=>$old===null?'Neu':'Geaendert',
+                'status'=>'Gueltig','reason'=>'Variablenzuordnung technisch plausibel.'
+            ];
+        }
+        // Deletions in EDIT must never silently delete PROD devices.
+        foreach ($oldRows as $key=>$row) {
+            if (!$inScope((string)($row['domain']??'')) || isset($newKeys[$key])) continue;
+            $skipped[]=['key'=>$key,'domain'=>(string)$row['domain'],
+                'title'=>(string)($row['title']??$key),
+                'status'=>'Gesperrt','reason'=>'In EDIT entfernt; Teiluebernahme loescht keine PROD-Geraete.'];
+        }
+        return [
+            'domain'=>$area,'approved'=>$approved,'skipped'=>$skipped,
+            'unchanged'=>$unchanged
+        ];
+    }
+
+    /** Copy only explicitly approved device leaves into the existing PROD tree. */
+    private function scopedProdApplyPlan(array $prod,array $edit,array $approved): array
+    {
+        $candidate=$prod;
+        $sourceRooms=$this->roomMap($edit);
+        if (isset($candidate['rooms']) && is_array($candidate['rooms'])) {
+            $destRooms=&$candidate['rooms'];
+        } else {
+            $destRooms=&$candidate;
+        }
+        foreach ($approved as $item) {
+            $parts=explode('|',(string)$item['key'],4);
+            if (count($parts)!==4) throw new \RuntimeException('Ungueltiger Geraeteschluessel.');
+            [$room,$domain,$group,$key]=$parts;
+            if (!isset($destRooms[$room]['domains']) || !is_array($destRooms[$room]['domains'])) {
+                throw new \RuntimeException('PROD-Raum seit Vorschau geaendert: '.$room);
+            }
+            $sourceDomain=$sourceRooms[$room]['domains'][$domain]??null;
+            $leaf=in_array($domain,['heizung','jalousie'],true)
+                ? ($sourceDomain[$key]??null)
+                : ($sourceDomain[$group][$key]??null);
+            if (!is_array($leaf)) throw new \RuntimeException('EDIT-Geraet nicht gefunden: '.$item['key']);
+            if (!isset($destRooms[$room]['domains'][$domain])) $destRooms[$room]['domains'][$domain]=[];
+            if (in_array($domain,['heizung','jalousie'],true)) {
+                $destRooms[$room]['domains'][$domain][$key]=$leaf;
+            } else {
+                if (!isset($destRooms[$room]['domains'][$domain][$group])) {
+                    $destRooms[$room]['domains'][$domain][$group]=[];
+                }
+                $destRooms[$room]['domains'][$domain][$group][$key]=$leaf;
+            }
+        }
+        unset($destRooms);
+        return $candidate;
+    }
+
+    private function scopedProdShowPreview(array $plan,string $message): void
+    {
+        $this->WriteAttributeString('PartialProdPublishNotice',$message);
+        $this->UpdateFormField('PartialProdPublishNotice','caption',$message);
+        $rows=[];
+        foreach ($plan['approved'] as $r) $rows[]=$r;
+        foreach ($plan['skipped'] as $r) $rows[]=$r;
+        $json=json_encode($rows,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
+        $this->WriteAttributeString('PartialProdPublishRows',$json);
+        $this->UpdateFormField('PartialProdPublishRows','values',$json);
+    }
+
+    public function SetScopedProdDomain(string $area): void
+    {
+        $this->WriteAttributeString('PartialProdSelectedDomain',$area);
+        $this->WriteAttributeString('PartialProdPublishPreview','{}');
+        $this->WriteAttributeString('PartialProdPublishRows','[]');
+        $this->WriteAttributeString('PartialProdPublishNotice','Bitte fuer diesen Bereich eine neue Vorschau erstellen.');
+        $this->UpdateFormField('PartialProdPublishRows','values','[]');
+        $this->UpdateFormField('PartialProdPublishNotice','caption',
+            'Bitte fuer diesen Bereich eine neue Vorschau erstellen.');
+    }
+
+    public function PreviewScopedProdPublish(string $area): void
+    {
+        $this->WriteAttributeString('PartialProdPublishPreview','{}');
+        $this->WriteAttributeString('PartialProdSelectedDomain',$area);
+        try {
+            $sources=$this->scopedProdSources();
+            $plan=$this->scopedProdPlan($sources['edit'],$sources['prod'],$area);
+            $fingerprint=hash('sha256',json_encode($plan,
+                JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR));
+            $preview=[
+                'time'=>time(),'domain'=>$area,
+                'editId'=>$sources['editId'],'prodId'=>$sources['prodId'],
+                'editHash'=>hash('sha256',$sources['editSource']),
+                'prodHash'=>hash('sha256',$sources['prodSource']),
+                'planHash'=>$fingerprint
+            ];
+            $this->WriteAttributeString('PartialProdPublishPreview',
+                json_encode($preview,JSON_THROW_ON_ERROR));
+            $message=sprintf('VORSCHAU Bereich %s: %d gueltige Aenderungen; %d gesperrt; '
+                .'%d unveraendert. Nur diese gueltigen Geraete werden nach PROD geschrieben. '
+                .'Andere Bereiche, alle ungueltigen Jalousien und Raum-Metadaten bleiben unveraendert. '
+                .'Vorschau 10 Minuten gueltig.',
+                $area,count($plan['approved']),count($plan['skipped']),$plan['unchanged']);
+            $this->scopedProdShowPreview($plan,$message);
+            echo $message;
+        } catch (\Throwable $e) {
+            $message='TEIL-PROD-VORSCHAU BLOCKIERT: '.$e->getMessage();
+            $this->scopedProdShowPreview(['approved'=>[],'skipped'=>[]],$message);
+            echo $message;
+        }
+    }
+
+    public function ApplyScopedProdPublish(string $area): void
+    {
+        try {
+            $preview=json_decode($this->ReadAttributeString('PartialProdPublishPreview'),true);
+            if (!is_array($preview) || !isset($preview['time'])
+                || time()-(int)$preview['time']>600 || (int)$preview['time']>time()
+                || ($preview['domain']??'')!==$area) {
+                throw new \RuntimeException('Bitte zuerst eine aktuelle Bereichs-Vorschau fuer denselben Bereich erstellen.');
+            }
+            $sources=$this->scopedProdSources();
+            if ($sources['editId']!==(int)($preview['editId']??0)
+                || $sources['prodId']!==(int)($preview['prodId']??0)
+                || hash('sha256',$sources['editSource'])!==($preview['editHash']??'')
+                || hash('sha256',$sources['prodSource'])!==($preview['prodHash']??'')) {
+                throw new \RuntimeException('EDIT/PROD hat sich seit der Vorschau veraendert. Neu pruefen.');
+            }
+            $plan=$this->scopedProdPlan($sources['edit'],$sources['prod'],$area);
+            $fingerprint=hash('sha256',json_encode($plan,
+                JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR));
+            if (!hash_equals((string)($preview['planHash']??''),$fingerprint)) {
+                throw new \RuntimeException('Geräte- oder IPS-Metadaten haben sich seit der Vorschau geaendert.');
+            }
+            if ($plan['approved']===[]) {
+                $message='KEINE UEBERNAHME: Im Bereich gibt es keine technisch gueltigen Aenderungen.';
+                $this->scopedProdShowPreview($plan,$message);
+                echo $message;
+                return;
+            }
+            $candidate=$this->scopedProdApplyPlan($sources['prod'],$sources['edit'],$plan['approved']);
+            if ($candidate===$sources['prod']) {
+                throw new \RuntimeException('Keine wirksamen Aenderungen erkannt.');
+            }
+            $php="<?php\nreturn ".var_export($candidate,true).";\n";
+            // No backup and no write if a concurrent operator changed sources.
+            if (IPS_GetScriptContent($sources['prodId'])!==$sources['prodSource']
+                || IPS_GetScriptContent($sources['editId'])!==$sources['editSource']) {
+                throw new \RuntimeException('Kataloge vor der Sicherung veraendert. Abbruch.');
+            }
+            $backup=IPS_CreateScript(0);
+            if (!is_int($backup) || $backup<=0) {
+                throw new \RuntimeException('PROD-Backup konnte nicht angelegt werden.');
+            }
+            IPS_SetParent($backup,IPS_GetParent($sources['prodId']));
+            IPS_SetName($backup,'RoomsCatalog_PartialProd_Backup_'.date('Ymd_His').'_'.$backup);
+            IPS_SetScriptContent($backup,$sources['prodSource']);
+            if (IPS_GetScriptContent($backup)!==$sources['prodSource']) {
+                throw new \RuntimeException('PROD-Backup konnte nicht verifiziert werden; keine Uebernahme.');
+            }
+            if (IPS_GetScriptContent($sources['prodId'])!==$sources['prodSource']
+                || IPS_GetScriptContent($sources['editId'])!==$sources['editSource']) {
+                throw new \RuntimeException('Kataloge nach Sicherung veraendert. PROD nicht beschrieben.');
+            }
+            try {
+                IPS_SetScriptContent($sources['prodId'],$php);
+                if (IPS_GetScriptContent($sources['prodId'])!==$php) {
+                    throw new \RuntimeException('PROD-Schreibverifikation fehlgeschlagen.');
+                }
+            } catch (\Throwable $writeError) {
+                try {
+                    IPS_SetScriptContent($sources['prodId'],$sources['prodSource']);
+                    $restored=IPS_GetScriptContent($sources['prodId'])===$sources['prodSource'];
+                } catch (\Throwable $restoreError) { $restored=false; }
+                throw new \RuntimeException('Schreibfehler: '.$writeError->getMessage()
+                    .($restored?' PROD wiederhergestellt.':' ACHTUNG: Wiederherstellung nicht bestaetigt!')
+                    .' Sicherung #'.$backup);
+            }
+            $this->WriteAttributeString('PartialProdPublishPreview','{}');
+            $message=sprintf('ERFOLG: %d gueltige Geraete im Bereich %s nach PROD uebernommen; '
+                .'%d gesperrt/unveraendert in PROD belassen. Backup #%d. '
+                .'EDIT bleibt unveraendert; offene Unterschiede koennen bestehen.',
+                count($plan['approved']),$area,count($plan['skipped']),$backup);
+            $this->scopedProdShowPreview($plan,$message);
+            $this->reloadAllFromCatalog();
+            $this->RefreshVisibleLists();
+            echo $message;
+        } catch (\Throwable $e) {
+            $message='BEREICHSWEISE PROD-UEBERNAHME BLOCKIERT: '.$e->getMessage();
+            $this->WriteAttributeString('PartialProdPublishNotice',$message);
+            $this->UpdateFormField('PartialProdPublishNotice','caption',$message);
+            echo $message;
+        }
+    }
+
     /**
      * Speichert den Edit-Katalog 1:1 nach PROD.
      */
@@ -4744,9 +5104,48 @@ class RoomsCatalogConfigurator extends IPSModule
                     'onClick' => 'RCC_DiscardEditChanges($id);'
                 ],
                 [
+                    'type'=>'ExpansionPanel',
+                    'caption'=>'BEREICHSWEISE PROD-UEBERNAHME – NUR GUELTIGE GERAETE',
+                    'expanded'=>true,
+                    'items'=>[
+                        ['type'=>'Label','caption'=>
+                            'Unabhaengig von anderen Bereichen: Nur neue/geaenderte und technisch plausible '
+                            .'Geraete des ausgewaehlten Bereichs nach PROD. Ungueltige Geraete werden '
+                            .'einzeln gesperrt, Jalousien ohne ECHTE Rueckmeldung niemals uebernommen. '
+                            .'Keine Geraete-Loeschungen, keine KI-Schreibrechte-Erweiterungen und '
+                            .'keine Aenderung an anderen Bereichen oder Raum-Metadaten.'],
+                        ['type'=>'Select','name'=>'PartialProdDomain',
+                            'caption'=>'Bereich fuer die PROD-Teiluebernahme',
+                            'options'=>$this->scopedProdDomainOptions($entriesEdit),
+                            'value'=>$this->ReadAttributeString('PartialProdSelectedDomain'),
+                            'onChange'=>'RCC_SetScopedProdDomain($id, (string)$PartialProdDomain);'],
+                        ['type'=>'RowLayout','items'=>[
+                            ['type'=>'Button','caption'=>'1 – GUELTIGE AENDERUNGEN IM BEREICH PRUEFEN',
+                                'onClick'=>'RCC_PreviewScopedProdPublish($id, (string)$PartialProdDomain);'],
+                            ['type'=>'Button','caption'=>'2 – NUR GUELTIGE AENDERUNGEN NACH PROD',
+                                'confirm'=>'Nur die in der aktuellen Bereichsvorschau als GUELTIG markierten Geraete nach PROD uebernehmen? Ungueltige Jalousien und andere Bereiche bleiben unangetastet. Vorher PROD-Backup; EDIT bleibt unveraendert.',
+                                'onClick'=>'RCC_ApplyScopedProdPublish($id, (string)$PartialProdDomain);']
+                        ]],
+                        ['type'=>'Label','name'=>'PartialProdPublishNotice',
+                            'caption'=>$this->ReadAttributeString('PartialProdPublishNotice')],
+                        ['type'=>'List','name'=>'PartialProdPublishRows',
+                            'caption'=>'Bereichs-Vorschau: gueltig / gesperrt',
+                            'rowCount'=>12,'loadValuesFromConfiguration'=>false,
+                            'add'=>false,'delete'=>false,
+                            'columns'=>[
+                                ['caption'=>'Raum/Bereich/Gruppe/Key','name'=>'key','width'=>'270px','save'=>false,'add'=>''],
+                                ['caption'=>'Geraet','name'=>'title','width'=>'180px','save'=>false,'add'=>''],
+                                ['caption'=>'Ergebnis','name'=>'status','width'=>'90px','save'=>false,'add'=>''],
+                                ['caption'=>'Grund','name'=>'reason','width'=>'auto','save'=>false,'add'=>'']
+                            ],
+                            'values'=>json_decode($this->ReadAttributeString('PartialProdPublishRows'),true)??[]
+                        ]
+                    ]
+                ],
+                [
                     'type'    => 'Button',
-                    'caption' => 'EDIT NACH PROD UEBERNEHMEN',
-                    'confirm' => 'Aenderungen produktiv uebernehmen? Es wird zuvor ein Backup angelegt.',
+                    'caption' => 'GESAMTEN EDIT-KATALOG NACH PROD (NUR WENN ALLES GUELTIG)',
+                    'confirm' => 'ALLE Bereiche gemeinsam nach PROD uebernehmen? Bei einer einzigen ungueltigen Jalousie wird dies weiterhin blockiert. Fuer Teiluebernahme bitte den Bereichs-Assistenten verwenden.',
                     'onClick' => 'RCC_SaveEditToProd($id);'
                 ]
             ]
