@@ -677,6 +677,16 @@ ck339($validator->invoke($mod,[$fanCatalogRow],true)===[],
 $fanCatalogRow['kiReadOnly']=false;
 ck339($validator->invoke($mod,[$fanCatalogRow],true)===[],
     'Fan write role must reuse its existing action ID without an extra device status');
+$fanModeMethod=new ReflectionMethod(RoomsCatalogConfigurator::class,'classifyTechnicalCapability');
+ck339($fanModeMethod->invoke($mod,['aiType'=>'fan'],['status'=>'Technisch plausibel'],
+        $fanMeta,['power'=>$fanId,'control'=>$fanId])
+    ==='Nur Steuerungswert (kein separater Iststatus)',
+    'Fan using same command/read ID must never be labelled real physical feedback');
+$proposal=RCCSafeAutoRepair::propose(
+    ['aiType'=>'fan','ai'=>['variables'=>['control'=>$fanId]]],
+    $fanMeta,static fn(array $v,string $role):int=>140
+);
+ck339($proposal===[],'Auto-repair must not invent missing fan feedback when control alone is valid');
 $fanMeta[0]['action']=false;
 $badFan=RCCDeviceTechnicalAudit::assess(
     ['aiType'=>'fan','aiPowerId'=>$fanId,'aiControlId'=>$fanId],
