@@ -97,7 +97,9 @@ auditCheck(in_array('switches',array_column($group['options'],'value'),true)
 $mod->SetDomainFilter('heizung');
 auditCheck($mod->ReadAttributeString('FilterDomain')==='',
     'Unavailable room-specific domain should auto reset');
-auditCheck(str_contains($form['elements'][0]['caption'],'KI nur lesen: 1')===false,
+$catalogSummary=auditFind($form,'CatalogSummary');
+auditCheck(is_array($catalogSummary)
+    && !str_contains((string)($catalogSummary['caption']??''),'KI nur lesen: 1'),
     'Summary should not use old confusing KI wording');
 $ui=json_encode($form,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
 auditCheck(str_contains($ui,'Datenstand und KI-Berechtigungen')
