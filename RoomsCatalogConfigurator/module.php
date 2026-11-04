@@ -3129,6 +3129,11 @@ class RoomsCatalogConfigurator extends IPSModule
         $newNested=(int)($after['ai']['variables']['position']??0);
         $oldFlat=(int)($before['aiPositionId']??0);
         $newFlat=(int)($after['aiPositionId']??0);
+        // An unchanged nested field and a changed legacy field still
+        // must agree. Compare FINAL target values, not just the delta.
+        if ($newNested>0 && $newFlat>0 && $newNested!==$newFlat) {
+            throw new \RuntimeException('aiPositionId und ai.variables.position enthalten unterschiedliche neue IDs.');
+        }
         $changed=[];
         if ($newNested!==$oldNested) $changed['ai.variables.position']=$newNested;
         if ($newFlat!==$oldFlat && array_key_exists('aiPositionId',$after)) {
