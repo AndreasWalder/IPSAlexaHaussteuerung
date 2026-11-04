@@ -854,6 +854,63 @@ ck339(substr_count($fullFormJson,'RCC_SaveEditToProd($id);')===1
     && !str_contains($fullFormJson,'RCC_PreviewScopedProdPublish')
     && !str_contains($fullFormJson,'RCC_ApplySinglePositionProd'),
     'Exactly one explicit EDIT to PROD publish action should be visible');
+
+/** V3.3.22: editable pending diff, row-level explanations, copyable
+ * read-only diagnostic; all remain independent from full publication. */
+$pendingUi=json_encode($fullForm,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+ck339(str_contains($pendingUi,'PendingChanges')
+    && str_contains($pendingUi,'RCC_GetEntryEditForm')
+    && str_contains($pendingUi,'PendingChanges')
+    && str_contains($pendingUi,'RCC_SaveToEdit')
+    && str_contains($pendingUi,'ROOMSCATALOG UEBERPRUEFEN')
+    && str_contains($pendingUi,'CatalogCheckDebugOutput')
+    && substr_count($pendingUi,'RCC_SaveEditToProd($id);')===1,
+    'Single PROD button, editable pending diff and read-only check must coexist');
+$pendingTable=null;
+$deviceTable=null;
+$findTable339=function(array $nodes) use (&$findTable339,&$pendingTable,&$deviceTable):void {
+    foreach($nodes as $item) {
+        if(($item['name']??'')==='PendingChanges')$pendingTable=$item;
+        if(($item['name']??'')==='Entries')$deviceTable=$item;
+        if(is_array($item['items']??null))$findTable339($item['items']);
+    }
+};
+$findTable339($fullForm['elements']);
+ck339(is_array($pendingTable) && is_array($deviceTable)
+    && count($pendingTable['values'])>=3,
+    'Pending changes must show edits across blind and light/dimmer');
+$changesByKey=[];
+foreach($pendingTable['values'] as $row) {
+    $changesByKey[implode('|',[$row['roomKey'],$row['domain'],$row['group'],$row['key']])]=$row;
+}
+ck339(($changesByKey['wc|jalousie|jalousie|fenster']['changeKind']??null)==='Geaendert'
+    && str_contains($changesByKey['wc|jalousie|jalousie|fenster']['changeDetails'],'ai.variables.position')
+    && ($changesByKey['wohnzimmer|licht|switches|decke']['editable']??false)===true,
+    'Changed field paths are not precise or editable entries lack gear');
+$badRow=array_values(array_filter($deviceTable['values'],
+    static fn(array $row):bool=>($row['key']??'')==='defekt'))[0];
+ck339(($badRow['checkStatus']??'')==='Pruefen'
+    && str_contains((string)($badRow['checkDetails']??''),'Variable')
+    && ($badRow['rowColor']??'')==='#FFCCCC',
+    'Red invalid device must explain which variable needs checking');
+$beforeReadOnlyEdit=IPS_GetScriptContent(41);
+$beforeReadOnlyProd=IPS_GetScriptContent(40);
+ob_start();$mod->CheckRoomsCatalog();$checkNotice=ob_get_clean();
+$debug=json_decode($mod->ReadAttributeString('CatalogCheckDebugOutput'),true,512,JSON_THROW_ON_ERROR);
+ck339(($debug['schema']??'')==='RoomsCatalogCheck/1'
+    && ($debug['statistics']['total']??-1)===5
+    && !empty($debug['problems'])
+    && ($debug['editProdDifferences']['total']??0)>=3
+    && str_contains($checkNotice,'Geraete')
+    && str_contains($mod->updates['CatalogCheckDebugOutput.value']??'','RoomsCatalogCheck/1'),
+    'One-click diagnostic must populate copyable metadata-only JSON for current EDIT');
+ck339(IPS_GetScriptContent(41)===$beforeReadOnlyEdit
+    && IPS_GetScriptContent(40)===$beforeReadOnlyProd,
+    'RoomsCatalog check or pre-prod change review must not write to catalog');
+$beforeResetDebug=$mod->ReadAttributeString('CatalogCheckDebugOutput');
+ck339($beforeResetDebug!=='' && !str_contains($beforeResetDebug,'PRIVATE_VALUE_MUST_NOT_BE_CACHED'),
+    'Debug must avoid current live IPS variable values');
+
 $preBackupCount=count($GLOBALS['inventoryScripts']);
 ob_start();$mod->SaveEditToProd();$fullOutcome=ob_get_clean();
 ck339(str_contains($fullOutcome,'ERFOLG')
@@ -866,6 +923,8 @@ ck339(IPS_GetScriptContent($backupScriptId)===$prodOriginal,
     'Full catalog publish backup must preserve the exact previous PROD source');
 ck339((require $GLOBALS['inventoryDir'].'/scripts/40.php')===$fullEdit,
     'All device types, room metadata, KI rights and even unvalidated fields must be copied 1:1');
+ck339(($mod->updates['PendingChanges.values']??'x')==='[]',
+    'After full EDIT->PROD copy the pending-device list must refresh to empty');
 $prodBeforeNoop=IPS_GetScriptContent(40);
 $backupBeforeNoop=count($GLOBALS['inventoryScripts']);
 ob_start();$mod->SaveEditToProd();$noop=ob_get_clean();
