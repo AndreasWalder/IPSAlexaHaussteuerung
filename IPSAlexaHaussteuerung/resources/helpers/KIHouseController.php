@@ -43,6 +43,41 @@ function iah_rc_aliases(mixed $aliases): array
         static fn($value): string => is_string($value) ? trim($value) : '', $aliases
     ), static fn(string $value): bool => $value !== ''));
 }
+/** V3.4.1: Aus dem gesprochenen Text eindeutig erkennbare Lesefilter bevorzugen.
+ * So wird etwa "Fenster" nicht irrtuemlich nur in domain=fenster gesucht,
+ * obwohl die Daten unter sensoren/fenster liegen. Ohne Schreibwirkung.
+ */
+function iah_rc_scope_read_query(array $devices, array $args, string $spoken): array
+{
+    $n = ' ' . iah_rc_norm($spoken) . ' ';
+    if (preg_match('/\bfenster(kontakt|kontakte|n)?\b/u', $n)) {
+        unset($args['domain'], $args['group'], $args['only_active']);
+        if (in_array(iah_rc_norm((string)($args['name'] ?? '')), ['fenster','fensterkontakt','fensterkontakte'], true)) unset($args['name']);
+        $args['type'] = 'window';
+    } elseif (preg_match('/\b(jalousie|jalousien|rollladen|rolllaeden|rollo|rollos)\b/u', $n)) {
+        unset($args['type'], $args['group'], $args['only_active']);
+        if (in_array(iah_rc_norm((string)($args['name'] ?? '')), ['jalousie','jalousien','rollladen'], true)) unset($args['name']);
+        $args['domain'] = 'jalousie';
+    } elseif (preg_match('/\b(warm|temperatur|temperaturen|heizung|heizungen|grad)\b/u', $n)
+        && !preg_match('/\b(stell|stelle|setze|erhoehe|senke|schalte)\b/u', $n)) {
+        unset($args['type'], $args['group'], $args['only_active']);
+        if (in_array(iah_rc_norm((string)($args['name'] ?? '')), ['temperatur','heizung'], true)) unset($args['name']);
+        $args['domain'] = 'heizung';
+    }
+    // Raum nur bei eindeutiger, vollstaendiger Namens-/Alias-Nennung erschliessen.
+    $foundRooms = [];
+    foreach ($devices as $dev) {
+        foreach (array_merge([$dev['room'],$dev['roomKey']], $dev['roomAliases'] ?? []) as $label) {
+            $needle = iah_rc_norm((string)$label);
+            if (strlen($needle) >= 4 && str_contains($n, ' ' . $needle . ' ')) {
+                $foundRooms[$dev['roomKey']] = $dev['roomKey'];
+                break;
+            }
+        }
+    }
+    if (count($foundRooms) === 1) $args['room'] = (string)reset($foundRooms);
+    return $args;
+}
 /** Keine freien KNX-Befehle/Enums: nur sichere, explizite Zielrollen. */
 function iah_rc_write_roles(string $type, array $ids): array
 {
@@ -121,6 +156,20 @@ function iah_rc_index(int $scriptId): array
                         }
                         foreach ($mapped as $role => $variableId)
                             if (!in_array($role,['action','control'],true)) $reads[$role] = $variableId;
+                        // Vorhandene, ausdrueckliche Legacy-Heizungswerte nicht verlieren,
+                        // wenn der additive ai-Block noch keine Temperaturrolle enthaelt.
+                        // Ausschliesslich lesend; keine neue Schreibberechtigung.
+                        if ($type === 'heating') {
+                            foreach (['temperature'=>['ist'], 'targetTemperature'=>['soll','eingestellt']] as $role=>$fields) {
+                                if (isset($reads[$role])) continue;
+                                foreach ($fields as $field) {
+                                    $legacyId=(int)($dev[$field] ?? 0);
+                                    if ($legacyId<=0 || !IPS_VariableExists($legacyId)) continue;
+                                    $legacyType=(int)(IPS_GetVariable($legacyId)['VariableType'] ?? -1);
+                                    if (in_array($legacyType,[1,2],true)) { $reads[$role]=$legacyId; break; }
+                                }
+                            }
+                        }
                         // Ein Fan mit nur control meldet einen Befehlswert, keinen Istzustand.
                         if ($type === 'fan' && !isset($reads['power']) && isset($mapped['control']))
                             $reads['commandValue'] = $mapped['control'];
@@ -218,9 +267,28 @@ function iah_rc_state(array $dev): array
                     break;
                 }
             }
+            // Die explizit als 'open' konfigurierte Boolean-Rolle bedeutet offen=true.
+            // Fuer allgemeines 'status' bleibt weiterhin ein stateMapping notwendig.
+            if ($dev['type']==='window' && $role==='open' && is_bool($mapped)
+                && !array_key_exists('open',$dev['stateMapping'])
+                && !array_key_exists('closed',$dev['stateMapping']))
+                $mapped=$mapped ? 'offen' : 'geschlossen';
             if (is_bool($mapped) && in_array($role,['power','motion','commandValue'],true))
                 $mapped=$mapped ? 'an' : 'aus';
             $properties[$role]=$mapped;
+        }
+        // Position bleibt numerisch. Ein Endlagenstatus darf nur aus dem
+        // expliziten Mapping abgeleitet werden, niemals pauschal aus 0/100.
+        if ($dev['type']==='blind' && !isset($properties['status'])
+            && isset($properties['position']) && is_numeric($properties['position'])) {
+            $position=$properties['position'];
+            foreach (['open'=>'offen','closed'=>'geschlossen'] as $meaning=>$label) {
+                $expected=$dev['stateMapping'][$meaning] ?? null;
+                if ($expected!==null && is_numeric($expected) && (float)$expected===(float)$position) {
+                    $properties['endPositionStatus']=$label;
+                    break;
+                }
+            }
         }
         $out['properties']=$properties;
         $out['availableProperties']=array_keys($properties);
@@ -232,8 +300,14 @@ function iah_rc_state(array $dev): array
         }
         return $out;
     }
-    if ($dev['group'] === 'heizung' && $dev['setpoint'] > 0 && IPS_VariableExists($dev['setpoint']))
-        $out['targetTemperature'] = GetValue($dev['setpoint']);
+    if ($dev['group'] === 'heizung') {
+        if (is_numeric($v)) $out['properties']=['temperature'=>$v];
+        if ($dev['setpoint'] > 0 && IPS_VariableExists($dev['setpoint'])) {
+            $out['targetTemperature'] = GetValue($dev['setpoint']);
+            $out['properties']['targetTemperature']=$out['targetTemperature'];
+        }
+        if (isset($out['properties'])) $out['availableProperties']=array_keys($out['properties']);
+    }
     return $out;
 }
 function iah_rc_write(array $dev, mixed $value, string $property = ''): array
@@ -307,18 +381,32 @@ function iah_rc_tool(array $devices, string $name, array $args, bool $allowWrite
         return ['count'=>count($found),'truncated'=>count($found)>count($rows),'devices'=>$rows];
     }
     if ($name === 'get_states') {
-        $found=iah_rc_find($devices,$args);$active=0;$entries=[];$eligible=0;
-        $onlyActive=(bool)($args['only_active']??false);
+        $scopedArgs=iah_rc_scope_read_query($devices,$args,$spoken);
+        $found=iah_rc_find($devices,$scopedArgs);$active=0;$entries=[];$eligible=0;
+        $onlyActive=(bool)($scopedArgs['only_active']??false);
+        $statuses=['offen'=>0,'geschlossen'=>0,'unbekannt'=>0];
+        $temperatureAvailable=0;
         foreach ($found as $dev) {
             $row=iah_rc_state($dev);
             $on=$row['state']==='an'
                 || in_array('an',array_intersect_key((array)($row['properties']??[]),
                     array_flip(['power','status','motion'])),true);
             if($on)$active++;
+            if (array_key_exists('temperature',(array)($row['properties'] ?? []))) $temperatureAvailable++;
+            if (in_array($dev['type'] ?? '', ['window','blind'],true) || $dev['group']==='jalousie') {
+                $props=(array)($row['properties']??[]);
+                $status=$props['status']??$props['open']??$props['endPositionStatus']??null;
+                if ($status==='offen') $statuses['offen']++;
+                elseif ($status==='geschlossen') $statuses['geschlossen']++;
+                else $statuses['unbekannt']++;
+            }
             if (!$onlyActive || $on) { $eligible++; $entries[]=$row; }
         }
         $entries=iah_rc_bounded_rows($entries);
         return ['matched'=>count($found),'activeBooleanDevices'=>$active,
+            'temperatureAvailable'=>$temperatureAvailable,
+            'statusSummary'=>$statuses,
+            'filtersUsed'=>array_intersect_key($scopedArgs,array_flip(['room','domain','group','type','name','only_active'])),
             'shown'=>count($entries),'truncated'=>$eligible>count($entries),
             'devices'=>$entries];
     }
@@ -361,10 +449,14 @@ function iah_rc_http(array $payload,string $apiKey,float $deadline): array
     } finally {curl_close($ch);}
 }
 /** Für beide KI-Modelle mit einem Unit-Test überprüfbare API-Parameter. */
-function iah_rc_chat_payload(string $model,array $messages,array $tools,int $round): array
+function iah_rc_chat_payload(string $model,array $messages,array $tools,int $round,
+    bool $preferRead=false, bool $finalAnswer=false): array
 {
+    $toolChoice=$round===0
+        ? ($preferRead ? ['type'=>'function','function'=>['name'=>'get_states']] : 'required')
+        : ($finalAnswer ? 'none' : 'auto');
     $payload=['model'=>$model,'messages'=>$messages,'tools'=>$tools,
-        'tool_choice'=>$round===0?'required':'auto','max_completion_tokens'=>200];
+        'tool_choice'=>$toolChoice,'max_completion_tokens'=>200];
     if($model==='gpt-6-luna')$payload['reasoning_effort']='none';
     return $payload;
 }
@@ -395,7 +487,15 @@ function iah_rc_voice(string $text,array $cfg): array
     $maxWords=max(8,min(45,(int)($cfg['max_words']??20)));$allowWrites=(bool)($cfg['allow_writes']??false);
     try{
         $devices=iah_rc_index($catalogId);
-        iah_rc_log('catalog.loaded',['count'=>count($devices),'writeEnabled'=>$allowWrites]);
+        $typeCounts=[];$temperatureMapped=0;
+        foreach ($devices as $device) {
+            $kind=(string)($device['type']??'');
+            $typeCounts[$kind]=($typeCounts[$kind]??0)+1;
+            if (isset($device['reads']['temperature']) ||
+                ($device['group']==='heizung' && $device['read']>0)) $temperatureMapped++;
+        }
+        iah_rc_log('catalog.loaded',['count'=>count($devices),'writeEnabled'=>$allowWrites,
+            'types'=>$typeCounts,'temperatureReadable'=>$temperatureMapped]);
         if(!$devices)return $costFinish(['handled'=>true,'answer'=>'Im RoomsCatalog sind keine KI-Geräte freigegeben.']);
         $props=[
             'deviceKey'=>['type'=>'string'],'name'=>['type'=>'string'],'room'=>['type'=>'string'],
@@ -418,14 +518,15 @@ function iah_rc_voice(string $text,array $cfg): array
         $uiDomain=(string)($cfg['ui_context_domain']??'');
         $uiDomain=preg_match('/^[a-z0-9_-]{2,50}$/D',$uiDomain) ? $uiDomain : '';
         $uiHint=$uiDomain!=='' ? ' Aktueller Alexa-UI-Bereich: '.$uiDomain.'. Dieser Bereich ist ausschließlich ein Kontext für unvollständige Fragen und gewährt keine Schreibrechte.' : '';
+        $preferRead=(bool)preg_match('/^\s*(wie|welche|welcher|welches|was|wieviel|wie viel|ist|sind|zeige|nenne|liste|haben|hat)\b/ui',$text);
         $messages=[
-            ['role'=>'system','content'=>'Du bist eine deutsche Alexa-Haussteuerung. Alle Hausdaten nur ueber die Werkzeuge aus RoomsCatalog PROD. Geraete koennen mehrere Eigenschaften besitzen; Status, Sollwert und Steuerbefehl unterscheiden. Ein reiner Steuerwert ist KEIN bestaetigter Istzustand. Keine erfundenen Geraete oder Einheiten, keine Schaltbestaetigung ohne Werkzeugerfolg. Maximal '.$maxWords.' Woerter, ein kurzer deutscher Satz. Bei Abfragen niemals schalten. Bei unklaren Geraeten nachfragen. Eine an IP-Symcon gesendete Aktion ist noch keine bestaetigte Rueckmeldung.'.$uiHint],
+            ['role'=>'system','content'=>'Du bist eine deutsche Alexa-Haussteuerung. Alle Hausdaten nur ueber die Werkzeuge aus RoomsCatalog PROD. Geraete koennen mehrere Eigenschaften besitzen; Status, Sollwert und Steuerbefehl unterscheiden. Fuer Live-Fragen immer get_states (nicht get_devices: das ist nur eine Inventarliste). Bei matched=0 oder statusSummary.unbekannt>0 nicht behaupten, alle Fenster/Jalousien seien geschlossen. Nur bestaetigte Offen-/Geschlossen-Werte verwenden. Ein reiner Steuerwert ist KEIN bestaetigter Istzustand. Keine erfundenen Geraete oder Einheiten, keine Schaltbestaetigung ohne Werkzeugerfolg. Maximal '.$maxWords.' Woerter, ein kurzer deutscher Satz. Bei Abfragen niemals schalten. Bei unklaren Geraeten nachfragen. Eine an IP-Symcon gesendete Aktion ist noch keine bestaetigte Rueckmeldung.'.$uiHint],
             ['role'=>'user','content'=>mb_substr($text,0,500,'UTF-8')]
         ];
         for($round=0;$round<2;$round++){
             iah_rc_log('openai.start',['round'=>$round+1]);
             $model=(string)($cfg['model']??'gpt-6-luna');
-            $request=iah_rc_chat_payload($model,$messages,$tools,$round);
+            $request=iah_rc_chat_payload($model,$messages,$tools,$round,$preferRead,true);
             $response=iah_rc_http($request,$key,$deadline);
             $costReport('api',['callId'=>'round-'.$round,'response'=>[
                 'model'=>(string)($response['model']??($cfg['model']??'')),
@@ -449,7 +550,10 @@ function iah_rc_voice(string $text,array $cfg): array
                 if(!is_array($args)||!in_array($name,array_column(array_column($tools,'function'),'name'),true))
                     throw new RuntimeException('Ungültiger Werkzeugaufruf');
                 $result=iah_rc_tool($devices,$name,$args,$allowWrites,$text);
-                iah_rc_log('tool',['name'=>$name,'ok'=>$result['ok']??true]);
+                $diagnostic=['name'=>$name,'ok'=>$result['ok']??true];
+                foreach (['matched','shown','truncated','temperatureAvailable','statusSummary','filtersUsed','count'] as $field)
+                    if (array_key_exists($field,$result)) $diagnostic[$field]=$result[$field];
+                iah_rc_log('tool',$diagnostic);
                 $messages[]=['role'=>'tool','tool_call_id'=>(string)$call['id'],
                     'content'=>mb_substr(json_encode($result,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE),0,12000,'UTF-8')];
             }
