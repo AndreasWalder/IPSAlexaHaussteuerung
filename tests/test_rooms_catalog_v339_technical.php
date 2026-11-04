@@ -864,7 +864,7 @@ ck339(str_contains($fullOutcome,'ERFOLG')
 $backupScriptId=array_key_last($GLOBALS['inventoryScripts']);
 ck339(IPS_GetScriptContent($backupScriptId)===$prodOriginal,
     'Full catalog publish backup must preserve the exact previous PROD source');
-ck339(require $GLOBALS['inventoryDir'].'/scripts/40.php'===$fullEdit,
+ck339((require $GLOBALS['inventoryDir'].'/scripts/40.php')===$fullEdit,
     'All device types, room metadata, KI rights and even unvalidated fields must be copied 1:1');
 $prodBeforeNoop=IPS_GetScriptContent(40);
 $backupBeforeNoop=count($GLOBALS['inventoryScripts']);
