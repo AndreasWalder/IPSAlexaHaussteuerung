@@ -11,7 +11,7 @@ final class RCCSafeAutoRepair
         'light'=>['power','status'], 'dimmer'=>['brightness'],
         'blind'=>['position','status'], 'heating'=>['temperature'],
         'window'=>['open','status'], 'switch'=>['power','status'],
-        'fan'=>['power','status'], 'motion'=>['motion'],
+        'fan'=>['power','control','status'], 'motion'=>['motion'],
         'illuminance'=>['illuminance'], 'energy'=>['energy','powerWatts']
     ];
 
