@@ -2,6 +2,13 @@
 
 declare(strict_types=1);
 
+// IAH_DEVICETYPE_REGISTRY_INSERT
+// Im Symcon-Skript durch Modul-Update aus der zentralen Registry eingebettet.
+// Beim direkten PHP-Unit-Test dieselbe zentrale PHP-Datei laden.
+if (!class_exists('RCCDeviceTypeRegistry', false)) {
+    require_once dirname(__DIR__, 3) . '/RoomsCatalogConfigurator/libs/DeviceTypeRegistry.php';
+}
+
 /**
  * Alexa KI -> produktiver RoomsCatalog -> sichere IP-Symcon-Aktionen.
  * Keine Home-Agent-Installation, keine freien PHP-/Variablen-ID-Aufrufe.
@@ -21,19 +28,7 @@ function iah_rc_norm(string $text): string
 /** V3.4: Explizite Rollen; Steuerbefehle sind keine bestaetigten Istwerte. */
 function iah_rc_type_roles(): array
 {
-    return [
-        'light'=>['power','status','control'],
-        'dimmer'=>['power','brightness','status','control'],
-        'blind'=>['position','targetPosition','tilt','status','moving','action','control'],
-        'heating'=>['temperature','targetTemperature','control'],
-        'window'=>['open','status'],
-        'switch'=>['power','powerWatts','energy','status','control'],
-        'energy'=>['powerWatts','energy','status'],
-        'motion'=>['motion','status'],
-        'illuminance'=>['illuminance'],
-        'fan'=>['power','control'],
-        'generic'=>['power','status','action','control']
-    ];
+    return RCCDeviceTypeRegistry::roles();
 }
 function iah_rc_aliases(mixed $aliases): array
 {
@@ -255,7 +250,39 @@ function iah_rc_find(array $devices, array $filters): array
     }
     return $found;
 }
-function iah_rc_state(array $dev): array
+/** Zeitpunkt der LETZTEN WERTAENDERUNG laut IPS, nicht letzter Poll/Update.
+ * Der Zeitwert ist eine Eigenschaft der verknuepften Variable, keine Historie.
+ * Ohne explizite Nachfrage werden keinerlei Zeitdaten gelesen/ausgegeben.
+ */
+function iah_rc_wants_last_change(string $spoken): bool
+{
+    return preg_match('/\\b(?:wann|seit\\s+wann|wie\\s+lange|zuletzt|letzte[rsn]?|geaendert|geaendert|gewechselt|aktualisiert|letzter\\s+wechsel|letzte\\s+statusaenderung)\\b/ui',
+        $spoken) === 1;
+}
+function iah_rc_last_change(array $dev): ?array
+{
+    // Der zuletzt geaenderte lesbare Istwert; keine Kommando-IDs.
+    $last=0; $lastRole='';
+    foreach ((array)($dev['reads'] ?? []) as $role=>$id) {
+        if ($role==='commandValue' || !IPS_VariableExists((int)$id)) continue;
+        try {
+            $var=IPS_GetVariable((int)$id);
+            $ts=(int)($var['VariableChanged'] ?? 0);
+        } catch (Throwable $ignored) { continue; }
+        if ($ts>0 && $ts<time()+60 && $ts>$last) {$last=$ts;$lastRole=(string)$role;}
+    }
+    // Legacy-Datensaetze haben nur eine Read-ID, keine Rollenliste.
+    if (!$last && empty($dev['typed']) && (int)($dev['read']??0)>0) {
+        try {
+            $var=IPS_GetVariable((int)$dev['read']);
+            $last=(int)($var['VariableChanged']??0);
+            $lastRole='state';
+        } catch (Throwable $ignored) {$last=0;}
+    }
+    if ($last<=0 || $last>time()+60) return null;
+    return ['lastChangedAt'=>date('c',$last),'lastChangedProperty'=>$lastRole];
+}
+function iah_rc_state(array $dev, bool $includeLastChange = false): array
 {
     $v = !empty($dev['typed']) ? null : GetValue($dev['read']);
     $state = is_bool($v) ? ($v ? 'an' : 'aus') : $v;
@@ -268,7 +295,7 @@ function iah_rc_state(array $dev): array
             try { $raw=GetValue($id); } catch (Throwable $e) { continue; }
             $mapped=$raw;
             $meanings = match ($dev['type']) {
-                'blind','window' => in_array($role,['status','open'],true)
+                'blind','window','door' => in_array($role,['status','open'],true)
                     ? ['open'=>'offen','closed'=>'geschlossen'] : [],
                 'light','dimmer','switch','motion' => in_array($role,['power','status','motion'],true)
                     ? ['on'=>'an','off'=>'aus'] : [],
@@ -283,7 +310,7 @@ function iah_rc_state(array $dev): array
             }
             // Die explizit als 'open' konfigurierte Boolean-Rolle bedeutet offen=true.
             // Fuer allgemeines 'status' bleibt weiterhin ein stateMapping notwendig.
-            if ($dev['type']==='window' && $role==='open' && is_bool($mapped)
+            if (in_array($dev['type'],['window','door'],true) && $role==='open' && is_bool($mapped)
                 && !array_key_exists('open',$dev['stateMapping'])
                 && !array_key_exists('closed',$dev['stateMapping']))
                 $mapped=$mapped ? 'offen' : 'geschlossen';
@@ -312,6 +339,10 @@ function iah_rc_state(array $dev): array
             $out['state']='Istzustand nicht bestätigt';
             $out['stateSource']='nur Steuerungswert';
         }
+        if ($includeLastChange) {
+            $change=iah_rc_last_change($dev);
+            if ($change!==null) $out=array_merge($out,$change);
+        }
         return $out;
     }
     if ($dev['group'] === 'heizung') {
@@ -321,6 +352,10 @@ function iah_rc_state(array $dev): array
             $out['properties']['targetTemperature']=$out['targetTemperature'];
         }
         if (isset($out['properties'])) $out['availableProperties']=array_keys($out['properties']);
+    }
+    if ($includeLastChange) {
+        $change=iah_rc_last_change($dev);
+        if ($change!==null) $out=array_merge($out,$change);
     }
     return $out;
 }
@@ -387,10 +422,17 @@ function iah_rc_tool(array $devices, string $name, array $args, bool $allowWrite
 {
     if ($name === 'get_devices') {
         $found=iah_rc_find($devices,$args);
-        $rows=array_map(static fn($d):array=>['deviceKey'=>$d['id'],'name'=>$d['name'],
+        $rows=array_map(static function(array $d)use($spoken):array {
+            $row=['deviceKey'=>$d['id'],'name'=>$d['name'],
                 'room'=>$d['room'],'type'=>$d['type'],'writable'=>$d['writable'],
                 'properties'=>array_keys($d['reads']),
-                'writableProperties'=>array_keys($d['writeRoles'])],$found);
+                'writableProperties'=>array_keys($d['writeRoles'])];
+            if (iah_rc_wants_last_change($spoken)) {
+                $change=iah_rc_last_change($d);
+                if ($change!==null) $row=array_merge($row,$change);
+            }
+            return $row;
+        },$found);
         $rows=iah_rc_bounded_rows($rows);
         return ['count'=>count($found),'truncated'=>count($found)>count($rows),'devices'=>$rows];
     }
@@ -398,16 +440,17 @@ function iah_rc_tool(array $devices, string $name, array $args, bool $allowWrite
         $scopedArgs=iah_rc_scope_read_query($devices,$args,$spoken);
         $found=iah_rc_find($devices,$scopedArgs);$active=0;$entries=[];$eligible=0;
         $onlyActive=(bool)($scopedArgs['only_active']??false);
+        $includeLastChange=iah_rc_wants_last_change($spoken);
         $statuses=['offen'=>0,'geschlossen'=>0,'unbekannt'=>0];
         $temperatureAvailable=0;
         foreach ($found as $dev) {
-            $row=iah_rc_state($dev);
+            $row=iah_rc_state($dev,$includeLastChange);
             $on=$row['state']==='an'
                 || in_array('an',array_intersect_key((array)($row['properties']??[]),
                     array_flip(['power','status','motion'])),true);
             if($on)$active++;
             if (array_key_exists('temperature',(array)($row['properties'] ?? []))) $temperatureAvailable++;
-            if (in_array($dev['type'] ?? '', ['window','blind'],true) || $dev['group']==='jalousie') {
+            if (in_array($dev['type'] ?? '', ['window','door','blind'],true) || $dev['group']==='jalousie') {
                 $props=(array)($row['properties']??[]);
                 $status=$props['status']??$props['open']??$props['endPositionStatus']??null;
                 if ($status==='offen') $statuses['offen']++;
@@ -532,9 +575,9 @@ function iah_rc_voice(string $text,array $cfg): array
         $uiDomain=(string)($cfg['ui_context_domain']??'');
         $uiDomain=preg_match('/^[a-z0-9_-]{2,50}$/D',$uiDomain) ? $uiDomain : '';
         $uiHint=$uiDomain!=='' ? ' Aktueller Alexa-UI-Bereich: '.$uiDomain.'. Dieser Bereich ist ausschließlich ein Kontext für unvollständige Fragen und gewährt keine Schreibrechte.' : '';
-        $preferRead=(bool)preg_match('/^\s*(wie|welche|welcher|welches|was|wieviel|wie viel|ist|sind|zeige|nenne|liste|haben|hat)\b/ui',$text);
+        $preferRead=(bool)preg_match('/^\s*(wie|wann|seit wann|welche|welcher|welches|was|wieviel|wie viel|ist|sind|zeige|nenne|liste|haben|hat)\b/ui',$text);
         $messages=[
-            ['role'=>'system','content'=>'Du bist eine deutsche Alexa-Haussteuerung. Alle Hausdaten nur ueber die Werkzeuge aus RoomsCatalog PROD. Geraete koennen mehrere Eigenschaften besitzen; Status, Sollwert und Steuerbefehl unterscheiden. Fuer Live-Fragen immer get_states (nicht get_devices: das ist nur eine Inventarliste). Bei matched=0 oder statusSummary.unbekannt>0 nicht behaupten, alle Fenster/Jalousien seien geschlossen. Nur bestaetigte Offen-/Geschlossen-Werte verwenden. Ein reiner Steuerwert ist KEIN bestaetigter Istzustand. Keine erfundenen Geraete oder Einheiten, keine Schaltbestaetigung ohne Werkzeugerfolg. Maximal '.$maxWords.' Woerter, ein kurzer deutscher Satz. Bei Abfragen niemals schalten. Bei unklaren Geraeten nachfragen. Eine an IP-Symcon gesendete Aktion ist noch keine bestaetigte Rueckmeldung.'.$uiHint],
+            ['role'=>'system','content'=>'Du bist eine deutsche Alexa-Haussteuerung. Alle Hausdaten nur ueber die Werkzeuge aus RoomsCatalog PROD. Geraete koennen mehrere Eigenschaften besitzen; Status, Sollwert und Steuerbefehl unterscheiden. Fuer Live-Fragen immer get_states (nicht get_devices: das ist nur eine Inventarliste). Bei matched=0 oder statusSummary.unbekannt>0 nicht behaupten, alle Fenster/Jalousien seien geschlossen. Nur bestaetigte Offen-/Geschlossen-Werte verwenden. Ein reiner Steuerwert ist KEIN bestaetigter Istzustand. Keine erfundenen Geraete oder Einheiten, keine Schaltbestaetigung ohne Werkzeugerfolg. Maximal '.$maxWords.' Woerter, ein kurzer deutscher Satz. Zeitangaben wie lastChangedAt/lastChangedProperty werden NUR bei expliziter Frage nach letzter Aenderung, wann oder seit wann geliefert und beziehen sich auf den letzten IPS-WERTWECHSEL der bezeichneten Eigenschaft, nicht auf historische Ereignisse. Keine Zeiten erfinden; ohne Zeitfeld die Verfuegbarkeit verneinen. Bei Abfragen niemals schalten. Bei unklaren Geraeten nachfragen. Eine an IP-Symcon gesendete Aktion ist noch keine bestaetigte Rueckmeldung.'.$uiHint],
             ['role'=>'user','content'=>mb_substr($text,0,500,'UTF-8')]
         ];
         for($round=0;$round<2;$round++){
