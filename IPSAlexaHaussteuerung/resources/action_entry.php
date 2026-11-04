@@ -2103,11 +2103,40 @@ function Execute($request = null)
         $iahVoiceViewportMode = (string)($iahVoiceViewport->mode ?? '');
         $iahVoiceViewportShape = (string)($iahVoiceViewport->shape ?? '');
         $iahVoiceAplSource = (string)($request->source->type ?? '');
-        // Ein APL-Event oder ein eindeutiger GetHaus-Klick ist keine KI-Anfrage.
-        $iahVoiceSpoken = strcasecmp((string)$intentName, 'HomeAgentFrageIntent') === 0
-            ? trim((string)($getSlotCH($request,'Frage') ?? ''))
+        // IAH_ALEXA_QUESTION_CAPTURE_BEGIN
+        // Alexa liefert bei einem AMAZON.SearchQuery-Slot nur den variablen
+        // Text, NICHT das feste Fragewort aus der Sample Utterance.
+        // Pro W-Wort ein eindeutig benannter Intent: dadurch bleibt die
+        // urspruengliche Frage fuer KI und Router rekonstruierbar.
+        $iahQuestionPrefixes = [
+            'hauswelcheintent'=>'welche',
+            'hauswieintent'=>'wie',
+            'hauswasintent'=>'was',
+            'hausistintent'=>'ist',
+            'haussindintent'=>'sind'
+        ];
+        $iahQuestionPrefix = $iahQuestionPrefixes[strtolower((string)$intentName)] ?? '';
+        $iahDedicatedSearchIntent = strcasecmp((string)$intentName, 'HomeAgentFrageIntent') === 0
+            || $iahQuestionPrefix !== '';
+        $iahQuestionSlot = $iahDedicatedSearchIntent
+            ? trim((string)($getSlotCH($request, 'Frage') ?? '')) : '';
+        $iahVoiceSpoken = $iahDedicatedSearchIntent
+            ? $iahQuestionSlot
             : trim((string)($rawUserText !== '' ? $rawUserText : $rawSlotsToText($rawSlotValues)));
+        if ($iahQuestionPrefix !== '' && $iahQuestionSlot !== ''
+            && preg_match('/^' . preg_quote($iahQuestionPrefix, '/') . '\\b/ui', $iahQuestionSlot) !== 1) {
+            $iahVoiceSpoken = $iahQuestionPrefix . ' ' . $iahQuestionSlot;
+        }
         $iahVoiceSpoken = trim(preg_replace('/\s+/u',' ',$iahVoiceSpoken) ?? '');
+        if ($iahDedicatedSearchIntent) {
+            $log('info', 'HomeAgentVoice.slot_capture', [
+                'intent'=>$intentName,
+                'slotPresent'=>$iahQuestionSlot !== '',
+                'prefix'=>$iahQuestionPrefix,
+                'chars'=>mb_strlen($iahVoiceSpoken, 'UTF-8')
+            ]);
+        }
+        // IAH_ALEXA_QUESTION_CAPTURE_END
         // PRIO 1: GetHaus mit genau einem Device-/Action-Slot = UI-Kachel.
         // Alexa meldet bei "Jalousie" typischerweise GetHaus/Device=jalousie,
         // nicht HomeAgentFrageIntent. Das darf auch ohne KI-Helper funktionieren.
@@ -2270,7 +2299,7 @@ function Execute($request = null)
         // Navigation wird NACH dem KI-Hook an den vorhandenen ROUTE_ALL-Renderer übergeben.
         $iahVoiceIsNavigation = ($iahVoiceDecision['category']??'') === 'navigation';
         $iahVoiceNavKey = $iahVoiceIsNavigation ? (string)($iahVoiceDecision['route']??'') : '';
-        $homeAgentDedicatedIntent = strcasecmp((string) $intentName, 'HomeAgentFrageIntent') === 0;
+        $homeAgentDedicatedIntent = $iahDedicatedSearchIntent;
         $homeAgentEnabled = (bool) ($propsEarly['HomeAgentVoiceEnabled'] ?? false)
             && (string) ($propsEarly['KIVoiceMode'] ?? 'RoomsCatalog') !== 'Classic';
 
@@ -2283,7 +2312,8 @@ function Execute($request = null)
         $iahKiGatePolicy = static function (array $ctx): array {
             $intent = (string)($ctx['intent'] ?? '');
             $category = (string)($ctx['category'] ?? '');
-            $dedicated = strcasecmp($intent, 'HomeAgentFrageIntent') === 0;
+            $dedicated = strcasecmp($intent, 'HomeAgentFrageIntent') === 0
+                || preg_match('/^Haus(?:Welche|Wie|Was|Ist|Sind)Intent$/i', $intent) === 1;
             if (in_array($category, ['navigation', 'apl_navigation', 'apl_action', 'clarify'], true)) {
                 return ['allowed'=>false, 'reason'=>'navigation_or_clarification'];
             }
@@ -2346,7 +2376,7 @@ function Execute($request = null)
             $homeAgentStarted = microtime(true);
             // AMAZON.SearchQuery liefert die Äußerung im Slot "Frage", nicht im Request-Text.
             $homeAgentSpokenQuestion = $homeAgentDedicatedIntent
-                ? trim((string) ($getSlotCH($request, 'Frage') ?? ''))
+                ? $iahVoiceSpoken
                 : trim((string) ($rawUserText !== '' ? $rawUserText : $rawSlotsToText($rawSlotValues)));
             if ($homeAgentDedicatedIntent && ($homeAgentSpokenQuestion === '' || $homeAgentSpokenQuestion === '?')) {
                 $homeAgentSpokenQuestion = trim((string) $rawUserText);
@@ -2471,6 +2501,32 @@ function Execute($request = null)
             // Statt still auf main_launch zurueckzufallen den Grund nennen.
             $log('warn', 'HomeAgentVoice.query_blocked', ['reason'=>(string)$iahKiGate['reason']]);
             return $kiAlexaKeepOpen('Die Frage wurde erkannt, konnte aber nicht an die KI weitergeleitet werden.');
+        }
+        // Alexa/GetHaus kann einen IntentRequest mit komplett leeren Slots
+        // liefern. Alexa hat dann keinen Wortlaut uebermittelt: weder die
+        // KI noch PHP koennen die eigentliche Frage erraten. Nicht erneut
+        // die Hauptkachel rendern, sondern korrekt nach dem Text fragen.
+        if (strcasecmp((string)$intentName,'GetHaus') === 0
+            && !$IS_LAUNCH && !$IS_BACK && !$wantsExit
+            && empty($APL['args']) && !$iahVoiceIsAplEvent
+            && $iahLegacyNavKey === ''
+            && $iahVoiceCategory === 'passthrough'
+            && trim($iahVoiceSpoken) === '') {
+            $log('warn', 'HomeAgentVoice.empty_gethaus', [
+                'reason'=>'alexa_sent_no_slot_values',
+                'intent'=>$intentName,
+                'category'=>$iahVoiceCategory
+            ]);
+            return $kiAlexaKeepOpen('Alexa hat keinen Fragetext übermittelt. Bitte sage zum Beispiel: Frage, welche Fenster offen sind.');
+        }
+        if (strcasecmp((string)$intentName,'GetHaus') === 0
+            && !$IS_LAUNCH && !$IS_BACK && !$wantsExit
+            && empty($APL['args']) && !$iahVoiceIsAplEvent
+            && $iahLegacyNavKey === ''
+            && $iahVoiceCategory === 'passthrough'
+            && gr_norm_text($iahVoiceSpoken) === 'frage') {
+            $log('info', 'HomeAgentVoice.prompt_question', ['reason'=>'question_carrier_without_text']);
+            return $kiAlexaKeepOpen('Welche Hausfrage möchtest du stellen? Sage zum Beispiel: Frage, welche Fenster offen sind.');
         }
         // HOME_AGENT_VOICE_HOOK_END
 

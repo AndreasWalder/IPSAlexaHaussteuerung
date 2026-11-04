@@ -79,12 +79,15 @@ jobs:
         run: |
           php -r 'json_decode(file_get_contents("IPSAlexaHaussteuerung/form.json"), true, 512, JSON_THROW_ON_ERROR);'
           php -r 'json_decode(file_get_contents("docs/HomeAgentFrageIntent.json"), true, 512, JSON_THROW_ON_ERROR);'
+          php -r 'json_decode(file_get_contents("docs/Alexa_Hausfragen_Intent_Paket.json"), true, 512, JSON_THROW_ON_ERROR);'
       - name: Test RoomsCatalog KI permission checks
         run: php tests/test_ki_rooms_catalog.php
       - name: Test V3.4 typed RoomsCatalog multi-property KI and confirmed actuator guards
         run: php tests/test_ki_rooms_catalog_v34.php
       - name: Test V3.4.2 Alexa question priority over stale APL/UI fallback
         run: php tests/test_alexa_voice_question_priority_v342.php
+      - name: Test V3.4.3 Alexa direct W-question capture and no-slot fallback
+        run: php tests/test_alexa_voice_capture_v343.php
       - name: Test RoomsCatalog form add/edit and persistent expansion
         run: php tests/test_rooms_catalog_editor_ui.php
       - name: Test guided typed RoomsCatalog entry editor with room select and derived paths
