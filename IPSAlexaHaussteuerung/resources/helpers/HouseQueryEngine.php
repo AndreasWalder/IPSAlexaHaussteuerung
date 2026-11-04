@@ -197,17 +197,25 @@ function iah_ai_query_house(array $devices, array $args, string $spoken = ''): a
         $row=['key'=>$group['key'],'name'=>$group['name'],'count'=>$group['count']];
         if ($operation==='list' || $operation==='count') {
             if ($groupBy==='device') $row['value']=$group['values'][0]??null;
-            if ($operation==='list') $row['devices']=array_slice($group['devices'],0,8);
+            if ($operation==='list') {
+                $row['devices']=array_slice($group['devices'],0,4);
+                if (count($group['devices'])>4) $row['moreDevices']=count($group['devices'])-4;
+            }
         } else {
             $numeric=array_values(array_filter($group['values'],
                 static fn($v):bool=>is_numeric($v)&&!is_bool($v)&&is_finite((float)$v)));
             if (count($numeric)!==count($group['values'])) continue;
             $nums=array_map('floatval',$numeric);
-            $row['value']=match($operation) {
-                'min'=>min($nums), 'max'=>max($nums),
-                'sum'=>array_sum($nums), 'avg'=>array_sum($nums)/count($nums),
-                default=>null
-            };
+            // Fuer einen Raumvergleich den Mittelwert aller unabhaengigen
+            // Sensoren des Raumes bewerten, nicht die Extremwerte einzelner
+            // Sensoren. Fuer Geräte/gesamt dagegen normale min/max-Semantik.
+            $row['value']=($groupBy==='room' && in_array($operation,['min','max'],true))
+                ? array_sum($nums)/count($nums)
+                : match($operation) {
+                    'min'=>min($nums), 'max'=>max($nums),
+                    'sum'=>array_sum($nums), 'avg'=>array_sum($nums)/count($nums),
+                    default=>null
+                };
             $row['value']=round((float)$row['value'],3);
         }
         $rows[]=$row;
@@ -227,12 +235,13 @@ function iah_ai_query_house(array $devices, array $args, string $spoken = ''): a
         // operation das Aggregat ueber ALLE Sensoren statt einzelner Raeume.
         $primary=$rows[0]??null;
     } else $primary=$rows[0]??null;
-    $truncated=count($rows)>$limit;
-    $visible=array_slice($rows,0,$limit);
+    $visible=iah_rc_bounded_rows(array_slice($rows,0,$limit));
+    $truncated=count($rows)>count($visible);
     $result=['ok'=>true,'operation'=>$operation,'property'=>$property,
         'groupBy'=>$groupBy,'matchedDevices'=>count($found),'withProperty'=>$validDevices,
         'matchedReadings'=>$measurements,'groups'=>count($rows),
         'totalCount'=>$totalCount,'truncated'=>$truncated,
+        'roomSensorAggregation'=>$groupBy==='room' ? 'mean_of_distinct_measurements' : 'none',
         'rows'=>$visible];
     if ($primary!==null && in_array($operation,['max','min','avg','sum'],true)) {
         $result['best']=$primary;
