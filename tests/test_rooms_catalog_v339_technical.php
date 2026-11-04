@@ -610,6 +610,116 @@ ck339(str_contains($resetBlocked,'Bitte zuerst eine aktuelle Bereichs-Vorschau')
     'Reset must invalidate all partial PROD publish approvals');
 
 
+
+/** V3.3.19: simpler domain-specific editor and a shared fan control/status ID. */
+$layout=json_decode($mod->GetConfigurationForm(),true,512,JSON_THROW_ON_ERROR);
+$topCaptions=array_column($layout['elements'],'caption');
+ck339($topCaptions===array_values(array_filter($topCaptions,static fn($v):bool=>$v!==null))
+    && in_array('Raeume & Etagen',$topCaptions,true)
+    && in_array('RoomsCatalog Scripts',$topCaptions,true)
+    && in_array('Geraete bearbeiten (RoomsCatalog EDIT)',$topCaptions,true),
+    'Daily RoomsCatalog functions must remain visible');
+$expertPanels=array_values(array_filter($layout['elements'],
+    static fn(array $row):bool=>($row['caption']??'')==='Weitere Funktionen (Experten): Pruefen, Migration und PROD'));
+ck339(count($expertPanels)===1
+    && $expertPanels[0]['expanded']===false
+    && str_contains(json_encode($expertPanels[0],JSON_UNESCAPED_UNICODE),'RCC_ApplyScopedProdPublish')
+    && str_contains(json_encode($expertPanels[0],JSON_UNESCAPED_UNICODE),'RCC_RunTechnicalDeviceAudit'),
+    'Advanced operations must remain intact and hidden by default');
+
+$mod->UpdateEntryTypeForm('fan');
+ck339(($mod->updates['aiPowerId.visible']??null)===true
+    && ($mod->updates['aiControlId.visible']??null)===true
+    && ($mod->updates['aiStatusId.visible']??null)===false
+    && ($mod->updates['aiOnValue.visible']??null)===false
+    && ($mod->updates['aiOffValue.visible']??null)===false,
+    'Fan editor should show just optional On/Off value plus control, no extra device status');
+$mod->UpdateEntryTypeForm('heating');
+ck339(($mod->updates['aiTemperatureId.visible']??null)===true
+    && ($mod->updates['aiTargetTemperatureId.visible']??null)===true
+    && ($mod->updates['aiControlId.visible']??null)===true
+    && ($mod->updates['aiStatusId.visible']??null)===false,
+    'Heating editor needs only actual temperature, setpoint and writable control');
+
+$fanId=50811;
+addInvVar($fanId,2008,'Ein/Aus','Value',0,'~Switch',true);
+$fanMeta=[
+    ['id'=>$fanId,'name'=>'Ein/Aus','ident'=>'Value','type'=>0,
+        'profile'=>'~Switch','action'=>true,'associations'=>[]]
+];
+$fanScore=static fn(array $v,string $role):int=>130;
+$fanExists=static fn(int $id):bool=>$id===$fanId;
+$fanFieldMap=['power'=>'aiPowerId','control'=>'aiControlId'];
+$fanShared=RCCDeviceTechnicalAudit::assess(
+    ['aiType'=>'fan','aiPowerId'=>$fanId,'aiControlId'=>$fanId],
+    $fanFieldMap,$fanMeta,[['power','control']],$fanScore,$fanExists
+);
+ck339($fanShared['status']==='Technisch plausibel'
+    && !in_array('duplicate_mapping',$fanShared['issueCodes'],true)
+    && !in_array('missing_required_role',$fanShared['issueCodes'],true),
+    'Shared control and On/Off-value must be valid without invented fan status');
+$fanOnlyControl=RCCDeviceTechnicalAudit::assess(
+    ['aiType'=>'fan','aiControlId'=>$fanId],
+    $fanFieldMap,$fanMeta,[['power','control']],$fanScore,$fanExists
+);
+ck339($fanOnlyControl['status']==='Technisch plausibel',
+    'One fan control variable alone must be sufficient');
+
+$validator=new ReflectionMethod(RoomsCatalogConfigurator::class,'validateEntries');
+$fanCatalogRow=[
+    'roomKey'=>'wohnzimmer','domain'=>'lueftung','group'=>'fans','key'=>'ventilator',
+    'title'=>'Ventilator','aiType'=>'fan',
+    'aiPowerId'=>0,'aiControlId'=>$fanId,
+    'kiEnabled'=>true,'kiReadOnly'=>true
+];
+ck339($validator->invoke($mod,[$fanCatalogRow],true)===[],
+    'Read-only fan with just one control variable should pass ordinary catalog validation');
+$fanCatalogRow['kiReadOnly']=false;
+ck339($validator->invoke($mod,[$fanCatalogRow],true)===[],
+    'Fan write role must reuse its existing action ID without an extra device status');
+$fanModeMethod=new ReflectionMethod(RoomsCatalogConfigurator::class,'classifyTechnicalCapability');
+ck339($fanModeMethod->invoke($mod,['aiType'=>'fan'],['status'=>'Technisch plausibel'],
+        $fanMeta,['power'=>$fanId,'control'=>$fanId])
+    ==='Nur Steuerungswert (kein separater Iststatus)',
+    'Fan using same command/read ID must never be labelled real physical feedback');
+$proposal=RCCSafeAutoRepair::propose(
+    ['aiType'=>'fan','ai'=>['variables'=>['control'=>$fanId]]],
+    $fanMeta,static fn(array $v,string $role):int=>140
+);
+ck339($proposal===[],'Auto-repair must not invent missing fan feedback when control alone is valid');
+$fanMeta[0]['action']=false;
+$badFan=RCCDeviceTechnicalAudit::assess(
+    ['aiType'=>'fan','aiPowerId'=>$fanId,'aiControlId'=>$fanId],
+    $fanFieldMap,$fanMeta,[['power','control']],$fanScore,$fanExists
+);
+ck339($badFan['status']==='Manuell pruefen'
+    && in_array('no_action',$badFan['issueCodes'],true),
+    'A fan without a real write action must not silently be treated as controllable');
+
+$heaterId=50304;
+addInvVar($heaterId,2003,'Solltemperatur','Value',2,'~Temperature.Room',true);
+$heaterMeta=[
+    ['id'=>50301,'name'=>'Isttemperatur','type'=>2,'profile'=>'~Temperature','action'=>false],
+    ['id'=>$heaterId,'name'=>'Solltemperatur','type'=>2,'profile'=>'~Temperature.Room','action'=>true]
+];
+$heaterTest=RCCDeviceTechnicalAudit::assess(
+    ['aiType'=>'heating','aiTemperatureId'=>50301,
+        'aiTargetTemperatureId'=>$heaterId,'aiControlId'=>$heaterId],
+    ['temperature'=>'aiTemperatureId','targetTemperature'=>'aiTargetTemperatureId','control'=>'aiControlId'],
+    $heaterMeta,[['temperature']],
+    static fn(array $v,string $role):int=>130,
+    static fn(int $id):bool=>in_array($id,[50301,50304],true)
+);
+ck339($heaterTest['status']==='Technisch plausibel'
+    && !in_array('duplicate_mapping',$heaterTest['issueCodes'],true),
+    'Heater may use the same writable setpoint for targetTemperature and control');
+$catalogSourceBeforeSimpleUI=IPS_GetScriptContent(40);
+$editSourceBeforeSimpleUI=IPS_GetScriptContent(41);
+$mod->GetConfigurationForm();
+ck339(IPS_GetScriptContent(40)===$catalogSourceBeforeSimpleUI
+    && IPS_GetScriptContent(41)===$editSourceBeforeSimpleUI,
+    'Reorganized UI and profile checks must be read-only');
+
 foreach(array_keys($GLOBALS['inventoryScripts']) as $id) @unlink($GLOBALS['inventoryDir'].'/scripts/'.$id.'.php');
 @rmdir($GLOBALS['inventoryDir'].'/scripts');@rmdir($GLOBALS['inventoryDir']);
 echo "PASS V3.3.9: all types, IPS evidence, explicit approval, stale guard, EDIT-only updates, backups, legacy + diff reporting\n";

@@ -106,13 +106,13 @@ class RoomsCatalogConfigurator extends IPSModule
         'light' => ['power', 'status', 'control'],
         'dimmer' => ['power', 'brightness', 'status', 'control'],
         'blind' => ['position', 'targetPosition', 'tilt', 'status', 'moving', 'action', 'control'],
-        'heating' => ['temperature', 'targetTemperature', 'status', 'control'],
+        'heating' => ['temperature', 'targetTemperature', 'control'],
         'window' => ['open', 'status'],
         'switch' => ['power', 'powerWatts', 'energy', 'status', 'control'],
         'energy' => ['powerWatts', 'energy', 'status'],
         'motion' => ['motion', 'status'],
         'illuminance' => ['illuminance'],
-        'fan' => ['power', 'status', 'control'],
+        'fan' => ['power', 'control'],
         'generic' => ['power', 'status', 'action', 'control']
     ];
 
@@ -1171,7 +1171,10 @@ class RoomsCatalogConfigurator extends IPSModule
     private function minimumReadingRoles(string $type): array
     {
         return match ($type) {
-            'light','switch','fan' => [['power','status']],
+            'light','switch' => [['power','status']],
+            // Bei Lueftern darf ein einziges beschreibbares Ein/Aus-Signal
+            // sowohl Steuerwert als auch angezeigter Wert sein.
+            'fan' => [['power','control']],
             'dimmer' => [['brightness']],
             'blind' => [['position','status']],
             'heating' => [['temperature']],
@@ -2260,9 +2263,13 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         $group = (string)($row['group'] ?? '');
         $fields = match ($group) {
-            'heizung' => ['ist','soll','eingestellt'],
+            'heizung' => ['ist','aiTemperatureId','soll','eingestellt'],
             'dimmers' => ['value','state'],
             'jalousie' => ['wert'],
+            // Ein Luefter hat nicht zwingend ein getrenntes Statusobjekt.
+            // Die Steuerungs-ID darf als abfragbarer Soll-/Befehlswert
+            // dienen; echter physischer Status ist damit NICHT bewiesen.
+            'fans' => ['aiPowerId','aiControlId','state','toggle','value'],
             default => ['state','value']
         };
         foreach ($fields as $field) if ((int)($row[$field] ?? 0)>0) return (int)$row[$field];
@@ -2272,7 +2279,8 @@ class RoomsCatalogConfigurator extends IPSModule
     private function aiWriteId(array $row): int
     {
         return match ((string)($row['group'] ?? '')) {
-            'switches','fans' => (int)($row['toggle'] ?? 0),
+            'switches' => (int)(($row['toggle']??0) ?: ($row['aiControlId']??0)),
+            'fans' => (int)(($row['aiControlId']??0) ?: ($row['toggle']??0)),
             'dimmers' => (int)($row['set'] ?? 0),
             'heizung' => (int)($row['soll'] ?? $row['eingestellt'] ?? 0),
             default => 0
@@ -3410,6 +3418,18 @@ class RoomsCatalogConfigurator extends IPSModule
     private function classifyTechnicalCapability(
         array $row,array $assessment,array $scoped,array $explicit
     ): string {
+        if (($row['aiType']??'')==='fan'
+            && ($assessment['status']??'')==='Technisch plausibel') {
+            $control=(int)($explicit['control']??0);
+            $power=(int)($explicit['power']??0);
+            $status=(int)($explicit['status']??0);
+            // Steuerwert ist kein bestaetigter Istzustand: auch bei
+            // derselben gemeinsamen ID eindeutig als solcher ausweisen.
+            if ($control>0 && ($power<=0 || $power===$control)
+                && ($status<=0 || $status===$control)) {
+                return 'Nur Steuerungswert (kein separater Iststatus)';
+            }
+        }
         if (($assessment['status']??'')==='Technisch plausibel') {
             return 'Technisch plausibel (nicht fachlich bestaetigt)';
         }
@@ -5189,6 +5209,49 @@ class RoomsCatalogConfigurator extends IPSModule
         }
         $form['elements'] = $remaining;
 
+        // V3.3.19: Alltag zuerst. Genau die Bereiche, die man zur normalen
+        // Pflege braucht, werden sichtbar dargestellt; alle vorhandenen
+        // Diagnose-/Migrations-/Freigabeaktionen bleiben erreichbar, aber
+        // standardmaessig vollstaendig zugeklappt.
+        $everyday=['Raeume & Etagen','RoomsCatalog Scripts',
+            'Geraete bearbeiten (RoomsCatalog EDIT)'];
+        $main=[];
+        $expert=[];
+        foreach ($form['elements'] as $index=>$element) {
+            $caption=(string)($element['caption']??'');
+            if ($index<=2 || in_array($caption,$everyday,true)) {
+                if (in_array($caption,$everyday,true)) {
+                    $element['expanded']=true;
+                }
+                $main[]=$element;
+            } else {
+                if (($element['type']??'')==='ExpansionPanel') {
+                    $element['expanded']=false;
+                }
+                $expert[]=$element;
+            }
+        }
+        // Move standalone actions too; hiding only the elements would
+        // leave the page cluttered below the core device list.
+        foreach ($form['actions']??[] as $action) {
+            if (($action['type']??'')==='ExpansionPanel') $action['expanded']=false;
+            $expert[]=$action;
+        }
+        $form['actions']=[];
+        if ($expert!==[]) {
+            $main[]=[
+                'type'=>'ExpansionPanel',
+                'caption'=>'Weitere Funktionen (Experten): Pruefen, Migration und PROD',
+                'expanded'=>false,
+                'items'=>array_merge([[
+                    'type'=>'Label',
+                    'caption'=>'Erweiterte Diagnose, Inventur, Massenbearbeitung und PROD-Teiluebernahme. '
+                        .'Alle bestehenden Funktionen bleiben vorhanden, sind aber im Alltag ausgeblendet.'
+                ]],$expert)
+            ];
+        }
+        $form['elements']=$main;
+
         return json_encode($form);
     }
 
@@ -6397,7 +6460,7 @@ class RoomsCatalogConfigurator extends IPSModule
         foreach (self::AI_STATE_FIELDS as $property=>$field) {
             $show = in_array($type,['blind','window'],true)
                 ? in_array($property,['open','closed'],true)
-                : (in_array($type,['light','dimmer','switch','fan','motion'],true)
+                : (in_array($type,['light','dimmer','switch','motion'],true)
                     && in_array($property,['on','off'],true));
             $this->UpdateFormField($field,'visible',$show);
         }
@@ -6484,17 +6547,25 @@ class RoomsCatalogConfigurator extends IPSModule
             ]
         ];
         $variableCaptions = [
-            'power' => 'Ein/Aus (Rueckmeldung)', 'brightness' => 'Helligkeit',
+            'power' => $editorType==='fan'
+                ? 'Ein/Aus-Wert (optional; darf dieselbe ID wie Steuerung sein)'
+                : 'Ein/Aus (Rueckmeldung)', 'brightness' => 'Helligkeit',
             'position' => 'Istposition', 'targetPosition' => 'Sollposition',
             'tilt' => 'Lamellenwinkel', 'moving' => 'Fahrstatus',
-            'control' => 'Steuerungsvariable', 'temperature' => 'Isttemperatur',
+            'control' => $editorType==='fan' ? 'Steuerung (Ein/Aus)' : 'Steuerungsvariable',
+            'temperature' => 'Isttemperatur',
             'targetTemperature' => 'Solltemperatur', 'open' => 'Fensterstatus',
             'powerWatts' => 'Leistung (W)', 'energy' => 'Verbrauch/Zaehlerstand',
             'motion' => 'Bewegung', 'illuminance' => 'Beleuchtungsstaerke (Lux)',
             'status' => 'Geraetestatus (z.B. Offen/Geschlossen)',
             'action' => 'Aktion (z.B. Auf/Ab/Stop)'
         ];
-        $aiItems = [['type'=>'Label','caption'=>'Nur die zum Geraetetyp passenden Variablen auswaehlen. Bei unbekannter Bedeutung keine Statuswerte raten.']];
+        $typeHint = match ($editorType) {
+            'fan' => 'Luefter: Steuerungsvariable reicht aus. Ein/Aus-Wert ist optional und darf dieselbe ID haben. Ohne separate Rueckmeldung ist der tatsaechliche Laufzustand nicht bestaetigt.',
+            'heating' => 'Heizung: nur Isttemperatur, Solltemperatur und Steuerung. Steuerung darf dieselbe beschreibbare Solltemperatur-Variable sein. Kein zusaetzlicher Geraetestatus.',
+            default => 'Nur benoetigte Variablen auswaehlen. Eine fehlende optionale Rueckmeldung ist kein Konfigurationsfehler.'
+        };
+        $aiItems = [['type'=>'Label','caption'=>$typeHint]];
         foreach (array_chunk(array_keys(self::AI_VARIABLE_FIELDS), 2) as $pair) {
             $controls = [];
             foreach ($pair as $property) {
@@ -6510,7 +6581,7 @@ class RoomsCatalogConfigurator extends IPSModule
         foreach ($stateFields as $property=>$caption) {
             $visible = in_array($editorType,['blind','window'],true)
                 ? in_array($property,['open','closed'],true)
-                : (in_array($editorType,['light','dimmer','switch','fan','motion'],true)
+                : (in_array($editorType,['light','dimmer','switch','motion'],true)
                     && in_array($property,['on','off'],true));
             $controls[] = ['type'=>'ValidationTextBox','name'=>self::AI_STATE_FIELDS[$property],
                 'caption'=>$caption . ' (z.B. true/false, 0/100)','visible'=>$visible];
@@ -6551,7 +6622,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 $extra[]=['type'=>'ValidationTextBox','name'=>$name,'caption'=>$name];
             }
         }
-        $items[]=['type'=>'ExpansionPanel','caption'=>'Weitere Felder / Objekt-IDs','expanded'=>true,
+        $items[]=['type'=>'ExpansionPanel','caption'=>'Weitere Felder / Objekt-IDs (Experten)','expanded'=>false,
             'items'=>$extra!==[]?$extra:[['type'=>'Label','caption'=>'Keine weiteren Eigenschaften vorhanden']]];
         return json_encode($items,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
     }

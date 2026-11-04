@@ -106,6 +106,14 @@ foreach ($form['elements'] as $element) {
         foreach ($element['items'] as $item) if (($item['name'] ?? '') === 'RoomsDiff') $roomDiffList = $item;
     }
 }
+// The room diff is intentionally now inside the collapsed expert panel.
+$findRoomsDiff31 = function(array $nodes)use(&$findRoomsDiff31,&$roomDiffList):void {
+    foreach ($nodes as $node) {
+        if (($node['name']??'')==='RoomsDiff') $roomDiffList=$node;
+        if (isset($node['items']) && is_array($node['items'])) $findRoomsDiff31($node['items']);
+    }
+};
+$findRoomsDiff31($form['elements']);
 ok31(($panel['expanded'] ?? false) === true, 'Rooms panel must start expanded');
 ok31(is_array($roomsList) && count($roomsList['values']) === 2, 'Rooms list should exclude global and include empty rooms');
 ok31(is_array($roomDiffList), 'Room metadata diff missing');

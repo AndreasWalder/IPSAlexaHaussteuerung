@@ -107,15 +107,21 @@ auditCheck(str_contains($ui,'Datenstand und KI-Berechtigungen')
     'Migration audit UI missing');
 $top=array_column($form['elements'],'caption');
 auditCheck(in_array('Raeume & Etagen',$top,true)
-    && in_array('Geraete erkennen, inventarisieren und reparieren',$top,true)
+    && in_array('RoomsCatalog Scripts',$top,true)
+    && in_array('Geraete bearbeiten (RoomsCatalog EDIT)',$top,true)
+    && in_array('Weitere Funktionen (Experten): Pruefen, Migration und PROD',$top,true)
+    && !in_array('Geraete erkennen, inventarisieren und reparieren',$top,true)
     && !in_array('Variablenzuordnungen pruefen',$top,true),
-    'Legacy setup panels must not clutter main form');
-$nested=array_values(array_filter($form['elements'],
-    static fn(array $row):bool => ($row['caption']??'')==='Geraete erkennen, inventarisieren und reparieren'))[0];
-auditCheck($nested['expanded']===false
-    && str_contains(json_encode($nested),'RCC_ScanNewDevices')
-    && str_contains(json_encode($nested),'RCC_AnalyzeLegacyDevices'),
-    'Inventory and incomplete legacy migration must remain available');
+    'Only rooms, script settings, devices and collapsed experts should be visible');
+$expert=array_values(array_filter($form['elements'],
+    static fn(array $row):bool =>
+        ($row['caption']??'')==='Weitere Funktionen (Experten): Pruefen, Migration und PROD'))[0];
+auditCheck($expert['expanded']===false
+    && str_contains(json_encode($expert),'RCC_ScanNewDevices')
+    && str_contains(json_encode($expert),'RCC_AnalyzeLegacyDevices')
+    && str_contains(json_encode($expert),'RCC_ApplyScopedProdPublish')
+    && ($form['actions']??[])===[],
+    'Advanced operations must stay reachable only under collapsed experts');
 
 $prodBefore=IPS_GetScriptContent(40);
 $editBefore=IPS_GetScriptContent(41);
@@ -139,8 +145,14 @@ $allDone=auditReadForm($mod);
 $reportField=auditFind($allDone,'MigrationReadinessReport');
 auditCheck(str_contains((string)($reportField['caption']??''),'Datenstand erneut pruefen'),
     'Migration report must expire when EDIT changes outside the configurator');
-$compact=array_values(array_filter($allDone['elements'],
-    static fn(array $row):bool => ($row['caption']??'')==='Geraete erkennen, inventarisieren und reparieren'))[0];
+$compact=null;
+$findNestedAudit=function(array $nodes)use(&$findNestedAudit,&$compact):void {
+    foreach($nodes as $node) {
+        if(($node['caption']??'')==='Geraete erkennen, inventarisieren und reparieren') $compact=$node;
+        if(is_array($node['items']??null)) $findNestedAudit($node['items']);
+    }
+};
+$findNestedAudit($allDone['elements']);
 auditCheck(!str_contains(json_encode($compact),'RCC_AnalyzeLegacyDevices')
     && str_contains(json_encode($compact),'RCC_ScanNewDevices'),
     'Fully typed catalog should hide only obsolete legacy migration, not new-device scanner');

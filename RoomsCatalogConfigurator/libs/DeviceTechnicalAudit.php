@@ -140,6 +140,19 @@ final class RCCDeviceTechnicalAudit
                     || str_contains($nameLower,'setpoint')
                 );
             if ($heatingSetpointControl) $profileMatches=true;
+            // Ein Luefter kann genau eine beschreibbare Boolean-Variable
+            // fuer die Steuerung und den angezeigten Ein/Aus-Befehlswert
+            // besitzen. Ein neutraler KNX-Profilname macht die eindeutige
+            // vorhandene Aktion nicht ungueltig. Das ist KEIN Nachweis
+            // einer physisch unabhaengigen Rueckmeldung.
+            $fanControlSignal=$type==='fan' && $typeCode===0
+                && !empty($v['action'])
+                && (
+                    $role==='control'
+                    || ($role==='power'
+                        && (int)($configured['control']??0)===$id)
+                );
+            if ($fanControlSignal) $profileMatches=true;
             if ($profileMatches) $rank=max($rank,120);
             if ($rank < 105) {
                 $reasons[] = '#' . $id . ' (' . $role . '): Rolle anhand Name/Profil nicht eindeutig';
