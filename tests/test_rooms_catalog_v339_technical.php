@@ -61,6 +61,47 @@ $mod->properties=['RoomsCatalogScriptID'=>40,'RoomsCatalogEditScriptID'=>41];
 (new ReflectionMethod(RoomsCatalogConfigurator::class,'reloadAllFromCatalog'))->invoke($mod);
 function ck339(bool $test,string $reason): void { if(!$test)throw new RuntimeException($reason); }
 
+/** V3.3.23: don't infer KNX blind targetPosition from legacy
+ * set values, and don't create unsupported IPS form elements. */
+$legacyTargetReader=new ReflectionMethod(RoomsCatalogConfigurator::class,'legacyAIVariable');
+ck339($legacyTargetReader->invoke($mod,['set'=>1],'targetPosition')===0,
+    'Legacy set=1 must not become a phantom targetPosition IPS variable');
+ck339($legacyTargetReader->invoke($mod,['set'=>55194],'targetPosition')===0,
+    'Even a valid set-ID is not evidence of a separate target-position variable');
+$editorValues=(new ReflectionMethod(RoomsCatalogConfigurator::class,'withAIEditorFields'))
+    ->invoke($mod,['set'=>1],['ai'=>['type'=>'blind','variables'=>[]]]);
+ck339(($editorValues['aiTargetPositionId']??-1)===0,
+    'Optional target position must be empty when ai.variables is absent');
+$explicitValues=(new ReflectionMethod(RoomsCatalogConfigurator::class,'withAIEditorFields'))
+    ->invoke($mod,['set'=>1],['ai'=>['type'=>'blind','variables'=>['targetPosition'=>1]]]);
+ck339(($explicitValues['aiTargetPositionId']??0)===1,
+    'Existing explicit invalid targetPosition ID must remain visible for manual correction');
+$check=(new ReflectionMethod(RoomsCatalogConfigurator::class,'catalogCheckHint'))
+    ->invoke($mod,[
+        'roomKey'=>'wc','roomLabel'=>'WC','domain'=>'jalousie','group'=>'jalousie',
+        'key'=>'fenster','title'=>'Fenster','aiType'=>'blind','kiEnabled'=>false,
+        'aiTargetPositionId'=>1
+    ]);
+ck339(($check['severity']??'')==='error'
+    && str_contains($check['reason']??'','Optionale Sollposition')
+    && str_contains($check['reason']??'','"Keine"'),
+    'Invalid explicit targetPosition=1 should explain exactly how to clear optional role');
+$formNow=json_decode($mod->GetConfigurationForm(),true,512,JSON_THROW_ON_ERROR);
+$formInput=null;
+$findDebugField=function(array $nodes)use(&$findDebugField,&$formInput):void {
+    foreach($nodes as $node) {
+        if(($node['name']??'')==='CatalogCheckDebugOutput')$formInput=$node;
+        if(is_array($node['items']??null))$findDebugField($node['items']);
+    }
+};
+$findDebugField($formNow['elements']);
+ck339(is_array($formInput)
+    && ($formInput['type']??'')==='ValidationTextBox'
+    && ($formInput['multiline']??false)===true
+    && !str_contains(json_encode($formNow,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),'"type":"TextArea"'),
+    'RoomsCatalog diagnosis must use a real supported multiline Symcon form field');
+
+
 $beforeEdit=IPS_GetScriptContent(41);
 $beforeProd=IPS_GetScriptContent(40);
 ob_start();$mod->AuditMigrationReadiness();ob_end_clean();
