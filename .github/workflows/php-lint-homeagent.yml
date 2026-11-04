@@ -52,6 +52,7 @@ jobs:
           php -l IPSAlexaHaussteuerung/resources/helpers/NavigationRuntime.php
           php -l RoomsCatalogConfigurator/module.php
           php -l RoomsCatalogConfigurator/libs/DeviceTechnicalAudit.php
+          php -l RoomsCatalogConfigurator/libs/DeviceTypeRegistry.php
           php -l RoomsCatalogConfigurator/libs/SafeAutoRepair.php
       - name: Check Alexa HTML diagnostic JavaScript syntax
         run: |
@@ -84,6 +85,8 @@ jobs:
         run: php tests/test_ki_rooms_catalog.php
       - name: Test V3.4 typed RoomsCatalog multi-property KI and confirmed actuator guards
         run: php tests/test_ki_rooms_catalog_v34.php
+      - name: Test V3.4.4 centralized properties, read-only new types and on-request timestamps
+        run: php tests/test_device_property_registry_v344.php
       - name: Test V3.4.2 Alexa question priority over stale APL/UI fallback
         run: php tests/test_alexa_voice_question_priority_v342.php
       - name: Test V3.4.3 Alexa direct W-question capture and no-slot fallback

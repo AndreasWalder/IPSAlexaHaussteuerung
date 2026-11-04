@@ -2683,6 +2683,26 @@ PHP;
         if (is_file($template)) {
             $content = file_get_contents($template);
             if ($content !== false) {
+                // KIHouseController wird als IPS-Skript gespeichert: relative
+                // Modulpfade existieren zur Ausfuehrungszeit dort NICHT.
+                // Deshalb die zentrale Typ-Registry beim Installieren
+                // in die Vorlage einbetten (eine Quelle im Repository).
+                if ($ident === 'kiHouseControllerScript') {
+                    $registryFile = dirname(__DIR__) . '/RoomsCatalogConfigurator/libs/DeviceTypeRegistry.php';
+                    $registry = is_file($registryFile) ? file_get_contents($registryFile) : false;
+                    if (!is_string($registry) || strpos($registry, 'final class RCCDeviceTypeRegistry') === false) {
+                        IPS_LogMessage('Alexa', 'KIHouseController nicht erneuert: zentrale Geraeteregistry fehlt.');
+                        return (int)$id;
+                    }
+                    $registry = preg_replace('/^<\\?php\\s*declare\\(strict_types=1\\);\\s*/', '', $registry);
+                    if (!is_string($registry) || !str_contains($content, '// IAH_DEVICETYPE_REGISTRY_INSERT')) {
+                        IPS_LogMessage('Alexa', 'KIHouseController nicht erneuert: Registry-Platzhalter ungueltig.');
+                        return (int)$id;
+                    }
+                    $content = str_replace('// IAH_DEVICETYPE_REGISTRY_INSERT',
+                        'if (!class_exists(\'RCCDeviceTypeRegistry\', false)) {' . "\n"
+                        . $registry . "\n" . '}', $content);
+                }
                 IPS_SetScriptContent($id, $content);
             }
         }

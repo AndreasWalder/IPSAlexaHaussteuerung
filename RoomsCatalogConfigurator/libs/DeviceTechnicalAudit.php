@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/DeviceTypeRegistry.php';
 
 /**
  * V3.3.9 – deterministic, read-only evidence classifier for typed device roles.
@@ -8,15 +9,6 @@ declare(strict_types=1);
  */
 final class RCCDeviceTechnicalAudit
 {
-    private const VALID_TYPES = [
-        'power'=>[0,1], 'brightness'=>[1,2], 'position'=>[1,2],
-        'targetPosition'=>[1,2], 'tilt'=>[1,2], 'moving'=>[0,1],
-        'control'=>[0,1,2], 'temperature'=>[1,2],
-        'targetTemperature'=>[1,2], 'open'=>[0,1],
-        'powerWatts'=>[1,2], 'energy'=>[1,2], 'motion'=>[0,1],
-        'status'=>[0,1,2,3], 'action'=>[0,1,2], 'illuminance'=>[2],
-    ];
-
     /**
      * @param array<string,mixed> $row flattened catalog entry
      * @param array<string,string> $fieldMap role => editor field
@@ -75,7 +67,7 @@ final class RCCDeviceTechnicalAudit
                 && in_array($typeCode,[1,2],true)
                 && (int)($configured['brightness']??0)===$id
                 && self::isIntensityProfile($profile);
-            if (!in_array($typeCode,self::VALID_TYPES[$role] ?? [],true)
+            if (!in_array($typeCode,RCCDeviceTypeRegistry::dataTypes()[$role] ?? [],true)
                 && !($role==='power' && $sharedDimmerIntensity)) {
                 $reasons[] = 'Datentyp von #' . $id . ' passt nicht zu ' . $role;
                 $issueCodes['wrong_type'] = true;
