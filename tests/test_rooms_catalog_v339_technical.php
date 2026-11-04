@@ -1049,6 +1049,7 @@ ck339(str_contains($unsafeRefusal,'statisches PHP-Array')
 $sharedCatalog=$catalog;
 $sharedCatalog['wc']['domains']['jalousie']['zweites_fenster']=[
     'title'=>'Zweite eigenstaendige Jalousie',
+    'wert'=>55194,'statusId'=>39138,
     'kiEnabled'=>true,'kiReadOnly'=>true,
     'ai'=>[
         'version'=>2,'type'=>'blind',
