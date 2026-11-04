@@ -116,7 +116,7 @@ $findRoomsDiff31 = function(array $nodes)use(&$findRoomsDiff31,&$roomDiffList):v
 $findRoomsDiff31($form['elements']);
 ok31(($panel['expanded'] ?? false) === true, 'Rooms panel must start expanded');
 ok31(is_array($roomsList) && count($roomsList['values']) === 2, 'Rooms list should exclude global and include empty rooms');
-ok31(is_array($roomDiffList), 'Room metadata diff missing');
+ok31($roomDiffList===null, 'Obsolete room diff UI must be removed from simple configurator');
 ok31(str_contains($roomsList['onEdit'], '$Rooms["roomKey"]'), 'Callback not reading IPSList row fields');
 ok31(!str_contains($roomsList['onEdit'], 'array_filter($Rooms'), 'IPSList must not be passed to array_filter');
 
@@ -167,7 +167,7 @@ ok31($roundTrip['wohnzimmer']['aliases'] === ['Stube','Wohnen'], 'Room aliases l
 
 $oldProd = IPS_GetScriptContent(20);
 ob_start(); $mod->SaveEditToProd(); $publish = ob_get_clean();
-ok31(str_contains($publish, 'aktualisiert'), 'Valid V3.1 rooms could not be published');
+ok31(str_contains($publish, 'ERFOLG'), 'All rooms and devices must be published 1:1');
 ok31(read31(20) === $editNew, 'PROD mismatch after explicit publish');
 ok31(IPS_GetScriptContent($GLOBALS['v31NextId']) === $oldProd, 'Backup lost original PROD');
 

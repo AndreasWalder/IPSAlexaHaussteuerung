@@ -90,8 +90,9 @@ $instance->WriteAttributeString('FilterAI','all');
 $form = json_decode($instance->GetConfigurationForm(), true, 512, JSON_THROW_ON_ERROR);
 
 $overview=listFromForm($form,'Entries');
-$diff=listFromForm($form,'EntriesEdit');
-foreach ([$overview,$diff] as $table) {
+idAssert(!str_contains(json_encode($form,JSON_THROW_ON_ERROR),'EntriesEdit'),
+    'Obsolete diff table should not be visible in simplified main UI');
+foreach ([$overview] as $table) {
     foreach (['ipsObjectIds','ipsInstanceIds'] as $field) {
         $columns=array_values(array_filter(
             $table['columns'], static fn(array $col): bool=>($col['name']??'')===$field
@@ -122,7 +123,7 @@ idAssert($entries===json_decode($instance->ReadAttributeString('RuntimeEntries')
     'Displaying both ID columns must never mutate RuntimeEntries/EDIT catalog');
 
 $instance->SetRoomFilter('wohnzimmer');
-foreach (['Entries.values','EntriesEdit.values'] as $field) {
+foreach (['Entries.values'] as $field) {
     idAssert(isset($instance->formUpdates[$field]),'Filter must refresh '.$field.' in place');
     $rows=json_decode($instance->formUpdates[$field],true,512,JSON_THROW_ON_ERROR);
     idAssert(count($rows)===2,'Room filter should preserve both target rows');

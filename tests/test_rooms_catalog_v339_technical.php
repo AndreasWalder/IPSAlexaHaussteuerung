@@ -99,8 +99,10 @@ $ui=json_encode($form,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
 foreach(['TechnicalDeviceChecks','TechnicalLegacyDevices','TechnicalDiffRows',
     'RCC_PreviewTechnicalDeviceReview','RCC_ApplyTechnicalDeviceReview',
     'RCC_PreviewManualDeviceConfirmation','RCC_ApplyManualDeviceConfirmation'] as $token) {
-    ck339(str_contains($ui,$token),'V3.3.9 UI control missing: '.$token);
+    ck339(!str_contains($ui,$token),'Obsolete advanced controls must not clutter the simple UI: '.$token);
 }
+ck339(str_contains($ui,'EDIT NACH PROD UEBERNEHMEN'),
+    'Simple complete EDIT to PROD publishing action is missing');
 ck339(str_contains($summary,'EDIT/PROD:'),'Summary missing diff categories');
 
 $mod->SelectTechnicalDevices(true);
@@ -362,10 +364,10 @@ ck339($capMethod->invoke($mod, ['aiType'=>'blind','wert'=>55194],
 
 $newForm=json_decode($mod->GetConfigurationForm(),true,512,JSON_THROW_ON_ERROR);
 $serialized=json_encode($newForm,JSON_UNESCAPED_UNICODE);
-ck339(str_contains($serialized,'"name":"capability"'),
-    'Technical device table missing explicit capability column');
-ck339(str_contains($serialized,'Funktionsumfang'),
-    'Technical capability must be visible in the technical audit list');
+ck339(!str_contains($serialized,'"name":"capability"')
+    && !str_contains($serialized,'Funktionsumfang')
+    && str_contains($serialized,'EDIT NACH PROD UEBERNEHMEN'),
+    'Technical analysis UI must be removed from the simple configurator');
 $oldSnapshot=['rows'=>[1,2,3],'counts'=>['Technisch plausibel'=>1,'Manuell pruefen'=>2],
     'capabilityCounts'=>[
         'Technisch plausibel (nicht fachlich bestaetigt)'=>1,
@@ -522,19 +524,17 @@ IPS_SetScriptContent(41,'<?php return '.var_export($domainEdit,true).';');
 
 $partialForm=json_decode($mod->GetConfigurationForm(),true,512,JSON_THROW_ON_ERROR);
 $partialUI=json_encode($partialForm,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-ck339(str_contains($partialUI,'RCC_PreviewScopedProdPublish')
-    && str_contains($partialUI,'RCC_ApplyScopedProdPublish')
-    && str_contains($partialUI,'BEREICHSWEISE PROD-UEBERNAHME')
-    && str_contains($partialUI,'__all_without_jalousie__')
-    && str_contains($partialUI,'GESAMTEN EDIT-KATALOG NACH PROD'),
-    'Domain-level publication controls and full-publish warning missing');
+ck339(!str_contains($partialUI,'RCC_PreviewScopedProdPublish')
+    && !str_contains($partialUI,'RCC_ApplyScopedProdPublish')
+    && !str_contains($partialUI,'BEREICHSWEISE PROD-UEBERNAHME')
+    && !str_contains($partialUI,'NUR EINE JALOUSIE-POSITIONS-ID')
+    && str_contains($partialUI,'EDIT NACH PROD UEBERNEHMEN'),
+    'Obsolete scoped publishing UI must be replaced by one full-copy button');
 
 $originalPartialProd=IPS_GetScriptContent(40);
 $originalPartialEdit=IPS_GetScriptContent(41);
-ob_start();$mod->SaveEditToProd();$legacyBlocked=ob_get_clean();
-ck339(str_contains($legacyBlocked,'Veröffentlichung abgebrochen')
-    && IPS_GetScriptContent(40)===$originalPartialProd,
-    'Legacy full publish must still block on unverified blind values');
+ck339(IPS_GetScriptContent(40)===$originalPartialProd,
+    'Old scoped scenario should not change PROD before testing partial APIs');
 ob_start();$mod->PreviewScopedProdPublish('licht');$partialPreview=ob_get_clean();
 $planRows=json_decode($mod->ReadAttributeString('PartialProdPublishRows'),true,512,JSON_THROW_ON_ERROR);
 $approvedRows=array_values(array_filter($planRows,static fn(array $row):bool=>($row['status']??'')==='Gueltig'));
@@ -619,13 +619,12 @@ ck339($topCaptions===array_values(array_filter($topCaptions,static fn($v):bool=>
     && in_array('RoomsCatalog Scripts',$topCaptions,true)
     && in_array('Geraete bearbeiten (RoomsCatalog EDIT)',$topCaptions,true),
     'Daily RoomsCatalog functions must remain visible');
-$expertPanels=array_values(array_filter($layout['elements'],
-    static fn(array $row):bool=>($row['caption']??'')==='Weitere Funktionen (Experten): Pruefen, Migration und PROD'));
-ck339(count($expertPanels)===1
-    && $expertPanels[0]['expanded']===false
-    && str_contains(json_encode($expertPanels[0],JSON_UNESCAPED_UNICODE),'RCC_ApplyScopedProdPublish')
-    && str_contains(json_encode($expertPanels[0],JSON_UNESCAPED_UNICODE),'RCC_RunTechnicalDeviceAudit'),
-    'Advanced operations must remain intact and hidden by default');
+$simpleUi=json_encode($layout,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+ck339(!str_contains($simpleUi,'Weitere Funktionen (Experten)')
+    && !str_contains($simpleUi,'RCC_ApplyScopedProdPublish')
+    && !str_contains($simpleUi,'RCC_RunTechnicalDeviceAudit')
+    && str_contains($simpleUi,'EDIT NACH PROD UEBERNEHMEN'),
+    'Only core device editing and one full EDIT-to-PROD action should be shown');
 
 $mod->UpdateEntryTypeForm('fan');
 ck339(($mod->updates['aiPowerId.visible']??null)===true
@@ -740,17 +739,15 @@ IPS_SetScriptContent(41,'<?php return '.var_export($positionEdit,true).';');
 $singleKey='wc|jalousie|jalousie|fenster';
 $singleForm=json_decode($mod->GetConfigurationForm(),true,512,JSON_THROW_ON_ERROR);
 $singleFormText=json_encode($singleForm,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-ck339(str_contains($singleFormText,'NUR EINE JALOUSIE-POSITIONS-ID')
-    && str_contains($singleFormText,'RCC_PreviewSinglePositionProd')
-    && str_contains($singleFormText,'RCC_ApplySinglePositionProd')
-    && str_contains($singleFormText,$singleKey),
-    'Field-only position transfer not exposed as a selectable per-device action');
+ck339(!str_contains($singleFormText,'NUR EINE JALOUSIE-POSITIONS-ID')
+    && !str_contains($singleFormText,'RCC_PreviewSinglePositionProd')
+    && !str_contains($singleFormText,'RCC_ApplySinglePositionProd')
+    && str_contains($singleFormText,'EDIT NACH PROD UEBERNEHMEN'),
+    'Field-only UI must be replaced with the simple full-catalog action');
 $beforePositionProd=IPS_GetScriptContent(40);
 $beforePositionEdit=IPS_GetScriptContent(41);
-ob_start();$mod->SaveEditToProd();$wholeDeviceBlocked=ob_get_clean();
-ck339(str_contains($wholeDeviceBlocked,'Veröffentlichung abgebrochen')
-    && IPS_GetScriptContent(40)===$beforePositionProd,
-    'Known invalid open/closed status must still block full-device publishing');
+ck339(IPS_GetScriptContent(40)===$beforePositionProd,
+    'The single-position legacy test must not alter PROD before invoking the old API');
 $singleOption='wc|jalousie|jalousie|fenster';
 $mod->SetSinglePositionProdKey($singleOption);
 ob_start();$mod->PreviewSinglePositionProd($singleOption);$previewPosition=ob_get_clean();
@@ -828,6 +825,65 @@ ck339(str_contains($afterResetPosition,'Bitte zuerst')
     && IPS_GetScriptContent(40)===$staleOrigin,
     'Reset must invalidate old field-only approvals without writing');
 
+
+
+/** V3.3.21 – The only visible publish button copies ALL device types
+ * and fields, including incomplete blinds and mismatched dimmer/fan roles,
+ * without validation. Backup and failure guards still apply. */
+$fullProd=$catalog;
+$fullEdit=$catalog;
+$fullProd['wc']['domains']['jalousie']['fenster']['title']='PROD alter Titel';
+$fullEdit['wc']['domains']['jalousie']['fenster']['title']='EDIT neuer Titel';
+$fullEdit['wc']['domains']['jalousie']['fenster']['ai']['stateMapping']=[];
+$fullEdit['wc']['domains']['jalousie']['fenster']['ai']['variables']['position']=59001;
+$fullEdit['wc']['domains']['jalousie']['fenster']['aiPositionId']=59001;
+$fullEdit['wohnzimmer']['domains']['licht']['switches']['decke']['title']='EDIT Licht';
+$fullEdit['wohnzimmer']['domains']['licht']['switches']['defekt']['title']='EDIT ungültiges Licht';
+$fullEdit['wohnzimmer']['domains']['dimmer']['dimmers']['dimmer']['title']='EDIT Dimmer';
+$fullEdit['wohnzimmer']['display']='EDIT Raumdaten';
+$fullEdit['wc']['domains']['jalousie']['fenster']['kiEnabled']=true;
+$fullEdit['wc']['domains']['jalousie']['fenster']['kiReadOnly']=true;
+$prodOriginal='<?php return '.var_export($fullProd,true).';';
+$editOriginal='<?php return '.var_export($fullEdit,true).';';
+IPS_SetScriptContent(40,$prodOriginal);
+IPS_SetScriptContent(41,$editOriginal);
+(new ReflectionMethod(RoomsCatalogConfigurator::class,'reloadAllFromCatalog'))->invoke($mod);
+$fullForm=json_decode($mod->GetConfigurationForm(),true,512,JSON_THROW_ON_ERROR);
+$fullFormJson=json_encode($fullForm,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+ck339(substr_count($fullFormJson,'RCC_SaveEditToProd($id);')===1
+    && !str_contains($fullFormJson,'RCC_PreviewScopedProdPublish')
+    && !str_contains($fullFormJson,'RCC_ApplySinglePositionProd'),
+    'Exactly one explicit EDIT to PROD publish action should be visible');
+$preBackupCount=count($GLOBALS['inventoryScripts']);
+ob_start();$mod->SaveEditToProd();$fullOutcome=ob_get_clean();
+ck339(str_contains($fullOutcome,'ERFOLG')
+    && IPS_GetScriptContent(40)===$editOriginal
+    && IPS_GetScriptContent(41)===$editOriginal
+    && count($GLOBALS['inventoryScripts'])===$preBackupCount+1,
+    'All-device EDIT->PROD copy failed despite incomplete KNX blind: '.$fullOutcome);
+$backupScriptId=array_key_last($GLOBALS['inventoryScripts']);
+ck339(IPS_GetScriptContent($backupScriptId)===$prodOriginal,
+    'Full catalog publish backup must preserve the exact previous PROD source');
+ck339((require $GLOBALS['inventoryDir'].'/scripts/40.php')===$fullEdit,
+    'All device types, room metadata, KI rights and even unvalidated fields must be copied 1:1');
+$prodBeforeNoop=IPS_GetScriptContent(40);
+$backupBeforeNoop=count($GLOBALS['inventoryScripts']);
+ob_start();$mod->SaveEditToProd();$noop=ob_get_clean();
+ck339(str_contains($noop,'bereits identisch')
+    && count($GLOBALS['inventoryScripts'])===$backupBeforeNoop
+    && IPS_GetScriptContent(40)===$prodBeforeNoop,
+    'Unchanged catalog should not create pointless backups or rewrite PROD');
+IPS_SetScriptContent(41,"<?php return [];");
+$prodBeforeEmpty=IPS_GetScriptContent(40);
+ob_start();$mod->SaveEditToProd();$emptyRefusal=ob_get_clean();
+ck339(str_contains($emptyRefusal,'EDIT NACH PROD ABGEBROCHEN')
+    && IPS_GetScriptContent(40)===$prodBeforeEmpty,
+    'Empty EDIT must never replace a working PROD catalog');
+IPS_SetScriptContent(41,'<?php return system("echo unsafe");');
+ob_start();$mod->SaveEditToProd();$unsafeRefusal=ob_get_clean();
+ck339(str_contains($unsafeRefusal,'statisches PHP-Array')
+    && IPS_GetScriptContent(40)===$prodBeforeEmpty,
+    'Dynamic executable PHP must never be copied into a production catalog');
 
 foreach(array_keys($GLOBALS['inventoryScripts']) as $id) @unlink($GLOBALS['inventoryDir'].'/scripts/'.$id.'.php');
 @rmdir($GLOBALS['inventoryDir'].'/scripts');@rmdir($GLOBALS['inventoryDir']);
