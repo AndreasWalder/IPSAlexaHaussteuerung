@@ -171,18 +171,21 @@ $savedLight = $saved['wohnzimmer']['domains']['licht']['switches']['decke'];
 v3Assert($savedLight['ai']['futureFeature']['nested']['a'] === 1, 'Partial IPSList save dropped future AI fields');
 v3Assert($savedLight['state'] === '12345' && $savedLight['title'] === 'Deckenlicht umbenannt', 'Partial row dropped old data');
 
-// Die produktive Freigabe muss ungültige Statussemantik vor dem Backup ablehnen.
+// Die bewusste Gesamtkopie uebernimmt auch unvollstaendige Jalousien.
 $withBlindAI = $saved;
 $withBlindAI['wohnzimmer']['domains']['jalousie']['sued']['ai'] = [
     'version' => 1, 'type' => 'blind', 'variables' => ['position' => 34567]
 ];
 $withBlindAI['wohnzimmer']['domains']['jalousie']['sued']['kiEnabled'] = true;
 IPS_SetScriptContent(21, '<?php return ' . var_export($withBlindAI, true) . ';');
-ob_start();
-$instance->SaveEditToProd();
-$rejected = ob_get_clean();
-v3Assert(str_contains($rejected, 'abgebrochen'), 'Ambiguous blind mapping was published');
-v3Assert($GLOBALS['rccNextId'] === 1000, 'Backup was created before validation');
+$originalProd = IPS_GetScriptContent(20);
+ob_start();$instance->SaveEditToProd();$publishedIncomplete=ob_get_clean();
+v3Assert(str_contains($publishedIncomplete,'ERFOLG')
+    && IPS_GetScriptContent(20)===IPS_GetScriptContent(21),
+    'An incomplete blind must not block deliberate full EDIT-to-PROD copy');
+$firstBackup=$GLOBALS['rccNextId'];
+v3Assert(IPS_GetScriptContent($firstBackup)===$originalProd,
+    'Original PROD was not backed up before incomplete catalog copy');
 
 $withBlindAI['wohnzimmer']['domains']['jalousie']['sued']['ai']['stateMapping'] = ['open' => 0, 'closed' => 100];
 IPS_SetScriptContent(21, '<?php return ' . var_export($withBlindAI, true) . ';');
@@ -193,7 +196,7 @@ v3Assert(str_contains($failed, 'Backup'), 'Failed backup not detected');
 v3Assert(IPS_GetScriptContent(20) === $originalProd, 'PROD changed without verified backup');
 $GLOBALS['rccBackupFails'] = false;
 ob_start(); $instance->SaveEditToProd(); $published = ob_get_clean();
-v3Assert(str_contains($published, 'aktualisiert'), 'Valid catalog not published');
+v3Assert(str_contains($published, 'ERFOLG'), 'Whole EDIT catalog not published');
 v3Assert(IPS_GetScriptContent($GLOBALS['rccNextId']) === $originalProd, 'Backup content mismatch');
 v3Assert((require $GLOBALS['rccTemp'] . '/scripts/20.php') === $withBlindAI, 'Publish modified EDIT data');
 
