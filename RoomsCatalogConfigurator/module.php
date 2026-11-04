@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/libs/DeviceTechnicalAudit.php';
 require_once __DIR__ . '/libs/SafeAutoRepair.php';
+require_once __DIR__ . '/libs/DeviceTypeRegistry.php';
 
 /**
  * ============================================================
@@ -77,64 +78,8 @@ require_once __DIR__ . '/libs/SafeAutoRepair.php';
 
 class RoomsCatalogConfigurator extends IPSModule
 {
-    /** Die Editor-Felder gehören nicht zum Katalog, sondern werden in ai.variables gespeichert. */
-    private const AI_VARIABLE_FIELDS = [
-        'power' => 'aiPowerId',
-        'brightness' => 'aiBrightnessId',
-        'position' => 'aiPositionId',
-        'targetPosition' => 'aiTargetPositionId',
-        'tilt' => 'aiTiltId',
-        'moving' => 'aiMovingId',
-        'control' => 'aiControlId',
-        'temperature' => 'aiTemperatureId',
-        'targetTemperature' => 'aiTargetTemperatureId',
-        'open' => 'aiOpenId',
-        'powerWatts' => 'aiWattsId',
-        'energy' => 'aiEnergyId',
-        'motion' => 'aiMotionId',
-        'illuminance' => 'aiIlluminanceId',
-        'status' => 'aiStatusId',
-        'action' => 'aiActionId'
-    ];
-
-    private const AI_STATE_FIELDS = [
-        'on' => 'aiOnValue', 'off' => 'aiOffValue',
-        'open' => 'aiOpenValue', 'closed' => 'aiClosedValue'
-    ];
-
-    private const AI_TYPE_FIELDS = [
-        'light' => ['power', 'status', 'control'],
-        'dimmer' => ['power', 'brightness', 'status', 'control'],
-        'blind' => ['position', 'targetPosition', 'tilt', 'status', 'moving', 'action', 'control'],
-        'heating' => ['temperature', 'targetTemperature', 'control'],
-        'window' => ['open', 'status'],
-        'switch' => ['power', 'powerWatts', 'energy', 'status', 'control'],
-        'energy' => ['powerWatts', 'energy', 'status'],
-        'motion' => ['motion', 'status'],
-        'illuminance' => ['illuminance'],
-        'fan' => ['power', 'control'],
-        'generic' => ['power', 'status', 'action', 'control']
-    ];
-
-    /** Normalisierte Namen/Ident-Beispiele. Mehrdeutige Treffer werden nicht übernommen. */
-    private const AI_SUGGESTION_NAMES = [
-        'power' => ['status','state','schaltstatus','schaltzustand','ein','onoff','powerstate'],
-        'brightness' => ['helligkeit','brightness','dimmwert','dimmerlevel','dimming'],
-        'position' => ['position','istposition','behangposition','rollladenposition','actualposition'],
-        'targetPosition' => ['sollposition','targetposition','positionvorgabe','positiontarget'],
-        'tilt' => ['lamelle','lamellen','positionlamelle','lamellenwinkel','lamellenposition','tilt','slatposition'],
-        'moving' => ['fahrstatus','fahrrichtung','moving','bewegungstatus','ismoving'],
-        'control' => ['schalten','schaltbefehl','steuern','steuerung','switch','command','control'],
-        'temperature' => ['isttemperatur','temperaturist','raumtemperatur','actualtemperature','temperature'],
-        'targetTemperature' => ['solltemperatur','temperatursoll','zieltemperatur','targettemperature','setpoint'],
-        'open' => ['fensterkontakt','fensterstatus','kontakt','contact','openstate'],
-        'powerWatts' => ['leistung','wirkleistung','powerw','powerwatts','currentpower'],
-        'energy' => ['energie','energieverbrauch','zaehlerstand','energy','consumption','kwh'],
-        'motion' => ['bewegung','bewegungsmelder','motion','presence','praesenz'],
-        'illuminance' => ['lux','helligkeit','beleuchtungsstaerke','illuminance'],
-        'status' => ['status','devicestatus','geraetestatus','rollladenstatus','shutterstatus','blindenstatus'],
-        'action' => ['aktion','fahrbefehl','fahraktion','action','direction','fahrtrichtung','befehl']
-    ];
+    // V3.4.4: Typen, editierbare Eigenschaften und Rollen nur noch zentral
+    // in libs/DeviceTypeRegistry.php pflegen, nicht in diesem Formular.
 
     /** Auflösung der übergeordneten Instanz-ID je IP-Symcon-Objekt innerhalb des PHP-Laufs. */
     private array $ipsInstanceLookupCache = [];
@@ -412,7 +357,7 @@ class RoomsCatalogConfigurator extends IPSModule
     public function SetBulkOption(string $field,string $value): void
     {
         $allowed = match ($field) {
-            'BulkDeviceType'=>array_merge(['keep'],array_keys(self::AI_TYPE_FIELDS)),
+            'BulkDeviceType'=>array_merge(['keep'],array_keys(RCCDeviceTypeRegistry::roles())),
             'BulkAIMode'=>['keep','disabled','read','write'],
             'BulkSuggestions'=>['yes','no'],
             'BulkReview'=>['keep','pending'],
@@ -431,7 +376,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $suggest = $this->ReadAttributeString('BulkSuggestions');
         $review = $this->ReadAttributeString('BulkReview');
         return [
-            'type'=>array_key_exists($type,self::AI_TYPE_FIELDS) ? $type : 'keep',
+            'type'=>array_key_exists($type,RCCDeviceTypeRegistry::roles()) ? $type : 'keep',
             'aiMode'=>in_array($aiMode,['disabled','read','write'],true) ? $aiMode : 'keep',
             'suggest'=>$suggest !== 'no',
             'review'=>$review === 'pending' ? 'pending' : 'keep'
@@ -570,20 +515,20 @@ class RoomsCatalogConfigurator extends IPSModule
             if ($options['type']!=='keep' && $options['suggest'] && $type!=='generic') {
                 $variables = $this->getScopedIpsVariables($row);
                 $used = [];
-                foreach (self::AI_VARIABLE_FIELDS as $field) {
+                foreach (RCCDeviceTypeRegistry::fields() as $field) {
                     if ((int)($row[$field] ?? 0)>0) $used[(int)$row[$field]]=true;
                 }
                 foreach ($this->suggestAIFields($row,$type,$variables) as $suggestion) {
                     $id = (int)($suggestion['candidateId'] ?? 0);
                     if ($suggestion['confidence']!=='Hoch' || $id<=0 || isset($used[$id])) continue;
-                    $row[self::AI_VARIABLE_FIELDS[$suggestion['property']]]=$id;
+                    $row[RCCDeviceTypeRegistry::fields()[$suggestion['property']]]=$id;
                     $used[$id]=true;
                     $suggested++;
                     $row['aiReviewed']=false;
                 }
                 $statusId = (int)($row['aiStatusId'] ?? $row['aiOpenId'] ?? $row['aiPowerId'] ?? 0);
                 foreach ($this->inferStateMapping($variables,$statusId,$type) as $meaning=>$value) {
-                    $field = self::AI_STATE_FIELDS[$meaning] ?? null;
+                    $field = RCCDeviceTypeRegistry::states()[$meaning] ?? null;
                     if ($field===null || trim((string)($row[$field] ?? ''))!=='') continue;
                     $row[$field]=is_bool($value) ? ($value ? 'true' : 'false') : (string)$value;
                     $row['aiReviewed']=false;
@@ -595,7 +540,7 @@ class RoomsCatalogConfigurator extends IPSModule
             }
             if ($options['review']==='pending' || empty($row['aiReviewed'])) {
                 $row['aiReviewed']=false;
-                if ($type!=='' && array_key_exists($type,self::AI_TYPE_FIELDS)) {
+                if ($type!=='' && array_key_exists($type,RCCDeviceTypeRegistry::roles())) {
                     $review = is_array($row['ai']['review'] ?? null) ? $row['ai']['review'] : [];
                     $review['status']='pending';
                     unset($review['confirmedAt']);
@@ -643,7 +588,7 @@ class RoomsCatalogConfigurator extends IPSModule
         }
         $row = $selected['row'];
         $type = (string)($row['aiType'] ?? '');
-        if (!array_key_exists($type, self::AI_TYPE_FIELDS)) $type = $this->inferredAIType($row);
+        if (!array_key_exists($type, RCCDeviceTypeRegistry::roles())) $type = $this->inferredAIType($row);
         $scopedVariables = $this->getScopedIpsVariables($row);
         if ($scopedVariables === []) {
             $this->clearSuggestionPreview();
@@ -681,7 +626,7 @@ class RoomsCatalogConfigurator extends IPSModule
             return;
         }
         $type = (string)($preview['type'] ?? '');
-        if (!array_key_exists($type, self::AI_TYPE_FIELDS)) return;
+        if (!array_key_exists($type, RCCDeviceTypeRegistry::roles())) return;
         $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
         if ($editId <= 0 || !IPS_ScriptExists($editId)) {
             echo 'RoomsCatalogEdit ist nicht konfiguriert.';
@@ -699,8 +644,8 @@ class RoomsCatalogConfigurator extends IPSModule
         foreach ($preview['suggestions'] as $suggestion) {
             if (!is_array($suggestion) || ($suggestion['confidence'] ?? '') !== 'Hoch') continue;
             $property = (string)($suggestion['property'] ?? '');
-            if (!in_array($property, self::AI_TYPE_FIELDS[$type], true)) continue;
-            $field = self::AI_VARIABLE_FIELDS[$property];
+            if (!in_array($property, RCCDeviceTypeRegistry::roles()[$type], true)) continue;
+            $field = RCCDeviceTypeRegistry::fields()[$property];
             $candidate = (int)($suggestion['candidateId'] ?? 0);
             if (($liveIndex[$property]['confidence'] ?? '') !== 'Hoch'
                 || (int)($liveIndex[$property]['candidateId'] ?? 0) !== $candidate) continue;
@@ -769,7 +714,7 @@ class RoomsCatalogConfigurator extends IPSModule
         }
         $anchorFields = array_merge(
             ['state','toggle','value','set','wert','stellung','ist','soll','eingestellt','statusId','controlId','tiltId','id','var'],
-            array_values(self::AI_VARIABLE_FIELDS)
+            array_values(RCCDeviceTypeRegistry::fields())
         );
         $scopeCounts = [];
         $seenAnchors = [];
@@ -879,7 +824,7 @@ class RoomsCatalogConfigurator extends IPSModule
 
     private function suggestionScore(array $variable, string $property): int
     {
-        $names = self::AI_SUGGESTION_NAMES[$property] ?? [];
+        $names = RCCDeviceTypeRegistry::suggestions()[$property] ?? [];
         $name = $this->normalizeSuggestionText((string)$variable['name']);
         $ident = $this->normalizeSuggestionText((string)$variable['ident']);
         $profile = $this->normalizeSuggestionText((string)$variable['profile']);
@@ -892,20 +837,29 @@ class RoomsCatalogConfigurator extends IPSModule
             }
         }
         // Ein Profil alleine reicht bewusst nie zur automatischen Zuordnung.
-        $profileHint = match ($property) {
-            'power','control' => ['switch','boolean'],
-            'brightness' => ['intensity','brightness'],
-            'position','targetPosition','tilt' => ['shutter','blind','intensity'],
-            'temperature','targetTemperature' => ['temperature'],
-            'open' => ['window','contact'],
-            'powerWatts' => ['watt','power'],
-            'energy' => ['energy','electricity','kwh'],
-            'motion','moving' => ['motion','boolean'],
-            'illuminance' => ['illumination','lux','illuminance'],
-            'status' => ['status','shutter','blind'],
-            'action' => ['action','direction','blind','shutter'],
-            default => []
-        };
+        $profileHints = [
+            'power'=>['switch','boolean'],'control'=>['switch','boolean'],
+            'brightness'=>['intensity','brightness'],
+            'position'=>['shutter','blind','intensity'],
+            'targetPosition'=>['shutter','blind','intensity'],
+            'tilt'=>['shutter','blind','intensity'],
+            'temperature'=>['temperature'],'targetTemperature'=>['temperature'],
+            'open'=>['window','contact'],'powerWatts'=>['watt','power'],
+            'energy'=>['energy','electricity','kwh'],'motion'=>['motion','boolean'],
+            'moving'=>['motion','boolean'],'illuminance'=>['illumination','lux'],
+            'status'=>['status','shutter','blind'],'action'=>['action','direction','blind'],
+            'humidity'=>['humidity','feuchtigkeit'],'alarm'=>['alarm'],
+            'batteryLevel'=>['battery','batterie','soc'],
+            'waterLeak'=>['leak','wasser'],'windSpeed'=>['wind','speed'],
+            'rain'=>['regen','rain'],'online'=>['online','reachable'],
+            'locked'=>['locked','verriegelt'],'armed'=>['armed','scharf'],
+            'feedIn'=>['feedin','einspeisung'],'selfConsumption'=>['eigenverbrauch'],
+            'chargePower'=>['ladeleistung','chargepower'],
+            'dischargePower'=>['entladeleistung','dischargepower'],
+            'volume'=>['volume','wasser'],'flowRate'=>['flow','durchfluss'],
+            'charging'=>['charging','laden']
+        ];
+        $profileHint = $profileHints[$property] ?? [];
         foreach ($profileHint as $hint) {
             if ($profile !== '' && str_contains($profile, $hint)) {
                 $score += 15;
@@ -920,14 +874,7 @@ class RoomsCatalogConfigurator extends IPSModule
         if ($property === 'action' && count(array_intersect($associations,
             ['auf','ab','stop','open','close','up','down'])) >= 2) $score += 25;
         $type = (int)($variable['type'] ?? -1);
-        $compatible = match ($property) {
-            'power','open','motion','moving' => in_array($type, [0,1], true),
-            'illuminance' => $type === 2,
-            'brightness','position','targetPosition','tilt','temperature','targetTemperature','powerWatts','energy' => in_array($type, [1,2], true),
-            'control','action' => in_array($type, [0,1,2], true),
-            'status' => in_array($type, [0,1,2,3], true),
-            default => false
-        };
+        $compatible = in_array($type, RCCDeviceTypeRegistry::dataTypes()[$property] ?? [],true);
         if (!$compatible) return 0;
         $score += 10;
         if (in_array($property,['control','action'],true)) {
@@ -943,8 +890,8 @@ class RoomsCatalogConfigurator extends IPSModule
     private function suggestAIFields(array $row, string $type, array $variables): array
     {
         $suggestions = [];
-        foreach (self::AI_TYPE_FIELDS[$type] as $property) {
-            $field = self::AI_VARIABLE_FIELDS[$property];
+        foreach (RCCDeviceTypeRegistry::roles()[$type] as $property) {
+            $field = RCCDeviceTypeRegistry::fields()[$property];
             $current = (int)($row[$field] ?? 0);
             $ranked = [];
             if ($current <= 0) {
@@ -1002,7 +949,7 @@ class RoomsCatalogConfigurator extends IPSModule
             if ($source > 0) $known['source:' . $source] = true;
             foreach (array_merge(
                 ['state','toggle','value','set','wert','stellung','ist','soll','eingestellt','statusId','controlId','tiltId','id','var'],
-                array_values(self::AI_VARIABLE_FIELDS)
+                array_values(RCCDeviceTypeRegistry::fields())
             ) as $field) {
                 $id = (int)($row[$field] ?? 0);
                 if ($id > 0) $known['var:' . $id] = true;
@@ -1047,7 +994,7 @@ class RoomsCatalogConfigurator extends IPSModule
     private function discoverHighProperties(array $variables): array
     {
         $high = [];
-        foreach (self::AI_VARIABLE_FIELDS as $property => $field) {
+        foreach (RCCDeviceTypeRegistry::fields() as $property => $field) {
             $ranked = [];
             foreach ($variables as $variable) {
                 $score = $this->suggestionScore($variable, $property);
@@ -1114,10 +1061,10 @@ class RoomsCatalogConfigurator extends IPSModule
         $types = [];
         $signatures = [];
         foreach ($this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($catalog)) as $row) {
-            if (empty($row['aiReviewed']) || !array_key_exists((string)($row['aiType'] ?? ''),self::AI_TYPE_FIELDS)) continue;
+            if (empty($row['aiReviewed']) || !array_key_exists((string)($row['aiType'] ?? ''),RCCDeviceTypeRegistry::roles())) continue;
             $sourceId = (int)($row['discoverySourceId'] ?? 0);
             if ($sourceId <= 0) {
-                foreach (array_values(self::AI_VARIABLE_FIELDS) as $field) {
+                foreach (array_values(RCCDeviceTypeRegistry::fields()) as $field) {
                     $variableId = (int)($row[$field] ?? 0);
                     if ($variableId > 0) { $sourceId = $this->lookupIpsInstanceId($variableId); break; }
                 }
@@ -1130,7 +1077,7 @@ class RoomsCatalogConfigurator extends IPSModule
             } catch (Throwable $ignored) { continue; }
             $type = (string)$row['aiType'];
             $types[$type] = true;
-            foreach (self::AI_VARIABLE_FIELDS as $property=>$field) {
+            foreach (RCCDeviceTypeRegistry::fields() as $property=>$field) {
                 $variableId = (int)($row[$field] ?? 0);
                 if ($variableId <= 0) continue;
                 $object = IPS_GetObject($variableId);
@@ -1192,20 +1139,7 @@ class RoomsCatalogConfigurator extends IPSModule
     /** Fuer jede Geräteklasse: minimal notwendige Rueckmeldung, keine Schreibpflicht. */
     private function minimumReadingRoles(string $type): array
     {
-        return match ($type) {
-            'light','switch' => [['power','status']],
-            // Bei Lueftern darf ein einziges beschreibbares Ein/Aus-Signal
-            // sowohl Steuerwert als auch angezeigter Wert sein.
-            'fan' => [['power','control']],
-            'dimmer' => [['brightness']],
-            'blind' => [['position','status']],
-            'heating' => [['temperature']],
-            'window' => [['open','status']],
-            'energy' => [['energy','powerWatts']],
-            'motion' => [['motion']],
-            'illuminance' => [['illuminance']],
-            default => []
-        };
+        return RCCDeviceTypeRegistry::required($type);
     }
 
     private function roleCoverage(string $type, array $suggestions): array
@@ -1231,14 +1165,7 @@ class RoomsCatalogConfigurator extends IPSModule
 
     private function discoveryTypeLocation(string $type): array
     {
-        return match ($type) {
-            'light' => ['licht','switches'], 'dimmer' => ['licht','dimmers'],
-            'blind' => ['jalousie','jalousie'], 'heating' => ['heizung','heizung'],
-            'fan' => ['lueftung','fans'], 'window' => ['sensoren','fenster'],
-            'motion' => ['sensoren','bewegung'],
-            'illuminance' => ['licht','status'], 'energy' => ['energie','zaehler'],
-            'switch' => ['geraete','switches'], default => ['geraete','other']
-        };
+        return RCCDeviceTypeRegistry::location($type);
     }
 
     private function discoveryDeviceKey(string $title, int $sourceId): string
@@ -1310,7 +1237,7 @@ class RoomsCatalogConfigurator extends IPSModule
                     break;
                 }
                 foreach (array_merge(['state','toggle','value','set','wert','stellung','ist','soll','statusId','controlId'],
-                    array_values(self::AI_VARIABLE_FIELDS)) as $field) {
+                    array_values(RCCDeviceTypeRegistry::fields())) as $field) {
                     $id = (int)($row[$field] ?? 0);
                     if ($id > 0 && in_array($id,$knownIds,true)) { $device = $row; break 2; }
                 }
@@ -1322,7 +1249,7 @@ class RoomsCatalogConfigurator extends IPSModule
             }
             $checked++;
             $type = (string)($device['aiType'] ?? '');
-            if (!array_key_exists($type,self::AI_TYPE_FIELDS) || $type === 'generic') {
+            if (!array_key_exists($type,RCCDeviceTypeRegistry::roles()) || $type === 'generic') {
                 $unresolved[] = 'IPS ' . $candidateSource . ': Geraetetyp noch nicht bestaetigt';
                 continue;
             }
@@ -1330,7 +1257,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 $unresolved[] = 'IPS ' . $candidateSource . ': Zuordnungen noch nicht am Geraet bestaetigt';
             }
             $bound = [];
-            foreach (self::AI_VARIABLE_FIELDS as $property=>$field) {
+            foreach (RCCDeviceTypeRegistry::fields() as $property=>$field) {
                 $id = (int)($device[$field] ?? 0);
                 if ($id > 0 && (!function_exists('IPS_VariableExists') || IPS_VariableExists($id))) {
                     $bound[$property] = true;
@@ -1482,7 +1409,7 @@ class RoomsCatalogConfigurator extends IPSModule
             if ($candidate['composite'] !== (string)($row['composite'] ?? '')) continue;
             if (array_key_exists('selected',$row)) $candidate['selected'] = (bool)$row['selected'];
             $type = (string)($row['deviceType'] ?? '');
-            if (array_key_exists($type,self::AI_TYPE_FIELDS)) $candidate['deviceType'] = $type;
+            if (array_key_exists($type,RCCDeviceTypeRegistry::roles())) $candidate['deviceType'] = $type;
             break;
         }
         unset($candidate);
@@ -1519,7 +1446,7 @@ class RoomsCatalogConfigurator extends IPSModule
             if (empty($candidate['selected'])) continue;
             $identity = (string)($candidate['composite'] ?? '');
             $type = (string)($candidate['deviceType'] ?? '');
-            if (!isset($indexes[$identity]) || !array_key_exists($type,self::AI_TYPE_FIELDS)
+            if (!isset($indexes[$identity]) || !array_key_exists($type,RCCDeviceTypeRegistry::roles())
                 || (string)($rows[$indexes[$identity]]['aiType'] ?? '') !== '') {
                 echo 'Legacy-Uebernahme abgebrochen: Eintrag/Typ ungueltig. Bitte neu analysieren.';
                 return;
@@ -1528,18 +1455,18 @@ class RoomsCatalogConfigurator extends IPSModule
             $row = $rows[$index];
             $variables = $this->getScopedIpsVariables($row);
             $used = [];
-            foreach (self::AI_VARIABLE_FIELDS as $property=>$field) {
+            foreach (RCCDeviceTypeRegistry::fields() as $property=>$field) {
                 if ((int)($row[$field] ?? 0) > 0) $used[(int)$row[$field]] = true;
             }
             foreach ($this->suggestAIFields($row,$type,$variables) as $suggestion) {
                 $id = (int)$suggestion['candidateId'];
                 if ($suggestion['confidence'] !== 'Hoch' || $id <= 0 || isset($used[$id])) continue;
-                $row[self::AI_VARIABLE_FIELDS[$suggestion['property']]] = $id;
+                $row[RCCDeviceTypeRegistry::fields()[$suggestion['property']]] = $id;
                 $used[$id] = true;
             }
             $stateId = (int)($row['aiStatusId'] ?? $row['aiOpenId'] ?? $row['aiPowerId'] ?? 0);
             foreach ($this->inferStateMapping($variables,$stateId,$type) as $meaning=>$value) {
-                $field = self::AI_STATE_FIELDS[$meaning] ?? null;
+                $field = RCCDeviceTypeRegistry::states()[$meaning] ?? null;
                 if ($field === null || trim((string)($row[$field] ?? '')) !== '') continue;
                 $row[$field] = is_bool($value) ? ($value ? 'true' : 'false') : (string)$value;
             }
@@ -1744,7 +1671,7 @@ class RoomsCatalogConfigurator extends IPSModule
             if (isset($row['roomKey'])) $candidate['roomKey'] = trim((string)$row['roomKey']);
             if (isset($row['title'])) $candidate['title'] = trim((string)$row['title']);
             $type = (string)($row['deviceType'] ?? '');
-            if (array_key_exists($type,self::AI_TYPE_FIELDS)) $candidate['deviceType'] = $type;
+            if (array_key_exists($type,RCCDeviceTypeRegistry::roles())) $candidate['deviceType'] = $type;
             break;
         }
         unset($candidate);
@@ -1788,7 +1715,7 @@ class RoomsCatalogConfigurator extends IPSModule
             $type = (string)($candidate['deviceType'] ?? '');
             $title = trim((string)($candidate['title'] ?? ''));
             if ($sourceId <= 0 || !IPS_ObjectExists($sourceId) || !isset($rooms[$roomKey]['domains'])
-                || !array_key_exists($type,self::AI_TYPE_FIELDS) || $title === '') {
+                || !array_key_exists($type,RCCDeviceTypeRegistry::roles()) || $title === '') {
                 $errors[] = 'Geraet ' . $sourceId . ': Raum, Typ oder Name ungueltig.';
                 continue;
             }
@@ -1813,13 +1740,13 @@ class RoomsCatalogConfigurator extends IPSModule
             foreach ($this->suggestAIFields($entry,$type,$variables) as $suggestion) {
                 $id = (int)$suggestion['candidateId'];
                 if ($suggestion['confidence'] !== 'Hoch' || $id <= 0 || isset($used[$id])) continue;
-                $entry[self::AI_VARIABLE_FIELDS[$suggestion['property']]] = $id;
+                $entry[RCCDeviceTypeRegistry::fields()[$suggestion['property']]] = $id;
                 $used[$id] = true;
             }
             $statusId = (int)($entry['aiStatusId'] ?? $entry['aiOpenId'] ?? $entry['aiPowerId'] ?? 0);
             $stateMapping = $this->inferStateMapping($variables,$statusId,$type);
             foreach ($stateMapping as $meaning=>$value) {
-                $field = self::AI_STATE_FIELDS[$meaning] ?? null;
+                $field = RCCDeviceTypeRegistry::states()[$meaning] ?? null;
                 if ($field !== null) $entry[$field] = is_bool($value)
                     ? ($value ? 'true' : 'false') : (string)$value;
             }
@@ -1841,7 +1768,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 'window' => ['open'=>'state'], 'motion' => ['motion'=>'state'], default => []
             };
             foreach ($legacy as $property => $field) {
-                $id = (int)($entry[self::AI_VARIABLE_FIELDS[$property]] ?? 0);
+                $id = (int)($entry[RCCDeviceTypeRegistry::fields()[$property]] ?? 0);
                 if ($id > 0) $entry[$field] = $id;
             }
             $exists = false;
@@ -1888,7 +1815,7 @@ class RoomsCatalogConfigurator extends IPSModule
             'key', 'title', 'synonyms', 'entityId', 'kiEnabled', 'kiReadOnly',
             'state', 'toggle', 'editorOriginalKey'
         ];
-        $keys = array_merge($keys, ['aiType','aiReviewed'], array_values(self::AI_VARIABLE_FIELDS), array_values(self::AI_STATE_FIELDS));
+        $keys = array_merge($keys, ['aiType','aiReviewed'], array_values(RCCDeviceTypeRegistry::fields()), array_values(RCCDeviceTypeRegistry::states()));
         foreach ($entries as $row) {
             if (!is_array($row)) continue;
             foreach (array_keys($row) as $name) {
@@ -2241,11 +2168,11 @@ class RoomsCatalogConfigurator extends IPSModule
 
             $aiType = trim((string)($row['aiType'] ?? ''));
             if ($aiType !== '') {
-                if (!array_key_exists($aiType, self::AI_TYPE_FIELDS)) {
+                if (!array_key_exists($aiType, RCCDeviceTypeRegistry::roles())) {
                     $errors[] = $key . ': unbekannter KI-Geraetetyp ' . $aiType;
                 } else {
-                    foreach (self::AI_TYPE_FIELDS[$aiType] as $property) {
-                        $field = self::AI_VARIABLE_FIELDS[$property];
+                    foreach (RCCDeviceTypeRegistry::roles()[$aiType] as $property) {
+                        $field = RCCDeviceTypeRegistry::fields()[$property];
                         $id = (int)($row[$field] ?? 0);
                         if ($id < 0 || ($id > 0 && !IPS_VariableExists($id))) {
                             $errors[] = $key . ': ungueltige KI-Variable ' . $property . ' (' . $id . ')';
@@ -2283,6 +2210,15 @@ class RoomsCatalogConfigurator extends IPSModule
 
     private function aiReadId(array $row): int
     {
+        $type = (string)($row['aiType'] ?? '');
+        if ($type !== '' && array_key_exists($type, RCCDeviceTypeRegistry::roles())) {
+            foreach (RCCDeviceTypeRegistry::roles()[$type] as $property) {
+                if (in_array($property, ['control','action'], true)) continue;
+                $field = RCCDeviceTypeRegistry::fields()[$property] ?? '';
+                $id = (int)($row[$field] ?? 0);
+                if ($id > 0) return $id;
+            }
+        }
         $group = (string)($row['group'] ?? '');
         $fields = match ($group) {
             'heizung' => ['ist','aiTemperatureId','soll','eingestellt'],
@@ -2311,6 +2247,11 @@ class RoomsCatalogConfigurator extends IPSModule
 
     private function isSupportedAIEntry(array $row): bool
     {
+        // Alle bekannten typisierten Sensoren und Messgeraete sind lesbar;
+        // die separate Schreibfreigabe bleibt auf die Altgruppen beschraenkt.
+        $type = (string)($row['aiType'] ?? '');
+        if ($type !== '' && $type !== 'generic'
+            && array_key_exists($type, RCCDeviceTypeRegistry::roles())) return true;
         $domain = (string)($row['domain'] ?? '');
         $group = (string)($row['group'] ?? '');
         return ($domain === 'licht' && in_array($group,['switches','dimmers','status'],true))
@@ -2373,13 +2314,13 @@ class RoomsCatalogConfigurator extends IPSModule
         $row['aiType'] = is_string($ai['type'] ?? null) ? $ai['type'] : '';
         $row['aiReviewed'] = ($ai['review']['status'] ?? '') === 'confirmed';
         $variables = isset($ai['variables']) && is_array($ai['variables']) ? $ai['variables'] : [];
-        foreach (self::AI_VARIABLE_FIELDS as $property => $field) {
+        foreach (RCCDeviceTypeRegistry::fields() as $property => $field) {
             $configured = $variables[$property] ?? null;
             $row[$field] = is_numeric($configured) ? (int)$configured
                 : $this->legacyAIVariable($row, $property);
         }
         $mapping = isset($ai['stateMapping']) && is_array($ai['stateMapping']) ? $ai['stateMapping'] : [];
-        foreach (self::AI_STATE_FIELDS as $property => $field) {
+        foreach (RCCDeviceTypeRegistry::states() as $property => $field) {
             $value = $mapping[$property] ?? null;
             $row[$field] = $value === null ? '' : (is_bool($value) ? ($value ? 'true' : 'false') : (string)$value);
         }
@@ -2400,14 +2341,14 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         $type = trim((string)($row['aiType'] ?? ''));
         // Ohne explizite Typwahl bleibt ein Legacy-Gerät ein Legacy-Gerät.
-        if ($type === '' || !array_key_exists($type, self::AI_TYPE_FIELDS)) return $cfg;
+        if ($type === '' || !array_key_exists($type, RCCDeviceTypeRegistry::roles())) return $cfg;
 
         $ai = isset($cfg['ai']) && is_array($cfg['ai']) ? $cfg['ai'] : [];
         $ai['version'] = max(1, (int)($ai['version'] ?? 1));
         $ai['type'] = $type;
         $variables = isset($ai['variables']) && is_array($ai['variables']) ? $ai['variables'] : [];
-        foreach (self::AI_VARIABLE_FIELDS as $property => $field) {
-            if (!in_array($property, self::AI_TYPE_FIELDS[$type], true)) continue;
+        foreach (RCCDeviceTypeRegistry::fields() as $property => $field) {
+            if (!in_array($property, RCCDeviceTypeRegistry::roles()[$type], true)) continue;
             if (!array_key_exists($field, $row)) continue;
             $value = (int)$row[$field];
             if ($value > 0) {
@@ -2423,7 +2364,7 @@ class RoomsCatalogConfigurator extends IPSModule
         if ($variables !== [] || array_key_exists('variables', $ai)) $ai['variables'] = $variables;
 
         $mapping = isset($ai['stateMapping']) && is_array($ai['stateMapping']) ? $ai['stateMapping'] : [];
-        foreach (self::AI_STATE_FIELDS as $property => $field) {
+        foreach (RCCDeviceTypeRegistry::states() as $property => $field) {
             if (!array_key_exists($field, $row)) continue;
             $value = trim((string)$row[$field]);
             if ($value !== '') $mapping[$property] = $this->parseAIStateValue($value);
@@ -2520,10 +2461,10 @@ class RoomsCatalogConfigurator extends IPSModule
         if ($row['title'] === '') throw new InvalidArgumentException('Bitte einen Geraetenamen eingeben.');
 
         $type = trim((string)($row['aiType'] ?? ($source['aiType'] ?? '')));
-        if ($new && !array_key_exists($type, self::AI_TYPE_FIELDS)) {
+        if ($new && !array_key_exists($type, RCCDeviceTypeRegistry::roles())) {
             throw new InvalidArgumentException('Neue Geraete brauchen einen konkreten Geraetetyp.');
         }
-        if ($type !== '' && !array_key_exists($type, self::AI_TYPE_FIELDS)) {
+        if ($type !== '' && !array_key_exists($type, RCCDeviceTypeRegistry::roles())) {
             throw new InvalidArgumentException('Unbekannter Geraetetyp.');
         }
         if ($new || ($type !== '' && $type !== (string)($source['aiType'] ?? '')
@@ -2546,13 +2487,13 @@ class RoomsCatalogConfigurator extends IPSModule
                 default => []
             };
             foreach ($legacyFields as $property => $legacyField) {
-                $id = (int)($row[self::AI_VARIABLE_FIELDS[$property]] ?? 0);
+                $id = (int)($row[RCCDeviceTypeRegistry::fields()[$property]] ?? 0);
                 if ($id > 0 && (int)($row[$legacyField] ?? 0) <= 0) $row[$legacyField] = $id;
             }
         }
         if (!$new && $type !== (string)($source['aiType'] ?? '')) $row['aiReviewed'] = false;
         if (!$new) {
-            foreach (array_merge(array_values(self::AI_VARIABLE_FIELDS),array_values(self::AI_STATE_FIELDS)) as $field) {
+            foreach (array_merge(array_values(RCCDeviceTypeRegistry::fields()),array_values(RCCDeviceTypeRegistry::states())) as $field) {
                 if (array_key_exists($field,$row) && (string)$row[$field] !== (string)($source[$field] ?? '')) {
                     $row['aiReviewed'] = false;
                     break;
@@ -4032,8 +3973,8 @@ class RoomsCatalogConfigurator extends IPSModule
         }
         // Geklontes Gerät darf niemals heimlich die KI-Variablen des Originals nutzen.
         unset($clone['ai']);
-        foreach (self::AI_VARIABLE_FIELDS as $virtualField) $clone[$virtualField] = 0;
-        foreach (self::AI_STATE_FIELDS as $virtualField) $clone[$virtualField] = '';
+        foreach (RCCDeviceTypeRegistry::fields() as $virtualField) $clone[$virtualField] = 0;
+        foreach (RCCDeviceTypeRegistry::states() as $virtualField) $clone[$virtualField] = '';
         $clone['kiEnabled'] = false;
         $clone['kiReadOnly'] = true;
         if (isset($clone['entityId'])) $clone['entityId'] = '';
@@ -4124,7 +4065,7 @@ class RoomsCatalogConfigurator extends IPSModule
             'manualEligible'=>false,
             'roleCount'=>0
         ];
-        if ($key === null || !array_key_exists($type,self::AI_TYPE_FIELDS) || $type === 'generic') {
+        if ($key === null || !array_key_exists($type,RCCDeviceTypeRegistry::roles()) || $type === 'generic') {
             return $base + [
                 'capability'=>'Technische Zuordnung pruefen',
                 'status'=>$type === '' ? 'Legacy' : 'Manuell pruefen',
@@ -4141,14 +4082,14 @@ class RoomsCatalogConfigurator extends IPSModule
         $explicit = is_array($sourceAi) && is_array($sourceAi['variables'] ?? null)
             ? $sourceAi['variables'] : [];
         $typedRow = $row;
-        foreach (self::AI_VARIABLE_FIELDS as $role=>$field) {
+        foreach (RCCDeviceTypeRegistry::fields() as $role=>$field) {
             if (!isset($explicit[$role]) || (int)$explicit[$role] <= 0) {
                 $typedRow[$field] = 0;
             }
         }
         $assessment = RCCDeviceTechnicalAudit::assess(
             $typedRow,
-            array_intersect_key(self::AI_VARIABLE_FIELDS,array_fill_keys(self::AI_TYPE_FIELDS[$type],true)),
+            array_intersect_key(RCCDeviceTypeRegistry::fields(),array_fill_keys(RCCDeviceTypeRegistry::roles()[$type],true)),
             $variables,
             $this->minimumReadingRoles($type),
             fn(array $variable,string $property): int => $this->suggestionScore($variable,$property),
@@ -4164,17 +4105,17 @@ class RoomsCatalogConfigurator extends IPSModule
         foreach ($this->minimumReadingRoles($type) as $alternatives) {
             $hasTypedRole = false;
             foreach ($alternatives as $role) {
-                $field = self::AI_VARIABLE_FIELDS[$role];
+                $field = RCCDeviceTypeRegistry::fields()[$role];
                 if ((int)($typedRow[$field] ?? 0) > 0) $hasTypedRole = true;
             }
             if ($hasTypedRole) continue;
             foreach ($alternatives as $role) {
-                $field = self::AI_VARIABLE_FIELDS[$role];
+                $field = RCCDeviceTypeRegistry::fields()[$role];
                 if ((int)($row[$field] ?? 0) > 0) $missingTypedRoles[] = $role;
             }
         }
         $assessment['mappedExplicitRoles'] = count(array_filter(
-            array_intersect_key($explicit,array_fill_keys(self::AI_TYPE_FIELDS[$type],true)),
+            array_intersect_key($explicit,array_fill_keys(RCCDeviceTypeRegistry::roles()[$type],true)),
             static fn($id): bool => (int)$id > 0
         ));
         $assessment['legacyRoleCandidates'] = count($missingTypedRoles);
@@ -5167,7 +5108,7 @@ class RoomsCatalogConfigurator extends IPSModule
             elseif (empty($row['kiReadOnly'])) $summary['writable']++;
             else $summary['readOnly']++;
             $type = trim((string)($row['aiType']??''));
-            if ($type === '' || !array_key_exists($type,self::AI_TYPE_FIELDS)) {
+            if ($type === '' || !array_key_exists($type,RCCDeviceTypeRegistry::roles())) {
                 $summary['legacy']++;
                 if (count($summary['examples']) < 20) $summary['examples'][]='Ohne typisiertes Modell: '.$path;
                 continue;
@@ -5182,7 +5123,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 if (count($summary['examples']) < 20) $summary['examples'][]='Zuordnung unbestaetigt: '.$path;
             } else $summary['confirmed']++;
             $bound = [];
-            foreach (self::AI_VARIABLE_FIELDS as $property=>$field) {
+            foreach (RCCDeviceTypeRegistry::fields() as $property=>$field) {
                 $id = (int)($row[$field]??0);
                 if ($id <= 0) continue;
                 if ($validateVariables && function_exists('IPS_VariableExists') && !IPS_VariableExists($id)) {
@@ -5677,11 +5618,10 @@ class RoomsCatalogConfigurator extends IPSModule
                             ['type'=>'Select','name'=>'BulkDeviceType','caption'=>'Geraetetyp fuer alle Markierten',
                                 'options'=>[
                                     ['caption'=>'Nicht aendern','value'=>'keep'],
-                                    ['caption'=>'Licht','value'=>'light'],['caption'=>'Dimmer','value'=>'dimmer'],
-                                    ['caption'=>'Jalousie','value'=>'blind'],['caption'=>'Heizung','value'=>'heating'],
-                                    ['caption'=>'Fensterkontakt','value'=>'window'],['caption'=>'Steckdose/Schalter','value'=>'switch'],
-                                    ['caption'=>'Energiezaehler','value'=>'energy'],['caption'=>'Bewegung','value'=>'motion'],
-                                    ['caption'=>'Lueftung','value'=>'fan'],['caption'=>'Sonstiges (ungeklaert)','value'=>'generic']
+                                    ...array_map(static fn(string $type,string $caption):array=>
+                                        ['caption'=>$caption,'value'=>$type],
+                                        array_keys(RCCDeviceTypeRegistry::captions()),
+                                        array_values(RCCDeviceTypeRegistry::captions()))
                                 ],
                                 'value'=>$bulkOptions['type'],
                                 'onChange'=>'RCC_SetBulkOption($id, "BulkDeviceType", $BulkDeviceType);'],
@@ -5803,11 +5743,10 @@ class RoomsCatalogConfigurator extends IPSModule
                                 ['caption'=>'Geraetename','name'=>'title','width'=>'165px','edit'=>['type'=>'ValidationTextBox'],'quickFilter'=>true],
                                 ['caption'=>'Raum','name'=>'roomKey','width'=>'125px','edit'=>['type'=>'Select','options'=>$roomOptions]],
                                 ['caption'=>'Geraetetyp','name'=>'deviceType','width'=>'115px','edit'=>['type'=>'Select','options'=>[
-                                    ['caption'=>'Licht','value'=>'light'],['caption'=>'Dimmer','value'=>'dimmer'],
-                                    ['caption'=>'Jalousie','value'=>'blind'],['caption'=>'Heizung','value'=>'heating'],
-                                    ['caption'=>'Fensterkontakt','value'=>'window'],['caption'=>'Steckdose/Schalter','value'=>'switch'],
-                                    ['caption'=>'Energiezaehler','value'=>'energy'],['caption'=>'Bewegung','value'=>'motion'],
-                                    ['caption'=>'Lueftung','value'=>'fan'],['caption'=>'Sonstiges','value'=>'generic']
+                                    ...array_map(static fn(string $type,string $caption):array=>
+                                        ['caption'=>$caption,'value'=>$type],
+                                        array_keys(RCCDeviceTypeRegistry::captions()),
+                                        array_values(RCCDeviceTypeRegistry::captions()))
                                 ]]],
                                 ['caption'=>'Variablen','name'=>'variableCount','width'=>'80px','save'=>false],
                                 ['caption'=>'Bewertung','name'=>'confidence','width'=>'90px','save'=>false],
@@ -5852,11 +5791,10 @@ class RoomsCatalogConfigurator extends IPSModule
                                 ['caption'=>'Raum','name'=>'roomKey','width'=>'105px','save'=>false],
                                 ['caption'=>'IPS-ID','name'=>'sourceId','width'=>'85px','save'=>false],
                                 ['caption'=>'Typ','name'=>'deviceType','width'=>'135px','edit'=>['type'=>'Select','options'=>[
-                                    ['caption'=>'Licht','value'=>'light'],['caption'=>'Dimmer','value'=>'dimmer'],
-                                    ['caption'=>'Jalousie','value'=>'blind'],['caption'=>'Heizung','value'=>'heating'],
-                                    ['caption'=>'Fenster','value'=>'window'],['caption'=>'Steckdose','value'=>'switch'],
-                                    ['caption'=>'Energie','value'=>'energy'],['caption'=>'Bewegung','value'=>'motion'],
-                                    ['caption'=>'Lueftung','value'=>'fan'],['caption'=>'Sonstiges','value'=>'generic']
+                                    ...array_map(static fn(string $type,string $caption):array=>
+                                        ['caption'=>$caption,'value'=>$type],
+                                        array_keys(RCCDeviceTypeRegistry::captions()),
+                                        array_values(RCCDeviceTypeRegistry::captions()))
                                 ]]],
                                 ['caption'=>'Bewertung','name'=>'confidence','width'=>'85px','save'=>false],
                                 ['caption'=>'Pruefhinweis','name'=>'reason','width'=>'auto','save'=>false]
@@ -6921,7 +6859,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $hasRoomsWrapper = isset($existingCatalog['rooms']) && is_array($existingCatalog['rooms']);
         $existingRoomsMap = $hasRoomsWrapper ? $existingCatalog['rooms'] : $existingCatalog;
         $virtualAIFields = array_merge(
-            ['aiType','aiReviewed'], array_values(self::AI_VARIABLE_FIELDS), array_values(self::AI_STATE_FIELDS)
+            ['aiType','aiReviewed'], array_values(RCCDeviceTypeRegistry::fields()), array_values(RCCDeviceTypeRegistry::states())
         );
 
         foreach ($entries as $row) {
@@ -7403,7 +7341,7 @@ class RoomsCatalogConfigurator extends IPSModule
     /** Die Variablen-Auswahl im offenen Listen-Dialog beim Typwechsel umschalten. */
     public function UpdateEntryTypeForm(string $type): void
     {
-        if (!array_key_exists($type,self::AI_TYPE_FIELDS)) {
+        if (!array_key_exists($type,RCCDeviceTypeRegistry::roles())) {
             $this->UpdateFormField('EntryTargetPreview','caption',
                 'Bisheriges Datenmodell: Bereich und Gruppe bleiben unveraendert.');
             $type = '';
@@ -7412,10 +7350,10 @@ class RoomsCatalogConfigurator extends IPSModule
             $this->UpdateFormField('EntryTargetPreview','caption',
                 'Bereich / Gruppe werden automatisch zugeordnet: ' . $domain . ' / ' . $group);
         }
-        foreach (self::AI_VARIABLE_FIELDS as $property=>$field) {
-            $this->UpdateFormField($field,'visible',in_array($property,self::AI_TYPE_FIELDS[$type] ?? [],true));
+        foreach (RCCDeviceTypeRegistry::fields() as $property=>$field) {
+            $this->UpdateFormField($field,'visible',in_array($property,RCCDeviceTypeRegistry::roles()[$type] ?? [],true));
         }
-        foreach (self::AI_STATE_FIELDS as $property=>$field) {
+        foreach (RCCDeviceTypeRegistry::states() as $property=>$field) {
             $show = in_array($type,['blind','window'],true)
                 ? in_array($property,['open','closed'],true)
                 : (in_array($type,['light','dimmer','switch','motion'],true)
@@ -7465,14 +7403,8 @@ class RoomsCatalogConfigurator extends IPSModule
             $roomOptions[] = ['caption'=>(string)($row['roomLabel'] ?? $row['roomKey']),'value'=>(string)$row['roomKey']];
         }
         $type = (string)($row['aiType'] ?? '');
-        $editorType = array_key_exists($type, self::AI_TYPE_FIELDS) ? $type : $this->inferredAIType($row);
-        $typeCaptions = [
-            'light' => 'Licht', 'dimmer' => 'Dimmer', 'blind' => 'Jalousie',
-            'heating' => 'Heizung', 'window' => 'Fensterkontakt',
-            'switch' => 'Steckdose/Schalter', 'energy' => 'Energiezaehler',
-            'motion' => 'Bewegungsmelder', 'illuminance' => 'Helligkeitssensor (Lux)',
-            'fan' => 'Lueftung', 'generic' => 'Sonstiges'
-        ];
+        $editorType = array_key_exists($type, RCCDeviceTypeRegistry::roles()) ? $type : $this->inferredAIType($row);
+        $typeCaptions = RCCDeviceTypeRegistry::captions();
         if (!$isNew) $typeCaptions = [''=>'Bisheriges Datenmodell (unveraendert)'] + $typeCaptions;
         $path = $this->guidedTypeLocation($editorType);
         $targetHint = !$isNew && $type === ''
@@ -7504,29 +7436,20 @@ class RoomsCatalogConfigurator extends IPSModule
                 ]
             ]
         ];
-        $variableCaptions = [
-            'power' => $editorType==='fan'
-                ? 'Ein/Aus-Wert (optional; darf dieselbe ID wie Steuerung sein)'
-                : 'Ein/Aus (Rueckmeldung)', 'brightness' => 'Helligkeit',
-            'position' => 'Istposition', 'targetPosition' => 'Sollposition',
-            'tilt' => 'Lamellenwinkel', 'moving' => 'Fahrstatus',
-            'control' => $editorType==='fan' ? 'Steuerung (Ein/Aus)' : 'Steuerungsvariable',
-            'temperature' => 'Isttemperatur',
-            'targetTemperature' => 'Solltemperatur', 'open' => 'Fensterstatus',
-            'powerWatts' => 'Leistung (W)', 'energy' => 'Verbrauch/Zaehlerstand',
-            'motion' => 'Bewegung', 'illuminance' => 'Beleuchtungsstaerke (Lux)',
-            'status' => 'Geraetestatus (z.B. Offen/Geschlossen)',
-            'action' => 'Aktion (z.B. Auf/Ab/Stop)'
-        ];
+        $variableCaptions = RCCDeviceTypeRegistry::propertyCaptions();
+        if ($editorType === 'fan') {
+            $variableCaptions['power'] = 'Ein/Aus-Wert (optional; darf dieselbe ID wie Steuerung sein)';
+            $variableCaptions['control'] = 'Steuerung (Ein/Aus)';
+        }
         $typeHint = match ($editorType) {
             'fan' => 'Luefter: Steuerungsvariable reicht aus. Ein/Aus-Wert ist optional und darf dieselbe ID haben. Ohne separate Rueckmeldung ist der tatsaechliche Laufzustand nicht bestaetigt.',
             'heating' => 'Heizung: nur Isttemperatur, Solltemperatur und Steuerung. Steuerung darf dieselbe beschreibbare Solltemperatur-Variable sein. Kein zusaetzlicher Geraetestatus.',
-            default => 'Nur benoetigte Variablen auswaehlen. Eine fehlende optionale Rueckmeldung ist kein Konfigurationsfehler.'
+            default => 'Eigenschaften kommen zentral aus der Typvorlage. Nur vorhandene IPS-Variablen zuordnen; fehlende optionale Rueckmeldungen sind kein Fehler. Neue Typen sind zunaechst nur lesbar.'
         };
         $aiItems = [['type'=>'Label','caption'=>$typeHint]];
         $invalidBindings=[];
-        foreach (self::AI_VARIABLE_FIELDS as $property=>$field) {
-            if (!in_array($property,self::AI_TYPE_FIELDS[$editorType] ?? [],true)) continue;
+        foreach (RCCDeviceTypeRegistry::fields() as $property=>$field) {
+            if (!in_array($property,RCCDeviceTypeRegistry::roles()[$editorType] ?? [],true)) continue;
             $id=(int)($row[$field]??0);
             if ($id>0 && !IPS_VariableExists($id)) {
                 $invalidBindings[$property]=$id;
@@ -7544,12 +7467,12 @@ class RoomsCatalogConfigurator extends IPSModule
                 .'Beim Speichern werden diese nicht mehr existierenden Zuordnungen '
                 .'entfernt, sofern du keine neue gueltige Variable auswaehlst.'];
         }
-        foreach (array_chunk(array_keys(self::AI_VARIABLE_FIELDS), 2) as $pair) {
+        foreach (array_chunk(array_keys(RCCDeviceTypeRegistry::fields()), 2) as $pair) {
             $controls = [];
             foreach ($pair as $property) {
-                $control=['type'=>'SelectVariable','name'=>self::AI_VARIABLE_FIELDS[$property],
+                $control=['type'=>'SelectVariable','name'=>RCCDeviceTypeRegistry::fields()[$property],
                     'caption'=>$variableCaptions[$property] ?? $property,
-                    'visible'=>in_array($property,self::AI_TYPE_FIELDS[$editorType] ?? [],true)];
+                    'visible'=>in_array($property,RCCDeviceTypeRegistry::roles()[$editorType] ?? [],true)];
                 if (isset($invalidBindings[$property])) {
                     // What the selector actually shows ("Keine") is the
                     // initial value we submit on confirmation, never the
@@ -7568,7 +7491,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 ? in_array($property,['open','closed'],true)
                 : (in_array($editorType,['light','dimmer','switch','motion'],true)
                     && in_array($property,['on','off'],true));
-            $controls[] = ['type'=>'ValidationTextBox','name'=>self::AI_STATE_FIELDS[$property],
+            $controls[] = ['type'=>'ValidationTextBox','name'=>RCCDeviceTypeRegistry::states()[$property],
                 'caption'=>$caption . ' (z.B. true/false, 0/100)','visible'=>$visible];
         }
         $aiItems[] = ['type'=>'RowLayout','items'=>$controls];
@@ -7590,7 +7513,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $hidden = array_merge(['selected','roomKey','roomLabel','floor','domain','group','key','title',
             'synonyms','entityId','kiEnabled','kiReadOnly','rowColor','kiStatus','diffKeys','checkStatus','checkDetails','changeKind','changeDetails','editable',
             'deletable','ipsObjectIds','ipsInstanceIds','ai','aiType','aiReviewed'],
-            array_values(self::AI_VARIABLE_FIELDS), array_values(self::AI_STATE_FIELDS));
+            array_values(RCCDeviceTypeRegistry::fields()), array_values(RCCDeviceTypeRegistry::states()));
         $idFields = ['id','controlId','statusId','tiltId','set','state','ist','soll','eingestellt',
             'stellung','toggle','value','wert','var'];
         $extra = [];
