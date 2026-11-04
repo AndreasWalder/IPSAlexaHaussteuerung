@@ -560,6 +560,10 @@ function iah_rc_voice(string $text,array $cfg): array
         iah_rc_log('catalog.loaded',['count'=>count($devices),'writeEnabled'=>$allowWrites,
             'types'=>$typeCounts,'temperatureReadable'=>$temperatureMapped]);
         if(!$devices)return $costFinish(['handled'=>true,'answer'=>'Im RoomsCatalog sind keine KI-Geräte freigegeben.']);
+        // Frage-Requests bekommen gar keine Schreib-Werkzeuge angeboten.
+        // Lesende Analysen duerfen durch eine zusaetzliche KI-Runde niemals
+        // versehentlich eine Aktion ausloesen.
+
         $props=[
             'deviceKey'=>['type'=>'string'],'name'=>['type'=>'string'],'room'=>['type'=>'string'],
             'floor'=>['type'=>'string'],'domain'=>['type'=>'string'],'group'=>['type'=>'string'],
@@ -589,7 +593,7 @@ function iah_rc_voice(string $text,array $cfg): array
             $make('get_devices','Inventar fuer eindeutige deviceKeys und kontrollierte Schreibfreigaben (keine Livewerte).',$props)
         ];
         $tools[0]['function']['parameters']['required']=['property'];
-        if($allowWrites){
+        if($allowWrites && !$preferRead){
             $tools[]=$make('set_device','Aendert EIN eindeutig bestimmtes, explizit freigegebenes und fachlich bestaetigtes Geraet. property optional: power als Boolean, brightness/targetPosition 0-100, targetTemperature 6-30. Zuerst get_devices fuer deviceKey und writableProperties. Keine KNX-Fahrbefehle oder frei erfundenen IDs.',
                 $props+['property'=>['type'=>'string'],'value'=>['type'=>['boolean','number']]]);
             $tools[]=$make('set_multiple','Schaltet bis zu 15 freigegebene Lampen/Lüfter, nur wenn der Nutzer ausdrücklich ALLE verlangt.',
