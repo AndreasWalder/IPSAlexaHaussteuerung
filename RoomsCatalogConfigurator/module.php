@@ -5453,6 +5453,32 @@ class RoomsCatalogConfigurator extends IPSModule
                                 ['caption'=>'Grund','name'=>'reason','width'=>'auto','save'=>false,'add'=>'']
                             ],
                             'values'=>json_decode($this->ReadAttributeString('PartialProdPublishRows'),true)??[]
+                        ],
+                        ['type'=>'ExpansionPanel',
+                            'caption'=>'NUR EINE JALOUSIE-POSITIONS-ID NACH PROD (OHNE GESAMTPRUEFUNG)',
+                            'expanded'=>true,
+                            'items'=>[
+                                ['type'=>'Label','caption'=>
+                                    'Hier wird nur die geaenderte Positions-ID des ausgewaehlten Geraets '
+                                    .'in PROD uebernommen. Keine Gesamtpruefung und keine Uebernahme von '
+                                    .'Offen/Geschlossen-Werten, Steuerbefehlen, KI-Rechten oder weiteren '
+                                    .'geänderten Feldern. Die einzelne ID muss existieren, Integer/Float '
+                                    .'und als Positions-Rueckmeldung plausibel sein (kein Fahrbefehl).'],
+                                ['type'=>'Select','name'=>'SinglePositionKey',
+                                    'caption'=>'Geraet mit geaenderter Positions-ID',
+                                    'options'=>$this->singlePositionProdOptions($editCatalog,$prodCatalog),
+                                    'value'=>$this->ReadAttributeString('SinglePositionSelectedKey'),
+                                    'onChange'=>'RCC_SetSinglePositionProdKey($id,(string)$SinglePositionKey);'],
+                                ['type'=>'RowLayout','items'=>[
+                                    ['type'=>'Button','caption'=>'1 – NUR DIESE POSITIONS-ID PRUEFEN',
+                                        'onClick'=>'RCC_PreviewSinglePositionProd($id,(string)$SinglePositionKey);'],
+                                    ['type'=>'Button','caption'=>'2 – NUR DIESE POSITIONS-ID NACH PROD',
+                                        'confirm'=>'Nur die angezeigte Positions-ID (und den zugehoerigen ai.variables.position-Wert) dieses EINEN Geraets in PROD aendern? Andere Feldunterschiede, ungeklaerte Statuswerte und KI-Freigaben bleiben unveraendert. Ein PROD-Backup wird erzeugt.',
+                                        'onClick'=>'RCC_ApplySinglePositionProd($id,(string)$SinglePositionKey);']
+                                ]],
+                                ['type'=>'Label','name'=>'SinglePositionProdNotice',
+                                    'caption'=>$this->ReadAttributeString('SinglePositionProdNotice')]
+                            ]
                         ]
                     ]
                 ],
