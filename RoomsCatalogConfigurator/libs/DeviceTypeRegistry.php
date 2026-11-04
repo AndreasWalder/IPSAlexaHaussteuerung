@@ -110,6 +110,40 @@ final class RCCDeviceTypeRegistry
             'charging'=>'Ladevorgang aktiv'
         ];
     }
+    /** Eindeutige Namen fuer unverbindliche Inventur-Typvorschlaege.
+     * Keine KI-Freigabe, kein PROD-Import und kein automatisches Schalten.
+     * Die Zeichenfolgen sind bereits wie normalizeSuggestionText normalisiert.
+     */
+    public static function discoveryPatterns(): array
+    {
+        return [
+            'blind'=>['rollladen','rolladen','jalousie','raffstore','shutter','blind','markise'],
+            'heating'=>['heizung','thermostat','radiator','heating','climate','heizkreis'],
+            'dimmer'=>['dimmer','dimming','dimmaktor'],
+            'window'=>['fensterkontakt','windowcontact','reedkontakt'],
+            'door'=>['tuerkontakt','doorcontact'],
+            'temperature'=>['temperatursensor','temperaturfuehler','temperaturgeber','temperaturesensor'],
+            'humidity'=>['luftfeuchte','feuchtigkeitssensor','humiditysensor'],
+            'smoke'=>['rauchmelder','smokedetector','rauchalarm'],
+            'water_leak'=>['wassermelder','wasserleck','leakdetector','waterleak'],
+            'weather'=>['wetterstation','weatherstation','wetterdaten'],
+            'camera'=>['kamera','camera','videoueberwachung'],
+            'irrigation'=>['bewaesserung','bewasserung','sprinkler','bewasserungsventil'],
+            'lock'=>['tuerschloss','doorlock','smartlock'],
+            'alarm'=>['alarmanlage','alarmanlage','alarmsystem'],
+            'solar'=>['photovoltaik','wechselrichter','solaranlage','inverter'],
+            'battery'=>['batteriespeicher','energiespeicher','batteriesystem'],
+            'water_meter'=>['wasserzaehler','watermeter','wasseruhr'],
+            'ev_charger'=>['wallbox','ladestationev','ladepunkt','evcharger'],
+            'media'=>['fernseher','mediengeraet','receiver','smarttv'],
+            'network'=>['fritzbox','netzwerkgeraet','accesspoint','router','netzwerkswitch'],
+            'motion'=>['bewegungsmelder','motion','pir'],
+            'fan'=>['lueftung','ventilator','fan','ventilation','airhandling'],
+            'energy'=>['energiezaehler','stromzaehler','powermeter','energymeter','smartmeter'],
+            'switch'=>['steckdose','switchingactor','schaltaktor','relay','socket','plug'],
+            'light'=>['licht','beleuchtung','lampe','leuchte','lighting','light']
+        ];
+    }
     public static function suggestions(): array
     {
         return [
@@ -125,12 +159,12 @@ final class RCCDeviceTypeRegistry
             'open'=>['fensterkontakt','fensterstatus','tuerkontakt','doorcontact','kontakt','contact','openstate'],
             'powerWatts'=>['leistung','wirkleistung','powerw','powerwatts','currentpower'],
             'energy'=>['energie','energieverbrauch','zaehlerstand','energy','consumption','kwh'],
-            'motion'=>['bewegung','bewegungsmelder','motion','presence','praesenz'],
+            'motion'=>['bewegung','bewegungsmelder','motion'],
             'illuminance'=>['lux','helligkeit','beleuchtungsstaerke','illuminance'],
             'status'=>['status','devicestatus','geraetestatus','rollladenstatus','shutterstatus','blindenstatus'],
             'action'=>['aktion','fahrbefehl','fahraktion','action','direction','fahrtrichtung','befehl'],
             'humidity'=>['luftfeuchtigkeit','humidity','relativehumidity'],
-            'alarm'=>['alarm','alarmstatus','alarmstate','rauchealarm'],
+            'alarm'=>['alarm','alarmstatus','alarmstate','rauchalarm'],
             'batteryLevel'=>['batteriestand','batterielevel','batterie','batterylevel','batterypercent','soc'],
             'waterLeak'=>['wasseralarm','waterleak','wassererkannt','leakdetected','leak'],
             'windSpeed'=>['windgeschwindigkeit','windspeed','windvelocity'],
