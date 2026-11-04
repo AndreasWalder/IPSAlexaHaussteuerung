@@ -9,6 +9,12 @@ if (!class_exists('RCCDeviceTypeRegistry', false)) {
     require_once dirname(__DIR__, 3) . '/RoomsCatalogConfigurator/libs/DeviceTypeRegistry.php';
 }
 
+// IAH_HOUSE_QUERY_ENGINE_INSERT
+// Auf IP-Symcon wird der zentrale, lesende Query-Engine-Code direkt ins Skript eingebettet.
+if (!function_exists('iah_ai_query_house')) {
+    require_once __DIR__ . '/HouseQueryEngine.php';
+}
+
 /**
  * Alexa KI -> produktiver RoomsCatalog -> sichere IP-Symcon-Aktionen.
  * Keine Home-Agent-Installation, keine freien PHP-/Variablen-ID-Aufrufe.
