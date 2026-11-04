@@ -2279,8 +2279,8 @@ class RoomsCatalogConfigurator extends IPSModule
     private function aiWriteId(array $row): int
     {
         return match ((string)($row['group'] ?? '')) {
-            'switches' => (int)($row['toggle'] ?: ($row['aiControlId']??0)),
-            'fans' => (int)($row['aiControlId'] ?: ($row['toggle']??0)),
+            'switches' => (int)(($row['toggle']??0) ?: ($row['aiControlId']??0)),
+            'fans' => (int)(($row['aiControlId']??0) ?: ($row['toggle']??0)),
             'dimmers' => (int)($row['set'] ?? 0),
             'heizung' => (int)($row['soll'] ?? $row['eingestellt'] ?? 0),
             default => 0
