@@ -1010,9 +1010,20 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         $high = $this->discoverHighProperties($variables);
         if (isset($high['position']) || isset($high['tilt'])) return 'blind';
-        if (isset($high['temperature']) || isset($high['targetTemperature'])) return 'heating';
+        if (isset($high['targetTemperature'])) return 'heating';
+        // Ein einzelner numerischer Isttemperaturwert ist kein Thermostat.
+        // Das Geraet bekommt erst durch Zielwert/Modulnamen den Typ Heizung.
+        if (isset($high['temperature'])) return 'temperature';
         if (isset($high['brightness'])) return 'dimmer';
         if (isset($high['open'])) return 'window';
+        if (isset($high['waterLeak'])) return 'water_leak';
+        if (isset($high['humidity'])) return 'humidity';
+        if (isset($high['windSpeed']) || isset($high['rain'])) return 'weather';
+        if (isset($high['locked'])) return 'lock';
+        if (isset($high['armed']) || isset($high['alarm'])) return 'alarm';
+        if (isset($high['batteryLevel']) && (isset($high['chargePower']) || isset($high['dischargePower']))) return 'battery';
+        if (isset($high['flowRate']) || isset($high['volume'])) return 'water_meter';
+        if (isset($high['online'])) return 'network';
         if (isset($high['motion'])) return 'motion';
         if (isset($high['powerWatts']) || isset($high['energy'])) {
             return isset($high['power']) || isset($high['control']) ? 'switch' : 'energy';
@@ -1024,17 +1035,7 @@ class RoomsCatalogConfigurator extends IPSModule
     /** Typvorschlaege fuer alle Standardklassen; Modulinformation vor Namensraten. */
     private function inferDeviceTypeFromMetadata(array $variables, string $moduleName, string $instanceName): array
     {
-        $patterns = [
-            'blind'=>['rollladen','rolladen','jalousie','raffstore','shutter','blind','markise'],
-            'heating'=>['heizung','thermostat','radiator','heating','climate','heizkreis'],
-            'dimmer'=>['dimmer','dimming','dimmaktor'],
-            'window'=>['fensterkontakt','tuerkontakt','doorcontact','windowcontact','reedkontakt'],
-            'motion'=>['bewegungsmelder','praesenzmelder','motion','presence','pir'],
-            'fan'=>['lueftung','ventilator','fan','ventilation','airhandling'],
-            'energy'=>['energiezaehler','stromzaehler','powermeter','energymeter','smartmeter'],
-            'switch'=>['steckdose','switchingactor','schaltaktor','relay','socket','plug'],
-            'light'=>['licht','beleuchtung','lampe','leuchte','lighting','light']
-        ];
+        $patterns = RCCDeviceTypeRegistry::discoveryPatterns();
         $module = $this->normalizeSuggestionText($moduleName);
         $instance = $this->normalizeSuggestionText($instanceName);
         foreach ([$module,$instance] as $step=>$name) {
@@ -1121,7 +1122,7 @@ class RoomsCatalogConfigurator extends IPSModule
             if ((int)$candidate['id'] === $statusId) { $variable = $candidate; break; }
         }
         if ($variable === null) return [];
-        $labels = in_array($type,['blind','window'],true)
+        $labels = in_array($type,['blind','window','door'],true)
             ? ['open'=>['offen','open','geoeffnet'],'closed'=>['geschlossen','closed']]
             : ['on'=>['ein','an','on','aktiv'],'off'=>['aus','off','inaktiv']];
         $mapped = [];
@@ -1274,7 +1275,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 }
             }
             // Position alleine belegt nicht die Bedeutung 0/100; die KI darf nicht raten.
-            if (in_array($type,['blind','window'],true)) {
+            if (in_array($type,['blind','window','door'],true)) {
                 $mapping = $device['aiOpenValue'] ?? null;
                 $closed = $device['aiClosedValue'] ?? null;
                 $statusId = (int)($device['aiStatusId'] ?? 0);
