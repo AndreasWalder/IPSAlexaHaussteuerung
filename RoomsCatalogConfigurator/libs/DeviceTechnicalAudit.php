@@ -121,7 +121,8 @@ final class RCCDeviceTechnicalAudit
                 'power'=>['switch','bool'],
                 'tilt'=>['lamella','lamelle','tilt'],
                 'control'=>['switch','bool','intensity','steuerung'],
-                'brightness'=>['intensity','brightness','dimm'],
+                'brightness'=>['intensity','brightness','dimm','scaling.knx'],
+                'targetPosition'=>['shutterposition','behangposition'],
                 'temperature'=>['temperature','temp','heizung'],
                 'targetTemperature'=>['temperature','temp','heizung'],
                 'motion'=>['motion','bewegung'],
@@ -227,8 +228,16 @@ final class RCCDeviceTechnicalAudit
             $issueCodes['position_command_collision']=true;
             $uncertain=true;
         }
+        // A KNX Value with a *separate* object ID can be read and writable.
+        // Having an IPS action is not evidence of a missing readback.
+        // Still reject action/target collisions and command-only profiles.
+        $positionProfile=strtolower((string)($evidence['position']['profile']??''));
         $positionEvidence=isset($evidence['position'])
-            && !$positionCollides && empty($evidence['position']['action']);
+            && !$positionCollides
+            && (str_contains($positionProfile,'shutter')
+                || str_contains($positionProfile,'behangposition')
+                || str_contains($positionProfile,'position'))
+            && !str_contains($positionProfile,'steuerung');
         $semanticEvidence='not_applicable';
         if (in_array($type,['blind','window'],true)) {
             $mapping=[
@@ -236,8 +245,13 @@ final class RCCDeviceTechnicalAudit
                 'closed'=>trim((string)($row['aiClosedValue']??''))
             ];
             $discrete=$evidence['status']??$evidence['open']??null;
-            $associations=is_array($discrete)
-                ? (array)($discrete['associations']??[]) : [];
+            // A separate status role always wins. Only if there is NO
+            // status role may explicit "Geoeffnet/Geschlossen" associations
+            // on a position profile prove its 0/100 end-point labels.
+            $semanticSource=$discrete
+                ?? ($positionEvidence ? ($evidence['position']??null) : null);
+            $associations=is_array($semanticSource)
+                ? (array)($semanticSource['associations']??[]) : [];
             $profileStates=self::openClosedAssociationValues($associations);
             $hasMapping=$mapping['open']!=='' || $mapping['closed']!=='';
             if ($hasMapping && ($mapping['open']==='' || $mapping['closed']===''
@@ -269,6 +283,9 @@ final class RCCDeviceTechnicalAudit
                 // write assumed numeric values into the RoomsCatalog.
                 $semanticEvidence='profile_derived_not_saved';
             } elseif ($discrete!==null) {
+                // A status variable with missing enum labels is unresolved.
+                // A plain position (%) without endpoint labels is still a
+                // valid numeric readback, not a status-enum error.
                 $semanticEvidence='unconfirmed';
                 if (!$positionEvidence) {
                     $reasons[]='Offen/Geschlossen ohne eindeutige Profil-Assoziationen';
@@ -339,7 +356,8 @@ final class RCCDeviceTechnicalAudit
     private static function isIntensityProfile(string $profile): bool
     {
         return str_contains($profile,'intensity')
-            || str_contains($profile,'brightness') || str_contains($profile,'dimm');
+            || str_contains($profile,'brightness') || str_contains($profile,'dimm')
+            || str_contains($profile,'scaling.knx');
     }
 
     /**

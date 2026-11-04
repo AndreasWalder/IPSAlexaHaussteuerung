@@ -88,6 +88,16 @@ function IPS_GetVariable(int $id): array { return $GLOBALS['inventoryVariables']
 function IPS_GetInstance(int $id): array { return $GLOBALS['inventoryInstances'][$id] ?? []; }
 function IPS_GetVariableProfile(string $profile): array
 {
+    if ($profile === '~ShutterStatus.KNX') return [
+        'Suffix'=>'','Associations'=>[
+            ['Value'=>0,'Name'=>'N/A'],['Value'=>1,'Name'=>'Geöffnet'],
+            ['Value'=>2,'Name'=>'Geschlossen']]
+    ];
+    if ($profile === '~ShutterPosition.100') return [
+        'Suffix'=>'%','Associations'=>[
+            ['Value'=>0,'Name'=>'Geöffnet'],['Value'=>50,'Name'=>'50 %'],
+            ['Value'=>100,'Name'=>'Geschlossen']]
+    ];
     if ($profile === 'BlindStatus') return [
         'Suffix'=>'', 'Associations'=>[
             ['Value'=>0,'Name'=>'Offen'],['Value'=>1,'Name'=>'Geschlossen']]
