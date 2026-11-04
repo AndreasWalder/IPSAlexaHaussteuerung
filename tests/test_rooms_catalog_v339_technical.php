@@ -422,6 +422,85 @@ ck339(str_contains($refusal,'EDIT und PROD unterscheiden sich')
     && IPS_GetScriptContent(41)===$originalEdit,
     'Repair MUST refuse any outstanding EDIT/PROD diff, without writing');
 
+
+/** V3.3.17 – one top-level reset clears only temporary reports,
+ * inventories and selected checkboxes; never rewrites EDIT or PROD. */
+$resetForm=json_decode($mod->GetConfigurationForm(),true,512,JSON_THROW_ON_ERROR);
+ck339(
+    ($resetForm['elements'][0]['items'][0]['onClick']??'')==='RCC_ResetAllCheckCaches($id);'
+    && !empty($resetForm['elements'][0]['items'][0]['confirm']),
+    'The reset button must be FIRST in the RoomsCatalogConfigurator and require confirmation'
+);
+$attributesToClear=[
+    'SuggestionPreview'=>'{}','DiscoveryCandidates'=>'{}','DiscoveryInventory'=>'{}',
+    'LegacyMigrationPreview'=>'{}','BulkPreview'=>'{}',
+    'MigrationReadinessDetails'=>'{}','TechnicalDeviceSnapshot'=>'{}',
+    'TechnicalDevicePreview'=>'{}','AutoRepairPreview'=>'{}'
+];
+foreach ($attributesToClear as $name=>$unused) {
+    $mod->WriteAttributeString($name,'{"stale":true}');
+}
+$mod->WriteAttributeString('MigrationReadinessReport','Ein alter Migrationsbericht');
+$mod->WriteAttributeString('DiscoveryAuditReport','Alte Inventur');
+$mod->WriteAttributeString('TechnicalDeviceSummary','Alte technische Bewertung');
+$mod->WriteAttributeString('TechnicalDeviceActionMessage','Alte Aktion');
+$mod->WriteAttributeString('AutoRepairNotice','Alte Reparaturvorschau');
+$mod->WriteAttributeString('FilterRoom','wohnzimmer');
+$mod->WriteAttributeString('FilterDomain','licht');
+$mod->WriteAttributeString('FilterGroup','switches');
+$mod->WriteAttributeString('FilterAI','writable');
+$mod->WriteAttributeString('BulkDeviceType','blind');
+$mod->WriteAttributeString('BulkAIMode','enabled');
+$mod->WriteAttributeString('BulkSuggestions','no');
+$mod->WriteAttributeString('BulkReview','approve');
+$mod->WriteAttributeString('RuntimeEntries','[{"selected":true,"key":"dummy"}]');
+$mod->WriteAttributeString('RuntimeEditHash','stale');
+
+$resetOriginalEdit=IPS_GetScriptContent(41);
+$resetOriginalProd=IPS_GetScriptContent(40);
+$resetCountScripts=count($GLOBALS['inventoryScripts']);
+ob_start();$mod->ResetAllCheckCaches();$resetMsg=ob_get_clean();
+ck339(str_contains($resetMsg,'Zwischenspeicher')
+    && str_contains($resetMsg,'UNVERAENDERT')
+    && IPS_GetScriptContent(40)===$resetOriginalProd
+    && IPS_GetScriptContent(41)===$resetOriginalEdit
+    && count($GLOBALS['inventoryScripts'])===$resetCountScripts,
+    'Reset modified a data script or created a backup unexpectedly');
+foreach ($attributesToClear as $name=>$expected) {
+    ck339($mod->ReadAttributeString($name)===$expected,
+        'Reset did not clear temporary attribute '.$name);
+}
+foreach ([
+    'FilterRoom'=>'','FilterDomain'=>'','FilterGroup'=>'','FilterAI'=>'all',
+    'BulkDeviceType'=>'keep','BulkAIMode'=>'keep',
+    'BulkSuggestions'=>'yes','BulkReview'=>'keep',
+    'MigrationReadinessReport'=>'Noch nicht geprueft.',
+    'TechnicalDeviceActionMessage'=>'',
+    'AutoRepairNotice'=>'Noch kein Diagnoseexport erstellt.'
+] as $name=>$expected) {
+    ck339($mod->ReadAttributeString($name)===$expected,
+        'Reset left a stale filter, cache message or selection '.$name);
+}
+ck339(($mod->updates['TechnicalDeviceChecks.values']??'')==='[]'
+    && ($mod->updates['TechnicalDiffRows.values']??'')==='[]'
+    && ($mod->updates['DiscoveryInventoryList.values']??'')==='[]'
+    && ($mod->updates['TechnicalDevicesPhysicallyChecked.value']??null)===false,
+    'The open form still displays stale technical, diff, discovery or manual-review selections');
+$resetLiveForm=json_decode($mod->GetConfigurationForm(),true,512,JSON_THROW_ON_ERROR);
+ck339($mod->ReadAttributeString('RuntimeEntries')!=='[]'
+    && $mod->ReadAttributeString('RuntimeEditHash')!=='stale'
+    && str_contains(json_encode($resetLiveForm,JSON_UNESCAPED_UNICODE),'RoomsCatalog EDIT'),
+    'Reset failed to reload the visible device editor from persisted catalog');
+ob_start();$mod->ApplySafeAutoRepair();$afterResetApply=ob_get_clean();
+ck339(str_contains($afterResetApply,'Bitte zuerst eine aktuelle Diagnose')
+    && IPS_GetScriptContent(40)===$resetOriginalProd
+    && IPS_GetScriptContent(41)===$resetOriginalEdit,
+    'Reset must invalidate approvals and disallow stale automatic repair');
+ob_start();$mod->ResetAllCheckCaches();ob_end_clean();
+ck339(IPS_GetScriptContent(40)===$resetOriginalProd
+    && IPS_GetScriptContent(41)===$resetOriginalEdit,
+    'Reset should be idempotent and preserve catalog scripts');
+
 foreach(array_keys($GLOBALS['inventoryScripts']) as $id) @unlink($GLOBALS['inventoryDir'].'/scripts/'.$id.'.php');
 @rmdir($GLOBALS['inventoryDir'].'/scripts');@rmdir($GLOBALS['inventoryDir']);
 echo "PASS V3.3.9: all types, IPS evidence, explicit approval, stale guard, EDIT-only updates, backups, legacy + diff reporting\n";
