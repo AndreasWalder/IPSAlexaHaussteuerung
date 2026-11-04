@@ -3358,59 +3358,89 @@ class RoomsCatalogConfigurator extends IPSModule
     /**
      * Speichert den Edit-Katalog 1:1 nach PROD.
      */
+    /**
+     * Publish the ENTIRE EDIT catalog to PROD, unchanged.
+     *
+     * This is intentionally a user-confirmed copy, NOT a complete-device
+     * validation. Each device's optional status, position or other roles
+     * may remain incomplete; the device editor owns those checks.
+     *
+     * Safeguards: separate scripts, non-empty literal-array EDIT source,
+     * independent verified PROD backup, race checks, read-back and rollback.
+     */
     public function SaveEditToProd(): void
     {
-        $prodId = $this->ReadPropertyInteger('RoomsCatalogScriptID');
-        $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        try {
+            $prodId=$this->ReadPropertyInteger('RoomsCatalogScriptID');
+            $editId=$this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+            if ($prodId<=0 || $editId<=0 || $prodId===$editId
+                || !IPS_ScriptExists($prodId) || !IPS_ScriptExists($editId)) {
+                throw new \RuntimeException('Bitte zwei verschiedene gueltige EDIT-/PROD-Skripte einstellen.');
+            }
+            $editSource=(string)IPS_GetScriptContent($editId);
+            $prodSource=(string)IPS_GetScriptContent($prodId);
+            if (!RCCDeviceTechnicalAudit::isLiteralArraySource($editSource)) {
+                throw new \RuntimeException('EDIT muss ein statisches PHP-Array zurueckgeben; keine dynamischen Skriptbefehle.');
+            }
+            $editCatalog=$this->loadRoomsCatalog($editId,'EDIT');
+            if ($editCatalog===[] || $this->extractRoomsFromCatalog($editCatalog)===[]) {
+                throw new \RuntimeException('EDIT ist leer oder unlesbar. PROD bleibt unveraendert.');
+            }
+            if (IPS_GetScriptContent($editId)!==$editSource
+                || IPS_GetScriptContent($prodId)!==$prodSource) {
+                throw new \RuntimeException('EDIT/PROD hat sich beim Lesen veraendert. Bitte erneut versuchen.');
+            }
+            if ($editSource===$prodSource) {
+                echo 'EDIT und PROD sind bereits identisch. Keine Uebernahme notwendig.';
+                return;
+            }
 
-        if ($prodId <= 0 || !IPS_ScriptExists($prodId)) {
-            $this->logDebug('SaveEditToProd: RoomsCatalogScriptID ungültig: ' . $prodId);
-            return;
+            // Back up the exact original PROD script content BEFORE editing.
+            $backup=IPS_CreateScript(0);
+            if (!is_int($backup) || $backup<=0) {
+                throw new \RuntimeException('PROD-Backup konnte nicht erstellt werden.');
+            }
+            IPS_SetParent($backup,IPS_GetParent($prodId));
+            IPS_SetName($backup,'RoomsCatalog_Backup_before_full_EDIT_to_PROD_'.date('Ymd_His').'_'.$backup);
+            IPS_SetScriptContent($backup,$prodSource);
+            if (IPS_GetScriptContent($backup)!==$prodSource) {
+                throw new \RuntimeException('PROD-Backup nicht verifiziert; keine Uebernahme.');
+            }
+            if (IPS_GetScriptContent($editId)!==$editSource
+                || IPS_GetScriptContent($prodId)!==$prodSource) {
+                throw new \RuntimeException('EDIT/PROD nach der Sicherung veraendert; PROD nicht beschrieben.');
+            }
+            try {
+                // 1:1: includes EVERY room, device, optional field, and KI
+                // setting exactly as stored in EDIT, without reserializing.
+                IPS_SetScriptContent($prodId,$editSource);
+                if (IPS_GetScriptContent($prodId)!==$editSource) {
+                    throw new \RuntimeException('PROD-Schreibverifikation fehlgeschlagen.');
+                }
+            } catch (\Throwable $writeError) {
+                $restored=false;
+                try {
+                    IPS_SetScriptContent($prodId,$prodSource);
+                    $restored=IPS_GetScriptContent($prodId)===$prodSource;
+                } catch (\Throwable $restoreError) { /* backup remains available */ }
+                throw new \RuntimeException('PROD-Schreibfehler: '.$writeError->getMessage()
+                    .($restored?' Original wurde wiederhergestellt.'
+                        :' ACHTUNG: Wiederherstellung nicht bestaetigt!')
+                    .' Backup #'.$backup);
+            }
+            $this->WriteAttributeString('PartialProdPublishPreview','{}');
+            $this->WriteAttributeString('SinglePositionProdPreview','{}');
+            $this->WriteAttributeString('AutoRepairPreview','{}');
+            $this->logDebug('SaveEditToProd: vollstaendiger EDIT-Skriptinhalt 1:1 nach PROD, Backup #'.$backup);
+            echo 'ERFOLG: Gesamter RoomsCatalog EDIT 1:1 nach PROD kopiert. '
+                .'Alle Raeume, Geraete, Variablen, KI-Freigaben und auch unvollstaendige '
+                .'Statusfelder wurden unveraendert uebernommen. '
+                .'Keine vollstaendige Geraetepruefung erzwungen. PROD-Backup #'.$backup.'.';
+            $this->ReloadCatalog();
+        } catch (\Throwable $error) {
+            $this->logDebug('SaveEditToProd: '.$error->getMessage());
+            echo 'EDIT NACH PROD ABGEBROCHEN: '.$error->getMessage();
         }
-
-        if ($editId <= 0 || !IPS_ScriptExists($editId)) {
-            $this->logDebug('SaveEditToProd: RoomsCatalogEditScriptID ungültig: ' . $editId);
-            return;
-        }
-
-        $editCatalog = $this->loadRoomsCatalog($editId, 'EDIT');
-        $editEntries = $this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($editCatalog));
-        $errors = array_merge($this->validateEntries($editEntries), $this->validateRoomMetadata($editCatalog));
-        $roundTrip = $this->rebuildRoomsCatalogFromEntries($editEntries, $editCatalog);
-        $this->findLostCatalogFields($editCatalog, $roundTrip, 'RoomsCatalogEdit', $errors);
-        if ($errors !== []) {
-            echo 'Veröffentlichung abgebrochen: ' . implode('; ',array_slice($errors,0,4));
-            return;
-        }
-        if ($editCatalog === []) {
-            $this->logDebug('SaveEditToProd: Edit-Katalog leer oder ungültig');
-            return;
-        }
-
-        // Keine Migration: die geprüfte EDIT-Quelle wird unverändert in PROD geschrieben.
-        $php = "<?php\nreturn " . var_export($editCatalog, true) . ";\n";
-        $originalProd = IPS_GetScriptContent($prodId);
-        $backup = IPS_CreateScript(0);
-        if (!is_int($backup) || $backup <= 0) {
-            echo 'Veröffentlichung abgebrochen: Backup konnte nicht angelegt werden.';
-            return;
-        }
-        IPS_SetParent($backup, IPS_GetParent($prodId));
-        IPS_SetName($backup, 'RoomsCatalog_Backup_' . date('Ymd_His') . '_' . $backup);
-        IPS_SetScriptContent($backup, $originalProd);
-        if (IPS_GetScriptContent($backup) !== $originalProd) {
-            echo 'Veröffentlichung abgebrochen: Backup konnte nicht verifiziert werden.';
-            return;
-        }
-        IPS_SetScriptContent($prodId, $php);
-        echo 'Produktiver Katalog aktualisiert; Backup-Skript ' . $backup . '.';
-
-        $roomsArray = $this->extractRoomsFromCatalog($editCatalog);
-        $roomCount  = count($roomsArray);
-
-        $this->logDebug('SaveEditToProd: Edit → Prod übernommen, rooms=' . $roomCount);
-
-        $this->ReloadCatalog();
     }
 
     /**
@@ -5534,48 +5564,34 @@ class RoomsCatalogConfigurator extends IPSModule
         }
         $form['elements'] = $remaining;
 
-        // V3.3.19: Alltag zuerst. Genau die Bereiche, die man zur normalen
-        // Pflege braucht, werden sichtbar dargestellt; alle vorhandenen
-        // Diagnose-/Migrations-/Freigabeaktionen bleiben erreichbar, aber
-        // standardmaessig vollstaendig zugeklappt.
+        // V3.3.21 – Keine separaten Freigabe-, Bereichs-, Einzelfeld-
+        // oder Migrations-Publishing-Aktionen in der Hauptansicht.
+        // Der regulaere Geraeteeditor mit seinen Prueffeldern bleibt.
         $everyday=['Raeume & Etagen','RoomsCatalog Scripts',
             'Geraete bearbeiten (RoomsCatalog EDIT)'];
         $main=[];
-        $expert=[];
         foreach ($form['elements'] as $index=>$element) {
             $caption=(string)($element['caption']??'');
             if ($index<=2 || in_array($caption,$everyday,true)) {
-                if (in_array($caption,$everyday,true)) {
-                    $element['expanded']=true;
-                }
+                if (in_array($caption,$everyday,true)) $element['expanded']=true;
                 $main[]=$element;
-            } else {
-                if (($element['type']??'')==='ExpansionPanel') {
-                    $element['expanded']=false;
-                }
-                $expert[]=$element;
             }
         }
-        // Move standalone actions too; hiding only the elements would
-        // leave the page cluttered below the core device list.
-        foreach ($form['actions']??[] as $action) {
-            if (($action['type']??'')==='ExpansionPanel') $action['expanded']=false;
-            $expert[]=$action;
-        }
-        $form['actions']=[];
-        if ($expert!==[]) {
-            $main[]=[
-                'type'=>'ExpansionPanel',
-                'caption'=>'Weitere Funktionen (Experten): Pruefen, Migration und PROD',
-                'expanded'=>false,
-                'items'=>array_merge([[
-                    'type'=>'Label',
-                    'caption'=>'Erweiterte Diagnose, Inventur, Massenbearbeitung und PROD-Teiluebernahme. '
-                        .'Alle bestehenden Funktionen bleiben vorhanden, sind aber im Alltag ausgeblendet.'
-                ]],$expert)
-            ];
-        }
+        $main[]=[
+            'type'=>'RowLayout',
+            'items'=>[
+                ['type'=>'Button',
+                    'caption'=>'EDIT NACH PROD UEBERNEHMEN',
+                    'confirm'=>'Den GESAMTEN RoomsCatalog EDIT 1:1 nach PROD kopieren? '
+                        .'ALLE Raeume, Geraete, Variablen, Statusfelder und KI-Berechtigungen '
+                        .'in PROD werden durch EDIT ersetzt – auch unvollstaendige Zuordnungen. '
+                        .'Es gibt KEINE globale Geraetepruefung. '
+                        .'Vorher wird ein vollstaendiges PROD-Backup erstellt.',
+                    'onClick'=>'RCC_SaveEditToProd($id);']
+            ]
+        ];
         $form['elements']=$main;
+        $form['actions']=[];
 
         return json_encode($form);
     }
