@@ -180,6 +180,8 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('SinglePositionSelectedKey', '');
         $this->RegisterAttributeString('SinglePositionProdPreview', '{}');
         $this->RegisterAttributeString('SinglePositionProdNotice', 'Noch keine einzelne Positionsaenderung geprueft.');
+        $this->RegisterAttributeString('CatalogCheckDebugOutput', '');
+        $this->RegisterAttributeString('CatalogCheckDebugSummary', 'Noch keine RoomsCatalog-Pruefung ausgefuehrt.');
     }
 
     public function ApplyChanges()
@@ -1878,7 +1880,7 @@ class RoomsCatalogConfigurator extends IPSModule
         foreach ($entries as $row) {
             if (!is_array($row)) continue;
             foreach (array_keys($row) as $name) {
-                if (!is_string($name) || in_array($name, ['rowColor','kiStatus','diffKeys','editable','deletable','ipsObjectIds','ipsInstanceIds'], true)) continue;
+                if (!is_string($name) || in_array($name, ['rowColor','kiStatus','diffKeys','checkStatus','checkDetails','editable','deletable','ipsObjectIds','ipsInstanceIds'], true)) continue;
                 if (preg_match('/^[A-Za-z_][A-Za-z_0-9]*$/D', $name) !== 1) continue;
                 if (!in_array($name, $keys, true)) $keys[] = $name;
             }
@@ -2595,7 +2597,7 @@ class RoomsCatalogConfigurator extends IPSModule
         }
 
         foreach ($entries as &$entry) {
-            if (is_array($entry)) unset($entry['rowColor'], $entry['kiStatus'], $entry['diffKeys'], $entry['editable'], $entry['ipsObjectIds'], $entry['ipsInstanceIds']);
+            if (is_array($entry)) unset($entry['rowColor'], $entry['kiStatus'], $entry['diffKeys'], $entry['checkStatus'], $entry['checkDetails'], $entry['editable'], $entry['ipsObjectIds'], $entry['ipsInstanceIds']);
         }
         unset($entry);
         $this->logDebug('SaveToEdit: START, rows=' . count($entries));
@@ -3352,6 +3354,150 @@ class RoomsCatalogConfigurator extends IPSModule
             $this->WriteAttributeString('SinglePositionProdNotice',$notice);
             $this->UpdateFormField('SinglePositionProdNotice','caption',$notice);
             echo $notice;
+        }
+    }
+
+    /**
+     * Advisory only: a missing optional feedback is not an automatic
+     * publication blocker. Reuse existing validation reasons so that red
+     * rows explain WHY they are highlighted.
+     */
+    private function catalogCheckHint(array $row): array
+    {
+        $errors=$this->validateEntries([$row]);
+        $notes=array_map(static function(string $error): string {
+            $start=strpos($error,': ');
+            return $start!==false ? substr($error,$start+2) : $error;
+        },$errors);
+        if ($notes===[]) return [
+            'status'=>'OK', 'reason'=>'Keine offensichtlichen Konfigurationsprobleme erkannt.',
+            'severity'=>'ok','codes'=>[]
+        ];
+        // Optional/demonstrably missing status semantics are an advisory;
+        // non-existing variables, unsafe writable rights are critical.
+        $onlySemantics=count(array_filter($notes,static fn(string $v): bool=>
+            str_contains($v,'Offen/Geschlossen-Werte der Jalousie fehlen oder sind gleich.'))===count($notes);
+        return [
+            'status'=>$onlySemantics?'Pruefen (Hinweis)':'Pruefen',
+            'reason'=>implode('; ',array_slice($notes,0,4)),
+            'severity'=>$onlySemantics?'warning':'error',
+            'codes'=>$notes
+        ];
+    }
+
+    /**
+     * Display metadata-only diagnostic text directly in an editable/copyable
+     * IPS TextArea. Never reads live variable values or sends switch actions.
+     */
+    public function CheckRoomsCatalog(): void
+    {
+        try {
+            $this->ensureRuntimeCatalogCurrent();
+            $editId=$this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+            $prodId=$this->ReadPropertyInteger('RoomsCatalogScriptID');
+            if ($editId<=0 || $prodId<=0 || !IPS_ScriptExists($editId)
+                || !IPS_ScriptExists($prodId)) {
+                throw new \RuntimeException('EDIT- und PROD-Skripte muessen konfiguriert sein.');
+            }
+            $editSource=IPS_GetScriptContent($editId);
+            $prodSource=IPS_GetScriptContent($prodId);
+            $editCatalog=$this->loadRoomsCatalog($editId,'EDIT');
+            $prodCatalog=$this->loadRoomsCatalog($prodId,'PROD');
+            $rows=$this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($editCatalog));
+            $stats=['total'=>count($rows),'ok'=>0,'warning'=>0,'error'=>0,
+                'technicallyPlausible'=>0,'technicallyNeedsReview'=>0,'technicallyInvalid'=>0,
+                'notManuallyConfirmed'=>0];
+            $problems=[];
+            foreach ($rows as $row) {
+                $hint=$this->catalogCheckHint($row);
+                $technical=$this->assessTechnicalDevice($row);
+                $status=(string)($technical['status']??'Manuell pruefen');
+                if ($status==='Technisch plausibel') $stats['technicallyPlausible']++;
+                elseif ($status==='Ungueltig') $stats['technicallyInvalid']++;
+                else $stats['technicallyNeedsReview']++;
+                if (empty($row['aiReviewed'])) $stats['notManuallyConfirmed']++;
+                $stats[$hint['severity']]++;
+                if ($hint['severity']==='ok' && $status==='Technisch plausibel') continue;
+
+                $ai=$row['ai']??[];
+                if (is_string($ai)) $ai=json_decode($ai,true)??[];
+                $roles=is_array($ai) && is_array($ai['variables']??null)
+                    ? $ai['variables'] : [];
+                // Only ID/type/name/profile/action metadata for *configured*
+                // roles; no credentials, current value, or raw source.
+                $bindings=[];
+                foreach ($roles as $role=>$id) {
+                    $n=(int)$id;
+                    if ($n<=0) continue;
+                    $binding=['role'=>(string)$role,'id'=>$n,
+                        'exists'=>function_exists('IPS_VariableExists') && IPS_VariableExists($n)];
+                    if ($binding['exists'] && function_exists('IPS_GetVariable')
+                        && function_exists('IPS_GetObject')) {
+                        $v=IPS_GetVariable($n);
+                        $o=IPS_GetObject($n);
+                        $binding['name']=(string)($o['ObjectName']??'');
+                        $binding['ident']=(string)($o['ObjectIdent']??'');
+                        $binding['variableType']=(int)($v['VariableType']??-1);
+                        $binding['profile']=(string)(($v['VariableCustomProfile']??'')
+                            ?:($v['VariableProfile']??''));
+                        $binding['hasAction']=function_exists('HasAction')
+                            ? HasAction($n)
+                            : ((int)($v['VariableCustomAction']??0)>0
+                                || (int)($v['VariableAction']??0)>0);
+                    }
+                    $bindings[]=$binding;
+                }
+                $problems[]=[
+                    'path'=>$this->buildCompositeKey($row),
+                    'room'=>(string)($row['roomLabel']??$row['roomKey']??''),
+                    'device'=>(string)($row['title']??$row['key']??''),
+                    'type'=>(string)($row['aiType']??''),
+                    'uiSeverity'=>$hint['severity'],
+                    'uiReasons'=>$hint['codes'],
+                    'technicalStatus'=>$status,
+                    'technicalReasons'=>(string)($technical['reason']??''),
+                    'technicalIssueCodes'=>array_values((array)($technical['issueCodes']??[])),
+                    'capability'=>(string)($technical['capability']??''),
+                    'confirmed'=>!empty($row['aiReviewed']),
+                    'kiEnabled'=>!empty($row['kiEnabled']),
+                    'kiReadOnly'=>!empty($row['kiReadOnly']),
+                    'bindings'=>$bindings
+                ];
+            }
+            $diff=$this->diagnosticCatalogDiff($editCatalog,$prodCatalog);
+            $roomDiff=$this->buildRoomDiffEntries($prodCatalog,$editCatalog);
+            $report=[
+                'schema'=>'RoomsCatalogCheck/1',
+                'createdAt'=>date(DATE_ATOM),
+                'notice'=>'Lesende Metadatenanalyse. Keine aktuellen Variablenwerte, Passwoerter oder Schaltaktionen. Warnungen sperren EDIT→PROD NICHT.',
+                'sources'=>['editId'=>$editId,'prodId'=>$prodId,
+                    'editHash'=>hash('sha256',$editSource),
+                    'prodHash'=>hash('sha256',$prodSource)],
+                'statistics'=>$stats,
+                'editProdDifferences'=>$diff,
+                'roomMetadataDifferences'=>$roomDiff,
+                'problems'=>$problems
+            ];
+            $json=json_encode($report,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE
+                |JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR);
+            $summary=sprintf('%d Geraete: %d OK, %d Hinweise, %d Fehler; '
+                .'%d technisch offen/ungueltig; %d Geraete- und %d Raumdifferenzen EDIT/PROD. '
+                .'Die Diagnose kann unten kopiert und hier eingefuegt werden. '
+                .'Keine automatische Korrektur, keine PROD-Sperre.',
+                $stats['total'],$stats['ok'],$stats['warning'],$stats['error'],
+                $stats['technicallyNeedsReview']+$stats['technicallyInvalid'],
+                (int)$diff['total'],count($roomDiff));
+            $this->WriteAttributeString('CatalogCheckDebugOutput',$json);
+            $this->WriteAttributeString('CatalogCheckDebugSummary',$summary);
+            $this->UpdateFormField('CatalogCheckDebugOutput','value',$json);
+            $this->UpdateFormField('CatalogCheckDebugSummary','caption',$summary);
+            $this->RefreshVisibleLists();
+            echo $summary;
+        } catch (\Throwable $error) {
+            $summary='ROOMSCATALOG-PRUEFUNG FEHLGESCHLAGEN: '.$error->getMessage();
+            $this->WriteAttributeString('CatalogCheckDebugSummary',$summary);
+            $this->UpdateFormField('CatalogCheckDebugSummary','caption',$summary);
+            echo $summary;
         }
     }
 
@@ -6675,9 +6821,15 @@ class RoomsCatalogConfigurator extends IPSModule
         $readOnly = !empty($row['kiReadOnly']);
         $row['kiStatus'] = !$enabled ? 'Ohne KI' : ($readOnly ? 'Nur lesen' : 'Schaltbar');
         $row['rowColor'] = !$enabled ? '#EEEEEE' : ($readOnly ? '#E2F2FF' : '#DDF4DE');
-        if ($this->validateEntries([$row]) !== []) {
-            $row['kiStatus'] = 'Pruefen';
-            $row['rowColor'] = '#FFCCCC';
+        $check=$this->catalogCheckHint($row);
+        $row['checkStatus']=$check['status'];
+        $row['checkDetails']=$check['reason'];
+        if ($check['severity']==='error') {
+            $row['kiStatus']='Pruefen';
+            $row['rowColor']='#FFCCCC';
+        } elseif ($check['severity']==='warning') {
+            $row['kiStatus']='Pruefen';
+            $row['rowColor']='#FFE5B4';
         }
         $row['title'] = (string)($row['title'] ?? $row['key'] ?? '');
         return $this->decorateIpsIds($row);
@@ -6778,6 +6930,8 @@ class RoomsCatalogConfigurator extends IPSModule
             ['caption'=>'Mit KI','name'=>'kiEnabled','width'=>'80px','add'=>false,'edit'=>['type'=>'CheckBox']],
             ['caption'=>'Nur abfragen','name'=>'kiReadOnly','width'=>'110px','add'=>true,'edit'=>['type'=>'CheckBox']],
             ['caption'=>'Freigabe','name'=>'kiStatus','width'=>'105px','add'=>'','save'=>false],
+            ['caption'=>'Pruefstatus','name'=>'checkStatus','width'=>'140px','add'=>'','save'=>false,'quickFilter'=>true],
+            ['caption'=>'Was ist zu pruefen?','name'=>'checkDetails','width'=>'350px','add'=>'','save'=>false,'quickFilter'=>true],
             ['caption'=>'Raum-Key','name'=>'roomKey','visible'=>false,'add'=>'','quickFilter'=>true],
             ['caption'=>'Synonyme','name'=>'synonyms','visible'=>false,'add'=>'','quickFilter'=>true]
         ];
@@ -6944,7 +7098,7 @@ class RoomsCatalogConfigurator extends IPSModule
         ]];
 
         $hidden = array_merge(['selected','roomKey','roomLabel','floor','domain','group','key','title',
-            'synonyms','entityId','kiEnabled','kiReadOnly','rowColor','kiStatus','diffKeys','editable',
+            'synonyms','entityId','kiEnabled','kiReadOnly','rowColor','kiStatus','diffKeys','checkStatus','checkDetails','editable',
             'deletable','ipsObjectIds','ipsInstanceIds','ai','aiType','aiReviewed'],
             array_values(self::AI_VARIABLE_FIELDS), array_values(self::AI_STATE_FIELDS));
         $idFields = ['id','controlId','statusId','tiltId','set','state','ist','soll','eingestellt',
