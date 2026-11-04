@@ -567,10 +567,26 @@ function iah_rc_voice(string $text,array $cfg): array
         ];
         $make=static fn(string $n,string $d,array $p):array=>['type'=>'function','function'=>[
             'name'=>$n,'description'=>$d,'parameters'=>['type'=>'object','properties'=>$p]]];
+        // V3.4.5: Eine KI kann beliebige Kombinationen aus Eigenschaft,
+        // Operation, Raum und Status als deklarative Datenabfrage planen.
+        // Sie bekommt keine freien IPS-IDs, SQL oder PHP-Funktionen.
+        $queryProperties=$props+[
+            'rooms'=>['type'=>'array','items'=>['type'=>'string']],
+            'property'=>['type'=>'string','enum'=>array_merge(
+                array_keys(RCCDeviceTypeRegistry::fields()),['activity','state'])],
+            'operation'=>['type'=>'string','enum'=>['list','count','min','max','avg','sum']],
+            'group_by'=>['type'=>'string','enum'=>['device','room','none']],
+            'condition'=>['type'=>'string','enum'=>['eq','neq','gt','gte','lt','lte','active','inactive']],
+            'value'=>['type'=>['string','number','boolean']],
+            'limit'=>['type'=>'integer','minimum'=>1,'maximum'=>50],
+            'indoor_only'=>['type'=>'boolean']
+        ];
         $tools=[
-            $make('get_states','Liest aktuelle Geraete-Eigenschaften aus RoomsCatalog PROD: z.B. Temperatur, Sollwert, Position, Status, Lux und Verbrauch. Nur explizite Rueckmeldungen sind Istwerte. Fuer eingeschaltete Lichter domain=licht und only_active=true.',
+            $make('query_house','Allgemeine KI-Datenabfrage fuer BELIEBIGE reale Geraete-Eigenschaften: lesen, listen, zaehlen, sortieren, max/min, Mittelwert, Summe, nach Raum gruppieren. Immer property=kanonische Eigenschaft statt type=Temperatur. Beispiel: waermster Raum = property=temperature, operation=max, group_by=room, indoor_only=true; eingeschaltete Lichter = property=activity, operation=list, condition=active, domain=licht; geoeffnete Fenster = property=open, condition=eq, value=offen, type=window. Keine Schaltereignisse.',
+                $queryProperties),
+            $make('get_states','Alternative Rohdatenabfrage fuer wenige spezifische Geraete; wenn Filter unbekannt lieber query_house verwenden. Keinen beliebigen Eigenschaftsnamen als Geraetetyp oder Domain ausgeben.',
                 $props+['only_active'=>['type'=>'boolean']]),
-            $make('get_devices','Listet Geraete mit eindeutigen deviceKeys, verfuegbaren Eigenschaften und freigegebenen Schreib-Eigenschaften.',$props)
+            $make('get_devices','Inventar fuer eindeutige deviceKeys und kontrollierte Schreibfreigaben (keine Livewerte).',$props)
         ];
         if($allowWrites){
             $tools[]=$make('set_device','Aendert EIN eindeutig bestimmtes, explizit freigegebenes und fachlich bestaetigtes Geraet. property optional: power als Boolean, brightness/targetPosition 0-100, targetTemperature 6-30. Zuerst get_devices fuer deviceKey und writableProperties. Keine KNX-Fahrbefehle oder frei erfundenen IDs.',
