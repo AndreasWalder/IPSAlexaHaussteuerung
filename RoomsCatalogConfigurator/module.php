@@ -182,6 +182,9 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('SinglePositionProdNotice', 'Noch keine einzelne Positionsaenderung geprueft.');
         $this->RegisterAttributeString('CatalogCheckDebugOutput', '');
         $this->RegisterAttributeString('CatalogCheckDebugSummary', 'Noch keine RoomsCatalog-Pruefung ausgefuehrt.');
+        $this->RegisterAttributeString('KnxStatusRepairPreview', '{}');
+        $this->RegisterAttributeString('KnxStatusRepairSummary', 'Noch keine KNX-Statuskorrektur geprueft.');
+        $this->RegisterAttributeString('KnxStatusRepairPreviewText', '');
     }
 
     public function ApplyChanges()
@@ -3607,6 +3610,223 @@ class RoomsCatalogConfigurator extends IPSModule
     }
 
     /**
+     * Safe semantic source: use ONLY a configured status variable with
+     * ~ShutterStatus.KNX and unambiguous numeric profile associations.
+     * Commands (0/100) and position feedback are not used as status enums.
+     */
+    private function knxShutterStatusValues(int $statusId): ?array
+    {
+        if ($statusId<=0 || !function_exists('IPS_VariableExists')
+            || !function_exists('IPS_GetVariable') || !function_exists('IPS_GetVariableProfile')
+            || !IPS_VariableExists($statusId)) return null;
+        $v=IPS_GetVariable($statusId);
+        if (!is_array($v) || (int)($v['VariableType']??-1)!==1) return null;
+        $profile=(string)(($v['VariableCustomProfile']??'') ?: ($v['VariableProfile']??''));
+        if (mb_strtolower($profile,'UTF-8')!=='~shutterstatus.knx') return null;
+        try {
+            $meta=IPS_GetVariableProfile($profile);
+        } catch (\Throwable $ignored) {
+            return null;
+        }
+        $values=[];
+        foreach ((array)($meta['Associations']??[]) as $assoc) {
+            if (!is_array($assoc) || !isset($assoc['Value'])) continue;
+            $label=mb_strtolower(trim((string)($assoc['Name']??'')),'UTF-8');
+            $label=str_replace(['ä','ö','ü','ß'],['ae','oe','ue','ss'],$label);
+            $kind=match ($label) {
+                'offen','geoeffnet','open'=>'open',
+                'geschlossen','closed'=>'closed',
+                default=>null
+            };
+            if ($kind===null) continue;
+            $numeric=$assoc['Value'];
+            if (!is_int($numeric) && !(is_string($numeric) && preg_match('/^-?\d+$/D',$numeric)===1)) {
+                return null;
+            }
+            $value=(int)$numeric;
+            if (isset($values[$kind]) && $values[$kind]!==$value) return null;
+            $values[$kind]=$value;
+        }
+        if (!isset($values['open'],$values['closed'])
+            || $values['open']===$values['closed']) return null;
+        return $values;
+    }
+
+    /**
+     * Conservative candidates: ONLY legacy 0/100 meanings on explicitly
+     * assigned KNX status enums. Different custom mappings are never overwritten.
+     */
+    private function knxShutterStatusRepairPlan(array $catalog): array
+    {
+        $rooms=$this->extractRoomsFromCatalog($catalog);
+        $plan=[];
+        foreach ($rooms as $roomKey=>$room) {
+            foreach ((array)($room['domains']['jalousie']??[]) as $key=>$leaf) {
+                if (!is_array($leaf)) continue;
+                $ai=$leaf['ai']??[];
+                if (!is_array($ai) || ($ai['type']??'')!=='blind'
+                    || ($ai['review']['status']??'')==='confirmed') continue;
+                $statusId=(int)($ai['variables']['status']??0);
+                $actionId=(int)($ai['variables']['action']??0);
+                $positionId=(int)($ai['variables']['position']??0);
+                if ($statusId<=0 || $statusId===$actionId || $statusId===$positionId) continue;
+                $known=$this->knxShutterStatusValues($statusId);
+                if ($known===null) continue;
+                $old=(array)($ai['stateMapping']??[]);
+                // 0/100 are the old command/position endpoint convention.
+                // Do not silently replace an explicitly custom state enum.
+                if (($old['open']??null)!==0 || ($old['closed']??null)!==100
+                    || ($known['open']===0 && $known['closed']===100)) continue;
+                $plan[]=[
+                    'roomKey'=>(string)$roomKey,'key'=>(string)$key,
+                    'device'=>(string)($leaf['title']??$key),
+                    'statusId'=>$statusId,
+                    'old'=>['open'=>0,'closed'=>100],
+                    'new'=>['open'=>$known['open'],'closed'=>$known['closed']]
+                ];
+            }
+        }
+        return $plan;
+    }
+
+    private function knxStatusRepairSources(): array
+    {
+        $editId=$this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        $prodId=$this->ReadPropertyInteger('RoomsCatalogScriptID');
+        if ($editId<=0 || $prodId<=0 || $editId===$prodId
+            || !IPS_ScriptExists($editId) || !IPS_ScriptExists($prodId)) {
+            throw new \RuntimeException('EDIT/PROD muessen zwei verschiedene gueltige Skripte sein.');
+        }
+        $editSource=(string)IPS_GetScriptContent($editId);
+        $prodSource=(string)IPS_GetScriptContent($prodId);
+        if (!RCCDeviceTechnicalAudit::isLiteralArraySource($editSource)) {
+            throw new \RuntimeException('EDIT ist kein statisches PHP-Array.');
+        }
+        $catalog=$this->loadRoomsCatalog($editId,'EDIT');
+        if ($this->extractRoomsFromCatalog($catalog)===[]) {
+            throw new \RuntimeException('EDIT-Katalog leer oder unlesbar.');
+        }
+        return compact('editId','prodId','editSource','prodSource','catalog');
+    }
+
+    /** No write – identify exact candidate devices and show before/after. */
+    public function PreviewKnxStatusRepair(): void
+    {
+        try {
+            $src=$this->knxStatusRepairSources();
+            $plan=$this->knxShutterStatusRepairPlan($src['catalog']);
+            $data=[
+                'time'=>time(),
+                'editHash'=>hash('sha256',$src['editSource']),
+                'prodHash'=>hash('sha256',$src['prodSource']),
+                'plan'=>$plan
+            ];
+            $text=json_encode($plan,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE
+                |JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR);
+            $msg=count($plan).' eindeutige KNX-Statuszuordnungen zur EDIT-Korrektur gefunden. '
+                .'Nur open=0 / closed=100 wird auf die Profilwerte umgestellt. '
+                .'Keine Fahraktionen, KI-Freigaben, Bestaetigungen oder PROD-Aenderung. '
+                .'Bitte Vorschau kontrollieren und dann ausdruecklich uebernehmen.';
+            $this->WriteAttributeString('KnxStatusRepairPreview',json_encode($data,JSON_THROW_ON_ERROR));
+            $this->WriteAttributeString('KnxStatusRepairPreviewText',$text);
+            $this->WriteAttributeString('KnxStatusRepairSummary',$msg);
+            $this->UpdateFormField('KnxStatusRepairSummary','caption',$msg);
+            $this->UpdateFormField('KnxStatusRepairPreviewText','value',$text);
+            echo $msg;
+        } catch (\Throwable $error) {
+            $this->WriteAttributeString('KnxStatusRepairPreview','{}');
+            echo 'KNX-STATUS-VORSCHAU FEHLGESCHLAGEN: '.$error->getMessage();
+        }
+    }
+
+    /**
+     * Explicit operator action. EDIT only, verified backup, source-hash
+     * and freshly rebuilt IPS metadata guard, readback and rollback.
+     */
+    public function ApplyKnxStatusRepair(): void
+    {
+        try {
+            $preview=json_decode($this->ReadAttributeString('KnxStatusRepairPreview'),true);
+            if (!is_array($preview) || !isset($preview['time'])
+                || time()-(int)$preview['time']>900) {
+                throw new \RuntimeException('Zuerst aktuelle Vorschau ausfuehren (15 Minuten gueltig).');
+            }
+            $src=$this->knxStatusRepairSources();
+            if (hash('sha256',$src['editSource'])!==($preview['editHash']??'')
+                || hash('sha256',$src['prodSource'])!==($preview['prodHash']??'')) {
+                throw new \RuntimeException('EDIT/PROD nach Vorschau veraendert. Bitte Vorschau wiederholen.');
+            }
+            $plan=$this->knxShutterStatusRepairPlan($src['catalog']);
+            if ($plan===[] || $plan!==($preview['plan']??null)) {
+                throw new \RuntimeException('Keine unveraenderten eindeutigen Vorschlaege; Vorschau wiederholen.');
+            }
+            $next=$src['catalog'];
+            if (isset($next['rooms']) && is_array($next['rooms'])) {
+                $rooms=&$next['rooms'];
+            } else {
+                $rooms=&$next;
+            }
+            foreach ($plan as $item) {
+                $leaf=&$rooms[$item['roomKey']]['domains']['jalousie'][$item['key']];
+                if (!is_array($leaf) || !is_array($leaf['ai']??null)
+                    || (int)($leaf['ai']['variables']['status']??0)!==$item['statusId']
+                    || ($leaf['ai']['stateMapping']['open']??null)!==0
+                    || ($leaf['ai']['stateMapping']['closed']??null)!==100) {
+                    throw new \RuntimeException('Unerwartete Geraeteaenderung, EDIT bleibt unveraendert.');
+                }
+                $leaf['ai']['stateMapping']['open']=$item['new']['open'];
+                $leaf['ai']['stateMapping']['closed']=$item['new']['closed'];
+                unset($leaf);
+            }
+            unset($rooms);
+            $php="<?php\nreturn ".var_export($next,true).";\n";
+            if (IPS_GetScriptContent($src['editId'])!==$src['editSource']
+                || IPS_GetScriptContent($src['prodId'])!==$src['prodSource']) {
+                throw new \RuntimeException('Katalog vor dem Backup geaendert.');
+            }
+            $backup=IPS_CreateScript(0);
+            if (!is_int($backup) || $backup<=0) {
+                throw new \RuntimeException('EDIT-Backup konnte nicht erzeugt werden.');
+            }
+            IPS_SetParent($backup,IPS_GetParent($src['editId']));
+            IPS_SetName($backup,'RoomsCatalogEdit_Backup_KNX_Status_'.date('Ymd_His').'_'.$backup);
+            IPS_SetScriptContent($backup,$src['editSource']);
+            if (IPS_GetScriptContent($backup)!==$src['editSource']) {
+                throw new \RuntimeException('EDIT-Backup-Verifikation fehlgeschlagen. Keine Aenderung.');
+            }
+            if (IPS_GetScriptContent($src['editId'])!==$src['editSource']
+                || IPS_GetScriptContent($src['prodId'])!==$src['prodSource']) {
+                throw new \RuntimeException('Katalog nach Backup geaendert. Keine Aenderung.');
+            }
+            try {
+                if (IPS_SetScriptContent($src['editId'],$php)===false
+                    || IPS_GetScriptContent($src['editId'])!==$php) {
+                    throw new \RuntimeException('EDIT-Schreibverifikation fehlgeschlagen.');
+                }
+            } catch (\Throwable $writeError) {
+                $restored=false;
+                try {
+                    IPS_SetScriptContent($src['editId'],$src['editSource']);
+                    $restored=IPS_GetScriptContent($src['editId'])===$src['editSource'];
+                } catch (\Throwable $ignored) { }
+                throw new \RuntimeException('EDIT-Schreibfehler: '.$writeError->getMessage()
+                    .($restored ? ' Ursprung wiederhergestellt.' : ' Backup #'.$backup.' manuell pruefen.'));
+            }
+            $this->WriteAttributeString('KnxStatusRepairPreview','{}');
+            $msg='ERFOLG: '.count($plan).' KNX-Statuszuordnungen ausschliesslich in EDIT '
+                .'an Profilwerte angepasst. EDIT-Backup #'.$backup.'. PROD UNVERAENDERT. '
+                .'Jetzt ROOMSCATALOG UEBERPRUEFEN und danach bewusst EDIT NACH PROD.';
+            $this->WriteAttributeString('KnxStatusRepairSummary',$msg);
+            $this->UpdateFormField('KnxStatusRepairSummary','caption',$msg);
+            $this->reloadAllFromCatalog();
+            $this->RefreshVisibleLists();
+            echo $msg;
+        } catch (\Throwable $error) {
+            echo 'KNX-STATUS-UEBERNAHME ABGEBROCHEN: '.$error->getMessage();
+        }
+    }
+
+    /**
      * Speichert den Edit-Katalog 1:1 nach PROD.
      */
     /**
@@ -5896,7 +6116,27 @@ class RoomsCatalogConfigurator extends IPSModule
                 ['type'=>'ValidationTextBox','name'=>'CatalogCheckDebugOutput',
                     'caption'=>'Debug-Ausgabe (alles markieren und hier einfuegen)',
                     'multiline'=>true,'width'=>'100%',
-                    'value'=>$this->ReadAttributeString('CatalogCheckDebugOutput')]
+                    'value'=>$this->ReadAttributeString('CatalogCheckDebugOutput')],
+                ['type'=>'ExpansionPanel','caption'=>'KNX-Jalousie-Statuswerte sicher in EDIT korrigieren',
+                    'expanded'=>false,'items'=>[
+                        ['type'=>'Label','caption'=>'Nur eindeutig abweichende Status-Zuordnungen mit '
+                            .'Profil ~ShutterStatus.KNX und bisherigen Werten 0/100. '
+                            .'Erst Vorschau; anschliessend manuelle Uebernahme mit EDIT-Backup. '
+                            .'Fahrbefehle, KI-Freigaben, andere Geraete und PROD bleiben unveraendert.'],
+                        ['type'=>'Button','caption'=>'1 – STATUS-KORREKTUR VORSCHAU',
+                            'onClick'=>'RCC_PreviewKnxStatusRepair($id);'],
+                        ['type'=>'Label','name'=>'KnxStatusRepairSummary',
+                            'caption'=>$this->ReadAttributeString('KnxStatusRepairSummary')],
+                        ['type'=>'ValidationTextBox','name'=>'KnxStatusRepairPreviewText',
+                            'caption'=>'Korrekturvorschau (alt / neu)',
+                            'multiline'=>true,'width'=>'100%',
+                            'value'=>$this->ReadAttributeString('KnxStatusRepairPreviewText')],
+                        ['type'=>'Button','caption'=>'2 – GEPRUEFTE STATUSWERTE NACH EDIT',
+                            'confirm'=>'Die in der letzten Vorschau ausgewiesenen KNX-Statuswerte '
+                                .'nach EDIT schreiben? Es wird zuerst ein verifiziertes EDIT-Backup '
+                                .'erstellt. PROD bleibt unveraendert.',
+                            'onClick'=>'RCC_ApplyKnxStatusRepair($id);']
+                    ]]
             ]
         ];
         $main[]=[
