@@ -7787,6 +7787,381 @@ class RoomsCatalogConfigurator extends IPSModule
             $this->liveVariablePreview($variableId));
     }
 
+
+    /**
+     * V3.5.0: Festgehaltene Markierung fuer den mehrstufigen EDIT-Editor.
+     * Der normale IPS-List-Haken ist nur eine voruebergehende Auswahl und
+     * wird nach SaveToEdit bewusst neu geladen. Deshalb eigene Wizard-Keys.
+     */
+    private function markedEditorContext(): ?array
+    {
+        $keys=json_decode($this->ReadAttributeString('MarkedEditorKeys'),true);
+        if(!is_array($keys) || $keys===[]) return null;
+        $keys=array_values(array_filter($keys,static fn($key):bool=>
+            is_string($key) && substr_count($key,'|')===3));
+        if($keys===[]) return null;
+        $index=max(0,min(count($keys)-1,(int)$this->ReadAttributeString('MarkedEditorIndex')));
+        $key=$keys[$index];
+        foreach($this->getRuntimeEntries() as $row) {
+            if(is_array($row) && $this->buildCompositeKey($row)===$key)
+                return compact('keys','index','key','row');
+        }
+        return ['keys'=>$keys,'index'=>$index,'key'=>$key,'row'=>null];
+    }
+
+    private function markedEditorName(array $row): string
+    {
+        return trim((string)($row['title']??$row['key']??'Geraet'));
+    }
+
+    /** Erst nach Auswahl per Button einen bestandsfesten Bearbeitungsdurchlauf starten. */
+    public function StartMarkedEditor(): void
+    {
+        $this->ensureRuntimeCatalogCurrent();
+        $keys=$this->bulkSelectionKeys();
+        $editId=$this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        if($keys===[] || $editId<=0 || !IPS_ScriptExists($editId)) {
+            $message='Bitte zuerst Geraete in der Tabelle markieren und ein gueltiges EDIT-Skript konfigurieren.';
+            $this->WriteAttributeString('MarkedEditorNotice',$message);
+            $this->UpdateFormField('MarkedEditorNotice','caption',$message);
+            echo $message;
+            return;
+        }
+        $this->WriteAttributeString('MarkedEditorKeys',
+            json_encode($keys,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
+        $this->WriteAttributeString('MarkedEditorIndex','0');
+        $this->WriteAttributeString('MarkedEditorEditHash',
+            hash('sha256',(string)IPS_GetScriptContent($editId)));
+        $this->WriteAttributeString('MarkedEditorNotice',
+            count($keys).' Geraete im Durchlauf. Aenderungen werden pro Geraet nur durch SPEICHERN uebernommen.');
+        $this->refreshMarkedEditorForm();
+        echo count($keys).' markierte Geraete zur Bearbeitung geladen. Erster Eintrag aktiv.';
+    }
+
+    public function FinishMarkedEditor(): void
+    {
+        $this->WriteAttributeString('MarkedEditorKeys','[]');
+        $this->WriteAttributeString('MarkedEditorIndex','0');
+        $this->WriteAttributeString('MarkedEditorEditHash','');
+        $this->WriteAttributeString('MarkedEditorNotice','Bearbeitungsdurchlauf abgeschlossen. EDIT bleibt gespeichert.');
+        $this->refreshMarkedEditorForm();
+    }
+
+    /** Nur navigieren. Nicht gespeicherte Eingaben werden bewusst verworfen. */
+    public function StepMarkedEditor(int $step): void
+    {
+        $context=$this->markedEditorContext();
+        if($context===null) {
+            echo 'Noch kein Bearbeitungsdurchlauf gestartet.'; return;
+        }
+        $newIndex=max(0,min(count($context['keys'])-1,
+            $context['index']+($step<0?-1:1)));
+        $this->WriteAttributeString('MarkedEditorIndex',(string)$newIndex);
+        $this->WriteAttributeString('MarkedEditorNotice',
+            'Geraet gewechselt. Nicht gespeicherte Aenderungen am vorherigen Eintrag wurden verworfen.');
+        $this->refreshMarkedEditorForm();
+    }
+
+    /** Optional gezielt einen markierten Eintrag in der Dropdown-Liste anwaehlen. */
+    public function ChooseMarkedEditor(string $key): void
+    {
+        $context=$this->markedEditorContext();
+        if($context===null) return;
+        $index=array_search($key,$context['keys'],true);
+        if($index===false) return;
+        $this->WriteAttributeString('MarkedEditorIndex',(string)$index);
+        $this->WriteAttributeString('MarkedEditorNotice',
+            'Eintrag gewechselt. Aenderungen bitte vor dem Wechsel speichern.');
+        $this->refreshMarkedEditorForm();
+    }
+
+    /** Statusvorschau auch im mehrstufigen Editor nach SelectVariable-Auswahl. */
+    public function RefreshMarkedVariablePreview(string $field,int $variableId): void
+    {
+        if(!in_array($field,array_values(RCCDeviceTypeRegistry::fields()),true))return;
+        $this->UpdateFormField('MarkedValuePreview_'.$field,'caption',
+            $this->liveVariablePreview($variableId));
+    }
+
+    /**
+     * UI-Update OHNE ReloadForm: laesst das Panel offen, zeigt kompletten
+     * Rollenblock und die aktuellen IPS-Werte des naechsten Geraetes.
+     */
+    private function refreshMarkedEditorForm(): void
+    {
+        $context=$this->markedEditorContext();
+        $row=is_array($context['row']??null)?$context['row']:[];
+        $active=$row!==[];
+        $type=(string)($row['aiType']??'');
+        if(!isset(RCCDeviceTypeRegistry::roles()[$type]) && $active)
+            $type=$this->inferredAIType($row);
+        if(!isset(RCCDeviceTypeRegistry::roles()[$type]))$type='';
+        $total=count($context['keys']??[]);
+        $index=(int)($context['index']??0);
+        $caption=$active
+            ? sprintf('Eintrag %d/%d: %s – %s / %s / %s',
+                $index+1,$total,$this->markedEditorName($row),
+                (string)($row['roomLabel']??$row['roomKey']),
+                (string)($row['domain']??''),(string)($row['group']??''))
+            : ($total>0?'Eintrag in EDIT nicht mehr vorhanden – Durchlauf neu starten.'
+                :'Noch kein Durchlauf: zuerst die markierten Geraete laden.');
+        $this->UpdateFormField('MarkedEditorPanel','visible',$active);
+        $this->UpdateFormField('MarkedEditorPanel','expanded',true);
+        $this->UpdateFormField('MarkedEditorProgress','caption',$caption);
+        $this->UpdateFormField('MarkedEditorNotice','caption',
+            $this->ReadAttributeString('MarkedEditorNotice'));
+        $this->UpdateFormField('MarkedEditorDevice','options',
+            $this->markedEditorOptions($context));
+        $this->UpdateFormField('MarkedEditorDevice','value',(string)($context['key']??''));
+        $this->UpdateFormField('MarkedEditorPrevious','enabled',$active&&$index>0);
+        $this->UpdateFormField('MarkedEditorNext','enabled',$active&&$index<$total-1);
+        $this->UpdateFormField('MarkedEditorSave','enabled',$active);
+        $this->UpdateFormField('MarkedEditorSaveNext','enabled',$active);
+        $this->UpdateFormField('MarkedEditSourceKey','value',(string)($context['key']??''));
+        $this->UpdateFormField('MarkedEditType','caption',
+            'Geraetetyp: '.(RCCDeviceTypeRegistry::captions()[$type]??'Legacy').
+            ' | Raum und Typ koennen gemeinsam oder ueber das Zahnrad geaendert werden.');
+        foreach(['title'=>'MarkedEditTitle','synonyms'=>'MarkedEditSynonyms',
+            'entityId'=>'MarkedEditEntityId'] as $field=>$name)
+            $this->UpdateFormField($name,'value',(string)($row[$field]??''));
+        foreach(['kiEnabled'=>'MarkedEditKI','kiReadOnly'=>'MarkedEditReadOnly',
+            'aiReviewed'=>'MarkedEditReviewed'] as $field=>$name)
+            $this->UpdateFormField($name,'value',(bool)($row[$field]??($field==='kiReadOnly')));
+        foreach(RCCDeviceTypeRegistry::fields() as $property=>$field) {
+            $visible=$active && in_array($property,
+                RCCDeviceTypeRegistry::roles()[$type]??[],true);
+            $id=(int)($row[$field]??0);
+            if($id>0 && (!function_exists('IPS_VariableExists')||!IPS_VariableExists($id)))
+                $id=0;
+            $this->UpdateFormField('MarkedEdit_'.$field,'visible',$visible);
+            $this->UpdateFormField('MarkedEdit_'.$field,'value',$id);
+            $this->UpdateFormField('MarkedValuePreview_'.$field,'visible',$visible);
+            $this->UpdateFormField('MarkedValuePreview_'.$field,'caption',
+                $this->liveVariablePreview($id));
+        }
+        foreach(RCCDeviceTypeRegistry::states() as $property=>$field) {
+            $visible=$active && (in_array($type,['blind','window'],true)
+                ? in_array($property,['open','closed'],true)
+                : (in_array($type,['light','dimmer','switch','motion'],true)
+                    && in_array($property,['on','off'],true)));
+            $this->UpdateFormField('MarkedEdit_'.$field,'visible',$visible);
+            $this->UpdateFormField('MarkedEdit_'.$field,'value',(string)($row[$field]??''));
+        }
+    }
+
+    private function markedEditorOptions(?array $context): array
+    {
+        if($context===null)return [];
+        $rows=[];
+        foreach($this->getRuntimeEntries() as $row) {
+            if(is_array($row) && ($key=$this->buildCompositeKey($row))!==null)
+                $rows[$key]=$row;
+        }
+        $result=[];
+        foreach($context['keys'] as $i=>$key) {
+            $row=$rows[$key]??null;
+            $caption=$row===null?'[Nicht mehr vorhanden] '.$key:
+                sprintf('%d. %s / %s', $i+1,
+                    (string)($row['roomLabel']??$row['roomKey']),$this->markedEditorName($row));
+            $result[]=['caption'=>$caption,'value'=>$key];
+        }
+        return $result;
+    }
+
+    /** Standard-IPS-Formelemente; keine zweite Kopie des RoomsCatalog. */
+    private function markedEditorForm(): array
+    {
+        $context=$this->markedEditorContext();
+        $row=is_array($context['row']??null)?$context['row']:[];
+        $active=$row!==[];
+        $type=(string)($row['aiType']??'');
+        if($type==='' && $active)$type=$this->inferredAIType($row);
+        if(!isset(RCCDeviceTypeRegistry::roles()[$type]))$type='';
+        $index=(int)($context['index']??0);
+        $total=count($context['keys']??[]);
+        $roles=[];
+        $captions=RCCDeviceTypeRegistry::propertyCaptions();
+        foreach(RCCDeviceTypeRegistry::fields() as $property=>$field) {
+            $visible=$active && in_array($property,RCCDeviceTypeRegistry::roles()[$type]??[],true);
+            $id=(int)($row[$field]??0);
+            $roles[]=['type'=>'RowLayout','items'=>[
+                ['type'=>'SelectVariable','name'=>'MarkedEdit_'.$field,
+                    'caption'=>$captions[$property]??$property,
+                    'visible'=>$visible,'value'=>$id,'width'=>'43%',
+                    'onChange'=>sprintf('RCC_RefreshMarkedVariablePreview($id, "%s", $MarkedEdit_%s);',
+                        $field,$field)],
+                ['type'=>'Label','name'=>'MarkedValuePreview_'.$field,
+                    'caption'=>$this->liveVariablePreview($id),'visible'=>$visible]
+            ]];
+        }
+        $states=[];
+        foreach(RCCDeviceTypeRegistry::states() as $property=>$field) {
+            $visible=$active && (in_array($type,['blind','window'],true)
+                ? in_array($property,['open','closed'],true)
+                : (in_array($type,['light','dimmer','switch','motion'],true)
+                    && in_array($property,['on','off'],true)));
+            $states[]=['type'=>'ValidationTextBox','name'=>'MarkedEdit_'.$field,
+                'caption'=>match($property){'on'=>'Ein/Aktiv ist','off'=>'Aus/Inaktiv ist',
+                    'open'=>'Offen ist','closed'=>'Geschlossen ist',default=>$property},
+                'value'=>(string)($row[$field]??''),'visible'=>$visible];
+        }
+        $parts=[
+            "'sourceKey'=>\$MarkedEditSourceKey",
+            "'title'=>\$MarkedEditTitle",
+            "'synonyms'=>\$MarkedEditSynonyms",
+            "'entityId'=>\$MarkedEditEntityId",
+            "'kiEnabled'=>\$MarkedEditKI",
+            "'kiReadOnly'=>\$MarkedEditReadOnly",
+            "'aiReviewed'=>\$MarkedEditReviewed"
+        ];
+        foreach(RCCDeviceTypeRegistry::fields() as $field)
+            $parts[]=var_export($field,true).' => ($MarkedEdit_'.$field.' ?? null)';
+        foreach(RCCDeviceTypeRegistry::states() as $field)
+            $parts[]=var_export($field,true).' => ($MarkedEdit_'.$field.' ?? null)';
+        $payload='json_encode(array_filter(['.implode(', ',$parts)
+            .'], static fn($v) => $v !== null), JSON_INVALID_UTF8_SUBSTITUTE)';
+        $onSave='RCC_SaveMarkedEditorDevice($id, '.$payload.', false);';
+        $onSaveNext='RCC_SaveMarkedEditorDevice($id, '.$payload.', true);';
+        return [
+            'type'=>'ExpansionPanel','name'=>'MarkedEditorPanel',
+            'caption'=>'Markierte Geraete nacheinander bearbeiten',
+            'expanded'=>true,'visible'=>$active,'items'=>[
+                ['type'=>'Label','name'=>'MarkedEditorProgress','caption'=>$active
+                    ? sprintf('Eintrag %d/%d – %s', $index+1,$total,$this->markedEditorName($row))
+                    :'Noch kein Durchlauf gestartet.'],
+                ['type'=>'Label','name'=>'MarkedEditorNotice',
+                    'caption'=>$this->ReadAttributeString('MarkedEditorNotice')],
+                ['type'=>'Select','name'=>'MarkedEditorDevice',
+                    'caption'=>'Direkt zu einem markierten Geraet wechseln',
+                    'options'=>$this->markedEditorOptions($context),
+                    'value'=>(string)($context['key']??''),
+                    'onChange'=>'RCC_ChooseMarkedEditor($id, (string)$MarkedEditorDevice);'],
+                ['type'=>'RowLayout','items'=>[
+                    ['type'=>'Button','name'=>'MarkedEditorPrevious',
+                        'caption'=>'◀ ZURUECK','enabled'=>$index>0,
+                        'onClick'=>'RCC_StepMarkedEditor($id,-1);'],
+                    ['type'=>'Button','name'=>'MarkedEditorNext',
+                        'caption'=>'WEITER ▶','enabled'=>$index<$total-1,
+                        'onClick'=>'RCC_StepMarkedEditor($id,1);'],
+                    ['type'=>'Button','caption'=>'DURCHLAUF BEENDEN',
+                        'onClick'=>'RCC_FinishMarkedEditor($id);']
+                ]],
+                ['type'=>'ValidationTextBox','name'=>'MarkedEditSourceKey',
+                    'value'=>(string)($context['key']??''),'visible'=>false],
+                ['type'=>'Label','name'=>'MarkedEditType',
+                    'caption'=>'Geraetetyp: '.(RCCDeviceTypeRegistry::captions()[$type]??'Legacy').
+                        ' | Typ-/Raumwechsel weiterhin ueber Zahnrad oder gemeinsame Bearbeitung.'],
+                ['type'=>'RowLayout','items'=>[
+                    ['type'=>'ValidationTextBox','name'=>'MarkedEditTitle',
+                        'caption'=>'Geraetename','value'=>(string)($row['title']??'')],
+                    ['type'=>'ValidationTextBox','name'=>'MarkedEditSynonyms',
+                        'caption'=>'Alternative Namen','value'=>(string)($row['synonyms']??'')],
+                    ['type'=>'ValidationTextBox','name'=>'MarkedEditEntityId',
+                        'caption'=>'Entity-ID (optional)','value'=>(string)($row['entityId']??'')]
+                ]],
+                ['type'=>'ExpansionPanel','caption'=>'Zugehoerige Variablen / aktuelle IPS-Werte',
+                    'expanded'=>true,'items'=>$roles],
+                ['type'=>'RowLayout','items'=>$states],
+                ['type'=>'RowLayout','items'=>[
+                    ['type'=>'CheckBox','name'=>'MarkedEditKI','caption'=>'Mit KI',
+                        'value'=>(bool)($row['kiEnabled']??false)],
+                    ['type'=>'CheckBox','name'=>'MarkedEditReadOnly','caption'=>'Nur abfragen',
+                        'value'=>(bool)($row['kiReadOnly']??true)],
+                    ['type'=>'CheckBox','name'=>'MarkedEditReviewed',
+                        'caption'=>'Fachlich geprueft','value'=>(bool)($row['aiReviewed']??false)]
+                ]],
+                ['type'=>'Label','caption'=>'VOR/WEITER speichert nicht automatisch. '
+                    .'Bitte jedes Geraet bewusst speichern; alle Werte sind unabhaengig, '
+                    .'Variablen-IDs werden nie auf andere Geraete kopiert. Nur EDIT.'],
+                ['type'=>'RowLayout','items'=>[
+                    ['type'=>'Button','name'=>'MarkedEditorSave',
+                        'caption'=>'DIESES GERAET IN EDIT SPEICHERN',
+                        'onClick'=>$onSave],
+                    ['type'=>'Button','name'=>'MarkedEditorSaveNext',
+                        'caption'=>'SPEICHERN UND WEITER ▶',
+                        'onClick'=>$onSaveNext]
+                ]]
+            ]
+        ];
+    }
+
+    /** Nur aktuelles Geraet aktualisieren, nie alle gleichzeitig mit denselben Variablen-IDs. */
+    public function SaveMarkedEditorDevice(string $dataJson,bool $next=false): void
+    {
+        $context=$this->markedEditorContext();
+        $editId=$this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        $input=json_decode($dataJson,true);
+        $fail=function(string $message):void{
+            $this->WriteAttributeString('MarkedEditorNotice',$message);
+            $this->UpdateFormField('MarkedEditorNotice','caption',$message);
+            echo $message;
+        };
+        if($context===null || !is_array($context['row']??null)
+            || !is_array($input) || $editId<=0 || !IPS_ScriptExists($editId)) {
+            $fail('Speichern abgebrochen: Bitte die Markierung erneut laden.');return;
+        }
+        $key=$context['key'];
+        if(($input['sourceKey']??'')!==$key) {
+            $fail('Geraet gewechselt: Eingaben stammen aus einem anderen Eintrag. Bitte erneut pruefen.');return;
+        }
+        $source=(string)IPS_GetScriptContent($editId);
+        if(hash('sha256',$source)!==$this->ReadAttributeString('MarkedEditorEditHash')) {
+            $fail('EDIT wurde seit dem Laden geaendert: zuerst Bearbeitungsdurchlauf neu starten.');return;
+        }
+        $row=$context['row'];
+        $type=(string)($row['aiType']??'');
+        if(!isset(RCCDeviceTypeRegistry::roles()[$type])) {
+            // Legacy-Geraete koennen Namen und Berechtigungen erhalten.
+            // Typ-Rollen sind erst nach expliziter Typisierung editierbar.
+            $type='';
+        }
+        $title=trim((string)($input['title']??''));
+        if($title==='' || mb_strlen($title,'UTF-8')>200) {
+            $fail('Bitte einen Geraetenamen mit maximal 200 Zeichen angeben.');return;
+        }
+        $update=['editorOriginalKey'=>$key,'title'=>$title,
+            'synonyms'=>(string)($input['synonyms']??''),
+            'entityId'=>(string)($input['entityId']??''),
+            'kiEnabled'=>(bool)($input['kiEnabled']??false),
+            'kiReadOnly'=>(bool)($input['kiReadOnly']??true),
+            'aiReviewed'=>(bool)($input['aiReviewed']??false)];
+        if($type!=='') {
+            foreach(RCCDeviceTypeRegistry::fields() as $role=>$field) {
+                if(!in_array($role,RCCDeviceTypeRegistry::roles()[$type],true))continue;
+                if(!array_key_exists($field,$input))continue;
+                $value=(int)$input[$field];
+                if($value>0 && (!function_exists('IPS_VariableExists')
+                    || !IPS_VariableExists($value))) {
+                    $fail('Variable #'.$value.' fuer '.$role.' existiert nicht. Nicht gespeichert.');return;
+                }
+                if($value<0) {
+                    $fail('Negative Variablen-ID ist ungueltig.');return;
+                }
+                $update[$field]=$value;
+            }
+            foreach(RCCDeviceTypeRegistry::states() as $state=>$field) {
+                $visible=in_array($type,['blind','window'],true)
+                    ? in_array($state,['open','closed'],true)
+                    : (in_array($type,['light','dimmer','switch','motion'],true)
+                        && in_array($state,['on','off'],true));
+                if($visible && array_key_exists($field,$input))
+                    $update[$field]=trim((string)$input[$field]);
+            }
+        }
+        // Bestehende, ansonsten nicht editierte Felder bleiben im SaveToEdit
+        // erhalten, auch die individuelle Quelle, Gruppe, bisherige Keys usw.
+        $this->SaveToEdit(json_encode($update,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
+        $after=(string)IPS_GetScriptContent($editId);
+        $this->WriteAttributeString('MarkedEditorEditHash',hash('sha256',$after));
+        if($next && $context['index']<count($context['keys'])-1)
+            $this->WriteAttributeString('MarkedEditorIndex',(string)($context['index']+1));
+        $this->WriteAttributeString('MarkedEditorNotice',
+            'Geraet '.($context['index']+1).'/'.count($context['keys']).
+            ' nach EDIT gespeichert. PROD unveraendert.'.
+            ($next?' Naechster Eintrag geladen.':''));
+        $this->refreshMarkedEditorForm();
+    }
+
     /** Dynamischer Bearbeitungsdialog für Symcon-Listen, benötigt PHP-Form-Dialog-Support. */
     public function GetEntryEditForm(string $roomKey = '', string $domain = '', string $group = '', string $key = ''): string
     {
