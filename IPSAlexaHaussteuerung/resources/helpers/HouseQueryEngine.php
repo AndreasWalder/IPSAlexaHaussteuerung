@@ -115,6 +115,15 @@ function iah_ai_closure_feedback(array $state): ?string
     return null;
 }
 
+/** Bei activity nur Geraete mit einer echten Status- oder Helligkeitsrueckmeldung. */
+function iah_ai_activity_capable(array $dev): bool
+{
+    $roles=array_keys((array)($dev['reads']??[]));
+    // Legacy-Schalter haben noch keine benannten Rollen.
+    if ($roles===[]) return empty($dev['typed']) && (int)($dev['read']??0)>0;
+    return array_intersect($roles,['power','status','brightness','motion'])!==[];
+}
+
 /** Istwert lesen, niemals einen Befehlswert als bestaetigten Zustand ausgeben. */
 function iah_ai_property_value(array $state, string $property, array $dev = []): mixed
 {
@@ -129,10 +138,15 @@ function iah_ai_property_value(array $state, string $property, array $dev = []):
             ['light','dimmer','switch','fan','switches','dimmers','fans'],true);
         foreach (['power','status','motion'] as $role) {
             if (!array_key_exists($role,$props)) continue;
-            $binary=iah_ai_binary_feedback($props[$role],
-                ($switchType && in_array($role,['power','status'],true)) || $role==='motion');
-            if ($binary===null && $switchType && in_array($role,['power','status'],true))
-                $binary=iah_ai_profile_feedback((int)($dev['reads'][$role]??0),$props[$role]);
+            // iah_rc_state() uebersetzt ein explizites stateMapping bereits
+            // in 'an'/'aus'. Danach hat das reale IPS-Profil Vorrang vor
+            // Standard-Bool und 0/1 (manche Statuswerte sind invertiert).
+            $binary=($switchType && in_array($role,['power','status'],true))
+                ? iah_ai_profile_feedback((int)($dev['reads'][$role]??0),$props[$role])
+                : null;
+            if ($binary===null)
+                $binary=iah_ai_binary_feedback($props[$role],
+                    ($switchType && in_array($role,['power','status'],true)) || $role==='motion');
             if ($binary!==null) return $binary;
         }
         $brightness = $props['brightness'] ?? null;
@@ -245,6 +259,7 @@ function iah_ai_query_house(array $devices, array $args, string $spoken = ''): a
         'unrecognizedNumericStatus'=>[]];
     $includeLastChange=iah_rc_wants_last_change($spoken);
     foreach ($found as $dev) {
+        if ($property==='activity' && !iah_ai_activity_capable($dev)) continue;
         if (!iah_ai_selected_room($dev,$rooms)) continue;
         // Nicht von Innenraeumen auf explizite Wetterstationen schliessen.
         if ($indoorOnly && (($dev['type']??'')==='weather'
@@ -470,6 +485,7 @@ function iah_ai_log_device_diagnostics(
     $property=(string)($args['property']??'state');
     $condition=(string)($args['condition']??'');
     foreach ($found as $dev) {
+        if ($property==='activity' && !iah_ai_activity_capable($dev)) continue;
         if (!iah_ai_selected_room($dev,$rooms)) continue;
         if ($indoorOnly && (($dev['type']??'')==='weather'
             || preg_match('/\\b(aussen|aussenbereich|garten|terrasse|balkon|outdoor|draussen)\\b/u',
