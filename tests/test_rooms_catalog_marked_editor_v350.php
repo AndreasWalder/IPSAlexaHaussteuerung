@@ -99,7 +99,7 @@ $payload=['sourceKey'=>$keys[0],'title'=>'EG Büro PIR neu','synonyms'=>'Büro P
     'entityId'=>'','kiEnabled'=>true,'kiReadOnly'=>true,'aiReviewed'=>false,
     'aiMotionId'=>50104,'aiOnValue'=>'true','aiOffValue'=>'false'];
 ob_start();$m->SaveMarkedEditorDevice(json_encode($payload,JSON_THROW_ON_ERROR),true);
-ob_end_clean();
+$captured350=ob_get_clean();fwrite(STDERR,"DEBUG V350 methodOutput=".str_replace("\n"," ",$captured350)."\n");
 $edit=require $GLOBALS['v350dir'].'/scripts/91.php';
 fwrite(STDERR,"DEBUG V350 saved=".json_encode($edit['buero']['domains']['sensoren']['bewegung']['a']??null,JSON_UNESCAPED_UNICODE)."; cursor=".$m->ReadAttributeString('MarkedEditorIndex')."; notices=".json_encode($m->updates['MarkedEditorNotice.caption']??null)."\n");
 assert350($edit['buero']['domains']['sensoren']['bewegung']['a']['title']==='EG Büro PIR neu'
