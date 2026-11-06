@@ -1055,10 +1055,12 @@ class RoomsCatalogConfigurator extends IPSModule
                     'rooms'=>$possibleRooms,'devices'=>$payloads
                 ],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)]
             ],
-            'temperature'=>0,
             'response_format'=>['type'=>'json_object'],
             'max_completion_tokens'=>1600
         ];
+        // Wie im produktiven KIHouseController: Luna-Modell verwendet
+        // reasoning_effort statt nicht unterstuetzter temperature=0.
+        if($model==='gpt-6-luna') $request['reasoning_effort']='none';
         // Kein API-Key und keine Antwort-Payload in Symcon-Log schreiben.
         $ch=curl_init('https://api.openai.com/v1/chat/completions');
         if($ch===false) return 'KI-Hilfe: cURL konnte nicht gestartet werden.';
