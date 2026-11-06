@@ -1909,7 +1909,34 @@ class RoomsCatalogConfigurator extends IPSModule
             if (isset($row['roomKey'])) $candidate['roomKey'] = trim((string)$row['roomKey']);
             if (isset($row['title'])) $candidate['title'] = trim((string)$row['title']);
             $type = (string)($row['deviceType'] ?? '');
-            if (array_key_exists($type,RCCDeviceTypeRegistry::roles())) $candidate['deviceType'] = $type;
+            if (array_key_exists($type,RCCDeviceTypeRegistry::roles())
+                && $candidate['deviceType']!==$type) {
+                $candidate['deviceType']=$type;
+                // Altzuordnungen des vorherigen Typs niemals uebernehmen.
+                $candidate['mappedRoles']=[];
+                $inventory=json_decode($this->ReadAttributeString('DiscoveryInventory'),true);
+                foreach ((array)($inventory['items']??[]) as $item) {
+                    if((int)($item['sourceId']??0)!==$sourceId)continue;
+                    $vars=$this->discoveryVariablesForSource($sourceId);
+                    $suggestions=$this->suggestAIFields([],$type,$vars);
+                    $high=[];
+                    foreach($suggestions as $suggestion) {
+                        if($suggestion['confidence']==='Hoch' && (int)$suggestion['candidateId']>0)
+                            $high[$suggestion['property']]=(int)$suggestion['candidateId'];
+                    }
+                    $candidate['mappedRoles']=$this->guidedReadingRoles($type,$vars,$high);
+                    break;
+                }
+                if($this->ReadPropertyString('DiscoveryDomainOverride')==='') {
+                    [$candidate['locationDomain'],$candidate['locationGroup']]=$this->guidedTypeLocation($type);
+                }
+                $candidate['confidence']='Pruefen';
+                $candidate['readiness']='Pruefen';
+                $candidate['reason']='Geraetetyp nach Scan geaendert: Variablen bitte pruefen';
+            }
+            foreach(['locationDomain','locationGroup'] as $field) {
+                if(isset($row[$field])) $candidate[$field]=trim((string)$row[$field]);
+            }
             break;
         }
         unset($candidate);
@@ -1935,6 +1962,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
         if (!is_array($preview) || !is_array($preview['rows'] ?? null) || $editId <= 0 || !IPS_ScriptExists($editId)
             || ($preview['roots'] ?? []) !== $this->discoveryRoots()
+            || ($preview['guidedConfigHash'] ?? '')!==RCCGuidedDiscovery::config($this->guidedDiscoveryConfig())
             || time() - (int)($preview['time'] ?? 0) > 600
             || ($preview['editHash'] ?? '') !== hash('sha256', IPS_GetScriptContent($editId))) {
             echo 'Geraetesuche veraltet oder EDIT geaendert. Bitte erneut scannen.';
@@ -1952,12 +1980,18 @@ class RoomsCatalogConfigurator extends IPSModule
             $roomKey = (string)($candidate['roomKey'] ?? '');
             $type = (string)($candidate['deviceType'] ?? '');
             $title = trim((string)($candidate['title'] ?? ''));
+            $domain=(string)($candidate['locationDomain']??'');
+            $group=(string)($candidate['locationGroup']??'');
+            if ($domain==='' || $group==='') [$domain,$group]=$this->guidedTypeLocation($type);
             if ($sourceId <= 0 || !IPS_ObjectExists($sourceId) || !isset($rooms[$roomKey]['domains'])
-                || !array_key_exists($type,RCCDeviceTypeRegistry::roles()) || $title === '') {
+                || !array_key_exists($type,RCCDeviceTypeRegistry::roles()) || $title === ''
+                || !RCCGuidedDiscovery::validLocation($domain,$group)
+                || in_array($domain,['heizung','jalousie'],true)
+                    && [$domain,$group]!==$this->guidedTypeLocation($type)) {
                 $errors[] = 'Geraet ' . $sourceId . ': Raum, Typ oder Name ungueltig.';
                 continue;
             }
-            $variables = $this->getIpsVariablesUnderScope($sourceId);
+            $variables = $this->discoveryVariablesForSource($sourceId);
             $variables = $this->withLearnedRoleHints($variables,
                 $this->learnedModuleTemplate($original,(string)($candidate['moduleId'] ?? '')));
             $ids = array_column($variables, 'id');
@@ -1966,7 +2000,6 @@ class RoomsCatalogConfigurator extends IPSModule
                 $errors[] = 'Geraet ' . $sourceId . ': bereits bekannt oder keine gueltigen Variablen.';
                 continue;
             }
-            [$domain,$group] = $this->guidedTypeLocation($type);
             $key = $this->discoveryDeviceKey($title,$sourceId);
             $entry = [
                 'selected'=>false,'roomKey'=>$roomKey,'roomLabel'=>(string)($rooms[$roomKey]['display'] ?? $roomKey),
@@ -1975,11 +2008,42 @@ class RoomsCatalogConfigurator extends IPSModule
                 'discoverySourceId'=>$sourceId,'discoverySourceType'=>(string)($candidate['sourceType'] ?? 'instance')
             ];
             $used = [];
-            foreach ($this->suggestAIFields($entry,$type,$variables) as $suggestion) {
-                $id = (int)$suggestion['candidateId'];
-                if ($suggestion['confidence'] !== 'Hoch' || $id <= 0 || isset($used[$id])) continue;
-                $entry[RCCDeviceTypeRegistry::fields()[$suggestion['property']]] = $id;
-                $used[$id] = true;
+            // 1. In der Vorschau bestaetigte, lesende Vorschlaege.
+            $validRoles=(array)(RCCDeviceTypeRegistry::roles()[$type]??[]);
+            $dataTypes=RCCDeviceTypeRegistry::dataTypes();
+            $metadata=[];
+            foreach($variables as $variable) $metadata[(int)$variable['id']]=$variable;
+            foreach((array)($candidate['mappedRoles']??[]) as $role=>$id) {
+                $id=(int)$id;
+                if(!in_array($role,$validRoles,true)
+                    || in_array($role,['action','control','targetPosition','targetTemperature','commandValue'],true)
+                    || !isset($metadata[$id]) || !empty($metadata[$id]['action'])
+                    || !in_array((int)$metadata[$id]['type'],$dataTypes[$role]??[],true)
+                    || isset($used[$id])) continue;
+                $entry[RCCDeviceTypeRegistry::fields()[$role]]=$id;
+                $used[$id]=true;
+            }
+            // 2. Bereits bestehende bewertete Rollen nur dort verwenden,
+            // wo die neue Vorschau nichts festlegt. Keine Steuerwerte.
+            foreach($this->suggestAIFields($entry,$type,$variables) as $suggestion) {
+                $role=(string)$suggestion['property'];
+                $id=(int)$suggestion['candidateId'];
+                if(!in_array($role,$validRoles,true)
+                    || in_array($role,['action','control','targetPosition','targetTemperature','commandValue'],true)
+                    || $suggestion['confidence']!=='Hoch' || $id<=0
+                    || !isset($metadata[$id]) || !empty($metadata[$id]['action'])
+                    || isset($used[$id])) continue;
+                $entry[RCCDeviceTypeRegistry::fields()[$role]]=$id;
+                $used[$id]=true;
+            }
+            // Verlaesslicher Sensor-Notfallpfad: eine einzige kompatible
+            // Istvariable ist ohne AI eindeutig. Markierung erfolgt bereits
+            // im Vorschau-Dialog, nicht als stille EDIT-Automatik.
+            foreach(RCCGuidedDiscovery::sensorRole($type,$variables) as $role=>$id) {
+                if(!isset($used[$id]) && !isset($entry[RCCDeviceTypeRegistry::fields()[$role]])) {
+                    $entry[RCCDeviceTypeRegistry::fields()[$role]]=$id;
+                    $used[$id]=true;
+                }
             }
             $statusId = (int)($entry['aiStatusId'] ?? $entry['aiOpenId'] ?? $entry['aiPowerId'] ?? 0);
             $stateMapping = $this->inferStateMapping($variables,$statusId,$type);
@@ -1989,7 +2053,9 @@ class RoomsCatalogConfigurator extends IPSModule
                     ? ($value ? 'true' : 'false') : (string)$value;
             }
             $entry['ai'] = [
-                'version'=>2,
+                // KIHouseController akzeptiert genau Schema-Version 1;
+                // Version 2 war zuvor trotz gueltiger Variablen unsichtbar.
+                'version'=>1,
                 'source'=>[
                     'instanceId'=>$sourceId,
                     'moduleId'=>(string)($candidate['moduleId'] ?? ''),
