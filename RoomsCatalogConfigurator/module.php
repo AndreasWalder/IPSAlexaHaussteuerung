@@ -7352,7 +7352,9 @@ class RoomsCatalogConfigurator extends IPSModule
                 'Bereich / Gruppe werden automatisch zugeordnet: ' . $domain . ' / ' . $group);
         }
         foreach (RCCDeviceTypeRegistry::fields() as $property=>$field) {
-            $this->UpdateFormField($field,'visible',in_array($property,RCCDeviceTypeRegistry::roles()[$type] ?? [],true));
+            $visible=in_array($property,RCCDeviceTypeRegistry::roles()[$type] ?? [],true);
+            $this->UpdateFormField($field,'visible',$visible);
+            $this->UpdateFormField('ValuePreview_'.$field,'visible',$visible);
         }
         foreach (RCCDeviceTypeRegistry::states() as $property=>$field) {
             $show = in_array($type,['blind','window'],true)
@@ -7361,6 +7363,57 @@ class RoomsCatalogConfigurator extends IPSModule
                     && in_array($property,['on','off'],true));
             $this->UpdateFormField($field,'visible',$show);
         }
+    }
+
+    /**
+     * Das native SelectVariable-Objektbaum-Popup kann keine zusaetzliche
+     * Livewert-Spalte anzeigen. Direkt NEBEN der ausgewaehlten Variable im
+     * Geraeteeditor gibt es deshalb eine aktualisierbare Wert-Vorschau.
+     * Reines Lesen, nie RequestAction oder EDIT/PROD-Schreibzugriff.
+     */
+    private function liveVariablePreview(int $variableId): string
+    {
+        if ($variableId<=0) return 'Aktueller Wert: keine Variable ausgewaehlt';
+        if (!function_exists('IPS_VariableExists') || !IPS_VariableExists($variableId))
+            return 'Aktueller Wert: Variable #'.$variableId.' existiert nicht!';
+        if (!function_exists('IPS_GetVariable') || !function_exists('GetValue'))
+            return 'Variable #'.$variableId.' vorhanden; Livewert im Test nicht verfuegbar';
+        try {
+            $var=IPS_GetVariable($variableId);
+            $value=GetValue($variableId);
+            $type=(int)($var['VariableType']??-1);
+            $typeName=match($type) { 0=>'Bool',1=>'Integer',2=>'Float',3=>'String',default=>'unbekannt' };
+            $raw=is_bool($value) ? ($value?'true':'false') :
+                (is_scalar($value)?(string)$value:'[unbekannt]');
+            // Es sind auch stringbasierte Rueckmeldungen moeglich; potentiell
+            // sensitive URLs, JSON oder lange Texte NICHT im Editor drucken.
+            if (is_string($value) && (mb_strlen($value,'UTF-8')>70
+                || preg_match('~[/:\\\\@{}]|https?~iu',$value))) $raw='[Text ausgeblendet]';
+            $preview='Aktuell: '.$raw;
+            if (function_exists('GetValueFormatted')) {
+                try {
+                    $formatted=GetValueFormatted($variableId);
+                    if (is_scalar($formatted) && mb_strlen((string)$formatted,'UTF-8')<=70
+                        && !preg_match('~[/:\\\\@{}]|https?~iu',(string)$formatted)
+                        && (string)$formatted!==$raw)
+                        $preview.=' ('.(string)$formatted.')';
+                } catch (Throwable $ignored) {}
+            }
+            $profile=(string)(($var['VariableCustomProfile']??'')?:($var['VariableProfile']??''));
+            $preview.=' | #'.$variableId.' | '.$typeName;
+            if ($profile!=='') $preview.=' | Profil: '.$profile;
+            return $preview;
+        } catch (Throwable $e) {
+            return 'Variable #'.$variableId.' konnte nicht gelesen werden.';
+        }
+    }
+
+    /** Statusvorschau direkt nach Schliessen des Variablenauswahldialogs. */
+    public function RefreshSelectedVariablePreview(string $field, int $variableId): void
+    {
+        if (!in_array($field,array_values(RCCDeviceTypeRegistry::fields()),true)) return;
+        $this->UpdateFormField('ValuePreview_'.$field,'caption',
+            $this->liveVariablePreview($variableId));
     }
 
     /** Dynamischer Bearbeitungsdialog für Symcon-Listen, benötigt PHP-Form-Dialog-Support. */
@@ -7468,21 +7521,83 @@ class RoomsCatalogConfigurator extends IPSModule
                 .'Beim Speichern werden diese nicht mehr existierenden Zuordnungen '
                 .'entfernt, sofern du keine neue gueltige Variable auswaehlst.'];
         }
-        foreach (array_chunk(array_keys(RCCDeviceTypeRegistry::fields()), 2) as $pair) {
-            $controls = [];
-            foreach ($pair as $property) {
-                $control=['type'=>'SelectVariable','name'=>RCCDeviceTypeRegistry::fields()[$property],
-                    'caption'=>$variableCaptions[$property] ?? $property,
-                    'visible'=>in_array($property,RCCDeviceTypeRegistry::roles()[$editorType] ?? [],true)];
-                if (isset($invalidBindings[$property])) {
-                    // What the selector actually shows ("Keine") is the
-                    // initial value we submit on confirmation, never the
-                    // stale, non-existing IPS-ID.
-                    $control['value']=0;
-                }
-                $controls[]=$control;
+        foreach (RCCDeviceTypeRegistry::fields() as $property=>$field) {
+            $visible=in_array($property,RCCDeviceTypeRegistry::roles()[$editorType] ?? [],true);
+            $currentId=isset($invalidBindings[$property])?0:(int)($row[$field]??0);
+            $control=['type'=>'SelectVariable','name'=>$field,
+                'caption'=>$variableCaptions[$property]??$property,
+                'width'=>'43%','visible'=>$visible,
+                // Der neue Wert wird durch den nativen Auswahldialog erst
+                // beim Bestaetigen in $ai...Id uebernommen.
+                'onChange'=>'RCC_RefreshSelectedVariablePreview($id, "'.$field.'", 
+        $stateFields = ['on'=>'Aktiv/Ein ist','off'=>'Inaktiv/Aus ist',
+            'open'=>'Offen ist','closed'=>'Geschlossen ist'];
+        $controls = [];
+        foreach ($stateFields as $property=>$caption) {
+            $visible = in_array($editorType,['blind','window'],true)
+                ? in_array($property,['open','closed'],true)
+                : (in_array($editorType,['light','dimmer','switch','motion'],true)
+                    && in_array($property,['on','off'],true));
+            $controls[] = ['type'=>'ValidationTextBox','name'=>RCCDeviceTypeRegistry::states()[$property],
+                'caption'=>$caption . ' (z.B. true/false, 0/100)','visible'=>$visible];
+        }
+        $aiItems[] = ['type'=>'RowLayout','items'=>$controls];
+        $aiItems[] = ['type'=>'CheckBox','name'=>'aiReviewed',
+            'caption'=>'Alle Variablen und die Wertbedeutung am echten Geraet geprueft',
+            'enabled'=>!$isNew];
+        $items[] = ['type'=>'ExpansionPanel','caption'=>'3. Variablen und Zustandswerte',
+            'expanded'=>true,'items'=>$aiItems];
+        $items[] = ['type'=>'ExpansionPanel','caption'=>'4. KI-Freigabe','expanded'=>true,'items'=>[
+            ['type'=>'CheckBox','name'=>'kiEnabled','caption'=>'Mit KI: Abfragen freigeben',
+                'enabled'=>!$isNew],
+            ['type'=>'CheckBox','name'=>'kiReadOnly','caption'=>'Nur abfragen: Schalten gesperrt',
+                'enabled'=>!$isNew],
+            ['type'=>'Label','caption'=>$isNew
+                ? 'Neue Geraete starten sicher mit KI aus und Nur abfragen an. Freigabe spaeter im EDIT-Katalog setzen.'
+                : 'Schalten nur bei expliziter Freigabe und gueltiger IP-Symcon-Aktion.']
+        ]];
+
+        $hidden = array_merge(['selected','roomKey','roomLabel','floor','domain','group','key','title',
+            'synonyms','entityId','kiEnabled','kiReadOnly','rowColor','kiStatus','diffKeys','checkStatus','checkDetails','changeKind','changeDetails','editable',
+            'deletable','ipsObjectIds','ipsInstanceIds','ai','aiType','aiReviewed'],
+            array_values(RCCDeviceTypeRegistry::fields()), array_values(RCCDeviceTypeRegistry::states()));
+        $idFields = ['id','controlId','statusId','tiltId','set','state','ist','soll','eingestellt',
+            'stellung','toggle','value','wert','var'];
+        $extra = [];
+        foreach ($row as $name => $value) {
+            if (in_array($name,$hidden,true)) continue;
+            if (in_array($name,$idFields,true)) {
+                $extra[]=['type'=>in_array($name,['id','var'],true)?'SelectObject':'SelectVariable',
+                    'name'=>$name,'caption'=>'IP-Symcon: '.$name];
+            } elseif (is_bool($value)) {
+                $extra[]=['type'=>'CheckBox','name'=>$name,'caption'=>$name];
+            } elseif (is_int($value)||is_float($value)) {
+                $extra[]=['type'=>'NumberSpinner','name'=>$name,'caption'=>$name];
+            } else {
+                $extra[]=['type'=>'ValidationTextBox','name'=>$name,'caption'=>$name];
             }
-            $aiItems[] = ['type'=>'RowLayout','items'=>$controls];
+        }
+        $items[]=['type'=>'ExpansionPanel','caption'=>'Weitere Felder / Objekt-IDs (Experten)','expanded'=>false,
+            'items'=>$extra!==[]?$extra:[['type'=>'Label','caption'=>'Keine weiteren Eigenschaften vorhanden']]];
+        return json_encode($items,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
+    }
+
+    private function logDebug(string $message): void
+    {
+        // IPS_LogMessage('Alexa', 'RCC-DEBUG: ' . $message);
+    }
+}
+.$field.');'];
+            if (isset($invalidBindings[$property])) {
+                // "Keine" muss veraltete IDs beim Speichern entfernen.
+                $control['value']=0;
+            }
+            $aiItems[]=['type'=>'RowLayout','items'=>[
+                $control,
+                ['type'=>'Label','name'=>'ValuePreview_'.$field,
+                    'caption'=>$this->liveVariablePreview($currentId),
+                    'visible'=>$visible]
+            ]];
         }
         $stateFields = ['on'=>'Aktiv/Ein ist','off'=>'Inaktiv/Aus ist',
             'open'=>'Offen ist','closed'=>'Geschlossen ist'];
