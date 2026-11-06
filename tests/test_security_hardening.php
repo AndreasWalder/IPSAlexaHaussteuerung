@@ -40,11 +40,12 @@ checkSecurity(!str_contains($action,"['text' => \$homeAgentSpokenQuestion]"),'Ne
 $parser=$read('IPSAlexaHaussteuerung/resources/helpers/KIIntentParser.php');
 checkSecurity(!str_contains($parser,"\$status . ': ' . \$response"),
     'HTTP error bodies can contain private data');
-$docs=$read('docs/HomeAgent_Alexa_Setup.md');
-checkSecurity(str_contains($docs,'192.0.2.10'),'Documentation uses RFC 5737 TEST-NET-1');
-foreach (['README.md','docs/HomeAgent_Alexa_Setup.md'] as $path) {
+$docs=$read('docs/Alexa_ChatGPT_RoomsCatalog_Setup.md');
+checkSecurity(str_contains($docs,'kein MCP-Endpunkt') || str_contains($docs,'kein MCP-Token'),
+    'Documentation must explain MCP is no longer needed');
+foreach (['README.md','docs/Alexa_ChatGPT_RoomsCatalog_Setup.md'] as $path) {
     $text=$read($path);
     checkSecurity(!str_contains($text,'192.168.1.4'),'Do not publish actual private server IPv4');
-    checkSecurity(!str_contains($text,'24681'),'Do not publish actual MCP instance ID');
+    checkSecurity(!str_contains($text,'24681'),'Do not publish actual old MCP instance ID');
 }
 echo "PASS: public catalog anonymized, existing Symcon catalog preserved, example IP and logs safe\n";

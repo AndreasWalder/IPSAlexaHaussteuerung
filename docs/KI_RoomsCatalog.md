@@ -1,17 +1,17 @@
 # KI + RoomsCatalog (direkte Alexa-Haussteuerung)
 
-Die bestehende Alexa-/APL-Steuerung bleibt erhalten. Der zusätzliche Intent `HomeAgentFrageIntent` verwendet jetzt standardmäßig **KI + RoomsCatalog** als Datenquelle. **Home Agent (MCP)** lässt sich alternativ weiterhin auswählen.
+Die bestehende Alexa-/APL-Steuerung bleibt erhalten. Alexa-Hausfragen verwenden ausschließlich **ChatGPT (OpenAI API) + RoomsCatalog**. Der historische Intent `HomeAgentFrageIntent` bleibt nur als Alexa-Sprachkanal erhalten und stellt **keine HomeAgent/MCP-Verbindung** her.
 
 ## Einstellungen
 
 In der Alexa-Haussteuerungsinstanz:
 - **KI-Hausfragen beantworten** einschalten.
-- **KI-Verarbeitung**: `KI + RoomsCatalog` (Standard), `KI + Home Agent` oder `Klassisch`.
+- **KI-Verarbeitung**: direkt `KIHouseController` mit ChatGPT und RoomsCatalog; die separate Backend-Auswahl und der externe MCP-Server sind seit V3.4.6 entfernt.
 - Den bereits vorhandenen OpenAI-API-Key und das Modell hinterlegen.
 - **KI darf explizite Schaltbefehle ausführen**: zunächst deaktiviert lassen; später nur bewusst aktivieren.
 - Gewünschte kurze Sprachantwort auf 20 Wörter einstellen.
 
-Bei `Klassisch` wird der neue KI-Sprachkanal deaktiviert; vorhandene normale Alexa-Kommandos bleiben erhalten.
+Ist `KI-Hausfragen beantworten` deaktiviert, funktionieren die bisherigen lokalen Alexa-Befehle weiterhin. Es wird dann kein ChatGPT-Hausfragenaufruf gestartet.
 
 ## RoomsCatalogConfigurator
 
@@ -84,10 +84,10 @@ Beim Klonen werden alte Aktions-/Status-IDs zurückgesetzt; neue Klone sind für
 
 Der VoiceRouter liest seine Zustandsvariablen jetzt aus dem tatsaechlichen Pfad Diagnose/iahVoiceDiag, nicht mehr direkt unter der Modulinstanz. Die falsche Suche verursachte bisher helper_unavailable. Die KI selbst konnte trotzdem funktionieren.
 
-Testfrage im Alexa-Skill: **Frage, welche Lampen sind eingeschaltet?** Der bereits vorhandene HomeAgentFrageIntent verwendet den Slot Frage. Wenn der Aufruf IP-Symcon erreicht, sieht man HomeAgentVoice.received und KIRoomsCatalog.tool mit get_states. Ein blosses GetHaus/Device=licht ist dagegen eine Navigationsanfrage und enthaelt keinen Fragetext.
+Testfrage im Alexa-Skill: **Frage, welche Lampen sind eingeschaltet?** Der bereits vorhandene historische `HomeAgentFrageIntent` verwendet den Slot `Frage`. Wenn der Aufruf IP-Symcon erreicht, sieht man `KIVoice.received` und `KIRoomsCatalog.tool` mit `query_house` und `property=activity`. Ein blosses `GetHaus/Device=licht` ist dagegen eine Navigationsanfrage und enthaelt keinen Fragetext.
 
 
-Die Protokolle erscheinen in den IP-Symcon-Meldungen unter **Alexa** mit Präfix `KIRoomsCatalog.`. Der `HomeAgentFrageIntent` bleibt der sprachliche Eingang. Der Backendwechsel wird durch `KIVoice.backend.selected` protokolliert.
+Die Protokolle erscheinen unter **Alexa** mit den Präfixen `KIRoomsCatalog.` und `KIVoice.`. Der historische `HomeAgentFrageIntent` bleibt als Alexa-Intent gültig; der einzige Backendmodus wird als `KIVoice.backend.selected: RoomsCatalog` protokolliert. [Setup und Diagnose](Alexa_ChatGPT_RoomsCatalog_Setup.md).
 
 ## Prüfstatus
 
