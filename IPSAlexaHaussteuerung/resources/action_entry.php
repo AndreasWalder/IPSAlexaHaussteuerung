@@ -2427,6 +2427,7 @@ function Execute($request = null)
                             // Die Konfiguration deshalb als JSON-String übertragen (nicht als Array).
                             $kiCatalogJson = json_encode([
                                 'catalog_script_id' => (int) ($S['ROOMS_CATALOG'] ?? 0),
+                                'archive_control_id' => (int) ($propsEarly['KIArchiveControlId'] ?? 0),
                                 'api_key' => (string) ($propsEarly['KIIntentApiKey'] ?? ''),
                                 'model' => (string) ($propsEarly['KIModelSelection'] ?? 'gpt-6-luna'),
                                 'max_words' => (int) ($propsEarly['HomeAgentVoiceMaxWords'] ?? 20),
