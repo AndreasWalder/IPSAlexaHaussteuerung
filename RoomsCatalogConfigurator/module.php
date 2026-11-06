@@ -128,6 +128,8 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('MarkedEditorIndex','0');
         $this->RegisterAttributeString('MarkedEditorEditHash','');
         $this->RegisterAttributeString('MarkedEditorNotice','');
+        $this->RegisterAttributeString('CatalogRestorePreview','{}');
+        $this->RegisterAttributeString('CatalogRestoreNotice','Noch kein Backup zur Wiederherstellung ausgewaehlt.');
         $this->RegisterAttributeString('MigrationReadinessReport', 'Noch nicht geprüft.');
         $this->RegisterAttributeString('MigrationReadinessDetails', '{}');
         $this->RegisterAttributeString('TechnicalDeviceSnapshot', '{}');
@@ -185,6 +187,7 @@ class RoomsCatalogConfigurator extends IPSModule
             'MarkedEditorIndex'=>'0',
             'MarkedEditorEditHash'=>'',
             'MarkedEditorNotice'=>'',
+            'CatalogRestorePreview'=>'{}',
             'MigrationReadinessReport'=>'Noch nicht geprueft.',
             'MigrationReadinessDetails'=>'{}',
             'TechnicalDeviceSnapshot'=>'{}',
@@ -229,6 +232,9 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->WriteAttributeString('RuntimeEditHash','');
         $this->reloadAllFromCatalog();
         $this->RefreshVisibleLists();
+        // Nach dem Reset darf der alte mehrstufige Editor nicht stehen bleiben.
+        // Attribute allein zu loeschen schliesst das bereits sichtbare IPS-Panel nicht.
+        $this->refreshMarkedEditorForm();
 
         foreach ([
             'TechnicalDeviceSummary'=>'Noch keine technische Geraetepruefung ausgefuehrt.',
@@ -272,6 +278,176 @@ class RoomsCatalogConfigurator extends IPSModule
             .'Bestehende EDIT/PROD-Unterschiede bleiben bestehen.';
         $this->UpdateFormField('ResetCheckCachesNotice','caption',$message);
         $this->logDebug('ResetAllCheckCaches: nur temporaere Pruefattribute geloescht; keine Katalog-Skripte geschrieben.');
+        echo $message;
+    }
+
+    /**
+     * Die bereits von EDIT->PROD und Reparatur-Assistenten angelegten
+     * RoomsCatalog-Backups werden aus den beiden Skript-Ordnern gesammelt.
+     * Andere Skripte duerfen nicht als Restore-Quelle ausgewaehlt werden.
+     */
+    private function catalogRestoreOptions(): array
+    {
+        $options=[['caption'=>'Backup auswaehlen','value'=>0]];
+        if (!function_exists('IPS_GetChildrenIDs') || !function_exists('IPS_GetParent')
+            || !function_exists('IPS_GetName') || !function_exists('IPS_ScriptExists')) return $options;
+        $found=[];
+        $seenParents=[];
+        foreach (['RoomsCatalogEditScriptID','RoomsCatalogScriptID'] as $property) {
+            $scriptId=$this->ReadPropertyInteger($property);
+            if ($scriptId<=0 || !IPS_ScriptExists($scriptId)) continue;
+            $parentId=(int)IPS_GetParent($scriptId);
+            if ($parentId<=0 || isset($seenParents[$parentId])) continue;
+            $seenParents[$parentId]=true;
+            foreach ((array)IPS_GetChildrenIDs($parentId) as $candidateId) {
+                $candidateId=(int)$candidateId;
+                if ($candidateId<=0 || $candidateId===$scriptId
+                    || !IPS_ScriptExists($candidateId)) continue;
+                $name=(string)IPS_GetName($candidateId);
+                if (!str_starts_with($name,'RoomsCatalog')
+                    || (stripos($name,'Backup')===false
+                        && stripos($name,'before_repair')===false)) continue;
+                $found[$candidateId]=$name;
+            }
+        }
+        krsort($found,SORT_NUMERIC);
+        foreach (array_slice($found,0,100,true) as $id=>$name) {
+            $options[]=['caption'=>$name.' (#'.$id.')','value'=>$id];
+        }
+        return $options;
+    }
+
+    private function catalogRestoreSource(int $backupId): string
+    {
+        $allowed=array_map('intval',array_column($this->catalogRestoreOptions(),'value'));
+        if ($backupId<=0 || !in_array($backupId,$allowed,true))
+            throw new \RuntimeException('Backup nicht im konfigurierten RoomsCatalog-Ordner gefunden.');
+        $source=(string)IPS_GetScriptContent($backupId);
+        if (!RCCDeviceTechnicalAudit::isLiteralArraySource($source))
+            throw new \RuntimeException('Backup ist kein gueltiger statischer PHP-Array-Katalog.');
+        $catalog=$this->loadRoomsCatalog($backupId,'BACKUP');
+        if ($catalog===[] || $this->extractRoomsFromCatalog($catalog)===[])
+            throw new \RuntimeException('Backup enthaelt keinen gueltigen Geraetekatalog.');
+        return $source;
+    }
+
+    /** Eine unabhaengige, verifizierte Kopie vor JEDEM Restore anlegen. */
+    private function catalogBackupCurrentEdit(int $editId,string $content,string $reason): int
+    {
+        if (!function_exists('IPS_CreateScript') || !function_exists('IPS_SetParent')
+            || !function_exists('IPS_SetName') || !function_exists('IPS_GetParent'))
+            throw new \RuntimeException('IP-Symcon Backup-Funktionen nicht verfuegbar.');
+        $backup=IPS_CreateScript(0);
+        if (!is_int($backup) || $backup<=0)
+            throw new \RuntimeException('EDIT-Backup konnte nicht erstellt werden.');
+        IPS_SetParent($backup,IPS_GetParent($editId));
+        IPS_SetName($backup,'RoomsCatalogEdit_Backup_'.$reason.'_'.date('Ymd_His').'_'.$backup);
+        IPS_SetScriptContent($backup,$content);
+        if (IPS_GetScriptContent($backup)!==$content)
+            throw new \RuntimeException('EDIT-Backup #'.$backup.' konnte nicht verifiziert werden.');
+        return $backup;
+    }
+
+    public function CreateCatalogEditBackup(): void
+    {
+        try {
+            $editId=$this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+            if ($editId<=0 || !IPS_ScriptExists($editId))
+                throw new \RuntimeException('EDIT-Skript fehlt.');
+            $source=(string)IPS_GetScriptContent($editId);
+            if (!RCCDeviceTechnicalAudit::isLiteralArraySource($source))
+                throw new \RuntimeException('EDIT ist kein statischer PHP-Array-Katalog.');
+            $id=$this->catalogBackupCurrentEdit($editId,$source,'manual');
+            $message='EDIT-Sicherung erfolgreich angelegt: #'.$id.'. PROD unveraendert.';
+            $this->UpdateFormField('CatalogRestoreBackupId','options',
+                json_encode($this->catalogRestoreOptions(),JSON_INVALID_UTF8_SUBSTITUTE));
+            $this->UpdateFormField('CatalogRestoreBackupId','value',$id);
+            $this->WriteAttributeString('CatalogRestorePreview','{}');
+        } catch (\Throwable $error) {
+            $message='EDIT-SICHERUNG FEHLGESCHLAGEN: '.$error->getMessage();
+        }
+        $this->WriteAttributeString('CatalogRestoreNotice',$message);
+        $this->UpdateFormField('CatalogRestoreNotice','caption',$message);
+        echo $message;
+    }
+
+    public function PreviewCatalogRestore(int $backupId): void
+    {
+        $this->WriteAttributeString('CatalogRestorePreview','{}');
+        try {
+            $editId=$this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+            $prodId=$this->ReadPropertyInteger('RoomsCatalogScriptID');
+            if ($editId<=0 || $editId===$prodId || !IPS_ScriptExists($editId))
+                throw new \RuntimeException('Zwei verschiedene EDIT-/PROD-Skripte konfigurieren.');
+            $backup=$this->catalogRestoreSource($backupId);
+            $current=(string)IPS_GetScriptContent($editId);
+            $backupHash=hash('sha256',$backup);
+            if ($backupHash===hash('sha256',$current))
+                throw new \RuntimeException('Backup und EDIT sind bereits identisch.');
+            $catalog=$this->loadRoomsCatalog($backupId,'BACKUP');
+            $entries=$this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($catalog));
+            $preview=['id'=>$backupId,'backupHash'=>$backupHash,
+                'editHash'=>hash('sha256',$current),'expires'=>time()+600];
+            $this->WriteAttributeString('CatalogRestorePreview',
+                json_encode($preview,JSON_THROW_ON_ERROR));
+            $message='VORSCHAU: Backup #'.$backupId.' mit '.count($entries).
+                ' Geraeten. Ziel: ausschliesslich RoomsCatalogEdit #'.$editId.
+                '. Der aktuelle EDIT-Inhalt wird zuerst separat gesichert. '
+                .'PROD bleibt unberuehrt. Vorschau 10 Minuten gueltig.';
+        } catch (\Throwable $error) {
+            $message='RESTORE-VORSCHAU BLOCKIERT: '.$error->getMessage();
+        }
+        $this->WriteAttributeString('CatalogRestoreNotice',$message);
+        $this->UpdateFormField('CatalogRestoreNotice','caption',$message);
+        echo $message;
+    }
+
+    public function RestoreCatalogBackupToEdit(int $backupId): void
+    {
+        try {
+            $preview=json_decode($this->ReadAttributeString('CatalogRestorePreview'),true);
+            if (!is_array($preview) || ($preview['id']??0)!==$backupId
+                || (int)($preview['expires']??0)<time())
+                throw new \RuntimeException('Bitte dieses Backup zuerst frisch als Vorschau pruefen.');
+            $editId=$this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+            $prodId=$this->ReadPropertyInteger('RoomsCatalogScriptID');
+            if ($editId<=0 || $editId===$prodId || !IPS_ScriptExists($editId))
+                throw new \RuntimeException('EDIT/PROD-Konfiguration ungueltig.');
+            $current=(string)IPS_GetScriptContent($editId);
+            $backup=$this->catalogRestoreSource($backupId);
+            if (hash('sha256',$current)!==($preview['editHash']??'')
+                || hash('sha256',$backup)!==($preview['backupHash']??''))
+                throw new \RuntimeException('EDIT oder Backup hat sich geaendert. Vorschau erneut ausfuehren.');
+            $safetyId=$this->catalogBackupCurrentEdit($editId,$current,'before_restore');
+            if (IPS_GetScriptContent($editId)!==$current
+                || IPS_GetScriptContent($backupId)!==$backup)
+                throw new \RuntimeException('Quelldaten nach der Sicherung geaendert. Kein Restore.');
+            try {
+                IPS_SetScriptContent($editId,$backup);
+                if (IPS_GetScriptContent($editId)!==$backup)
+                    throw new \RuntimeException('EDIT-Schreibverifikation fehlgeschlagen.');
+            } catch (\Throwable $writeError) {
+                $rolledBack=false;
+                try {
+                    IPS_SetScriptContent($editId,$current);
+                    $rolledBack=IPS_GetScriptContent($editId)===$current;
+                } catch (\Throwable $ignored) {}
+                throw new \RuntimeException($writeError->getMessage().
+                    ($rolledBack?' Urspruenglicher EDIT wiederhergestellt.':
+                        ' EDIT unklar; Sicherheitskopie #'.$safetyId.' pruefen.'));
+            }
+            $this->ResetAllCheckCaches();
+            $message='RESTORE ERFOLGREICH: Backup #'.$backupId.' nach EDIT #'.$editId.
+                ' uebernommen. Vorheriger EDIT als Sicherheitskopie #'.$safetyId.
+                ' vorhanden. PROD NICHT veraendert.';
+            $this->UpdateFormField('CatalogRestoreBackupId','options',
+                json_encode($this->catalogRestoreOptions(),JSON_INVALID_UTF8_SUBSTITUTE));
+        } catch (\Throwable $error) {
+            $message='BACKUP-WIEDERHERSTELLUNG BLOCKIERT: '.$error->getMessage();
+        }
+        $this->WriteAttributeString('CatalogRestorePreview','{}');
+        $this->WriteAttributeString('CatalogRestoreNotice',$message);
+        $this->UpdateFormField('CatalogRestoreNotice','caption',$message);
         echo $message;
     }
 
@@ -6378,6 +6554,36 @@ class RoomsCatalogConfigurator extends IPSModule
                 $main[]=$element;
             }
         }
+        // Backup-Ruecksprung ist bewusst nur EDIT: PROD wird niemals still
+        // ueberschrieben. Vor einem Restore ist eine Quelle-Vorschau Pflicht.
+        $main[]=[
+            'type'=>'ExpansionPanel',
+            'caption'=>'BACKUP WIEDERHERSTELLEN (NUR ROOMSCATALOG EDIT)',
+            'expanded'=>false,
+            'items'=>[
+                ['type'=>'Label','caption'=>'Vorhandene Katalog-Sicherungen aus den '
+                    .'EDIT-/PROD-Skriptordnern. Wiederherstellen schreibt nur nach EDIT. '
+                    .'Vorher wird der aktuelle EDIT-Stand als neues Backup gesichert. '
+                    .'PROD bleibt unveraendert; gespeicherte EDIT-Aenderungen werden ersetzt.'],
+                ['type'=>'Button','caption'=>'AKTUELLEN EDIT-STAND JETZT SICHERN',
+                    'onClick'=>'RCC_CreateCatalogEditBackup($id);'],
+                ['type'=>'Select','name'=>'CatalogRestoreBackupId',
+                    'caption'=>'Sicherung auswaehlen',
+                    'options'=>$this->catalogRestoreOptions(),
+                    'value'=>0],
+                ['type'=>'RowLayout','items'=>[
+                    ['type'=>'Button','caption'=>'1 – BACKUP-VORSCHAU ANZEIGEN',
+                        'onClick'=>'RCC_PreviewCatalogRestore($id,(int)$CatalogRestoreBackupId);'],
+                    ['type'=>'Button','caption'=>'2 – BACKUP NACH EDIT WIEDERHERSTELLEN',
+                        'confirm'=>'ACHTUNG: Der gesamte aktuelle RoomsCatalogEdit wird durch '
+                            .'das zuvor gepruefte Backup ersetzt! Vorher entsteht eine neue '
+                            .'EDIT-Sicherung. RoomsCatalog PROD bleibt unveraendert. Fortfahren?',
+                        'onClick'=>'RCC_RestoreCatalogBackupToEdit($id,(int)$CatalogRestoreBackupId);']
+                ]],
+                ['type'=>'Label','name'=>'CatalogRestoreNotice',
+                    'caption'=>$this->ReadAttributeString('CatalogRestoreNotice')]
+            ]
+        ];
         // Pending changes are read directly from both current script sources,
         // not the last technical audit or resettable snapshot.
         $pending=$this->catalogPendingChanges($entriesProd,$entriesEdit,$editCatalog,$prodCatalog);
@@ -7885,6 +8091,55 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->refreshMarkedEditorForm();
     }
 
+    /**
+     * Ausschliesslich fuer Bewegungsmelder: eindeutig erkennbare IST-Variable
+     * unter der bekannten Quell-Instanz als EDIT-Vorschlag anzeigen.
+     * 11995 ist eine Instanz, keine boolesche Lesevariable. Kein Autowrite,
+     * keine KI-Freigabe, keine fachliche Bestaetigung.
+     */
+    private function markedEditorMotionCandidate(array $row): int
+    {
+        if ((int)($row['aiMotionId']??0)>0) return 0;
+        $source=(int)($row['discoverySourceId']??0);
+        if ($source<=0 || !function_exists('IPS_ObjectExists')
+            || !IPS_ObjectExists($source)) return 0;
+        $candidates=[];
+        foreach ($this->discoveryVariablesForSource($source) as $variable) {
+            if ((int)($variable['type']??-1)!==0 || !empty($variable['action'])) continue;
+            $id=(int)($variable['id']??0);
+            if ($id<=0 || !IPS_VariableExists($id)) continue;
+            $candidates[]=['id'=>$id,'score'=>$this->suggestionScore($variable,'motion')];
+        }
+        if ($candidates===[]) return 0;
+        usort($candidates,static fn($a,$b):int=>$b['score']<=>$a['score']
+            ?: $a['id']<=>$b['id']);
+        $best=$candidates[0];
+        $second=(int)($candidates[1]['score']??0);
+        // Eindeutiger Profil-/Namens-Treffer oder einzige lesbare
+        // Boolean-Variable dieser als motion typisierten Quelle.
+        if (($best['score']>=105 && $best['score']-$second>=25)
+            || count($candidates)===1)
+            return (int)$best['id'];
+        return 0;
+    }
+
+    private function markedEditorSourceInfo(array $row,string $type,int $motionId): string
+    {
+        if ($row===[]) return '';
+        $source=(int)($row['discoverySourceId']??0);
+        if ($source<=0) return 'Keine Discovery-Quellinstanz hinterlegt.';
+        if ($type==='motion' && (int)($row['aiMotionId']??0)<=0) {
+            if ($motionId>0) return 'Quelle: IPS-Instanz #'.$source.
+                '. Bewegung: Variable #'.$motionId.
+                ' unter der Instanz eindeutig vorgeschlagen (noch NICHT gespeichert). '
+                .'Livewert und Zuordnung bitte pruefen, dann DIESES GERAET SPEICHERN.';
+            return 'Quelle: IPS-Instanz #'.$source.
+                '. Keine eindeutige Bewegungs-Istvariable gefunden. '
+                .'Bitte im IP-Symcon-Baum die passende untergeordnete Variable waehlen.';
+        }
+        return 'Quell-Objekt/Instanz #'.$source.' (reine Herkunftsangabe).';
+    }
+
     /** Statusvorschau auch im mehrstufigen Editor nach SelectVariable-Auswahl. */
     public function RefreshMarkedVariablePreview(string $field,int $variableId): void
     {
@@ -7921,12 +8176,16 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->UpdateFormField('MarkedEditorNotice','caption',
             $this->ReadAttributeString('MarkedEditorNotice'));
         $this->UpdateFormField('MarkedEditorDevice','options',
-            $this->markedEditorOptions($context));
+            json_encode($this->markedEditorOptions($context),JSON_INVALID_UTF8_SUBSTITUTE));
         $this->UpdateFormField('MarkedEditorDevice','value',(string)($context['key']??''));
         $this->UpdateFormField('MarkedEditorPrevious','enabled',$active&&$index>0);
         $this->UpdateFormField('MarkedEditorNext','enabled',$active&&$index<$total-1);
         $this->UpdateFormField('MarkedEditorSave','enabled',$active);
         $this->UpdateFormField('MarkedEditorSaveNext','enabled',$active);
+        $autoMotionId=$active && $type==='motion'
+            ? $this->markedEditorMotionCandidate($row) : 0;
+        $this->UpdateFormField('MarkedEditorSourceInfo','caption',
+            $this->markedEditorSourceInfo($row,$type,$autoMotionId));
         $this->UpdateFormField('MarkedEditSourceKey','value',(string)($context['key']??''));
         $this->UpdateFormField('MarkedEditType','caption',
             'Geraetetyp: '.(RCCDeviceTypeRegistry::captions()[$type]??'Legacy').
@@ -7941,6 +8200,8 @@ class RoomsCatalogConfigurator extends IPSModule
             $visible=$active && in_array($property,
                 RCCDeviceTypeRegistry::roles()[$type]??[],true);
             $id=(int)($row[$field]??0);
+            if($type==='motion' && $property==='motion' && $id<=0)
+                $id=$autoMotionId;
             if($id>0 && (!function_exists('IPS_VariableExists')||!IPS_VariableExists($id)))
                 $id=0;
             $this->UpdateFormField('MarkedEdit_'.$field,'visible',$visible);
@@ -7961,7 +8222,7 @@ class RoomsCatalogConfigurator extends IPSModule
 
     private function markedEditorOptions(?array $context): array
     {
-        if($context===null)return [];
+        if($context===null)return [['caption'=>'Kein Durchlauf gestartet','value'=>'']];
         $rows=[];
         foreach($this->getRuntimeEntries() as $row) {
             if(is_array($row) && ($key=$this->buildCompositeKey($row))!==null)
@@ -7991,9 +8252,13 @@ class RoomsCatalogConfigurator extends IPSModule
         $total=count($context['keys']??[]);
         $roles=[];
         $captions=RCCDeviceTypeRegistry::propertyCaptions();
+        $autoMotionId=$active && $type==='motion'
+            ? $this->markedEditorMotionCandidate($row) : 0;
         foreach(RCCDeviceTypeRegistry::fields() as $property=>$field) {
             $visible=$active && in_array($property,RCCDeviceTypeRegistry::roles()[$type]??[],true);
             $id=(int)($row[$field]??0);
+            if($type==='motion' && $property==='motion' && $id<=0)
+                $id=$autoMotionId;
             $roles[]=['type'=>'RowLayout','items'=>[
                 ['type'=>'SelectVariable','name'=>'MarkedEdit_'.$field,
                     'caption'=>$captions[$property]??$property,
@@ -8061,6 +8326,8 @@ class RoomsCatalogConfigurator extends IPSModule
                 ['type'=>'Label','name'=>'MarkedEditType',
                     'caption'=>'Geraetetyp: '.(RCCDeviceTypeRegistry::captions()[$type]??'Legacy').
                         ' | Typ-/Raumwechsel weiterhin ueber Zahnrad oder gemeinsame Bearbeitung.'],
+                ['type'=>'Label','name'=>'MarkedEditorSourceInfo',
+                    'caption'=>$this->markedEditorSourceInfo($row,$type,$autoMotionId)],
                 ['type'=>'RowLayout','items'=>[
                     ['type'=>'ValidationTextBox','name'=>'MarkedEditTitle',
                         'caption'=>'Geraetename','value'=>(string)($row['title']??'')],
