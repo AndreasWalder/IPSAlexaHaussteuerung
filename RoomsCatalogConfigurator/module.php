@@ -8140,12 +8140,102 @@ class RoomsCatalogConfigurator extends IPSModule
         return 'Quell-Objekt/Instanz #'.$source.' (reine Herkunftsangabe).';
     }
 
+    /**
+     * Native SelectVariable kennt keinen SDK-Parameter fuer einen Startknoten.
+     * Deshalb bekommt jeder Geraete-Rollenwert eine zweite, nach der bereits
+     * bekannten Quellinstanz eingegrenzte Direktauswahl. Der originale
+     * SelectVariable-Baum bleibt fuer Ausnahmen erhalten.
+     */
+    private function markedEditorVariableScope(array $row): array
+    {
+        $source=(int)($row['discoverySourceId']??0);
+        if ($source<=0) {
+            // Bei Altgeraeten darf eine bereits bekannte Istvariable ihren
+            // Elternknoten als Filter liefern. Keine Suche im ganzen Haus.
+            foreach (array_values(RCCDeviceTypeRegistry::fields()) as $field) {
+                $id=(int)($row[$field]??0);
+                if ($id<=0 || !function_exists('IPS_VariableExists')
+                    || !IPS_VariableExists($id)) continue;
+                $source=$this->lookupIpsInstanceId($id);
+                if ($source>0)break;
+            }
+        }
+        if ($source<=0 || !function_exists('IPS_ObjectExists')
+            || !IPS_ObjectExists($source))return ['sourceId'=>0,'variables'=>[]];
+        $variables=[];
+        foreach ($this->discoveryVariablesForSource($source) as $variable) {
+            $id=(int)($variable['id']??0);
+            if ($id>0 && function_exists('IPS_VariableExists') && IPS_VariableExists($id))
+                $variables[$id]=$variable;
+        }
+        return ['sourceId'=>$source,'variables'=>array_values($variables)];
+    }
+
+    private function markedEditorScopedOptions(array $variables,string $property): array
+    {
+        $options=[['caption'=>'Keine Variable (Zuordnung entfernen)','value'=>0]];
+        $dataTypes=RCCDeviceTypeRegistry::dataTypes()[$property]??[];
+        foreach ($variables as $variable) {
+            $id=(int)($variable['id']??0);
+            if ($id<=0 || !in_array((int)($variable['type']??-1),$dataTypes,true))
+                continue;
+            $name=mb_substr((string)($variable['name']??'Variable'),0,70,'UTF-8');
+            $profile=mb_substr((string)($variable['profile']??''),0,60,'UTF-8');
+            $type=match((int)($variable['type']??-1)) {
+                0=>'Bool',1=>'Integer',2=>'Float',3=>'String',default=>'Unbekannt'
+            };
+            $caption='#'.$id.' | '.$name.' | '.$type;
+            if ($profile!=='')$caption.=' | '.$profile;
+            if (!empty($variable['action']))$caption.=' | Aktion';
+            $options[]=['caption'=>$caption,'value'=>$id];
+        }
+        return $options;
+    }
+
+    private function markedEditorScopedValue(array $options,int $id): int
+    {
+        if ($id<=0)return 0;
+        foreach ($options as $option)if ((int)$option['value']===$id)return $id;
+        return 0;
+    }
+
+    /**
+     * Auswahlliste fuer genau den aktuellen Geraete-Knoten; nur UI-aendernd.
+     * Auch manipulierte Optionen duerfen keine fremden IDs einschleusen.
+     */
+    public function SelectMarkedScopedVariable(string $field,int $variableId): void
+    {
+        $context=$this->markedEditorContext();
+        $row=is_array($context['row']??null)?$context['row']:[];
+        if ($row===[])return;
+        $type=(string)($row['aiType']??'');
+        if (!isset(RCCDeviceTypeRegistry::roles()[$type]))
+            $type=$this->inferredAIType($row);
+        $role=array_search($field,RCCDeviceTypeRegistry::fields(),true);
+        if ($role===false || !in_array($role,RCCDeviceTypeRegistry::roles()[$type]??[],true))return;
+        $scope=$this->markedEditorVariableScope($row);
+        $options=$this->markedEditorScopedOptions($scope['variables'],$role);
+        if ($variableId!==0 && $this->markedEditorScopedValue($options,$variableId)!==$variableId)
+            return;
+        $this->UpdateFormField('MarkedEdit_'.$field,'value',$variableId);
+        $this->UpdateFormField('MarkedValuePreview_'.$field,'caption',
+            $this->liveVariablePreview($variableId));
+    }
+
     /** Statusvorschau auch im mehrstufigen Editor nach SelectVariable-Auswahl. */
     public function RefreshMarkedVariablePreview(string $field,int $variableId): void
     {
-        if(!in_array($field,array_values(RCCDeviceTypeRegistry::fields()),true))return;
+        $role=array_search($field,RCCDeviceTypeRegistry::fields(),true);
+        if($role===false)return;
         $this->UpdateFormField('MarkedValuePreview_'.$field,'caption',
             $this->liveVariablePreview($variableId));
+        $context=$this->markedEditorContext();
+        $row=is_array($context['row']??null)?$context['row']:[];
+        if($row===[])return;
+        $scope=$this->markedEditorVariableScope($row);
+        $options=$this->markedEditorScopedOptions($scope['variables'],$role);
+        $this->UpdateFormField('MarkedScope_'.$field,'value',
+            $this->markedEditorScopedValue($options,$variableId));
     }
 
     /**
@@ -8184,8 +8274,12 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->UpdateFormField('MarkedEditorSaveNext','enabled',$active);
         $autoMotionId=$active && $type==='motion'
             ? $this->markedEditorMotionCandidate($row) : 0;
+        $scope=$active ? $this->markedEditorVariableScope($row)
+            : ['sourceId'=>0,'variables'=>[]];
         $this->UpdateFormField('MarkedEditorSourceInfo','caption',
-            $this->markedEditorSourceInfo($row,$type,$autoMotionId));
+            $this->markedEditorSourceInfo($row,$type,$autoMotionId).
+            ($scope['sourceId']>0 ? ' | Variablen-Filter: Instanz/Objekt #'.
+                $scope['sourceId'].'.' : ''));
         $this->UpdateFormField('MarkedEditSourceKey','value',(string)($context['key']??''));
         $this->UpdateFormField('MarkedEditType','caption',
             'Geraetetyp: '.(RCCDeviceTypeRegistry::captions()[$type]??'Legacy').
@@ -8204,6 +8298,13 @@ class RoomsCatalogConfigurator extends IPSModule
                 $id=$autoMotionId;
             if($id>0 && (!function_exists('IPS_VariableExists')||!IPS_VariableExists($id)))
                 $id=0;
+            $options=$this->markedEditorScopedOptions($scope['variables'],$property);
+            $this->UpdateFormField('MarkedScope_'.$field,'visible',
+                $visible && count($options)>1);
+            $this->UpdateFormField('MarkedScope_'.$field,'options',
+                json_encode($options,JSON_INVALID_UTF8_SUBSTITUTE));
+            $this->UpdateFormField('MarkedScope_'.$field,'value',
+                $this->markedEditorScopedValue($options,$id));
             $this->UpdateFormField('MarkedEdit_'.$field,'visible',$visible);
             $this->UpdateFormField('MarkedEdit_'.$field,'value',$id);
             $this->UpdateFormField('MarkedValuePreview_'.$field,'visible',$visible);
@@ -8254,15 +8355,27 @@ class RoomsCatalogConfigurator extends IPSModule
         $captions=RCCDeviceTypeRegistry::propertyCaptions();
         $autoMotionId=$active && $type==='motion'
             ? $this->markedEditorMotionCandidate($row) : 0;
+        $scope=$active ? $this->markedEditorVariableScope($row)
+            : ['sourceId'=>0,'variables'=>[]];
         foreach(RCCDeviceTypeRegistry::fields() as $property=>$field) {
             $visible=$active && in_array($property,RCCDeviceTypeRegistry::roles()[$type]??[],true);
             $id=(int)($row[$field]??0);
             if($type==='motion' && $property==='motion' && $id<=0)
                 $id=$autoMotionId;
+            $options=$this->markedEditorScopedOptions($scope['variables'],$property);
+            $useScope=$visible && count($options)>1;
             $roles[]=['type'=>'RowLayout','items'=>[
+                ['type'=>'Select','name'=>'MarkedScope_'.$field,
+                    'caption'=>($captions[$property]??$property).
+                        ' (Filter #'.$scope['sourceId'].')',
+                    'options'=>$options,
+                    'value'=>$this->markedEditorScopedValue($options,$id),
+                    'visible'=>$useScope,'width'=>'39%',
+                    'onChange'=>sprintf('RCC_SelectMarkedScopedVariable($id, "%s", (int)$MarkedScope_%s);',
+                        $field,$field)],
                 ['type'=>'SelectVariable','name'=>'MarkedEdit_'.$field,
-                    'caption'=>$captions[$property]??$property,
-                    'visible'=>$visible,'value'=>$id,'width'=>'43%',
+                    'caption'=>$useScope?'Anderes Objekt (ganzer IPS-Baum)':($captions[$property]??$property),
+                    'visible'=>$visible,'value'=>$id,'width'=>$useScope?'26%':'43%',
                     'onChange'=>sprintf('RCC_RefreshMarkedVariablePreview($id, "%s", $MarkedEdit_%s);',
                         $field,$field)],
                 ['type'=>'Label','name'=>'MarkedValuePreview_'.$field,
@@ -8318,6 +8431,9 @@ class RoomsCatalogConfigurator extends IPSModule
                     ['type'=>'Button','name'=>'MarkedEditorNext',
                         'caption'=>'WEITER ▶','enabled'=>$index<$total-1,
                         'onClick'=>'RCC_StepMarkedEditor($id,1);'],
+                    ['type'=>'Button','name'=>'MarkedEditorSaveNext',
+                        'caption'=>'SPEICHERN UND WEITER ▶',
+                        'enabled'=>$active,'onClick'=>$onSaveNext],
                     ['type'=>'Button','caption'=>'DURCHLAUF BEENDEN',
                         'onClick'=>'RCC_FinishMarkedEditor($id);']
                 ]],
@@ -8353,10 +8469,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 ['type'=>'RowLayout','items'=>[
                     ['type'=>'Button','name'=>'MarkedEditorSave',
                         'caption'=>'DIESES GERAET IN EDIT SPEICHERN',
-                        'onClick'=>$onSave],
-                    ['type'=>'Button','name'=>'MarkedEditorSaveNext',
-                        'caption'=>'SPEICHERN UND WEITER ▶',
-                        'onClick'=>$onSaveNext]
+                        'onClick'=>$onSave]
                 ]]
             ]
         ];
