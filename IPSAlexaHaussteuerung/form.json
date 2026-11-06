@@ -71,7 +71,7 @@
         {
           "name": "KIModelSelection",
           "type": "Select",
-          "caption": "KI-Modell – für RoomsCatalog, Home Agent und Intent-Parser",
+          "caption": "KI-Modell – für ChatGPT, RoomsCatalog und Intent-Parser",
           "value": "gpt-6-luna",
           "options": [
             {
@@ -106,7 +106,7 @@
     },
     {
       "type": "ExpansionPanel",
-      "caption": "KI-Haussteuerung – direkte RoomsCatalog-Integration / Home Agent",
+      "caption": "KI-Haussteuerung – ChatGPT + RoomsCatalog (ohne HomeAgent)",
       "expanded": false,
       "items": [
         {
@@ -114,38 +114,6 @@
           "type": "CheckBox",
           "caption": "KI-Hausfragen beantworten",
           "value": false
-        },
-        {
-          "name": "KIVoiceMode",
-          "type": "Select",
-          "caption": "KI-Verarbeitung",
-          "value": "RoomsCatalog",
-          "options": [
-            {
-              "caption": "KI + RoomsCatalog (direkt, empfohlen)",
-              "value": "RoomsCatalog"
-            },
-            {
-              "caption": "KI + Home Agent (MCP)",
-              "value": "HomeAgent"
-            },
-            {
-              "caption": "Klassisch (ohne KI-Hausfragen)",
-              "value": "Classic"
-            }
-          ]
-        },
-        {
-          "name": "HomeAgentVoiceEndpoint",
-          "type": "ValidationTextBox",
-          "caption": "Home Agent MCP-Endpunkt",
-          "value": ""
-        },
-        {
-          "name": "HomeAgentVoiceToken",
-          "type": "PasswordTextBox",
-          "caption": "Home Agent Zugangstoken",
-          "value": ""
         },
         {
           "name": "HomeAgentVoiceRouteCommands",
@@ -171,7 +139,7 @@
         },
         {
           "type": "Label",
-          "caption": "OpenAI-Key und Modell aus KI Intent Parser; Freigaben im Home Agent."
+          "caption": "OpenAI-Key und Modell aus KI Intent Parser; Lese- und Schaltrechte im RoomsCatalog."
         },
         {
           "type": "Label",
