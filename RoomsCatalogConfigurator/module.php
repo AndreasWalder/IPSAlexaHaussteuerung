@@ -936,6 +936,183 @@ class RoomsCatalogConfigurator extends IPSModule
         return $suggestions;
     }
 
+
+    /** Eingeschraenkter Scope und Benutzervorgaben statt globaler IPS-Suche. */
+    private function guidedDiscoveryConfig(): array
+    {
+        return [
+            'roots'=>$this->discoveryRoots(),
+            'domain'=>trim($this->ReadPropertyString('DiscoveryDomainOverride')),
+            'group'=>trim($this->ReadPropertyString('DiscoveryGroupOverride')),
+            'type'=>trim($this->ReadPropertyString('DiscoveryTypeOverride')),
+            'room'=>trim($this->ReadPropertyString('DiscoveryRoomOverride')),
+            'useAI'=>$this->ReadPropertyBoolean('DiscoveryUseAI'),
+            'aiInstance'=>$this->ReadPropertyInteger('DiscoveryAlexaInstanceId')
+        ];
+    }
+
+    /** Auch einzelne direkte Variablen unter einer KNX-Kategorie sind Geraete. */
+    private function discoveryVariablesForSource(int $sourceId): array
+    {
+        if ($sourceId<=0 || !IPS_ObjectExists($sourceId)) return [];
+        $object=IPS_GetObject($sourceId);
+        if ((int)($object['ObjectType']??-1)!==2)
+            return $this->getIpsVariablesUnderScope($sourceId);
+        $parent=(int)($object['ParentID']??$object['ObjectParentID']??0);
+        $list=$this->getIpsVariablesUnderScope($parent);
+        return array_values(array_filter($list,static fn(array $v):bool=>
+            (int)($v['id']??0)===$sourceId));
+    }
+
+    /** Eindeutig sensorische Lese-Rollen aus Klasse/Profil/Knoten ableiten. */
+    private function guidedReadingRoles(
+        string $type, array $variables, array $suggested
+    ): array {
+        $roles=$suggested;
+        foreach (RCCGuidedDiscovery::sensorRole($type,$variables) as $role=>$id) {
+            if (!isset($roles[$role]) && in_array($role,RCCDeviceTypeRegistry::roles()[$type]??[],true))
+                $roles[$role]=$id;
+        }
+        return $roles;
+    }
+
+    /**
+     * Optionale EINMALIGE KI-Hilfe fuer unklare Fundstellen.
+     * Weitergabe: nur explizit gewaehlter IPS-Teilbaum (Name, Ident, Profil,
+     * Datentyp); keine IPS-IDs, Istwerte, Passwoerter, Tokens, Steuerbefehle.
+     * Suggestions bleiben unbestaetigte, lesende Vorschlaege.
+     */
+    private function aiAssistDiscoveredCandidates(array &$candidates,array $inventory,array $rooms): string
+    {
+        if (!$this->ReadPropertyBoolean('DiscoveryUseAI')) return 'KI-Hilfe ausgeschaltet.';
+        $instanceId=$this->ReadPropertyInteger('DiscoveryAlexaInstanceId');
+        if($instanceId<=0 || !function_exists('IPS_InstanceExists')
+            || !IPS_InstanceExists($instanceId) || !function_exists('IPS_GetProperty'))
+            return 'KI-Hilfe: Bitte eine gueltige Alexa-Modulinstanz mit API-Key auswaehlen.';
+        try {
+            $apiKey=(string)IPS_GetProperty($instanceId,'KIIntentApiKey');
+            $model=(string)IPS_GetProperty($instanceId,'KIModelSelection');
+        } catch(Throwable $e) {
+            return 'KI-Hilfe: API-Zugang aus der gewaehlten Alexa-Instanz nicht lesbar.';
+        }
+        if($apiKey==='' || !function_exists('curl_init'))
+            return 'KI-Hilfe: Kein OpenAI-Key in der gewaehlten Instanz oder cURL fehlt.';
+        if($model==='') $model='gpt-6-luna';
+        $lookups=[];
+        foreach($inventory as $item) $lookups[(int)($item['sourceId']??0)]=$item;
+        $possibleRooms=[];
+        foreach($rooms as $key=>$room) {
+            if($key==='global'||!isset($room['domains']))continue;
+            $possibleRooms[]=['key'=>(string)$key,
+                'name'=>mb_substr((string)($room['display']??$key),0,70)];
+        }
+        $payloads=[];$index=[];
+        foreach($candidates as $rowIndex=>$row) {
+            if(count($payloads)>=45)break; // Eine begrenzte KI-Anfrage.
+            if(($row['roomKey']??'')!=='' && ($row['deviceType']??'')!=='generic'
+                && !empty($row['mappedRoles'])) continue;
+            $item=$lookups[(int)($row['sourceId']??0)]??null;
+            if(!is_array($item))continue;
+            $entries=[];
+            foreach(array_slice((array)($item['variables']??[]),0,15) as $variable){
+                $entries[]=[
+                    'name'=>mb_substr((string)($variable['name']??''),0,70),
+                    'ident'=>mb_substr((string)($variable['ident']??''),0,50),
+                    'profile'=>mb_substr((string)($variable['profile']??''),0,70),
+                    'valueType'=>(int)($variable['type']??-1),
+                    'writable'=>(bool)($variable['action']??false),
+                    'labels'=>array_slice(array_map(
+                        static fn(array $a):string=>(string)($a['name']??''),
+                        (array)($variable['associations']??[])),0,8)
+                ];
+            }
+            $idx=count($payloads);
+            $payloads[]=['idx'=>$idx,'node'=>mb_substr((string)($row['title']??''),0,90),
+                'module'=>mb_substr((string)($row['moduleName']??''),0,65),
+                'suggestedType'=>(string)($row['deviceType']??'generic'),
+                'suggestedRoom'=>(string)($row['roomKey']??''),
+                'variables'=>$entries];
+            $index[$idx]=$rowIndex;
+        }
+        if($payloads===[])return 'KI-Hilfe: alle Kandidaten bereits lokal eindeutig zugeordnet.';
+        $system='Du analysierst eine vom Nutzer explizit ausgewaehlte IP-Symcon-Baumwurzel. '
+            .'Antworte NUR mit gueltigem JSON {"devices":[{"idx":0,"type":"motion",'
+            .'"roomKey":"...", "roles":{"motion":0},"reason":"..."}]}. '
+            .'Typ nur aus validTypes, roomKey nur aus rooms; "roles" benutzt '
+            .'0-basierte Indizes aus variables, keine IPS-IDs. Keine Schalt- oder Sollrollen '
+            .'vorschlagen. Bewegungsmelder sind motion, Praesenz nicht erfinden. '
+            .'Bei unklarer Erkennung type/roomKey leer und roles={} lassen. '
+            .'Bevorzuge vorhandene, eindeutig benannte oder profilierte Istwerte.';
+        $request=[
+            'model'=>$model,
+            'messages'=>[
+                ['role'=>'system','content'=>$system],
+                ['role'=>'user','content'=>json_encode([
+                    'validTypes'=>array_keys(RCCDeviceTypeRegistry::roles()),
+                    'rooms'=>$possibleRooms,'devices'=>$payloads
+                ],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)]
+            ],
+            'temperature'=>0,
+            'response_format'=>['type'=>'json_object'],
+            'max_completion_tokens'=>1600
+        ];
+        // Kein API-Key und keine Antwort-Payload in Symcon-Log schreiben.
+        $ch=curl_init('https://api.openai.com/v1/chat/completions');
+        if($ch===false) return 'KI-Hilfe: cURL konnte nicht gestartet werden.';
+        try {
+            curl_setopt_array($ch,[
+                CURLOPT_POST=>true,CURLOPT_RETURNTRANSFER=>true,
+                CURLOPT_POSTFIELDS=>json_encode($request,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),
+                CURLOPT_HTTPHEADER=>['Content-Type: application/json','Authorization: Bearer '.$apiKey],
+                CURLOPT_CONNECTTIMEOUT=>2,CURLOPT_TIMEOUT=>12,CURLOPT_FOLLOWLOCATION=>false
+            ]);
+            $body=curl_exec($ch);
+            $code=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE);
+        } finally {curl_close($ch);}
+        if(!is_string($body)||$code!==200)
+            return 'KI-Hilfe: Modell nicht erreichbar (HTTP '.$code.'); lokale Vorschlaege bleiben erhalten.';
+        try {
+            $data=json_decode($body,true,512,JSON_THROW_ON_ERROR);
+            $raw=(string)($data['choices'][0]['message']['content']??'');
+            $json=json_decode($raw,true,512,JSON_THROW_ON_ERROR);
+        } catch(Throwable $e) {
+            return 'KI-Hilfe: Keine auswertbare JSON-Antwort, lokale Vorschlaege bleiben erhalten.';
+        }
+        $types=RCCDeviceTypeRegistry::roles();$applied=0;
+        foreach((array)($json['devices']??[]) as $suggestion) {
+            if(!is_array($suggestion)||!is_int($suggestion['idx']??null)
+                || !isset($index[$suggestion['idx']]))continue;
+            $rowIndex=$index[$suggestion['idx']];
+            $row=&$candidates[$rowIndex];
+            $info=$lookups[(int)$row['sourceId']]??null;
+            if(!is_array($info)){unset($row);continue;}
+            $type=(string)($suggestion['type']??'');
+            // Explizit eingestellter Typ/Ort hat immer Vorrang vor KI.
+            if(!empty($types[$type]) && ($row['deviceType']??'generic')==='generic')
+                $row['deviceType']=$type;
+            $roomKey=(string)($suggestion['roomKey']??'');
+            if(($row['roomKey']??'')==='' && isset($rooms[$roomKey]['domains']))
+                $row['roomKey']=$roomKey;
+            $allowedType=(string)$row['deviceType'];
+            $checked=RCCGuidedDiscovery::checkedAiRoles(
+                $allowedType,(array)($suggestion['roles']??[]),
+                (array)($info['variables']??[]),(array)($types[$allowedType]??[])
+            );
+            // Typisierung bleibt streng: nur Rollen des festgelegten Typs
+            // und keine Steuer- oder Aktionsvariablen erlauben.
+            foreach($checked as $role=>$id) {
+                if(!isset($row['mappedRoles'][$role])) $row['mappedRoles'][$role]=$id;
+            }
+            $row['reason'].='; KI-Vorschlag (noch fachlich pruefen)';
+            $row['confidence']='Pruefen';
+            $row['readiness']='Pruefen';
+            $applied++;
+            unset($row);
+        }
+        return 'KI-Hilfe: '.count($payloads).' unklare Kandidaten angefragt, '
+            .$applied.' Vorschlaege erhalten (alle vor EDIT pruefen).';
+    }
+
     /** V3.3: bewusst nur explizit konfigurierte Kategorien/Instanzen durchsuchen. */
     private function discoveryRoots(): array
     {
