@@ -434,3 +434,146 @@ function iah_ai_safe_voice_answer(array $result, int $maxWords = 20): ?string
     return $count.' passende Istwerte gefunden'
         .($names!==[]?': '.implode(', ',array_keys($names)):'.');
 }
+
+/**
+ * V3.4.8: Kopierbare, stueckweise Diagnose der bei einem KI-Lesewerkzeug
+ * tatsaechlich beruecksichtigten Geraete und Variablen. Rein lokal:
+ * diese Daten gelangen NICHT in die OpenAI-Tool-Antwort. Nur konfigurierte
+ * KI-Rueckmelderollen, keine Token-/Passwortvariablen, kein freies IPS-Scanning.
+ */
+function iah_ai_diagnostic_scalar(mixed $value): mixed
+{
+    if (is_bool($value) || is_int($value) || is_float($value) || $value===null) return $value;
+    if (!is_string($value)) return '[nicht skalar]';
+    // Freitext/URLs/JSON/Token in Diagnosemeldungen niemals ausgeben.
+    if (mb_strlen($value,'UTF-8')>72 || preg_match('~[/:\\\\@{}]|https?~iu',$value))
+        return '[Text ausgeblendet]';
+    return $value;
+}
+
+/**
+ * Die Berichte sind in max. sieben Geraete pro Meldung geteilt, so dass
+ * IP-Symcon-Meldungen und die bestehenden letzten 500 Logs kopierbar sind.
+ */
+function iah_ai_log_device_diagnostics(
+    array $devices, string $tool, array $args, array $result
+): void {
+    if (!function_exists('IPS_LogMessage') || empty($result['ok'])) return;
+    $filters=[];
+    foreach(['room','floor','domain','group','type','name','deviceKey'] as $field)
+        if (isset($args[$field]) && is_scalar($args[$field]) && (string)$args[$field]!=='')
+            $filters[$field]=(string)$args[$field];
+    $found=iah_rc_find($devices,$filters);
+    $selected=[];
+    $rooms=array_values(array_filter((array)($args['rooms']??[]),'is_scalar'));
+    $indoorOnly=($args['indoor_only']??false)===true;
+    $property=(string)($args['property']??'state');
+    $condition=(string)($args['condition']??'');
+    foreach ($found as $dev) {
+        if (!iah_ai_selected_room($dev,$rooms)) continue;
+        if ($indoorOnly && (($dev['type']??'')==='weather'
+            || preg_match('/\\b(aussen|aussenbereich|garten|terrasse|balkon|outdoor|draussen)\\b/u',
+                iah_rc_norm((string)($dev['room']??'').' '.($dev['roomKey']??''))))) continue;
+        if (count($selected)>=180) break;
+        $selected[]=$dev;
+    }
+    $total=count($selected);$parts=max(1,(int)ceil($total/7));
+    $queryInfo=[
+        'tool'=>$tool,'property'=>$property,'operation'=>$args['operation']??'list',
+        'condition'=>$condition,'expected'=>iah_ai_diagnostic_scalar($args['value']??null),
+        'filters'=>$filters,'candidateCount'=>count($found),'selectedCount'=>$total,
+        'matchedReadings'=>(int)($result['matchedReadings']??-1),
+        'withProperty'=>(int)($result['withProperty']??-1),
+        'truncatedDiagnostic'=>count($found)>180
+    ];
+    iah_rc_log('diagnostics.query',$queryInfo);
+    foreach(array_chunk($selected,7) as $chunkIndex=>$chunk) {
+        $entries=[];
+        foreach($chunk as $dev) {
+            $feedback=[];
+            $roles=(array)($dev['reads']??[]);
+            if ($roles===[] && (int)($dev['read']??0)>0)
+                $roles=['legacyState'=>(int)$dev['read']];
+            foreach($roles as $role=>$id) {
+                $id=(int)$id;
+                $item=['role'=>(string)$role,'id'=>$id];
+                if ($id<=0 || !IPS_VariableExists($id)) {
+                    $item['problem']='Variable nicht vorhanden';
+                    $feedback[]=$item;
+                    continue;
+                }
+                try {
+                    $var=IPS_GetVariable($id);
+                    $raw=GetValue($id);
+                    $item['raw']=iah_ai_diagnostic_scalar($raw);
+                    $item['variableType']=(int)($var['VariableType']??-1);
+                    $item['profile']=(string)(($var['VariableCustomProfile']??'')
+                        ?:($var['VariableProfile']??''));
+                    if (function_exists('GetValueFormatted')) {
+                        try { $item['display']=iah_ai_diagnostic_scalar(GetValueFormatted($id)); }
+                        catch(Throwable $ignored) {}
+                    }
+                    if ($item['profile']!=='' && function_exists('IPS_GetVariableProfile')) {
+                        try {
+                            $profile=IPS_GetVariableProfile($item['profile']);
+                            foreach((array)($profile['Associations']??[]) as $association) {
+                                $code=$association['Value']??null;
+                                if ($code!==null && (
+                                    ($code===$raw) || (is_numeric($code)&&is_numeric($raw)
+                                      && !is_bool($code)&&!is_bool($raw)
+                                      && (float)$code===(float)$raw))) {
+                                    $item['profileMeaning']=iah_ai_diagnostic_scalar(
+                                        (string)($association['Name']??''));
+                                    break;
+                                }
+                            }
+                        } catch(Throwable $ignored) {}
+                    }
+                    if (function_exists('IPS_GetObject')) {
+                        try {
+                            $obj=IPS_GetObject($id);
+                            $item['objectName']=iah_ai_diagnostic_scalar(
+                                (string)($obj['ObjectName']??''));
+                            $item['parentId']=(int)($obj['ObjectParentID']??0);
+                        } catch(Throwable $ignored) {}
+                    }
+                    if (isset($var['VariableChanged']))
+                        $item['changedAt']=(int)$var['VariableChanged'];
+                    if (isset($var['VariableUpdated']))
+                        $item['updatedAt']=(int)$var['VariableUpdated'];
+                } catch(Throwable $error) {
+                    $item['problem']='Variable konnte nicht gelesen werden';
+                }
+                $feedback[]=$item;
+            }
+            try {
+                $state=iah_rc_state($dev);
+                $value=iah_ai_property_value($state,$property,$dev);
+                $meaning=$value===null?'unknown':
+                    ($property==='activity'?($value==='an'?'on':($value==='aus'?'off':'unknown')):'available');
+                $matches=$value!==null && iah_ai_condition_matches(
+                    $value,$condition,$args['value']??null);
+            } catch(Throwable $e) {
+                $value=null;$meaning='read_error';$matches=false;
+            }
+            $entries[]=[
+                'room'=>(string)($dev['room']??''),
+                'device'=>(string)($dev['name']??''),
+                'key'=>(string)($dev['id']??''),
+                'type'=>(string)($dev['type']??''),
+                'domain'=>(string)($dev['domain']??''),
+                'group'=>(string)($dev['group']??''),
+                'isTyped'=>(bool)($dev['typed']??false),
+                'mapping'=>(array)($dev['stateMapping']??[]),
+                'interpreted'=>iah_ai_diagnostic_scalar($value),
+                'meaning'=>$meaning,
+                'matchesCondition'=>$matches,
+                'variables'=>$feedback
+            ];
+        }
+        iah_rc_log('diagnostics.devices',[
+            'part'=>$chunkIndex+1,'parts'=>$parts,
+            'count'=>count($entries),'devices'=>$entries
+        ]);
+    }
+}
