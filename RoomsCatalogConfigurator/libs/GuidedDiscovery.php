@@ -104,7 +104,9 @@ final class RCCGuidedDiscovery
                 || !is_int($index)||!isset($byIndex[$index])) continue;
             $var=$byIndex[$index];
             $id=(int)($var['id']??0);
-            if($id<=0||!empty($var['action'])||in_array($id,$roles,true)) continue;
+            if($id<=0||!empty($var['action'])||in_array($id,$roles,true)
+                || !in_array((int)($var['type']??-1),
+                    RCCDeviceTypeRegistry::dataTypes()[$role]??[],true)) continue;
             $roles[$role]=$id;
         }
         return $roles;
