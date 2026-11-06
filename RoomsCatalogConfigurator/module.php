@@ -2029,9 +2029,11 @@ class RoomsCatalogConfigurator extends IPSModule
                 $role=(string)$suggestion['property'];
                 $id=(int)$suggestion['candidateId'];
                 if(!in_array($role,$validRoles,true)
-                    || in_array($role,['action','control','targetPosition','targetTemperature','commandValue'],true)
                     || $suggestion['confidence']!=='Hoch' || $id<=0
-                    || !isset($metadata[$id]) || !empty($metadata[$id]['action'])
+                    || !isset($metadata[$id])
+                    || ($role==='action' || $role==='control'
+                        ? empty($metadata[$id]['action'])
+                        : !empty($metadata[$id]['action']))
                     || isset($used[$id])) continue;
                 $entry[RCCDeviceTypeRegistry::fields()[$role]]=$id;
                 $used[$id]=true;
