@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 require dirname(__DIR__).'/IPSAlexaHaussteuerung/src/KICostAccounting.php';
 require dirname(__DIR__).'/IPSAlexaHaussteuerung/resources/helpers/KIHouseController.php';
-require dirname(__DIR__).'/IPSAlexaHaussteuerung/resources/helpers/HomeAgentVoiceBridge.php';
 function checkModel(bool $ok,string $message):void {if(!$ok)throw new RuntimeException($message);}
 
 foreach (['gpt-6-luna','gpt-4.1-mini'] as $model) {
@@ -12,7 +11,6 @@ foreach (['gpt-6-luna','gpt-4.1-mini'] as $model) {
         $tools=[['type'=>'function','function'=>['name'=>'get_states']]];
         foreach ([
             'RoomsCatalog'=>iah_rc_chat_payload($model,$messages,$tools,$round),
-            'HomeAgent'=>iah_homeagent_chat_payload($model,$messages,$tools,$round),
         ] as $backend=>$body) {
             checkModel($body['model']===$model,$backend.': selected model');
             checkModel($body['tool_choice']===($round===0?'required':'auto'),$backend.': tool choice');
@@ -45,7 +43,8 @@ checkModel(array_column($fields['KIModelSelection']['options'],'value')===['gpt-
 $module=file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/module.php');
 checkModel(str_contains($module,"RegisterPropertyString('KIModelSelection', 'gpt-6-luna')"),'existing instance auto-default');
 $action=file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/resources/action_entry.php');
-checkModel(substr_count($action,"'KIModelSelection'")>=3,'both backends and parser selection');
+checkModel(substr_count($action,"'KIModelSelection'")>=1,'RoomsCatalog backend model selection');
+checkModel(!str_contains($action,"'KIVoiceMode'"),'old MCP backend selection removed');
 $parser=file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/resources/helpers/KIIntentParser.php');
 checkModel(str_contains($parser,"\$body['reasoning_effort'] = 'none'"),'legacy parser Luna reasoning none');
 echo "PASS: model selector, Luna-compatible Chat Completions tool calls, legacy GPT-4.1 mini, prices and parser\n";
