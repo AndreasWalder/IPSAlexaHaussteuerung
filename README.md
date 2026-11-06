@@ -43,26 +43,41 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
 
 ---
 
-## Alexa + Home Agent (experimentelle MCP-Sprachantworten)
+## Alexa + ChatGPT (direkte RoomsCatalog-Haussteuerung)
 
-**V3.4.0 – KI + RoomsCatalog:** Der `KIHouseController` wertet nun die
-typisierten Geräte und mehrere Status-/Mess-/Sollwerte pro Gerät aus,
-einschließlich Fensterkontakten, Bewegungsmeldern, Energiezählern und
-Jalousiepositionen. Neue Schreibaktionen benötigen eine fachliche
-Bestätigung und die bisherigen Freigaben. Siehe
-[V3.4 – Typisierte KI-Geräte](docs/KI_RoomsCatalog_V34.md).
+**V3.4.6 – nur noch eine KI-Anbindung:** Spracheingaben aus Alexa werden
+an den eigenen **KIHouseController** weitergegeben, der mit dem konfigurierten
+OpenAI-Modell (ChatGPT über API) das freigegebene `RoomsCatalog` abfragt.
+Für einfache Schaltbefehle und Navigation bleibt die bestehende lokale
+IP-Symcon-Steuerung erhalten. Es wird **kein externer HomeAgent/MCP-Server**
+mehr benötigt, auch kein MCP-Endpunkt oder zusätzliches Zugangstoken.
 
-**Neu:** Freitext-Intent `HomeAgentFrageIntent` mit `AMAZON.SearchQuery`-Slot `Frage`, damit Alexa längere Hausfragen tatsächlich übermittelt. [Alexa-Setup und Debugging](docs/HomeAgent_Alexa_Setup.md) · [Intent-Vorlage](docs/HomeAgentFrageIntent.json). Der Intent muss in der Alexa Developer Console angelegt und das Sprachmodell neu gebaut werden.
+Die KI verwendet zentrale Gerätetypen und Eigenschaften, analysiert Fragen
+über `query_house` (Listen, Status, Mittelwerte, Min/Max, Summen,
+Raumvergleiche) und kann nur für explizit berechtigte Geräte schalten.
+Fragen erhalten keine Schreibwerkzeuge. Der Alexa-Intent
+`HomeAgentFrageIntent` mit `AMAZON.SearchQuery` heißt aus
+**Abwärtskompatibilitätsgründen** in der Alexa Developer Console weiterhin so,
+obwohl **kein HomeAgent mehr aufgerufen** wird.
 
+**Einrichtung:** KI-API-Key, Modell und „KI-Hausfragen beantworten“ im
+IP-Symcon-Alexa-Modul konfigurieren und **Übernehmen**.
+Geräte-/Schaltfreigaben erfolgen ausschließlich im RoomsCatalogConfigurator.
+Die alten MCP-Einstellungen und die Bridge wurden entfernt; bereits
+eingerichtete Alexa-Intents müssen deshalb nicht umgebaut werden.
 
+**Fehlerbehebungen in V3.4.6:** Licht-Iststatus wird auch bei typisierten
+Boolean-/0/1-/Text-Rückmeldungen korrekt ausgewertet, bei Jalousien werden
+Positionen ohne Zu/Offen-Statusmapping nicht als Zustandsbestätigung
+ausgegeben. Wenn die KI eine gültige Abfrage abgeschlossen hat und die
+nachfolgende Sprachformulierung wegen Zeitüberschreitung scheitert, liefert
+Alexa eine kurze, sichere Antwort aus den tatsächlich gelesenen Werten.
+Weitere Diagnose für ungültige/fehlende Skriptrückgaben.
 
-Der optionale Alexa-Sprachkanal nutzt die bestehende Custom-Skill-Instanz und leitet Hausfragen über OpenAI-Tool-Calling an den [Home Agent](https://github.com/bumaas/HomeAgent) weiter. Alexa erhält eine kurze Antwort (Standard: 20 Wörter). Normale Alexa-Schaltbefehle funktionieren weiterhin über die bisherige Logik.
-
-**Vorbereitung:** Home Agent installieren, Geräte freigeben, separaten Zugang „Alexa“ mit „Nur abfragen“ anlegen und Selbsttest ausführen. In der Alexa-Modulinstanz unter „Home Agent – kurze Alexa-Antworten (MCP)“ den Endpunkt (z. B. `http://127.0.0.1:3777/hook/homeagent/12345`, fiktive Instanz-ID) und den Zugangstoken eintragen; unter „KI Intent Parser“ einen gültigen OpenAI-API-Key und ein Modell konfigurieren. Den Token nicht ins Repository übernehmen.
-
-**Test:** Nur bei aktivierter Option wird eine erkannte Hausfrage per MCP `tools/list` und `tools/call` bearbeitet. Die neue Helferdatei `HomeAgentVoiceBridge.php` wird als Symcon-Skript angelegt. Eine vorhandene Action-Skript-Installation erhält einen gezielten Hook; vor dem Aktualisieren der Skripte bitte ein Backup erstellen.
-
-**Grenzen:** Aktuell experimentell; Home Agent und die Alexa-Intent-Übergabe des vollständigen gesprochenen Texts müssen vor Ort getestet werden. Der `RoomsCatalog` wird nicht automatisch mit Home Agent synchronisiert. Alexa-Zeitlimits können auch mit kurzer Ausgabe überschritten werden; dann greift der bisherige Weg. Schreibrechte für den Home-Agent-Zugang bleiben standardmäßig ausgeschaltet.
+[ChatGPT-Setup und Diagnose](docs/Alexa_ChatGPT_RoomsCatalog_Setup.md) ·
+[KI + RoomsCatalog](docs/KI_RoomsCatalog.md) ·
+[Universelle KI-Datenabfragen](docs/Alexa_AI_HouseQuery_V345.md) ·
+[Alexa-Intent-Vorlage (historischer Name)](docs/HomeAgentFrageIntent.json)
 
 ## Alexa: Produktive Kachelvisualisierung „Visu“
 
