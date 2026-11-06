@@ -35,6 +35,7 @@ jobs:
           php -l IPSAlexaHaussteuerung/resources/action_entry.php
           php -l IPSAlexaHaussteuerung/resources/helpers/KIHouseController.php
           php -l IPSAlexaHaussteuerung/resources/helpers/HouseQueryEngine.php
+          php -l IPSAlexaHaussteuerung/resources/helpers/ArchiveHistoryEngine.php
           php -l IPSAlexaHaussteuerung/resources/helpers/VoiceIntentRouter.php
           php -l IPSAlexaHaussteuerung/resources/helpers/ExternalHtmlProbe.php
           php -l IPSAlexaHaussteuerung/resources/helpers/ExternalHtmlBrowserReceiver.php
@@ -89,6 +90,8 @@ jobs:
         run: php tests/test_device_property_registry_v344.php
       - name: Test V3.4.5 AI natural-language data queries, room temperatures and safe aggregate tools
         run: php tests/test_ai_house_query_v345.php
+      - name: Test V3.5.3 AI Archive Control history and true motion events
+        run: php tests/test_ai_archive_history_v353.php
       - name: Test V3.4.6 HomeAgent removal, statuses, safe Alexa voice bridge
         run: php tests/test_ki_mcp_removal_voice_v346.php
       - name: Test V3.4.7 read light status through IP-Symcon profiles and show diagnostic coverage

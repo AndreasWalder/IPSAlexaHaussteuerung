@@ -138,6 +138,17 @@
           "value": 6
         },
         {
+          "name": "KIArchiveControlId",
+          "type": "SelectInstance",
+          "caption": "Archive Control – Datenquelle für KI-Verlauf und Ereignisse",
+          "moduleID": "{43192F0B-135B-4CE7-A0A7-1475603F3060}",
+          "value": 0
+        },
+        {
+          "type": "Label",
+          "caption": "Einmal Archive Control wählen (z. B. Archive #17597). KI liest damit bei Bedarf archivierte Werte und erkannte Ereignisse, ohne weitere Archiv-IDs pro Gerät. Nur bereits im RoomsCatalog für KI freigegebene Geräte werden abgefragt. Voraussetzung: Die betreffenden Variablen wurden im Archiv protokolliert; die Funktion aktiviert Logging nicht selbst."
+        },
+        {
           "name": "KIDetailedQueryDiagnostics",
           "type": "CheckBox",
           "caption": "Detaillierte KI-Analyse in IP-Symcon-Logs (Geraete, Variablen-IDs, aktueller Wert, Profil und Mapping)",

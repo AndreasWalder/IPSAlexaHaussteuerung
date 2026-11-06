@@ -15,6 +15,12 @@ if (!function_exists('iah_ai_query_house')) {
     require_once __DIR__ . '/HouseQueryEngine.php';
 }
 
+// IAH_ARCHIVE_HISTORY_ENGINE_INSERT
+// Wird beim Modul-Uebernehmen in das erzeugte IPS-KI-Skript eingebettet.
+if (!function_exists('iah_archive_query')) {
+    require_once __DIR__ . '/ArchiveHistoryEngine.php';
+}
+
 /**
  * Alexa KI -> produktiver RoomsCatalog -> sichere IP-Symcon-Aktionen.
  * Keine Home-Agent-Installation, keine freien PHP-/Variablen-ID-Aufrufe.
@@ -128,7 +134,7 @@ function iah_rc_write_roles(string $type, array $ids): array
     }
     return $writable;
 }
-function iah_rc_index(int $scriptId): array
+function iah_rc_index(int $scriptId, bool $includeArchiveOnly = false): array
 {
     if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) throw new RuntimeException('RoomsCatalog-Skript fehlt');
     $file = IPS_GetScriptFile($scriptId);
@@ -206,7 +212,9 @@ function iah_rc_index(int $scriptId): array
                         // Ein Fan mit nur control meldet einen Befehlswert, keinen Istzustand.
                         if ($type === 'fan' && !isset($reads['power']) && isset($mapped['control']))
                             $reads['commandValue'] = $mapped['control'];
-                        if ($reads === []) continue;
+                        if ($reads === [] && !($includeArchiveOnly
+                            && $type==='motion'
+                            && (int)($dev['discoverySourceId']??0)>0)) continue;
                         if (($ai['review']['status'] ?? '') === 'confirmed'
                             && ($dev['kiEnabled'] ?? false) === true
                             && array_key_exists('kiReadOnly',$dev) && $dev['kiReadOnly'] === false)
@@ -218,7 +226,9 @@ function iah_rc_index(int $scriptId): array
                             $readId = (int)$dev[$field]; break;
                         }
                     }
-                    if ($readId <= 0 || !IPS_VariableExists($readId)) continue;
+                    if (($readId <= 0 || !IPS_VariableExists($readId))
+                        && !($includeArchiveOnly && $typed
+                            && $type==='motion' && (int)($dev['discoverySourceId']??0)>0)) continue;
                     $writeId = $typed ? (int)(reset($writeRoles) ?: 0) : match ($group) {
                         'switches', 'fans' => (int)($dev['toggle'] ?? 0),
                         'dimmers' => (int)($dev['set'] ?? 0),
@@ -239,6 +249,8 @@ function iah_rc_index(int $scriptId): array
                         'read' => $readId, 'write' => $writeId, 'writable' => $writable,
                         'typed' => $typed, 'type' => $typed ? $type : (string)$group,
                         'reads' => $reads, 'writeRoles' => $writeRoles,
+                        'archiveSourceId' => (int)($dev['discoverySourceId']??0),
+                        'archiveOnly' => $reads===[],
                         'stateMapping' => $typed && is_array($ai['stateMapping'] ?? null) ? $ai['stateMapping'] : [],
                         'setpoint' => (int)($dev['eingestellt'] ?? $dev['soll'] ?? 0),
                         'min' => is_numeric($dev['min'] ?? null) ? (float)$dev['min'] : null,
@@ -568,10 +580,13 @@ function iah_rc_voice(string $text,array $cfg): array
         return $result;
     };
     $started=microtime(true);$deadline=$started+max(2,min(7,(int)($cfg['timeout_seconds']??6)));
+    $archiveId=(int)($cfg['archive_control_id']??0);
+    $wantsArchive=$archiveId>0 && (bool)preg_match(
+        '/\b(wann|zuletzt|letzte[rsn]?|wie oft|wie haeufig|wie häufig|verlauf|historie|ereignisse|gestern|pro tag|in den letzten|vorletzte)\b/ui',$text);
     $maxWords=max(8,min(45,(int)($cfg['max_words']??20)));$allowWrites=(bool)($cfg['allow_writes']??false);
     $lastReadResult=null;
     try{
-        $devices=iah_rc_index($catalogId);
+        $devices=iah_rc_index($catalogId,$wantsArchive);
         $enableDeviceDiagnostics=(bool)($cfg['device_diagnostics']??true);
         $typeCounts=[];$temperatureMapped=0;
         foreach ($devices as $device) {
@@ -619,6 +634,26 @@ function iah_rc_voice(string $text,array $cfg): array
             $make('get_devices','Inventar fuer eindeutige deviceKeys und kontrollierte Schreibfreigaben (keine Livewerte).',$props)
         ];
         $tools[0]['function']['parameters']['required']=['property'];
+        if ($archiveId>0) {
+            $tools[]=$make('query_archive',
+                'READ-ONLY: Archivierte IP-Symcon-WERTAENDERUNGEN. Nutze fuer Zeitfragen '
+                .'wie wann zuletzt Bewegung erkannt, wann zuletzt eingeschaltet, wie oft '
+                .'Bewegung heute, Verlauf, Historie und vergangene Messwerte. '
+                .'Bei Bewegung operation=last_active, property=motion (true-Ereignis '
+                .'statt letztem false-Wert!), period=all. Fuer zeitlichen letzten '
+                .'Wertwechsel operation=last_change. Fuer Anzahl operation=count_active '
+                .'und period=today/yesterday/7d/30d. Fuer Tagesmittelwerte '
+                .'operation=stats; keine ungeprueften Summen erfinden. '
+                .'Nie willkuerliche IPS-IDs, sondern nur freigegebene Geraetenamen.',
+                $props+[
+                    'property'=>['type'=>'string'],
+                    'operation'=>['type'=>'string','enum'=>[
+                        'last_active','last_change','count_active','history','stats']],
+                    'period'=>['type'=>'string','enum'=>[
+                        'all','today','yesterday','7d','30d','90d']],
+                    'limit'=>['type'=>'integer','minimum'=>1,'maximum'=>10]
+                ]);
+        }
         if($allowWrites && !$preferRead){
             $tools[]=$make('set_device','Aendert EIN eindeutig bestimmtes, explizit freigegebenes und fachlich bestaetigtes Geraet. property optional: power als Boolean, brightness/targetPosition 0-100, targetTemperature 6-30. Zuerst get_devices fuer deviceKey und writableProperties. Keine KNX-Fahrbefehle oder frei erfundenen IDs.',
                 $props+['property'=>['type'=>'string'],'value'=>['type'=>['boolean','number']]]);
@@ -635,6 +670,12 @@ function iah_rc_voice(string $text,array $cfg): array
             'rooms'=>$catalogSchema['rooms']
         ],JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
         $planningRules='Du bist der deutschsprachige KI-Planer einer Haussteuerung. '
+            .($archiveId>0 ? 'Fuer historische Fragen steht query_archive zur Verfuegung: '
+                .'WANN LETZTE BEWEGUNG bedeutet letzte archivierte aktiv=true-Meldung, '
+                .'nicht VariableChanged und nicht die letzte false-Meldung. '
+                .'Falls das Archiv unvollstaendig, nicht geloggt oder mehrdeutig ist, '
+                .'dies klar sagen, nie einen Zeitpunkt erfinden. '
+                .'Archivsuche nur fuer freigegebene RoomsCatalog-Geraete. ' : '')
             .'Verstehe die NATUERLICHE FRAGE und waehle frei aus kombinierbaren Read-Only-Datenoperationen: '
             .'geraetespezifische Istwerte, Statuslisten, Filter, Zaehlen, hoechste/niedrigste Werte, '
             .'Summen, Durchschnitt, Raumvergleich und mehrere Raeume. Verwende dazu bevorzugt query_house. '
@@ -684,7 +725,7 @@ function iah_rc_voice(string $text,array $cfg): array
             iah_rc_log('openai.start',['round'=>$round+1]);
             $model=(string)($cfg['model']??'gpt-6-luna');
             $request=iah_rc_chat_payload($model,$messages,$tools,$round,
-                $preferRead,$round>=2,'query_house');
+                $preferRead,$round>=2,$wantsArchive?'query_archive':'query_house');
             $response=iah_rc_http($request,$key,$deadline);
             $costReport('api',['callId'=>'round-'.$round,'response'=>[
                 'model'=>(string)($response['model']??($cfg['model']??'')),
@@ -709,7 +750,9 @@ function iah_rc_voice(string $text,array $cfg): array
                     throw new RuntimeException('Ungültiger Werkzeugaufruf');
                 $result=$name==='query_house'
                     ? iah_ai_query_house($devices,$args,$text)
-                    : iah_rc_tool($devices,$name,$args,$allowWrites,$text);
+                    : ($name==='query_archive'
+                        ? iah_archive_query($devices,$args,$text,$archiveId)
+                        : iah_rc_tool($devices,$name,$args,$allowWrites,$text));
                 // Diagnose ist ein separater lokaler Logger. Keine
                 // Variablen-IDs, Profile oder unformatierten Istwerte an OpenAI.
                 if ($enableDeviceDiagnostics && in_array($name,['query_house','get_states'],true))
