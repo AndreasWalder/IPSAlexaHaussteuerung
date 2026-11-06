@@ -6034,7 +6034,7 @@ class RoomsCatalogConfigurator extends IPSModule
                                     [['caption'=>'Raum aus Geraetenamen bestimmen / einzeln auswaehlen','value'=>'']],
                                     array_values(array_filter($roomOptions,static fn(array $option):bool =>
                                         (string)($option['value']??'')!==''
-                                    )))
+                                    ))
                                 )]
                         ]],
                         ['type'=>'Label','caption'=>'3. Optional: ChatGPT hilft bei unklaren Funden mit Namen, Identifikatoren, '
