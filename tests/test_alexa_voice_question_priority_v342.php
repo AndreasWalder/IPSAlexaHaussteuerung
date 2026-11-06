@@ -52,7 +52,7 @@ foreach ([
 }
 
 // Dieser Fehler ist am 04.11.2026 in den Live-Logs aufgetreten:
-// Alexa meldete category=query, aber HomeAgentVoice.received blieb aus.
+// Alexa meldete category=query, aber KIVoice.received blieb aus.
 // Ein fehlerhaftes SDK-Flag darf einen dedizierten Query-Intent nicht abfangen.
 foreach ([
     ['aplEvent'=>true],
@@ -95,8 +95,8 @@ $module = file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/module.php'
 checkV342(str_contains($module, '$this->patchActionScriptKIVoice((int) $id);'),
     'Module update must refresh voice hook');
 checkV342(str_contains($action, "if ((bool)\$iahKiGate['allowed']) {"), 'Live action does not use the tested gate');
-checkV342(str_contains($action, "'HomeAgentVoice.route_gate'"), 'Missing reason logging');
-checkV342(str_contains($action, "'HomeAgentVoice.query_blocked'"), 'Missing blocked-query diagnosis');
+checkV342(str_contains($action, "'KIVoice.route_gate'"), 'Missing reason logging');
+checkV342(str_contains($action, "'KIVoice.query_blocked'"), 'Missing blocked-query diagnosis');
 checkV342(strpos($action, '// HOME_AGENT_VOICE_HOOK_END') < strpos($action, '// IAH_VOICE_NAVIGATION_BEGIN'),
     'Voice queries must route before the classic UI override');
 
