@@ -8157,6 +8157,43 @@ class RoomsCatalogConfigurator extends IPSModule
                 }
                 $update[$field]=$value;
             }
+            // Zusammenspiel von typisiertem ai-Wert und bestehendem
+            // Legacy-Feld: wurde das alte Feld bisher aus derselben
+            // Rueckmeldung gespeist, darf es nicht auf der alten IPS-ID
+            // haengen bleiben, wenn nur diese Rolle geaendert wird.
+            $linkedLegacy=match($type) {
+                'motion'=>['motion'=>'state'],
+                'window'=>['open'=>'state'],
+                'light','dimmer','switch','fan'=>['power'=>'state',
+                    'control'=>'toggle','brightness'=>'value'],
+                'heating'=>['temperature'=>'ist','targetTemperature'=>'soll'],
+                'blind'=>['position'=>'wert'],
+                default=>[]
+            };
+            foreach($linkedLegacy as $role=>$legacyField) {
+                $field=RCCDeviceTypeRegistry::fields()[$role]??'';
+                $oldId=(int)($row[$field]??0);
+                if($field==='' || !array_key_exists($field,$update)
+                    || $oldId<=0 || $oldId!==(int)($row[$legacyField]??0)
+                    || $oldId===(int)$update[$field])continue;
+                $update[$legacyField]=(int)$update[$field];
+            }
+            // Bei Legacy-Motion-Imports wurde 'status' haeufig nur als
+            // virtuelle Zweitrolle aus state abgeleitet. Wenn motion
+            // bewusst verschoben wurde, soll diese unbestaetigte Kopie
+            // keinen veralteten Statuswert zurueckhalten.
+            if($type==='motion' && array_key_exists('aiMotionId',$update)) {
+                $oldMotion=(int)($row['aiMotionId']??0);
+                $oldStatus=(int)($row['aiStatusId']??0);
+                $rawAi=$row['ai']??[];
+                if(is_string($rawAi))$rawAi=json_decode($rawAi,true);
+                $explicitStatus=is_array($rawAi)
+                    && array_key_exists('status',(array)($rawAi['variables']??[]));
+                if(!$explicitStatus && $oldMotion>0 && $oldMotion===$oldStatus
+                    && $oldMotion!==(int)$update['aiMotionId']
+                    && ($update['aiStatusId']??$oldStatus)===$oldStatus)
+                    $update['aiStatusId']=(int)$update['aiMotionId'];
+            }
             foreach(RCCDeviceTypeRegistry::states() as $state=>$field) {
                 $visible=in_array($type,['blind','window'],true)
                     ? in_array($state,['open','closed'],true)
@@ -8170,6 +8207,29 @@ class RoomsCatalogConfigurator extends IPSModule
         // erhalten, auch die individuelle Quelle, Gruppe, bisherige Keys usw.
         $this->SaveToEdit(json_encode($update,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
         $after=(string)IPS_GetScriptContent($editId);
+        $persisted=$this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog(
+            $this->loadRoomsCatalog($editId,'EDIT')));
+        $saved=null;
+        foreach($persisted as $candidate) {
+            if($this->buildCompositeKey($candidate)===$key) {$saved=$candidate;break;}
+        }
+        $okay=is_array($saved)
+            && (string)($saved['title']??'')===$title
+            && (bool)($saved['kiEnabled']??false)===$update['kiEnabled']
+            && (bool)($saved['kiReadOnly']??true)===$update['kiReadOnly'];
+        if($okay && $type!=='') {
+            foreach(RCCDeviceTypeRegistry::fields() as $role=>$field) {
+                if(!array_key_exists($field,$update))continue;
+                if((int)($saved[$field]??0)!==(int)$update[$field])
+                    {$okay=false;break;}
+            }
+        }
+        if(!$okay) {
+            $this->WriteAttributeString('MarkedEditorEditHash',hash('sha256',$after));
+            $fail('Speichern nicht bestaetigt: der EDIT-Katalog enthaelt die erwarteten Werte '
+                .'nicht. Eintrag nicht gewechselt; bitte Ursache pruefen.');
+            return;
+        }
         $this->WriteAttributeString('MarkedEditorEditHash',hash('sha256',$after));
         if($next && $context['index']<count($context['keys'])-1)
             $this->WriteAttributeString('MarkedEditorIndex',(string)($context['index']+1));
