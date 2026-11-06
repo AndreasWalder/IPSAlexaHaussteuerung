@@ -692,8 +692,9 @@ function iah_rc_voice(string $text,array $cfg): array
                 if ($name==='query_house' && ($result['ok']??false)===true)
                     $lastReadResult=$result;
                 $diagnostic=['name'=>$name,'ok'=>$result['ok']??true];
-                foreach (['matched','shown','truncated','temperatureAvailable','statusSummary','filtersUsed','count',
-                    'operation','property','groupBy','matchedReadings','groups','totalCount','error'] as $field)
+                foreach (['matched','shown','truncated','temperatureAvailable','statusSummary','statusCoverage',
+                    'matchedDevices','withProperty','filtersUsed','count','operation','property',
+                    'groupBy','matchedReadings','groups','totalCount','error'] as $field)
                     if (array_key_exists($field,$result)) $diagnostic[$field]=$result[$field];
                 iah_rc_log('tool',$diagnostic);
                 $messages[]=['role'=>'tool','tool_call_id'=>(string)$call['id'],
