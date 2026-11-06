@@ -116,9 +116,14 @@ ck353(count($GLOBALS['archiveCalls'])>0
     && count(array_unique(array_column($GLOBALS['archiveCalls'],0)))===1,
     'queries only use explicitly configured archive');
 $form=json_decode(file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/form.json'),true);
-$items=$form['elements'][6]['items']??[];
-$archiveMatches=array_values(array_filter($items,
-    static fn(array $e):bool=>($e['name']??'')==='KIArchiveControlId'));
+$archiveMatches=[];
+$collectArchive=static function(array $elements)use(&$collectArchive,&$archiveMatches):void {
+    foreach($elements as $item) {
+        if(($item['name']??'')==='KIArchiveControlId')$archiveMatches[]=$item;
+        if(is_array($item['items']??null))$collectArchive($item['items']);
+    }
+};
+$collectArchive($form['elements']??[]);
 ck353(count($archiveMatches)===1
     && ($archiveMatches[0]['type']??'')==='SelectInstance'
     && ($archiveMatches[0]['moduleID']??'')==='{43192F0B-135B-4CE7-A0A7-1475603F3060}',
