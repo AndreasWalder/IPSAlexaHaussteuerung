@@ -121,6 +121,8 @@ jobs:
         run: php tests/test_rooms_catalog_marked_editor_v350.php
       - name: Test V3.5.1 motion child proposal and backup restore to EDIT
         run: php tests/test_rooms_catalog_motion_restore_v351.php
+      - name: Test V3.5.2 source-scoped picker and Save+Next at top
+        run: php tests/test_rooms_catalog_marked_scope_v352.php
       - name: Test RoomsCatalog V3.3.2 selected-device bulk typing and safe EDIT updates
         run: php tests/test_rooms_catalog_v332_bulk.php
       - name: Test RoomsCatalog stale filters, migration readiness and scoped options
