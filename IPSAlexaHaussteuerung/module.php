@@ -85,6 +85,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         // Lokale Diagnose bei Hausfragen: Istwerte, Profile und IPS-Variablen-IDs
         // werden NICHT an OpenAI uebertragen, sondern nur in IPS-Logs ausgegeben.
         $this->RegisterPropertyBoolean('KIDetailedQueryDiagnostics', true);
+        // Nur diese eine Archivinstanz wird fuer KI-Verlaufsfragen benoetigt.
+        $this->RegisterPropertyInteger('KIArchiveControlId', 0);
         $this->RegisterPropertyFloat('KICostMonthlyWarningUSD', 5.00); // Historischer Konfigurationswert
         $this->RegisterPropertyFloat('KICostMonthlyWarningEUR', 5.00);
         $this->RegisterPropertyFloat('KICostManualUsdToEur', 0.0);
@@ -2720,6 +2722,22 @@ PHP;
                     $content = str_replace('// IAH_HOUSE_QUERY_ENGINE_INSERT',
                         'if (!function_exists(\'iah_ai_query_house\')) {' . "\n"
                         . $query . "\n" . '}', $content);
+
+                    // Auch die Archiv-Historie muss im zur Laufzeit generierten
+                    // IP-Symcon-Skript eingebettet sein, statt require __DIR__.
+                    $archiveFile = __DIR__ . '/resources/helpers/ArchiveHistoryEngine.php';
+                    $archiveSource = is_file($archiveFile) ? file_get_contents($archiveFile) : false;
+                    if (!is_string($archiveSource)
+                        || !str_contains($archiveSource,'function iah_archive_query(')
+                        || !str_contains($content,'// IAH_ARCHIVE_HISTORY_ENGINE_INSERT')) {
+                        IPS_LogMessage('Alexa','KIHouseController nicht erneuert: ArchiveHistoryEngine fehlt.');
+                        return (int)$id;
+                    }
+                    $archiveSource = preg_replace('/^<\?php\s*declare\(strict_types=1\);\s*/','',$archiveSource);
+                    if (!is_string($archiveSource)) return (int)$id;
+                    $content = str_replace('// IAH_ARCHIVE_HISTORY_ENGINE_INSERT',
+                        'if (!function_exists(\'iah_archive_query\')) {' . "\n"
+                        . $archiveSource . "\n" . '}', $content);
                 }
                 IPS_SetScriptContent($id, $content);
             }
