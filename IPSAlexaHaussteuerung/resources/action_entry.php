@@ -2431,6 +2431,7 @@ function Execute($request = null)
                                 'model' => (string) ($propsEarly['KIModelSelection'] ?? 'gpt-6-luna'),
                                 'max_words' => (int) ($propsEarly['HomeAgentVoiceMaxWords'] ?? 20),
                                 'timeout_seconds' => (int) ($propsEarly['HomeAgentVoiceTimeoutSeconds'] ?? 6),
+                                'device_diagnostics' => (bool) ($propsEarly['KIDetailedQueryDiagnostics'] ?? true),
                                 'allow_writes' => $homeAgentAllowCommands,
                                 'ki_cost_instance_id' => $instanceId,
                                 'ui_context_domain' => $iahVoiceContextDomain,
