@@ -2300,8 +2300,8 @@ function Execute($request = null)
         $iahVoiceIsNavigation = ($iahVoiceDecision['category']??'') === 'navigation';
         $iahVoiceNavKey = $iahVoiceIsNavigation ? (string)($iahVoiceDecision['route']??'') : '';
         $homeAgentDedicatedIntent = $iahDedicatedSearchIntent;
-        $homeAgentEnabled = (bool) ($propsEarly['HomeAgentVoiceEnabled'] ?? false)
-            && (string) ($propsEarly['KIVoiceMode'] ?? 'RoomsCatalog') !== 'Classic';
+        // V3.4.6: Keine alternative HomeAgent-/MCP-Route mehr.
+        $homeAgentEnabled = (bool) ($propsEarly['HomeAgentVoiceEnabled'] ?? false);
 
         // IAH_KI_GATE_POLICY_BEGIN
         // Reine Entscheidung ohne Nebenwirkungen: im Regressionstest isoliert
@@ -2404,7 +2404,7 @@ function Execute($request = null)
                 if (!$homeAgentEnabled) {
                     $log('warn', 'HomeAgentVoice.disabled');
                     if ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {
-                        return $kiAlexaKeepOpen('Der KI-Hausassistent ist noch nicht aktiviert.');
+                        return $kiAlexaKeepOpen('Die ChatGPT-Haussteuerung ist noch nicht aktiviert.');
                     }
                 } elseif ($homeAgentSpokenQuestion === '' || $homeAgentSpokenQuestion === '?') {
                     $log('warn', 'HomeAgentVoice.missing_text', ['intent' => $intentName]);
@@ -2413,19 +2413,20 @@ function Execute($request = null)
                     }
                 } else {
                     $homeAgentHelpers = iah_get_child_object($instanceId, 'iahHelper', 'Alexa new devices helper');
-                    $kiVoiceMode = (string) ($propsEarly['KIVoiceMode'] ?? 'RoomsCatalog');
-                    $helperIdent = $kiVoiceMode === 'RoomsCatalog' ? 'kiHouseControllerScript' : 'homeAgentVoiceBridgeScript';
-                    $helperName = $kiVoiceMode === 'RoomsCatalog' ? 'KIHouseController' : 'HomeAgentVoiceBridge';
-                    $homeAgentBridge = iah_get_child_object($homeAgentHelpers, $helperIdent, $helperName);
-                    $log('info', 'KIVoice.backend.selected', ['mode' => $kiVoiceMode, 'helper' => $helperIdent]);
+                    $kiVoiceMode = 'RoomsCatalog';
+                    $homeAgentBridge = iah_get_child_object(
+                        $homeAgentHelpers, 'kiHouseControllerScript', 'KIHouseController'
+                    );
+                    $log('info', 'KIVoice.backend.selected', [
+                        'mode'=>'RoomsCatalog','helper'=>'kiHouseControllerScript'
+                    ]);
                     if ($homeAgentBridge > 0 && function_exists('IPS_RunScriptWaitEx')) {
                         try {
                             $log('info', 'HomeAgentVoice.bridge.start', ['scriptId' => $homeAgentBridge]);
                             // IPS_RunScriptWaitEx akzeptiert nur skalare Parameterwerte.
                             // Die Konfiguration deshalb als JSON-String übertragen (nicht als Array).
-                            $homeAgentConfigJson = json_encode([
-                                'endpoint' => (string) ($propsEarly['HomeAgentVoiceEndpoint'] ?? ''),
-                                'token' => (string) ($propsEarly['HomeAgentVoiceToken'] ?? ''),
+                            $kiCatalogJson = json_encode([
+                                'catalog_script_id' => (int) ($S['ROOMS_CATALOG'] ?? 0),
                                 'api_key' => (string) ($propsEarly['KIIntentApiKey'] ?? ''),
                                 'model' => (string) ($propsEarly['KIModelSelection'] ?? 'gpt-6-luna'),
                                 'max_words' => (int) ($propsEarly['HomeAgentVoiceMaxWords'] ?? 20),
@@ -2434,29 +2435,27 @@ function Execute($request = null)
                                 'ki_cost_instance_id' => $instanceId,
                                 'ui_context_domain' => $iahVoiceContextDomain,
                             ], JSON_THROW_ON_ERROR);
-                            if ($kiVoiceMode === 'RoomsCatalog') {
-                                // IPS_RunScriptWaitEx akzeptiert nur skalare Parameterwerte.
-                                $kiCatalogJson = json_encode([
-                                    'catalog_script_id' => (int) ($S['ROOMS_CATALOG'] ?? 0),
-                                    'api_key' => (string) ($propsEarly['KIIntentApiKey'] ?? ''),
-                                    'model' => (string) ($propsEarly['KIModelSelection'] ?? 'gpt-6-luna'),
-                                    'max_words' => (int) ($propsEarly['HomeAgentVoiceMaxWords'] ?? 20),
-                                    'timeout_seconds' => (int) ($propsEarly['HomeAgentVoiceTimeoutSeconds'] ?? 6),
-                                    'allow_writes' => $homeAgentAllowCommands,
-                                    'ki_cost_instance_id' => $instanceId,
-                                'ui_context_domain' => $iahVoiceContextDomain,
-                                ], JSON_THROW_ON_ERROR);
-                                $homeAgentJson = IPS_RunScriptWaitEx($homeAgentBridge, [
-                                    'kiCatalogText' => $homeAgentSpokenQuestion,
-                                    'kiCatalogConfigJson' => $kiCatalogJson,
-                                ]);
-                            } else {
-                                $homeAgentJson = IPS_RunScriptWaitEx($homeAgentBridge, [
-                                    'homeAgentText' => $homeAgentSpokenQuestion,
-                                    'homeAgentConfigJson' => $homeAgentConfigJson,
+                            $homeAgentJson = IPS_RunScriptWaitEx($homeAgentBridge, [
+                                'kiCatalogText' => $homeAgentSpokenQuestion,
+                                'kiCatalogConfigJson' => $kiCatalogJson,
+                            ]);
+                            // IPS_RunScriptWaitEx muss das Skript-ECHO zurueckgeben.
+                            // Vorher endete eine intern erfolgreiche KI-Antwort oft als
+                            // "Keine verwertbare Antwort", ohne Hinweis auf den Grund.
+                            $homeAgentPayload = is_string($homeAgentJson)
+                                ? trim((string) $homeAgentJson) : '';
+                            $homeAgentPayload = ltrim($homeAgentPayload, "\xEF\xBB\xBF");
+                            $homeAgentData = $homeAgentPayload !== ''
+                                ? json_decode($homeAgentPayload, true) : null;
+                            if (!is_array($homeAgentData)) {
+                                // Nur Diagnose-Metadaten; niemals Text, Token,
+                                // Prompt oder eventuell enthaltenes JSON loggen.
+                                $log('warn', 'KIVoice.bridge.decode', [
+                                    'length'=>strlen($homeAgentPayload),
+                                    'resultType'=>get_debug_type($homeAgentJson),
+                                    'jsonError'=>json_last_error_msg(),
                                 ]);
                             }
-                            $homeAgentData = json_decode((string) $homeAgentJson, true);
                             $homeAgentElapsed = round(microtime(true) - $homeAgentStarted, 3);
                             if (is_array($homeAgentData) && ($homeAgentData['handled'] ?? false) === true
                                 && trim((string) ($homeAgentData['answer'] ?? '')) !== '') {
@@ -2487,7 +2486,7 @@ function Execute($request = null)
                         'model'=>(string)($propsEarly['KIModelSelection']??'gpt-6-luna')]);
                     if ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {
                         // Erkannte Fragen duerfen beim KI-Fehler keine Kachel ausloesen.
-                        return $kiAlexaKeepOpen('Der Hausassistent ist gerade nicht erreichbar.');
+                        return $kiAlexaKeepOpen('Die ChatGPT-Haussteuerung ist gerade nicht erreichbar.');
                     }
                 }
             } elseif ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {
