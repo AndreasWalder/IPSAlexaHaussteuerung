@@ -5333,15 +5333,19 @@ class RoomsCatalogConfigurator extends IPSModule
             }
             if (!is_array($cfg['ai'] ?? null)) { echo 'ai-Struktur fehlt.'; return; }
             $review = is_array($cfg['ai']['review'] ?? null) ? $cfg['ai']['review'] : [];
-            $review['technical'] = [
-                // Unklare Profil-Rollen werden auch bei ausdruecklicher
-                // manueller Bestaetigung nicht als maschinell eindeutig ausgegeben.
-                'status'=>$result['status'] === 'Technisch plausibel'
-                    ? 'validated' : 'manually_verified_with_uncertain_metadata',
-                'at'=>time(),
-                'fingerprint'=>$result['fingerprint'],
-                'source'=>'IP-Symcon Namen, Profile, Datentypen und Aktionen'
-            ];
+            // Manuelle Fachbestaetigung darf bestehende technische
+            // Pruefmetadaten (insbesondere technical.at) nicht aktualisieren:
+            // das faelscht den Zeitpunkt der technischen Pruefung und
+            // kann bei einer Sekundengrenze die Datenverlustsperre ausloesen.
+            if ($mode !== 'manual' || !isset($review['technical'])) {
+                $review['technical'] = [
+                    'status'=>$result['status'] === 'Technisch plausibel'
+                        ? 'validated' : 'manually_verified_with_uncertain_metadata',
+                    'at'=>time(),
+                    'fingerprint'=>$result['fingerprint'],
+                    'source'=>'IP-Symcon Namen, Profile, Datentypen und Aktionen'
+                ];
+            }
             if ($mode === 'manual') {
                 $review['status'] = 'confirmed';
                 $review['confirmedAt'] = time();
