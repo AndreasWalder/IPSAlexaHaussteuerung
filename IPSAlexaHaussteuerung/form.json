@@ -138,6 +138,16 @@
           "value": 6
         },
         {
+          "name": "KIDetailedQueryDiagnostics",
+          "type": "CheckBox",
+          "caption": "Detaillierte KI-Analyse in IP-Symcon-Logs (Geraete, Variablen-IDs, aktueller Wert, Profil und Mapping)",
+          "value": true
+        },
+        {
+          "type": "Label",
+          "caption": "Nur lokale Alexa-Meldungen; nicht an OpenAI. Fuer die Fehleranalyse des RoomsCatalog bei Bedarf ausschalten."
+        },
+        {
           "type": "Label",
           "caption": "OpenAI-Key und Modell aus KI Intent Parser; Lese- und Schaltrechte im RoomsCatalog."
         },

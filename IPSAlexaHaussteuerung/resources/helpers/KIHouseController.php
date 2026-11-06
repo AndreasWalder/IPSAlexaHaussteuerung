@@ -31,6 +31,19 @@ function iah_rc_norm(string $text): string
     return trim(preg_replace('/[^a-z0-9]+/u', ' ', str_replace(
         ['ä', 'ö', 'ü', 'ß'], ['ae', 'oe', 'ue', 'ss'], $text)) ?? '');
 }
+/**
+ * Ein Test-Raum soll im RoomsCatalog/EDITOR erhalten bleiben, aber
+ * niemals in einer normalen ChatGPT-Hausabfrage als echter Wohnraum zaehlen.
+ * Optional lassen sich weitere Test-Raeume zentral per room.aiTestRoom=true
+ * oder room.excludeFromAI=true ausschliessen.
+ */
+function iah_rc_is_test_room(string $key, array $room): bool
+{
+    return iah_rc_norm($key)==='laptop'
+        || !empty($room['aiTestRoom'])
+        || !empty($room['excludeFromAI']);
+}
+
 /** V3.4: Explizite Rollen; Steuerbefehle sind keine bestaetigten Istwerte. */
 function iah_rc_type_roles(): array
 {
@@ -126,8 +139,13 @@ function iah_rc_index(int $scriptId): array
     if (is_array($rooms['rooms'] ?? null)) $rooms = $rooms['rooms'];
     $devices = [];
     $knownTypes = iah_rc_type_roles();
+    $excludedTestRooms=[];
     foreach ($rooms as $roomKey => $room) {
         if (!is_array($room) || $roomKey === 'global') continue;
+        if (iah_rc_is_test_room((string)$roomKey,$room)) {
+            $excludedTestRooms[]=(string)$roomKey;
+            continue;
+        }
         $roomName = (string)($room['display'] ?? $roomKey);
         $floor = (string)($room['floor'] ?? '');
         $roomAliases = iah_rc_aliases($room['aliases'] ?? []);
@@ -230,6 +248,9 @@ function iah_rc_index(int $scriptId): array
             }
         }
     }
+    if ($excludedTestRooms!==[])
+        iah_rc_log('catalog.test_rooms_excluded',[
+            'count'=>count($excludedTestRooms),'roomKeys'=>array_slice($excludedTestRooms,0,25)]);
     return $devices;
 }
 function iah_rc_find(array $devices, array $filters): array
@@ -551,6 +572,7 @@ function iah_rc_voice(string $text,array $cfg): array
     $lastReadResult=null;
     try{
         $devices=iah_rc_index($catalogId);
+        $enableDeviceDiagnostics=(bool)($cfg['device_diagnostics']??true);
         $typeCounts=[];$temperatureMapped=0;
         foreach ($devices as $device) {
             $kind=(string)($device['type']??'');
@@ -559,6 +581,7 @@ function iah_rc_voice(string $text,array $cfg): array
                 ($device['group']==='heizung' && $device['read']>0)) $temperatureMapped++;
         }
         iah_rc_log('catalog.loaded',['count'=>count($devices),'writeEnabled'=>$allowWrites,
+            'deviceDiagnostics'=>$enableDeviceDiagnostics,
             'types'=>$typeCounts,'temperatureReadable'=>$temperatureMapped]);
         if(!$devices)return $costFinish(['handled'=>true,'answer'=>'Im RoomsCatalog sind keine KI-Geräte freigegeben.']);
         // Frage-Requests bekommen gar keine Schreib-Werkzeuge angeboten.
@@ -687,6 +710,10 @@ function iah_rc_voice(string $text,array $cfg): array
                 $result=$name==='query_house'
                     ? iah_ai_query_house($devices,$args,$text)
                     : iah_rc_tool($devices,$name,$args,$allowWrites,$text);
+                // Diagnose ist ein separater lokaler Logger. Keine
+                // Variablen-IDs, Profile oder unformatierten Istwerte an OpenAI.
+                if ($enableDeviceDiagnostics && in_array($name,['query_house','get_states'],true))
+                    iah_ai_log_device_diagnostics($devices,$name,$args,$result);
                 // Nur lesende, erfolgreich ausgefuehrte Resultate fuer die
                 // ausfallsichere Alexa-Antwort verwenden.
                 if ($name==='query_house' && ($result['ok']??false)===true)

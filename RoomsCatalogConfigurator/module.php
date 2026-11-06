@@ -7352,7 +7352,9 @@ class RoomsCatalogConfigurator extends IPSModule
                 'Bereich / Gruppe werden automatisch zugeordnet: ' . $domain . ' / ' . $group);
         }
         foreach (RCCDeviceTypeRegistry::fields() as $property=>$field) {
-            $this->UpdateFormField($field,'visible',in_array($property,RCCDeviceTypeRegistry::roles()[$type] ?? [],true));
+            $visible=in_array($property,RCCDeviceTypeRegistry::roles()[$type] ?? [],true);
+            $this->UpdateFormField($field,'visible',$visible);
+            $this->UpdateFormField('ValuePreview_'.$field,'visible',$visible);
         }
         foreach (RCCDeviceTypeRegistry::states() as $property=>$field) {
             $show = in_array($type,['blind','window'],true)
@@ -7361,6 +7363,57 @@ class RoomsCatalogConfigurator extends IPSModule
                     && in_array($property,['on','off'],true));
             $this->UpdateFormField($field,'visible',$show);
         }
+    }
+
+    /**
+     * Das native SelectVariable-Objektbaum-Popup kann keine zusaetzliche
+     * Livewert-Spalte anzeigen. Direkt NEBEN der ausgewaehlten Variable im
+     * Geraeteeditor gibt es deshalb eine aktualisierbare Wert-Vorschau.
+     * Reines Lesen, nie RequestAction oder EDIT/PROD-Schreibzugriff.
+     */
+    private function liveVariablePreview(int $variableId): string
+    {
+        if ($variableId<=0) return 'Aktueller Wert: keine Variable ausgewaehlt';
+        if (!function_exists('IPS_VariableExists') || !IPS_VariableExists($variableId))
+            return 'Aktueller Wert: Variable #'.$variableId.' existiert nicht!';
+        if (!function_exists('IPS_GetVariable') || !function_exists('GetValue'))
+            return 'Variable #'.$variableId.' vorhanden; Livewert im Test nicht verfuegbar';
+        try {
+            $var=IPS_GetVariable($variableId);
+            $value=GetValue($variableId);
+            $type=(int)($var['VariableType']??-1);
+            $typeName=match($type) { 0=>'Bool',1=>'Integer',2=>'Float',3=>'String',default=>'unbekannt' };
+            $raw=is_bool($value) ? ($value?'true':'false') :
+                (is_scalar($value)?(string)$value:'[unbekannt]');
+            // Es sind auch stringbasierte Rueckmeldungen moeglich; potentiell
+            // sensitive URLs, JSON oder lange Texte NICHT im Editor drucken.
+            if (is_string($value) && (mb_strlen($value,'UTF-8')>70
+                || preg_match('~[/:\\\\@{}]|https?~iu',$value))) $raw='[Text ausgeblendet]';
+            $preview='Aktuell: '.$raw;
+            if (function_exists('GetValueFormatted')) {
+                try {
+                    $formatted=GetValueFormatted($variableId);
+                    if (is_scalar($formatted) && mb_strlen((string)$formatted,'UTF-8')<=70
+                        && !preg_match('~[/:\\\\@{}]|https?~iu',(string)$formatted)
+                        && (string)$formatted!==$raw)
+                        $preview.=' ('.(string)$formatted.')';
+                } catch (Throwable $ignored) {}
+            }
+            $profile=(string)(($var['VariableCustomProfile']??'')?:($var['VariableProfile']??''));
+            $preview.=' | #'.$variableId.' | '.$typeName;
+            if ($profile!=='') $preview.=' | Profil: '.$profile;
+            return $preview;
+        } catch (Throwable $e) {
+            return 'Variable #'.$variableId.' konnte nicht gelesen werden.';
+        }
+    }
+
+    /** Statusvorschau direkt nach Schliessen des Variablenauswahldialogs. */
+    public function RefreshSelectedVariablePreview(string $field, int $variableId): void
+    {
+        if (!in_array($field,array_values(RCCDeviceTypeRegistry::fields()),true)) return;
+        $this->UpdateFormField('ValuePreview_'.$field,'caption',
+            $this->liveVariablePreview($variableId));
     }
 
     /** Dynamischer Bearbeitungsdialog für Symcon-Listen, benötigt PHP-Form-Dialog-Support. */
@@ -7468,21 +7521,24 @@ class RoomsCatalogConfigurator extends IPSModule
                 .'Beim Speichern werden diese nicht mehr existierenden Zuordnungen '
                 .'entfernt, sofern du keine neue gueltige Variable auswaehlst.'];
         }
-        foreach (array_chunk(array_keys(RCCDeviceTypeRegistry::fields()), 2) as $pair) {
-            $controls = [];
-            foreach ($pair as $property) {
-                $control=['type'=>'SelectVariable','name'=>RCCDeviceTypeRegistry::fields()[$property],
-                    'caption'=>$variableCaptions[$property] ?? $property,
-                    'visible'=>in_array($property,RCCDeviceTypeRegistry::roles()[$editorType] ?? [],true)];
-                if (isset($invalidBindings[$property])) {
-                    // What the selector actually shows ("Keine") is the
-                    // initial value we submit on confirmation, never the
-                    // stale, non-existing IPS-ID.
-                    $control['value']=0;
-                }
-                $controls[]=$control;
+        foreach (RCCDeviceTypeRegistry::fields() as $property=>$field) {
+            $visible=in_array($property,RCCDeviceTypeRegistry::roles()[$editorType] ?? [],true);
+            $currentId=isset($invalidBindings[$property])?0:(int)($row[$field]??0);
+            $control=['type'=>'SelectVariable','name'=>$field,
+                'caption'=>$variableCaptions[$property]??$property,
+                'width'=>'43%','visible'=>$visible,
+                // Nach Bestaetigen des IPS-Baumdialogs die Auswahl direkt lesen.
+                'onChange'=>sprintf('RCC_RefreshSelectedVariablePreview($id, "%s", $%s);',$field,$field)];
+            if (isset($invalidBindings[$property])) {
+                // Keine muss veraltete IDs beim Speichern entfernen.
+                $control['value']=0;
             }
-            $aiItems[] = ['type'=>'RowLayout','items'=>$controls];
+            $aiItems[]=['type'=>'RowLayout','items'=>[
+                $control,
+                ['type'=>'Label','name'=>'ValuePreview_'.$field,
+                    'caption'=>$this->liveVariablePreview($currentId),
+                    'visible'=>$visible]
+            ]];
         }
         $stateFields = ['on'=>'Aktiv/Ein ist','off'=>'Inaktiv/Aus ist',
             'open'=>'Offen ist','closed'=>'Geschlossen ist'];
