@@ -120,7 +120,8 @@ function iah_ai_activity_capable(array $dev): bool
 {
     $roles=array_keys((array)($dev['reads']??[]));
     // Legacy-Schalter haben noch keine benannten Rollen.
-    if ($roles===[]) return empty($dev['typed']) && (int)($dev['read']??0)>0;
+    if ($roles===[]) return empty($dev['typed']) && (int)($dev['read']??0)>0
+        && in_array((string)($dev['group']??''),['switches','dimmers','fans'],true);
     return array_intersect($roles,['power','status','brightness','motion'])!==[];
 }
 
