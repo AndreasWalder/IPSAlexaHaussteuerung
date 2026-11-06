@@ -548,6 +548,7 @@ function iah_rc_voice(string $text,array $cfg): array
     };
     $started=microtime(true);$deadline=$started+max(2,min(7,(int)($cfg['timeout_seconds']??6)));
     $maxWords=max(8,min(45,(int)($cfg['max_words']??20)));$allowWrites=(bool)($cfg['allow_writes']??false);
+    $lastReadResult=null;
     try{
         $devices=iah_rc_index($catalogId);
         $typeCounts=[];$temperatureMapped=0;
@@ -645,6 +646,18 @@ function iah_rc_voice(string $text,array $cfg): array
         // Zwei Runden sind ueblich; eine dritte erlaubt es der KI,
         // eine unpassende Datenabfrage gezielt zu korrigieren.
         for($round=0;$round<3;$round++){
+            // Ein vollstaendiges Leseergebnis hat Vorrang vor einem weiteren
+            // API-Timeout. Nicht die ganze Alexa-Frist fuer Round 3 aufbrauchen.
+            if($round>0 && is_array($lastReadResult)
+                && microtime(true)>=$deadline-1.8) {
+                $safe=iah_ai_safe_voice_answer($lastReadResult,$maxWords);
+                if($safe!==null){
+                    iah_rc_log('answer.fallback',[
+                        'reason'=>'time_budget','round'=>$round+1,
+                        'durationMs'=>round((microtime(true)-$started)*1000)]);
+                    return $costFinish(['handled'=>true,'answer'=>$safe]);
+                }
+            }
             iah_rc_log('openai.start',['round'=>$round+1]);
             $model=(string)($cfg['model']??'gpt-6-luna');
             $request=iah_rc_chat_payload($model,$messages,$tools,$round,
@@ -674,6 +687,10 @@ function iah_rc_voice(string $text,array $cfg): array
                 $result=$name==='query_house'
                     ? iah_ai_query_house($devices,$args,$text)
                     : iah_rc_tool($devices,$name,$args,$allowWrites,$text);
+                // Nur lesende, erfolgreich ausgefuehrte Resultate fuer die
+                // ausfallsichere Alexa-Antwort verwenden.
+                if ($name==='query_house' && ($result['ok']??false)===true)
+                    $lastReadResult=$result;
                 $diagnostic=['name'=>$name,'ok'=>$result['ok']??true];
                 foreach (['matched','shown','truncated','temperatureAvailable','statusSummary','filtersUsed','count',
                     'operation','property','groupBy','matchedReadings','groups','totalCount','error'] as $field)
@@ -685,6 +702,13 @@ function iah_rc_voice(string $text,array $cfg): array
         }
     }catch(Throwable $e){
         iah_rc_log('error',['reason'=>$e->getMessage(),'durationMs'=>round((microtime(true)-$started)*1000)]);
+        if(is_array($lastReadResult)){
+            $safe=iah_ai_safe_voice_answer($lastReadResult,$maxWords);
+            if($safe!==null){
+                iah_rc_log('answer.fallback',['reason'=>'api_after_read_failure']);
+                return $costFinish(['handled'=>true,'answer'=>$safe]);
+            }
+        }
         return $costFinish(['handled'=>false,'error'=>$e->getMessage()]);
     }
     return $costFinish(['handled'=>false,'error'=>'Keine Antwort']);
