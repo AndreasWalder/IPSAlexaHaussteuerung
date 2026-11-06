@@ -298,3 +298,55 @@ function iah_ai_query_house(array $devices, array $args, string $spoken = ''): a
     elseif ($groupBy!=='none' && $truncated) $result['warning']='Ergebnisliste gekuerzt; Aggregat wurde aus allen Treffern berechnet.';
     return $result;
 }
+
+/**
+ * Nur fuer den Fall, dass nach erfolgreicher Datenabfrage kein
+ * KI-Antwortaufruf mehr innerhalb der Alexa-Frist moeglich ist.
+ * Keine freie Interpretation und niemals ein Schaltbefehl.
+ */
+function iah_ai_safe_voice_answer(array $result, int $maxWords = 20): ?string
+{
+    if (empty($result['ok'])) return null;
+    $found=(int)($result['matchedReadings']??0);
+    $withProperty=(int)($result['withProperty']??0);
+    $property=(string)($result['property']??'');
+    $labels=RCCDeviceTypeRegistry::propertyCaptions();
+    $label=(string)($labels[$property]??($property==='activity'?'Schaltstatus':
+        ($property==='closure'?'Offen-/Geschlossenstatus':'Istwert')));
+    if ($found===0) {
+        return $withProperty===0
+            ? 'Ich finde dazu im RoomsCatalog derzeit keine lesbaren Istwerte.'
+            : 'Ich finde mit diesen Bedingungen keinen passenden bestätigten Istzustand.';
+    }
+    $operation=(string)($result['operation']??'list');
+    $value=(float)($result['best']['value']??0.0);
+    $valueText=rtrim(rtrim(number_format($value,2,',',''),'0'),',');
+    $unit=match($property) {
+        'temperature','targetTemperature'=>' Grad Celsius',
+        'humidity','brightness','position','batteryLevel'=>' Prozent',
+        'illuminance'=>' Lux','powerWatts','feedIn','selfConsumption','chargePower','dischargePower'=>' Watt',
+        'energy'=>' Kilowattstunden',default=>''
+    };
+    if (in_array($operation,['max','min','avg','sum'],true) && isset($result['best']['value'])) {
+        $prefix=match($operation) {
+            'max'=>'Der höchste ', 'min'=>'Der niedrigste ',
+            'avg'=>'Der durchschnittliche ', 'sum'=>'Der Gesamtwert für ',
+            default=>'Der '
+        };
+        $groupName=trim((string)($result['best']['name']??''));
+        return $prefix.$label.($groupName!==''&&$groupName!=='Gesamt'?' bei '.$groupName:'')
+            .' beträgt '.$valueText.$unit.'.';
+    }
+    if ($operation==='count')
+        return 'Ich habe '.$found.' passende bestätigte Rückmeldungen gefunden.';
+    // Keine Namen aus gekuerzten Geraetezeilen frei erfinden.
+    $names=[];
+    foreach((array)($result['rows']??[]) as $row){
+        $name=trim((string)($row['name']??''));
+        if($name!=='')$names[$name]=true;
+        if(count($names)>=3)break;
+    }
+    $count=(int)($result['totalCount']??$found);
+    return $count.' passende Istwerte gefunden'
+        .($names!==[]?': '.implode(', ',array_keys($names)):'.');
+}
