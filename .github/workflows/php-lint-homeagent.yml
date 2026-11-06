@@ -117,6 +117,8 @@ jobs:
         run: php tests/test_rooms_catalog_v331_inventory.php
       - name: Test V3.4.9 guided IP-Symcon KNX motion discovery and safe EDIT-only import
         run: php tests/test_rooms_catalog_guided_tree_v349.php
+      - name: Test V3.5.0 marked device editor, grouped variables and prev/next
+        run: php tests/test_rooms_catalog_marked_editor_v350.php
       - name: Test RoomsCatalog V3.3.2 selected-device bulk typing and safe EDIT updates
         run: php tests/test_rooms_catalog_v332_bulk.php
       - name: Test RoomsCatalog stale filters, migration readiness and scoped options
