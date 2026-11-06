@@ -122,6 +122,12 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('BulkSuggestions', 'yes');
         $this->RegisterAttributeString('BulkReview', 'keep');
         $this->RegisterAttributeString('BulkPreview', '{}');
+        // Wizard speichert die ausgewaehlten Geraete-Keys unabhaengig von
+        // RuntimeEntries, die nach jedem EDIT-Speichern neu geladen werden.
+        $this->RegisterAttributeString('MarkedEditorKeys','[]');
+        $this->RegisterAttributeString('MarkedEditorIndex','0');
+        $this->RegisterAttributeString('MarkedEditorEditHash','');
+        $this->RegisterAttributeString('MarkedEditorNotice','');
         $this->RegisterAttributeString('MigrationReadinessReport', 'Noch nicht geprüft.');
         $this->RegisterAttributeString('MigrationReadinessDetails', '{}');
         $this->RegisterAttributeString('TechnicalDeviceSnapshot', '{}');
@@ -175,6 +181,10 @@ class RoomsCatalogConfigurator extends IPSModule
             'DiscoveryAIReport'=>'Keine KI-Unterstuetzung bei der letzten Geraetesuche.',
             'LegacyMigrationPreview'=>'{}',
             'BulkPreview'=>'{}',
+            'MarkedEditorKeys'=>'[]',
+            'MarkedEditorIndex'=>'0',
+            'MarkedEditorEditHash'=>'',
+            'MarkedEditorNotice'=>'',
             'MigrationReadinessReport'=>'Noch nicht geprueft.',
             'MigrationReadinessDetails'=>'{}',
             'TechnicalDeviceSnapshot'=>'{}',
@@ -6348,7 +6358,8 @@ class RoomsCatalogConfigurator extends IPSModule
         // Der regulaere Geraeteeditor mit seinen Prueffeldern bleibt.
         $everyday=['Raeume & Etagen','RoomsCatalog Scripts',
             'Geraete bearbeiten (RoomsCatalog EDIT)',
-            'Geraete erkennen, inventarisieren und reparieren'];
+            'Geraete erkennen, inventarisieren und reparieren',
+            'Mehrere Geraete bearbeiten'];
         $main=[];
         foreach ($form['elements'] as $index=>$element) {
             $caption=(string)($element['caption']??'');
