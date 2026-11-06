@@ -69,9 +69,9 @@ foreach($fixtures as [$intent,$slot,$expected]){
     ]);
     checkV343($result['allowed']===true,'gate blocked '.$intent);
 }
-checkV343(str_contains($source,"'HomeAgentVoice.empty_gethaus'"),'empty GetHaus diagnosis missing');
+checkV343(str_contains($source,"'KIVoice.empty_gethaus'"),'empty GetHaus diagnosis missing');
 checkV343(str_contains($source,'alexa_sent_no_slot_values'),'empty GetHaus reason missing');
-checkV343(str_contains($source,'HomeAgentVoice.prompt_question'),'single-word Frage prompt missing');
+checkV343(str_contains($source,'KIVoice.prompt_question'),'single-word Frage prompt missing');
 checkV343(str_contains($source,'$homeAgentSpokenQuestion = $homeAgentDedicatedIntent')
     && str_contains($source,'? $iahVoiceSpoken'),
     'KI must receive reconstructed question rather than raw slot without question word');
