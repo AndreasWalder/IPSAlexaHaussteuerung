@@ -92,7 +92,7 @@ foreach (['Schalte das Licht ein','Fahre die Jalousie herunter'] as $spoken) {
 // Der Hook muss bei Modulupdates wieder in das bestehende IPS-Aktionsskript
 // synchronisiert werden; die Diagnose muss vor dem klassischen Renderer sein.
 $module = file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/module.php');
-checkV342(str_contains($module, '$this->patchActionScriptHomeAgentVoice((int) $id);'),
+checkV342(str_contains($module, '$this->patchActionScriptKIVoice((int) $id);'),
     'Module update must refresh voice hook');
 checkV342(str_contains($action, "if ((bool)\$iahKiGate['allowed']) {"), 'Live action does not use the tested gate');
 checkV342(str_contains($action, "'HomeAgentVoice.route_gate'"), 'Missing reason logging');
