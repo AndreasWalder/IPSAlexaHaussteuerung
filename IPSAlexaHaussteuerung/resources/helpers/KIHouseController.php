@@ -564,6 +564,8 @@ function iah_rc_voice(string $text,array $cfg): array
         // Lesende Analysen duerfen durch eine zusaetzliche KI-Runde niemals
         // versehentlich eine Aktion ausloesen.
 
+        // Explizite Hausfragen duerfen keine Schalt-Werkzeuge erhalten.
+        $preferRead=(bool)preg_match('/^\s*(wie|wo|wann|seit wann|welche|welcher|welches|was|wieviel|wie viel|ist|sind|zeige|nenne|liste|haben|hat)\b/ui',$text);
         $props=[
             'deviceKey'=>['type'=>'string'],'name'=>['type'=>'string'],'room'=>['type'=>'string'],
             'floor'=>['type'=>'string'],'domain'=>['type'=>'string'],'group'=>['type'=>'string'],
@@ -577,7 +579,7 @@ function iah_rc_voice(string $text,array $cfg): array
         $queryProperties=$props+[
             'rooms'=>['type'=>'array','items'=>['type'=>'string']],
             'property'=>['type'=>'string','enum'=>array_merge(
-                array_keys(RCCDeviceTypeRegistry::fields()),['activity','state'])],
+                array_keys(RCCDeviceTypeRegistry::fields()),['activity','state','closure'])],
             'operation'=>['type'=>'string','enum'=>['list','count','min','max','avg','sum']],
             'group_by'=>['type'=>'string','enum'=>['device','room','none']],
             'condition'=>['type'=>'string','enum'=>['eq','neq','gt','gte','lt','lte','active','inactive']],
@@ -586,7 +588,7 @@ function iah_rc_voice(string $text,array $cfg): array
             'indoor_only'=>['type'=>'boolean']
         ];
         $tools=[
-            $make('query_house','Allgemeine KI-Datenabfrage fuer BELIEBIGE reale Geraete-Eigenschaften: lesen, listen, zaehlen, sortieren, max/min, Mittelwert, Summe, nach Raum gruppieren. Immer property=kanonische Eigenschaft statt type=Temperatur. Beispiel: waermster Raum = property=temperature, operation=max, group_by=room, indoor_only=true; eingeschaltete Lichter = property=activity, operation=list, condition=active, domain=licht; geoeffnete Fenster = property=open, condition=eq, value=offen, type=window. Keine Schaltereignisse.',
+            $make('query_house','Allgemeine KI-Datenabfrage fuer BELIEBIGE reale Geraete-Eigenschaften: lesen, listen, zaehlen, sortieren, max/min, Mittelwert, Summe, nach Raum gruppieren. Immer property=kanonische Eigenschaft statt type=Temperatur. Beispiel: waermster Raum = property=temperature, operation=max, group_by=room, indoor_only=true; eingeschaltete Lichter = property=activity, operation=list, condition=active, domain=licht; offene Jalousien = property=closure, type=blind, condition=eq, value=offen (nie aus Position groesser null!); geoeffnete Fenster = property=open, condition=eq, value=offen, type=window. Keine Schaltereignisse.',
                 $queryProperties),
             $make('get_states','Alternative Rohdatenabfrage fuer wenige spezifische Geraete; wenn Filter unbekannt lieber query_house verwenden. Keinen beliebigen Eigenschaftsnamen als Geraetetyp oder Domain ausgeben.',
                 $props+['only_active'=>['type'=>'boolean']]),
@@ -608,7 +610,6 @@ function iah_rc_voice(string $text,array $cfg): array
             'availableLiveProperties'=>$catalogSchema['properties'],
             'rooms'=>$catalogSchema['rooms']
         ],JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
-        $preferRead=(bool)preg_match('/^\s*(wie|wo|wann|seit wann|welche|welcher|welches|was|wieviel|wie viel|ist|sind|zeige|nenne|liste|haben|hat)\b/ui',$text);
         $planningRules='Du bist der deutschsprachige KI-Planer einer Haussteuerung. '
             .'Verstehe die NATUERLICHE FRAGE und waehle frei aus kombinierbaren Read-Only-Datenoperationen: '
             .'geraetespezifische Istwerte, Statuslisten, Filter, Zaehlen, hoechste/niedrigste Werte, '
@@ -623,6 +624,8 @@ function iah_rc_voice(string $text,array $cfg): array
             .'nur IST-Temperaturen und bei mehreren Sensoren den Raum-Mittelwert. '
             .'Ein/Aus-Status kann property=activity mit condition=active/inactive verwenden. '
             .'Bei Fenstern wird eine explizit zugeordnete Offen-Rueckmeldung benoetigt. '
+            .'Bei Jalousien duerfen Offen-/Geschlossen-Aussagen nur aus bestaetigtem Status oder Endlagen-Mapping entstehen; niemals aus Position>0. '
+            .'Bei fehlenden Istwerten die fehlende Verknuepfung nennen statt unbegruendete Abfragen zu wiederholen. '
             .'Pruefe Resultate auf ok, matchedReadings und Warnungen. Fehlende Werte sind UNBEKANNT, '
             .'nicht 0 oder aus. Bei einer unpassenden Abfrage korrigiere deine Parameter mit einer '
             .'weiteren Werkzeugabfrage, solange das Zeitbudget reicht. '
