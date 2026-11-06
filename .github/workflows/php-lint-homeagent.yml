@@ -91,6 +91,8 @@ jobs:
         run: php tests/test_ai_house_query_v345.php
       - name: Test V3.4.6 HomeAgent removal, statuses, safe Alexa voice bridge
         run: php tests/test_ki_mcp_removal_voice_v346.php
+      - name: Test V3.4.7 read light status through IP-Symcon profiles and show diagnostic coverage
+        run: php tests/test_ai_light_status_profiles_v347.php
       - name: Test V3.4.2 Alexa question priority over stale APL/UI fallback
         run: php tests/test_alexa_voice_question_priority_v342.php
       - name: Test V3.4.3 Alexa direct W-question capture and no-slot fallback
