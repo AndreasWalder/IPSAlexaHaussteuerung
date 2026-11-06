@@ -946,7 +946,8 @@ class RoomsCatalogConfigurator extends IPSModule
             'group'=>trim($this->ReadPropertyString('DiscoveryGroupOverride')),
             'type'=>trim($this->ReadPropertyString('DiscoveryTypeOverride')),
             'room'=>trim($this->ReadPropertyString('DiscoveryRoomOverride')),
-            'useAI'=>$this->ReadPropertyBoolean('DiscoveryUseAI'),
+            'useAI'=>method_exists($this,'ReadPropertyBoolean')
+                ? $this->ReadPropertyBoolean('DiscoveryUseAI') : false,
             'aiInstance'=>$this->ReadPropertyInteger('DiscoveryAlexaInstanceId')
         ];
     }
@@ -984,7 +985,9 @@ class RoomsCatalogConfigurator extends IPSModule
      */
     private function aiAssistDiscoveredCandidates(array &$candidates,array $inventory,array $rooms): string
     {
-        if (!$this->ReadPropertyBoolean('DiscoveryUseAI')) return 'KI-Hilfe ausgeschaltet.';
+        if (!method_exists($this,'ReadPropertyBoolean')
+            || !$this->ReadPropertyBoolean('DiscoveryUseAI'))
+            return 'KI-Hilfe ausgeschaltet.';
         $instanceId=$this->ReadPropertyInteger('DiscoveryAlexaInstanceId');
         if($instanceId<=0 || !function_exists('IPS_InstanceExists')
             || !IPS_InstanceExists($instanceId) || !function_exists('IPS_GetProperty'))
