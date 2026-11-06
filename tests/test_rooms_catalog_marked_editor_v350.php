@@ -99,12 +99,14 @@ $payload=['sourceKey'=>$keys[0],'title'=>'EG Büro PIR neu','synonyms'=>'Büro P
     'entityId'=>'','kiEnabled'=>true,'kiReadOnly'=>true,'aiReviewed'=>false,
     'aiMotionId'=>50104,'aiOnValue'=>'true','aiOffValue'=>'false'];
 ob_start();$m->SaveMarkedEditorDevice(json_encode($payload,JSON_THROW_ON_ERROR),true);
-$captured350=ob_get_clean();fwrite(STDERR,"DEBUG V350 methodOutput=".str_replace("\n"," ",$captured350)."\n");
+ob_end_clean();
 $edit=require $GLOBALS['v350dir'].'/scripts/91.php';
-fwrite(STDERR,"DEBUG V350 saved=".json_encode($edit['buero']['domains']['sensoren']['bewegung']['a']??null,JSON_UNESCAPED_UNICODE)."; cursor=".$m->ReadAttributeString('MarkedEditorIndex')."; notices=".json_encode($m->updates['MarkedEditorNotice.caption']??null)."\n");
+
 assert350($edit['buero']['domains']['sensoren']['bewegung']['a']['title']==='EG Büro PIR neu'
     && $edit['buero']['domains']['sensoren']['bewegung']['a']['ai']['variables']['motion']===50104
-    && $edit['buero']['domains']['sensoren']['bewegung']['a']['kiEnabled']===true,
+    && $edit['buero']['domains']['sensoren']['bewegung']['a']['kiEnabled']===true
+    && $edit['buero']['domains']['sensoren']['bewegung']['a']['state']===50104
+    && $edit['buero']['domains']['sensoren']['bewegung']['a']['ai']['variables']['status']===50104,
     'save and next must update exactly first EDIT device');
 assert350($edit['buero']['domains']['sensoren']['bewegung']['b']['ai']['variables']['motion']===50102
     && $edit['kueche']['domains']['sensoren']['bewegung']['c']['ai']['variables']['motion']===50103,
