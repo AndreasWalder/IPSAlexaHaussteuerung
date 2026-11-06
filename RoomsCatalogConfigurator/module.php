@@ -5923,15 +5923,21 @@ class RoomsCatalogConfigurator extends IPSModule
                                     'caption' => 'MARKIERTE LÖSCHEN',
                                     'confirm' => 'Markierte Eintraege im EDIT-Katalog wirklich loeschen?',
                                     'onClick' => 'RCC_DeleteSelectedEntries($id);'
+                                ],
+                                [
+                                    'type'=>'Button',
+                                    'caption'=>'MARKIERTE NACHEINANDER BEARBEITEN',
+                                    'onClick'=>'RCC_StartMarkedEditor($id);'
                                 ]
                             ]
-                        ]
+                        ],
+                        $this->markedEditorForm()
                     ]
                 ],
                 [
                     'type'=>'ExpansionPanel',
-                    'caption'=>'Mehrere Geraete bearbeiten',
-                    'expanded'=>true,
+                    'caption'=>'Gemeinsame Felder aller markierten Geraete aendern',
+                    'expanded'=>false,
                     'items'=>[
                         ['type'=>'Label','name'=>'BulkSelectionSummary',
                             'caption'=>$this->bulkSelectionSummary($entriesEdit)],
@@ -6359,7 +6365,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $everyday=['Raeume & Etagen','RoomsCatalog Scripts',
             'Geraete bearbeiten (RoomsCatalog EDIT)',
             'Geraete erkennen, inventarisieren und reparieren',
-            'Mehrere Geraete bearbeiten'];
+            'Gemeinsame Felder aller markierten Geraete aendern'];
         $main=[];
         foreach ($form['elements'] as $index=>$element) {
             $caption=(string)($element['caption']??'');
