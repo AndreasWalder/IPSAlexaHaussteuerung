@@ -6335,7 +6335,8 @@ class RoomsCatalogConfigurator extends IPSModule
                     ['type'=>'Label','caption'=>
                         'Geraete koennen hier auch nach abgeschlossener Migration erneut erkannt werden. '
                         .'Vorhandene Konfigurationen und KI-Berechtigungen bleiben bei Analysen unveraendert.']
-                ],$assistants)
+                ],array_values(array_filter($assistants,static fn(array $item):bool=>
+                    ($item['caption']??'')==='IP-Symcon-Geraeteinventur')))
             ]]);
         }
         $form['elements'] = $remaining;
