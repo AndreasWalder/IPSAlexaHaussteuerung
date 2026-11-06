@@ -40,28 +40,64 @@ function iah_ai_schema(array $devices): array
 /** Rueckmelde-Rollen aus dem zentralen Katalog; abgeleitete Aktivitaet ist optional. */
 function iah_ai_property_allowed(string $property): bool
 {
-    return $property === 'activity' || $property === 'state'
+    return in_array($property,['activity','state','closure'],true)
         || array_key_exists($property, RCCDeviceTypeRegistry::fields());
 }
 
+/** Aus sicherer Rueckmeldevariable aktiv/inaktiv erkennen; keine Steuerwerte. */
+function iah_ai_binary_feedback(mixed $value, bool $numericStatus = false): ?string
+{
+    if (is_bool($value)) return $value ? 'an' : 'aus';
+    if (is_string($value)) {
+        $normalized = iah_rc_norm($value);
+        if (in_array($normalized,['an','ein','eingeschaltet','on','true','aktiv'],true)) return 'an';
+        if (in_array($normalized,['aus','ausgeschaltet','off','false','inaktiv'],true)) return 'aus';
+    }
+    // Zahlencodes nur bei sicher als Schaltstatus klassifizierter Rueckmeldung.
+    // Positions- und Kommando-Werte duerfen niemals als Ein/Aus gelten.
+    if ($numericStatus && is_numeric($value) && !is_bool($value)
+        && in_array((float)$value,[0.0,1.0],true))
+        return (float)$value===1.0 ? 'an' : 'aus';
+    return null;
+}
+
+/** Nur explizite Endlagen-/Status-Rueckmeldungen koennen offen/zu bestaetigen. */
+function iah_ai_closure_feedback(array $state): ?string
+{
+    $props=(array)($state['properties']??[]);
+    foreach (['open','endPositionStatus','status'] as $role) {
+        $value=$props[$role]??null;
+        if (in_array($value,['offen','geschlossen'],true)) return $value;
+        if ($role==='open' && is_bool($value)) return $value ? 'offen' : 'geschlossen';
+    }
+    return null;
+}
+
 /** Istwert lesen, niemals einen Befehlswert als bestaetigten Zustand ausgeben. */
-function iah_ai_property_value(array $state, string $property): mixed
+function iah_ai_property_value(array $state, string $property, array $dev = []): mixed
 {
     $props = (array)($state['properties'] ?? []);
     if ($property === 'state') return $state['state'] ?? null;
+    if ($property === 'closure') return iah_ai_closure_feedback($state);
     if ($property === 'activity') {
-        // Sichere semantische Alternative: expliziter Ein/Aus-Istzustand,
-        // sonst Helligkeit > 0 oder Bewegung; keine control/action-Rollen.
+        // Bei Schaltern und Leuchten kann ein expliziter Iststatus bool,
+        // 0/1, oder ein Profiltext sein. Beleuchtungsstaerke 0..100
+        // ist erst die zweite Wahl.
+        $switchType=in_array((string)($dev['type']??($state['type']??'')),
+            ['light','dimmer','switch','fan','switches','dimmers','fans'],true);
         foreach (['power','status','motion'] as $role) {
-            $value = $props[$role] ?? null;
-            if (in_array($value,['an','aus'],true)) return $value;
-            if (is_bool($value)) return $value ? 'an' : 'aus';
+            if (!array_key_exists($role,$props)) continue;
+            $binary=iah_ai_binary_feedback($props[$role],
+                ($switchType && in_array($role,['power','status'],true)) || $role==='motion');
+            if ($binary!==null) return $binary;
         }
         $brightness = $props['brightness'] ?? null;
         if (is_numeric($brightness) && !is_bool($brightness))
             return (float)$brightness > 0 ? 'an' : 'aus';
-        if (empty($state['properties']) && in_array(($state['state'] ?? null),['an','aus'],true))
-            return $state['state'];
+        // Bei Legacy-Schaltern ist der Lese-Status der einzige echte Istwert;
+        // im Rohskript liegt er teilweise als 0/1 statt als Boolean vor.
+        if (empty($state['properties']) && $switchType)
+            return iah_ai_binary_feedback($state['state']??null,true);
         return null;
     }
     if (!array_key_exists($property,$props)) return null;
@@ -165,7 +201,7 @@ function iah_ai_query_house(array $devices, array $args, string $spoken = ''): a
             || preg_match('/\\b(aussen|aussenbereich|garten|terrasse|balkon|outdoor|draussen)\\b/u',
                 iah_rc_norm((string)($dev['room']??'').' '.($dev['roomKey']??''))))) continue;
         $state=iah_rc_state($dev,$includeLastChange);
-        $value=iah_ai_property_value($state,$property);
+        $value=iah_ai_property_value($state,$property,$dev);
         if ($value===null) continue; // fehlend ≠ aus / 0
         $validDevices++;
         if (!iah_ai_condition_matches($value,$condition,$expected)) continue;
