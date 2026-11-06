@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/libs/DeviceTechnicalAudit.php';
 require_once __DIR__ . '/libs/SafeAutoRepair.php';
 require_once __DIR__ . '/libs/DeviceTypeRegistry.php';
+require_once __DIR__ . '/libs/GuidedDiscovery.php';
 
 /**
  * ============================================================
@@ -93,6 +94,16 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterPropertyInteger('RoomsCatalogEditScriptID', 0);
         $this->RegisterPropertyInteger('DiscoveryRootId', 0);
         $this->RegisterPropertyString('DiscoveryExtraRootIds', '');
+        // V3.4.9: Ein IP-Symcon-Knoten als gefuehrter Importscope.
+        // Leer = den vom zentralen Typregister vorgeschlagenen Pfad nutzen.
+        $this->RegisterPropertyString('DiscoveryDomainOverride', '');
+        $this->RegisterPropertyString('DiscoveryGroupOverride', '');
+        $this->RegisterPropertyString('DiscoveryTypeOverride', '');
+        $this->RegisterPropertyString('DiscoveryRoomOverride', '');
+        // Optional: bereits konfiguriertes Alexa-Modul liefert die KI-API-
+        // Anmeldedaten; KEIN zweiter Token im RoomsCatalogConfigurator.
+        $this->RegisterPropertyBoolean('DiscoveryUseAI', false);
+        $this->RegisterPropertyInteger('DiscoveryAlexaInstanceId', 0);
 
         $this->RegisterAttributeString('RuntimeEntries', '[]');
         $this->RegisterAttributeString('RuntimeEditHash', '');
@@ -104,6 +115,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('DiscoveryCandidates', '{}');
         $this->RegisterAttributeString('DiscoveryInventory', '{}');
         $this->RegisterAttributeString('DiscoveryAuditReport', 'Noch keine Vollstaendigkeitspruefung.');
+        $this->RegisterAttributeString('DiscoveryAIReport', 'Keine KI-Unterstuetzung bei der letzten Geraetesuche.');
         $this->RegisterAttributeString('LegacyMigrationPreview', '{}');
         $this->RegisterAttributeString('BulkDeviceType', 'keep');
         $this->RegisterAttributeString('BulkAIMode', 'keep');
@@ -160,6 +172,7 @@ class RoomsCatalogConfigurator extends IPSModule
             'DiscoveryCandidates'=>'{}',
             'DiscoveryInventory'=>'{}',
             'DiscoveryAuditReport'=>'Noch keine Vollstaendigkeitspruefung.',
+            'DiscoveryAIReport'=>'Keine KI-Unterstuetzung bei der letzten Geraetesuche.',
             'LegacyMigrationPreview'=>'{}',
             'BulkPreview'=>'{}',
             'MigrationReadinessReport'=>'Noch nicht geprueft.',
