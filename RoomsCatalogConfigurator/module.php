@@ -1126,7 +1126,7 @@ class RoomsCatalogConfigurator extends IPSModule
             $id = (int)$id;
             if ($id <= 0 || !IPS_ObjectExists($id)) continue;
             $object = IPS_GetObject($id);
-            if (in_array((int)($object['ObjectType'] ?? -1), [0,1], true)) $roots[] = $id;
+            if (in_array((int)($object['ObjectType'] ?? -1), [0,1,2], true)) $roots[] = $id;
         }
         return $roots;
     }
@@ -1715,6 +1715,23 @@ class RoomsCatalogConfigurator extends IPSModule
             echo 'IP-Symcon-Objektfunktionen nicht verfuegbar.';
             return;
         }
+        $settings=$this->guidedDiscoveryConfig();
+        $fixedType=(string)$settings['type'];
+        $fixedDomain=(string)$settings['domain'];
+        $fixedGroup=(string)$settings['group'];
+        $fixedRoom=(string)$settings['room'];
+        $roomMap=$this->roomMap($edit);
+        if ($fixedType!=='' && !array_key_exists($fixedType,RCCDeviceTypeRegistry::roles())) {
+            echo 'Geraetesuche: gewaehlter Geraetetyp ist unbekannt.'; return;
+        }
+        if (($fixedDomain!=='')!==($fixedGroup!=='')
+            || ($fixedDomain!=='' && !RCCGuidedDiscovery::validLocation($fixedDomain,$fixedGroup))
+            || in_array($fixedDomain,['heizung','jalousie'],true)) {
+            echo 'Geraetesuche: Bereich/Gruppe beide angeben (a-z/0-9/_/-). Heizung/Jalousie verwenden zentrale Pfade.'; return;
+        }
+        if ($fixedRoom!=='' && !isset($roomMap[$fixedRoom]['domains'])) {
+            echo 'Geraetesuche: gewaehlter Raum ist nicht im EDIT-Katalog vorhanden.'; return;
+        }
         $known = $this->knownDiscoveryIds($edit);
         $queue = array_map(static fn($id): array => [$id,0], $roots);
         $visited = [];
@@ -1730,15 +1747,15 @@ class RoomsCatalogConfigurator extends IPSModule
             if ($id <= 0 || isset($visited[$id]) || !IPS_ObjectExists($id)) continue;
             $visited[$id] = true;
             $object = IPS_GetObject($id);
-            if (!is_array($object) || !in_array((int)($object['ObjectType'] ?? -1), [0,1], true)) continue;
+            if (!is_array($object) || !in_array((int)($object['ObjectType'] ?? -1), [0,1,2], true)) continue;
             if (!empty($object['ObjectIsDisabled'])) {
                 $disabled++;
                 continue;
             }
             $kind = (int)$object['ObjectType'];
-            $children = IPS_GetChildrenIDs($id);
+            $children = $kind===2 ? [] : IPS_GetChildrenIDs($id);
             $childContainers = 0;
-            $directVariables = 0;
+            $directVariables = $kind===2 ? 1 : 0;
             foreach (is_array($children) ? $children : [] as $childId) {
                 $child = IPS_GetObject((int)$childId);
                 $childType = (int)($child['ObjectType'] ?? -1);
@@ -1748,6 +1765,18 @@ class RoomsCatalogConfigurator extends IPSModule
                     if ($kind === 0 && $depth < 12) $queue[] = [(int)$childId,$depth+1];
                     elseif ($kind === 0 && $depth >= 12) $depthLimited = true;
                 }
+            }
+            // Eine Kategorie mit mehreren direkten Sensorvariablen ist
+            // keine einzelne Geraeteinstanz: jede Variable ist ein Geraet.
+            if ($kind===0 && $childContainers===0 && $directVariables>1
+                && in_array($fixedType,['motion','temperature','humidity','illuminance',
+                    'window','door'],true)) {
+                foreach ((array)$children as $childId) {
+                    $child=IPS_GetObject((int)$childId);
+                    if((int)($child['ObjectType']??-1)===2)
+                        $queue[]=[(int)$childId,$depth+1];
+                }
+                continue;
             }
             // Instanzen sind Geräte; Kategorien nur als kleine Blatt-Gruppe zulassen.
             if ($kind === 0 && $childContainers > 0) {
@@ -1760,7 +1789,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 $noVariables++;
                 continue;
             }
-            $variables = $this->getIpsVariablesUnderScope($id);
+            $variables = $this->discoveryVariablesForSource($id);
             if ($variables === []) { $noVariables++; continue; }
             $moduleInfo = [];
             if ($kind === 1 && function_exists('IPS_GetInstance')) {
@@ -1779,8 +1808,10 @@ class RoomsCatalogConfigurator extends IPSModule
             $typing = isset($template['type']) && ($template['roles'] ?? []) !== []
                 ? ['type'=>$template['type'],'confidence'=>'Hoch','reason'=>'Bestaetigte Vorlage (ModuleID)']
                 : $this->inferDeviceTypeFromMetadata($variables,$moduleName,(string)($object['ObjectName'] ?? ''));
-            $type = $typing['type'];
-            $roomKey = $this->matchDiscoveryRoom($id, $edit);
+            $type = $fixedType!=='' ? $fixedType : $typing['type'];
+            $roomKey=$fixedRoom!=='' ? $fixedRoom : $this->matchDiscoveryRoom($id,$edit);
+            if ($roomKey==='') $roomKey=RCCGuidedDiscovery::roomByName(
+                (string)($object['ObjectName']??''),$roomMap);
             $suggestions = $this->suggestAIFields([], $type, $variables);
             $coverage = $this->roleCoverage($type,$suggestions);
             $matched = [];
@@ -1789,12 +1820,21 @@ class RoomsCatalogConfigurator extends IPSModule
                     $matched[$suggestion['property']] = (int)$suggestion['candidateId'];
                 }
             }
+            $mapped=$this->guidedReadingRoles($type,$variables,$matched);
+            $missing=[];
+            foreach ($this->minimumReadingRoles($type) as $alternative) {
+                if(array_intersect($alternative,array_keys($mapped))===[])
+                    $missing[]=implode(' oder ',$alternative);
+            }
+            [$domain,$group]=$fixedDomain!=='' ? [$fixedDomain,$fixedGroup]
+                : $this->guidedTypeLocation($type);
             $inventory[] = [
-                'sourceId'=>$id,'sourceType'=>$kind===1 ? 'instance' : 'category',
+                'sourceId'=>$id,'sourceType'=>$kind===1 ? 'instance' : ($kind===2?'variable':'category'),
                 'moduleId'=>$moduleId,'moduleName'=>$moduleName,
                 'name'=>mb_substr((string)($object['ObjectName'] ?? ''),0,100),
                 'roomKey'=>$roomKey,'deviceType'=>$type,
-                'variableIds'=>$ids,'roles'=>$matched,'roleMissing'=>$coverage['missing'],
+                'variableIds'=>$ids,'roles'=>$mapped,'roleMissing'=>$missing,
+                'locationDomain'=>$domain,'locationGroup'=>$group,
                 'known'=>$isKnown,
                 'variables'=>array_map(static fn(array $var): array => [
                     'id'=>$var['id'],'name'=>$var['name'],'ident'=>$var['ident'],
@@ -1808,24 +1848,30 @@ class RoomsCatalogConfigurator extends IPSModule
                 $skipped++;
                 continue;
             }
-            $high = count($this->discoverHighProperties($variables));
-            $confidence = $roomKey !== '' && $type !== 'generic' && $high > 0 ? 'Hoch' : 'Pruefen';
+            $high = count($mapped);
+            $confidence = $roomKey !== '' && $type !== 'generic' && $missing===[] && $high>0
+                ? 'Hoch' : 'Pruefen';
             $title = trim((string)($object['ObjectName'] ?? ''));
             $candidates[] = [
-                'selected'=>false, 'sourceId'=>$id, 'sourceType'=>$kind === 1 ? 'instance' : 'category',
+                'selected'=>false, 'sourceId'=>$id, 'sourceType'=>$kind === 1 ? 'instance'
+                    : ($kind===2 ? 'variable' : 'category'),
                 'title'=>$title !== '' ? $title : 'Geraet ' . $id,
                 'roomKey'=>$roomKey, 'deviceType'=>$type,
+                'locationDomain'=>$domain,'locationGroup'=>$group,
                 'moduleName'=>$moduleName,'moduleId'=>$moduleId,
                 'typeHint'=>$typing['reason'],'typeConfidence'=>$typing['confidence'],
                 'variableCount'=>count($variables), 'confidence'=>$confidence,
                 'reason'=>($roomKey === '' ? 'Raum zuordnen; ' : '') .
-                    ($type === 'generic' ? 'Geraetetyp pruefen; ' : '') . $high . ' eindeutige Variablen' .
-                    ($coverage['missing'] !== [] ? '; offen: ' . implode(', ',$coverage['missing']) : ''),
-                'readiness'=>$coverage['missing'] === [] ? 'Pruefen' : 'Unvollstaendig',
-                'mappedRoles'=>$matched,
+                    ($type === 'generic' ? 'Geraetetyp pruefen; ' : '') . $high . ' Lese-Rollen' .
+                    ($missing !== [] ? '; offen: ' . implode(', ',$missing) : ''),
+                'readiness'=>$missing === [] ? 'Pruefen' : 'Unvollstaendig',
+                'mappedRoles'=>$mapped,
                 'variableIds'=>$ids
             ];
         }
+        $aiReport=$this->aiAssistDiscoveredCandidates($candidates,$inventory,$roomMap);
+        $this->WriteAttributeString('DiscoveryAIReport',$aiReport);
+        $this->UpdateFormField('DiscoveryAIReport','caption',$aiReport);
         $truncated = $queue !== [] || $depthLimited || count($visited) >= 2500 || count($candidates) >= 200;
         $inventoryReport = [
             'time'=>time(),'roots'=>$roots,'scannedObjects'=>count($visited),
@@ -1838,6 +1884,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->WriteAttributeString('DiscoveryAuditReport','Neue Inventur: Vollstaendigkeitspruefung erneut starten.');
         $preview = [
             'time'=>time(), 'roots'=>$roots,
+            'guidedConfigHash'=>RCCGuidedDiscovery::config($settings),
             'editHash'=>hash('sha256', IPS_GetScriptContent($this->ReadPropertyInteger('RoomsCatalogEditScriptID'))),
             'rows'=>$candidates
         ];
