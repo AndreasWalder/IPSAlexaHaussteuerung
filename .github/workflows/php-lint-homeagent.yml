@@ -89,6 +89,8 @@ jobs:
         run: php tests/test_device_property_registry_v344.php
       - name: Test V3.4.5 AI natural-language data queries, room temperatures and safe aggregate tools
         run: php tests/test_ai_house_query_v345.php
+      - name: Test V3.4.6 HomeAgent removal, statuses, safe Alexa voice bridge
+        run: php tests/test_ki_mcp_removal_voice_v346.php
       - name: Test V3.4.2 Alexa question priority over stale APL/UI fallback
         run: php tests/test_alexa_voice_question_priority_v342.php
       - name: Test V3.4.3 Alexa direct W-question capture and no-slot fallback
