@@ -76,9 +76,9 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyString('KIIntentLogChannel', 'Alexa');
         $this->RegisterPropertyInteger('KIIntentRateLimit', 60);
         $this->RegisterPropertyBoolean('HomeAgentVoiceEnabled', false);
-        $this->RegisterPropertyString('KIVoiceMode', 'RoomsCatalog');
-        $this->RegisterPropertyString('HomeAgentVoiceEndpoint', '');
-        $this->RegisterPropertyString('HomeAgentVoiceToken', '');
+        // V3.4.6: Nur noch direkter RoomsCatalog + OpenAI. Alte
+        // HomeAgent-MCP-Zugangsdaten werden nicht mehr registriert.
+        // Die bisherigen Voice-Flags bleiben fuer Upgrade-Kompatibilitaet.
         $this->RegisterPropertyBoolean('HomeAgentVoiceRouteCommands', false);
         $this->RegisterPropertyInteger('HomeAgentVoiceMaxWords', 20);
         $this->RegisterPropertyInteger('HomeAgentVoiceTimeoutSeconds', 6);
@@ -2055,7 +2055,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             }
         }
         $this->patchActionScriptTabScopedDirectCommands((int) $id);
-        $this->patchActionScriptHomeAgentVoice((int) $id);
+        $this->patchActionScriptKIVoice((int) $id);
         $this->patchActionScriptVoiceNavigation((int) $id);
         $this->patchActionScriptSafeRequestLogging((int) $id);
         $this->patchActionScriptExternalHtmlMetadata((int) $id);
@@ -2628,7 +2628,6 @@ PHP;
             ['name' => 'Lexikon', 'ident' => 'lexikonScript', 'file' => __DIR__ . '/resources/helpers/Lexikon.php'],
             ['name' => 'Normalizer', 'ident' => 'normalizerScript', 'file' => __DIR__ . '/resources/helpers/Normalizer.php'],
             ['name' => 'KI_IntentParser', 'ident' => 'kiIntentParserScript', 'file' => __DIR__ . '/resources/helpers/KIIntentParser.php'],
-            ['name' => 'HomeAgentVoiceBridge', 'ident' => 'homeAgentVoiceBridgeScript', 'file' => __DIR__ . '/resources/helpers/HomeAgentVoiceBridge.php'],
             ['name' => 'KIHouseController', 'ident' => 'kiHouseControllerScript', 'file' => __DIR__ . '/resources/helpers/KIHouseController.php'],
             ['name' => 'VoiceIntentRouter', 'ident' => 'voiceIntentRouterScript', 'file' => __DIR__ . '/resources/helpers/VoiceIntentRouter.php'],
             ['name' => 'NavigationRuntime', 'ident' => 'navigationRuntimeScript', 'file' => __DIR__ . '/resources/helpers/NavigationRuntime.php'],
@@ -3160,7 +3159,7 @@ PHP;
         }
     }
 
-    private function patchActionScriptHomeAgentVoice(int $scriptId): void
+    private function patchActionScriptKIVoice(int $scriptId): void
     {
         $template = @file_get_contents(__DIR__ . '/resources/action_entry.php');
         $content = $this->getScriptContent($scriptId);
