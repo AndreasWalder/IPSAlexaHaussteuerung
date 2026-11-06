@@ -157,9 +157,11 @@ auditOk(count($allRows) === 11
     && count(array_filter($allRows,static fn($row): bool=>$row['knownLabel'] === 'Bestand')) === 1,
     'Full visible inventory omitted existing devices');
 $form = json_decode($mod->GetConfigurationForm(),true,512,JSON_THROW_ON_ERROR);
-auditOk(!str_contains(json_encode($form,JSON_THROW_ON_ERROR),'DiscoveryInventoryList')
+auditOk(str_contains(json_encode($form,JSON_THROW_ON_ERROR),'DiscoveryInventoryList')
+    && str_contains(json_encode($form,JSON_THROW_ON_ERROR),'DiscoveryRootId')
+    && str_contains(json_encode($form,JSON_THROW_ON_ERROR),'DiscoveryTypeOverride')
     && str_contains(json_encode($form,JSON_THROW_ON_ERROR),'EDIT NACH PROD UEBERNEHMEN'),
-    'Old inventory UI must be removed without deleting its read-only APIs');
+    'User-requested guided inventory UI must be exposed alongside EDIT/PROD');
 auditOk(IPS_GetScriptContent(41) === IPS_GetScriptContent(40),
     'Read-only inventory modified EDIT or PROD');
 

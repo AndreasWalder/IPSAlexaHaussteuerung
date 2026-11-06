@@ -87,10 +87,14 @@ $mod->WriteAttributeString('RuntimeEntries', '[]');
 $mod->WriteAttributeString('FilterAI', 'all');
 $form = json_decode($mod->GetConfigurationForm(), true, 512, JSON_THROW_ON_ERROR);
 $ui=json_encode($form,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-check33(!str_contains($ui,'IP-Symcon-Geraeteinventur')
-    && !str_contains($ui,'RCC_ScanNewDevices')
+check33(str_contains($ui,'IP-Symcon-Geraeteinventur')
+    && str_contains($ui,'RCC_ScanNewDevices')
+    && str_contains($ui,'DiscoveryRootId')
+    && str_contains($ui,'DiscoveryDomainOverride')
+    && str_contains($ui,'DiscoveryGroupOverride')
+    && str_contains($ui,'DiscoveryUseAI')
     && str_contains($ui,'EDIT NACH PROD UEBERNEHMEN'),
-    'Discovery controls must be absent from simplified UI while APIs remain callable');
+    'Guided device-import settings must now be available in the module UI');
 
 $editBefore = IPS_GetScriptContent(31);
 ob_start(); $mod->ScanNewDevices(); $scanMessage = ob_get_clean();

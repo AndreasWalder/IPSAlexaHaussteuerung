@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/libs/DeviceTechnicalAudit.php';
 require_once __DIR__ . '/libs/SafeAutoRepair.php';
 require_once __DIR__ . '/libs/DeviceTypeRegistry.php';
+require_once __DIR__ . '/libs/GuidedDiscovery.php';
 
 /**
  * ============================================================
@@ -93,6 +94,16 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterPropertyInteger('RoomsCatalogEditScriptID', 0);
         $this->RegisterPropertyInteger('DiscoveryRootId', 0);
         $this->RegisterPropertyString('DiscoveryExtraRootIds', '');
+        // V3.4.9: Ein IP-Symcon-Knoten als gefuehrter Importscope.
+        // Leer = den vom zentralen Typregister vorgeschlagenen Pfad nutzen.
+        $this->RegisterPropertyString('DiscoveryDomainOverride', '');
+        $this->RegisterPropertyString('DiscoveryGroupOverride', '');
+        $this->RegisterPropertyString('DiscoveryTypeOverride', '');
+        $this->RegisterPropertyString('DiscoveryRoomOverride', '');
+        // Optional: bereits konfiguriertes Alexa-Modul liefert die KI-API-
+        // Anmeldedaten; KEIN zweiter Token im RoomsCatalogConfigurator.
+        $this->RegisterPropertyBoolean('DiscoveryUseAI', false);
+        $this->RegisterPropertyInteger('DiscoveryAlexaInstanceId', 0);
 
         $this->RegisterAttributeString('RuntimeEntries', '[]');
         $this->RegisterAttributeString('RuntimeEditHash', '');
@@ -104,6 +115,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('DiscoveryCandidates', '{}');
         $this->RegisterAttributeString('DiscoveryInventory', '{}');
         $this->RegisterAttributeString('DiscoveryAuditReport', 'Noch keine Vollstaendigkeitspruefung.');
+        $this->RegisterAttributeString('DiscoveryAIReport', 'Keine KI-Unterstuetzung bei der letzten Geraetesuche.');
         $this->RegisterAttributeString('LegacyMigrationPreview', '{}');
         $this->RegisterAttributeString('BulkDeviceType', 'keep');
         $this->RegisterAttributeString('BulkAIMode', 'keep');
@@ -160,6 +172,7 @@ class RoomsCatalogConfigurator extends IPSModule
             'DiscoveryCandidates'=>'{}',
             'DiscoveryInventory'=>'{}',
             'DiscoveryAuditReport'=>'Noch keine Vollstaendigkeitspruefung.',
+            'DiscoveryAIReport'=>'Keine KI-Unterstuetzung bei der letzten Geraetesuche.',
             'LegacyMigrationPreview'=>'{}',
             'BulkPreview'=>'{}',
             'MigrationReadinessReport'=>'Noch nicht geprueft.',
@@ -923,6 +936,188 @@ class RoomsCatalogConfigurator extends IPSModule
         return $suggestions;
     }
 
+
+    /** Eingeschraenkter Scope und Benutzervorgaben statt globaler IPS-Suche. */
+    private function guidedDiscoveryConfig(): array
+    {
+        return [
+            'roots'=>$this->discoveryRoots(),
+            'domain'=>trim($this->ReadPropertyString('DiscoveryDomainOverride')),
+            'group'=>trim($this->ReadPropertyString('DiscoveryGroupOverride')),
+            'type'=>trim($this->ReadPropertyString('DiscoveryTypeOverride')),
+            'room'=>trim($this->ReadPropertyString('DiscoveryRoomOverride')),
+            'useAI'=>method_exists($this,'ReadPropertyBoolean')
+                ? $this->ReadPropertyBoolean('DiscoveryUseAI') : false,
+            'aiInstance'=>$this->ReadPropertyInteger('DiscoveryAlexaInstanceId')
+        ];
+    }
+
+    /** Auch einzelne direkte Variablen unter einer KNX-Kategorie sind Geraete. */
+    private function discoveryVariablesForSource(int $sourceId): array
+    {
+        if ($sourceId<=0 || !IPS_ObjectExists($sourceId)) return [];
+        $object=IPS_GetObject($sourceId);
+        if ((int)($object['ObjectType']??-1)!==2)
+            return $this->getIpsVariablesUnderScope($sourceId);
+        $parent=(int)($object['ParentID']??$object['ObjectParentID']??0);
+        $list=$this->getIpsVariablesUnderScope($parent);
+        return array_values(array_filter($list,static fn(array $v):bool=>
+            (int)($v['id']??0)===$sourceId));
+    }
+
+    /** Eindeutig sensorische Lese-Rollen aus Klasse/Profil/Knoten ableiten. */
+    private function guidedReadingRoles(
+        string $type, array $variables, array $suggested
+    ): array {
+        $roles=$suggested;
+        foreach (RCCGuidedDiscovery::sensorRole($type,$variables) as $role=>$id) {
+            if (!isset($roles[$role]) && in_array($role,RCCDeviceTypeRegistry::roles()[$type]??[],true))
+                $roles[$role]=$id;
+        }
+        return $roles;
+    }
+
+    /**
+     * Optionale EINMALIGE KI-Hilfe fuer unklare Fundstellen.
+     * Weitergabe: nur explizit gewaehlter IPS-Teilbaum (Name, Ident, Profil,
+     * Datentyp); keine IPS-IDs, Istwerte, Passwoerter, Tokens, Steuerbefehle.
+     * Suggestions bleiben unbestaetigte, lesende Vorschlaege.
+     */
+    private function aiAssistDiscoveredCandidates(array &$candidates,array $inventory,array $rooms): string
+    {
+        if (!method_exists($this,'ReadPropertyBoolean')
+            || !$this->ReadPropertyBoolean('DiscoveryUseAI'))
+            return 'KI-Hilfe ausgeschaltet.';
+        $instanceId=$this->ReadPropertyInteger('DiscoveryAlexaInstanceId');
+        if($instanceId<=0 || !function_exists('IPS_InstanceExists')
+            || !IPS_InstanceExists($instanceId) || !function_exists('IPS_GetProperty'))
+            return 'KI-Hilfe: Bitte eine gueltige Alexa-Modulinstanz mit API-Key auswaehlen.';
+        try {
+            $apiKey=(string)IPS_GetProperty($instanceId,'KIIntentApiKey');
+            $model=(string)IPS_GetProperty($instanceId,'KIModelSelection');
+        } catch(Throwable $e) {
+            return 'KI-Hilfe: API-Zugang aus der gewaehlten Alexa-Instanz nicht lesbar.';
+        }
+        if($apiKey==='' || !function_exists('curl_init'))
+            return 'KI-Hilfe: Kein OpenAI-Key in der gewaehlten Instanz oder cURL fehlt.';
+        if($model==='') $model='gpt-6-luna';
+        $lookups=[];
+        foreach($inventory as $item) $lookups[(int)($item['sourceId']??0)]=$item;
+        $possibleRooms=[];
+        foreach($rooms as $key=>$room) {
+            if($key==='global'||!isset($room['domains']))continue;
+            $possibleRooms[]=['key'=>(string)$key,
+                'name'=>mb_substr((string)($room['display']??$key),0,70)];
+        }
+        $payloads=[];$index=[];
+        foreach($candidates as $rowIndex=>$row) {
+            if(count($payloads)>=45)break; // Eine begrenzte KI-Anfrage.
+            if(($row['roomKey']??'')!=='' && ($row['deviceType']??'')!=='generic'
+                && !empty($row['mappedRoles'])) continue;
+            $item=$lookups[(int)($row['sourceId']??0)]??null;
+            if(!is_array($item))continue;
+            $entries=[];
+            foreach(array_slice((array)($item['variables']??[]),0,15) as $variable){
+                $entries[]=[
+                    'name'=>mb_substr((string)($variable['name']??''),0,70),
+                    'ident'=>mb_substr((string)($variable['ident']??''),0,50),
+                    'profile'=>mb_substr((string)($variable['profile']??''),0,70),
+                    'valueType'=>(int)($variable['type']??-1),
+                    'writable'=>(bool)($variable['action']??false),
+                    'labels'=>array_slice(array_map(
+                        static fn(array $a):string=>(string)($a['name']??''),
+                        (array)($variable['associations']??[])),0,8)
+                ];
+            }
+            $idx=count($payloads);
+            $payloads[]=['idx'=>$idx,'node'=>mb_substr((string)($row['title']??''),0,90),
+                'module'=>mb_substr((string)($row['moduleName']??''),0,65),
+                'suggestedType'=>(string)($row['deviceType']??'generic'),
+                'suggestedRoom'=>(string)($row['roomKey']??''),
+                'variables'=>$entries];
+            $index[$idx]=$rowIndex;
+        }
+        if($payloads===[])return 'KI-Hilfe: alle Kandidaten bereits lokal eindeutig zugeordnet.';
+        $system='Du analysierst eine vom Nutzer explizit ausgewaehlte IP-Symcon-Baumwurzel. '
+            .'Antworte NUR mit gueltigem JSON {"devices":[{"idx":0,"type":"motion",'
+            .'"roomKey":"...", "roles":{"motion":0},"reason":"..."}]}. '
+            .'Typ nur aus validTypes, roomKey nur aus rooms; "roles" benutzt '
+            .'0-basierte Indizes aus variables, keine IPS-IDs. Keine Schalt- oder Sollrollen '
+            .'vorschlagen. Bewegungsmelder sind motion, Praesenz nicht erfinden. '
+            .'Bei unklarer Erkennung type/roomKey leer und roles={} lassen. '
+            .'Bevorzuge vorhandene, eindeutig benannte oder profilierte Istwerte.';
+        $request=[
+            'model'=>$model,
+            'messages'=>[
+                ['role'=>'system','content'=>$system],
+                ['role'=>'user','content'=>json_encode([
+                    'validTypes'=>array_keys(RCCDeviceTypeRegistry::roles()),
+                    'rooms'=>$possibleRooms,'devices'=>$payloads
+                ],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)]
+            ],
+            'response_format'=>['type'=>'json_object'],
+            'max_completion_tokens'=>1600
+        ];
+        // Wie im produktiven KIHouseController: Luna-Modell verwendet
+        // reasoning_effort statt nicht unterstuetzter temperature=0.
+        if($model==='gpt-6-luna') $request['reasoning_effort']='none';
+        // Kein API-Key und keine Antwort-Payload in Symcon-Log schreiben.
+        $ch=curl_init('https://api.openai.com/v1/chat/completions');
+        if($ch===false) return 'KI-Hilfe: cURL konnte nicht gestartet werden.';
+        try {
+            curl_setopt_array($ch,[
+                CURLOPT_POST=>true,CURLOPT_RETURNTRANSFER=>true,
+                CURLOPT_POSTFIELDS=>json_encode($request,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),
+                CURLOPT_HTTPHEADER=>['Content-Type: application/json','Authorization: Bearer '.$apiKey],
+                CURLOPT_CONNECTTIMEOUT=>2,CURLOPT_TIMEOUT=>12,CURLOPT_FOLLOWLOCATION=>false
+            ]);
+            $body=curl_exec($ch);
+            $code=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE);
+        } finally {curl_close($ch);}
+        if(!is_string($body)||$code!==200)
+            return 'KI-Hilfe: Modell nicht erreichbar (HTTP '.$code.'); lokale Vorschlaege bleiben erhalten.';
+        try {
+            $data=json_decode($body,true,512,JSON_THROW_ON_ERROR);
+            $raw=(string)($data['choices'][0]['message']['content']??'');
+            $json=json_decode($raw,true,512,JSON_THROW_ON_ERROR);
+        } catch(Throwable $e) {
+            return 'KI-Hilfe: Keine auswertbare JSON-Antwort, lokale Vorschlaege bleiben erhalten.';
+        }
+        $types=RCCDeviceTypeRegistry::roles();$applied=0;
+        foreach((array)($json['devices']??[]) as $suggestion) {
+            if(!is_array($suggestion)||!is_int($suggestion['idx']??null)
+                || !isset($index[$suggestion['idx']]))continue;
+            $rowIndex=$index[$suggestion['idx']];
+            $row=&$candidates[$rowIndex];
+            $info=$lookups[(int)$row['sourceId']]??null;
+            if(!is_array($info)){unset($row);continue;}
+            $type=(string)($suggestion['type']??'');
+            // Explizit eingestellter Typ/Ort hat immer Vorrang vor KI.
+            if(!empty($types[$type]) && ($row['deviceType']??'generic')==='generic')
+                $row['deviceType']=$type;
+            $roomKey=(string)($suggestion['roomKey']??'');
+            if(($row['roomKey']??'')==='' && isset($rooms[$roomKey]['domains']))
+                $row['roomKey']=$roomKey;
+            $allowedType=(string)$row['deviceType'];
+            $checked=RCCGuidedDiscovery::checkedAiRoles(
+                $allowedType,(array)($suggestion['roles']??[]),
+                (array)($info['variables']??[]),(array)($types[$allowedType]??[])
+            );
+            // Typisierung bleibt streng: nur Rollen des festgelegten Typs
+            // und keine Steuer- oder Aktionsvariablen erlauben.
+            foreach($checked as $role=>$id) {
+                if(!isset($row['mappedRoles'][$role])) $row['mappedRoles'][$role]=$id;
+            }
+            $row['reason'].='; KI-Vorschlag (noch fachlich pruefen)';
+            $row['confidence']='Pruefen';
+            $row['readiness']='Pruefen';
+            $applied++;
+            unset($row);
+        }
+        return 'KI-Hilfe: '.count($payloads).' unklare Kandidaten angefragt, '
+            .$applied.' Vorschlaege erhalten (alle vor EDIT pruefen).';
+    }
+
     /** V3.3: bewusst nur explizit konfigurierte Kategorien/Instanzen durchsuchen. */
     private function discoveryRoots(): array
     {
@@ -936,7 +1131,7 @@ class RoomsCatalogConfigurator extends IPSModule
             $id = (int)$id;
             if ($id <= 0 || !IPS_ObjectExists($id)) continue;
             $object = IPS_GetObject($id);
-            if (in_array((int)($object['ObjectType'] ?? -1), [0,1], true)) $roots[] = $id;
+            if (in_array((int)($object['ObjectType'] ?? -1), [0,1,2], true)) $roots[] = $id;
         }
         return $roots;
     }
@@ -1525,6 +1720,23 @@ class RoomsCatalogConfigurator extends IPSModule
             echo 'IP-Symcon-Objektfunktionen nicht verfuegbar.';
             return;
         }
+        $settings=$this->guidedDiscoveryConfig();
+        $fixedType=(string)$settings['type'];
+        $fixedDomain=(string)$settings['domain'];
+        $fixedGroup=(string)$settings['group'];
+        $fixedRoom=(string)$settings['room'];
+        $roomMap=$this->roomMap($edit);
+        if ($fixedType!=='' && !array_key_exists($fixedType,RCCDeviceTypeRegistry::roles())) {
+            echo 'Geraetesuche: gewaehlter Geraetetyp ist unbekannt.'; return;
+        }
+        if (($fixedDomain!=='')!==($fixedGroup!=='')
+            || ($fixedDomain!=='' && !RCCGuidedDiscovery::validLocation($fixedDomain,$fixedGroup))
+            || in_array($fixedDomain,['heizung','jalousie'],true)) {
+            echo 'Geraetesuche: Bereich/Gruppe beide angeben (a-z/0-9/_/-). Heizung/Jalousie verwenden zentrale Pfade.'; return;
+        }
+        if ($fixedRoom!=='' && !isset($roomMap[$fixedRoom]['domains'])) {
+            echo 'Geraetesuche: gewaehlter Raum ist nicht im EDIT-Katalog vorhanden.'; return;
+        }
         $known = $this->knownDiscoveryIds($edit);
         $queue = array_map(static fn($id): array => [$id,0], $roots);
         $visited = [];
@@ -1540,15 +1752,15 @@ class RoomsCatalogConfigurator extends IPSModule
             if ($id <= 0 || isset($visited[$id]) || !IPS_ObjectExists($id)) continue;
             $visited[$id] = true;
             $object = IPS_GetObject($id);
-            if (!is_array($object) || !in_array((int)($object['ObjectType'] ?? -1), [0,1], true)) continue;
+            if (!is_array($object) || !in_array((int)($object['ObjectType'] ?? -1), [0,1,2], true)) continue;
             if (!empty($object['ObjectIsDisabled'])) {
                 $disabled++;
                 continue;
             }
             $kind = (int)$object['ObjectType'];
-            $children = IPS_GetChildrenIDs($id);
+            $children = $kind===2 ? [] : IPS_GetChildrenIDs($id);
             $childContainers = 0;
-            $directVariables = 0;
+            $directVariables = $kind===2 ? 1 : 0;
             foreach (is_array($children) ? $children : [] as $childId) {
                 $child = IPS_GetObject((int)$childId);
                 $childType = (int)($child['ObjectType'] ?? -1);
@@ -1558,6 +1770,18 @@ class RoomsCatalogConfigurator extends IPSModule
                     if ($kind === 0 && $depth < 12) $queue[] = [(int)$childId,$depth+1];
                     elseif ($kind === 0 && $depth >= 12) $depthLimited = true;
                 }
+            }
+            // Eine Kategorie mit mehreren direkten Sensorvariablen ist
+            // keine einzelne Geraeteinstanz: jede Variable ist ein Geraet.
+            if ($kind===0 && $childContainers===0 && $directVariables>1
+                && in_array($fixedType,['motion','temperature','humidity','illuminance',
+                    'window','door'],true)) {
+                foreach ((array)$children as $childId) {
+                    $child=IPS_GetObject((int)$childId);
+                    if((int)($child['ObjectType']??-1)===2)
+                        $queue[]=[(int)$childId,$depth+1];
+                }
+                continue;
             }
             // Instanzen sind Geräte; Kategorien nur als kleine Blatt-Gruppe zulassen.
             if ($kind === 0 && $childContainers > 0) {
@@ -1570,7 +1794,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 $noVariables++;
                 continue;
             }
-            $variables = $this->getIpsVariablesUnderScope($id);
+            $variables = $this->discoveryVariablesForSource($id);
             if ($variables === []) { $noVariables++; continue; }
             $moduleInfo = [];
             if ($kind === 1 && function_exists('IPS_GetInstance')) {
@@ -1589,8 +1813,10 @@ class RoomsCatalogConfigurator extends IPSModule
             $typing = isset($template['type']) && ($template['roles'] ?? []) !== []
                 ? ['type'=>$template['type'],'confidence'=>'Hoch','reason'=>'Bestaetigte Vorlage (ModuleID)']
                 : $this->inferDeviceTypeFromMetadata($variables,$moduleName,(string)($object['ObjectName'] ?? ''));
-            $type = $typing['type'];
-            $roomKey = $this->matchDiscoveryRoom($id, $edit);
+            $type = $fixedType!=='' ? $fixedType : $typing['type'];
+            $roomKey=$fixedRoom!=='' ? $fixedRoom : $this->matchDiscoveryRoom($id,$edit);
+            if ($roomKey==='') $roomKey=RCCGuidedDiscovery::roomByName(
+                (string)($object['ObjectName']??''),$roomMap);
             $suggestions = $this->suggestAIFields([], $type, $variables);
             $coverage = $this->roleCoverage($type,$suggestions);
             $matched = [];
@@ -1599,12 +1825,22 @@ class RoomsCatalogConfigurator extends IPSModule
                     $matched[$suggestion['property']] = (int)$suggestion['candidateId'];
                 }
             }
+            $mapped=$this->guidedReadingRoles($type,$variables,$matched);
+            $missing=[];
+            foreach ($this->minimumReadingRoles($type) as $alternative) {
+                if(array_intersect($alternative,array_keys($mapped))===[])
+                    $missing[]=implode(' oder ',$alternative);
+            }
+            if ($type==='generic') $missing[]='Geraetetyp manuell bestimmen';
+            [$domain,$group]=$fixedDomain!=='' ? [$fixedDomain,$fixedGroup]
+                : $this->guidedTypeLocation($type);
             $inventory[] = [
-                'sourceId'=>$id,'sourceType'=>$kind===1 ? 'instance' : 'category',
+                'sourceId'=>$id,'sourceType'=>$kind===1 ? 'instance' : ($kind===2?'variable':'category'),
                 'moduleId'=>$moduleId,'moduleName'=>$moduleName,
                 'name'=>mb_substr((string)($object['ObjectName'] ?? ''),0,100),
                 'roomKey'=>$roomKey,'deviceType'=>$type,
-                'variableIds'=>$ids,'roles'=>$matched,'roleMissing'=>$coverage['missing'],
+                'variableIds'=>$ids,'roles'=>$mapped,'roleMissing'=>$missing,
+                'locationDomain'=>$domain,'locationGroup'=>$group,
                 'known'=>$isKnown,
                 'variables'=>array_map(static fn(array $var): array => [
                     'id'=>$var['id'],'name'=>$var['name'],'ident'=>$var['ident'],
@@ -1618,24 +1854,30 @@ class RoomsCatalogConfigurator extends IPSModule
                 $skipped++;
                 continue;
             }
-            $high = count($this->discoverHighProperties($variables));
-            $confidence = $roomKey !== '' && $type !== 'generic' && $high > 0 ? 'Hoch' : 'Pruefen';
+            $high = count($mapped);
+            $confidence = $roomKey !== '' && $type !== 'generic' && $missing===[] && $high>0
+                ? 'Hoch' : 'Pruefen';
             $title = trim((string)($object['ObjectName'] ?? ''));
             $candidates[] = [
-                'selected'=>false, 'sourceId'=>$id, 'sourceType'=>$kind === 1 ? 'instance' : 'category',
+                'selected'=>false, 'sourceId'=>$id, 'sourceType'=>$kind === 1 ? 'instance'
+                    : ($kind===2 ? 'variable' : 'category'),
                 'title'=>$title !== '' ? $title : 'Geraet ' . $id,
                 'roomKey'=>$roomKey, 'deviceType'=>$type,
+                'locationDomain'=>$domain,'locationGroup'=>$group,
                 'moduleName'=>$moduleName,'moduleId'=>$moduleId,
                 'typeHint'=>$typing['reason'],'typeConfidence'=>$typing['confidence'],
                 'variableCount'=>count($variables), 'confidence'=>$confidence,
                 'reason'=>($roomKey === '' ? 'Raum zuordnen; ' : '') .
-                    ($type === 'generic' ? 'Geraetetyp pruefen; ' : '') . $high . ' eindeutige Variablen' .
-                    ($coverage['missing'] !== [] ? '; offen: ' . implode(', ',$coverage['missing']) : ''),
-                'readiness'=>$coverage['missing'] === [] ? 'Pruefen' : 'Unvollstaendig',
-                'mappedRoles'=>$matched,
+                    ($type === 'generic' ? 'Geraetetyp pruefen; ' : '') . $high . ' Lese-Rollen' .
+                    ($missing !== [] ? '; offen: ' . implode(', ',$missing) : ''),
+                'readiness'=>$missing === [] ? 'Pruefen' : 'Unvollstaendig',
+                'mappedRoles'=>$mapped,
                 'variableIds'=>$ids
             ];
         }
+        $aiReport=$this->aiAssistDiscoveredCandidates($candidates,$inventory,$roomMap);
+        $this->WriteAttributeString('DiscoveryAIReport',$aiReport);
+        $this->UpdateFormField('DiscoveryAIReport','caption',$aiReport);
         $truncated = $queue !== [] || $depthLimited || count($visited) >= 2500 || count($candidates) >= 200;
         $inventoryReport = [
             'time'=>time(),'roots'=>$roots,'scannedObjects'=>count($visited),
@@ -1648,6 +1890,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->WriteAttributeString('DiscoveryAuditReport','Neue Inventur: Vollstaendigkeitspruefung erneut starten.');
         $preview = [
             'time'=>time(), 'roots'=>$roots,
+            'guidedConfigHash'=>RCCGuidedDiscovery::config($settings),
             'editHash'=>hash('sha256', IPS_GetScriptContent($this->ReadPropertyInteger('RoomsCatalogEditScriptID'))),
             'rows'=>$candidates
         ];
@@ -1672,7 +1915,34 @@ class RoomsCatalogConfigurator extends IPSModule
             if (isset($row['roomKey'])) $candidate['roomKey'] = trim((string)$row['roomKey']);
             if (isset($row['title'])) $candidate['title'] = trim((string)$row['title']);
             $type = (string)($row['deviceType'] ?? '');
-            if (array_key_exists($type,RCCDeviceTypeRegistry::roles())) $candidate['deviceType'] = $type;
+            if (array_key_exists($type,RCCDeviceTypeRegistry::roles())
+                && $candidate['deviceType']!==$type) {
+                $candidate['deviceType']=$type;
+                // Altzuordnungen des vorherigen Typs niemals uebernehmen.
+                $candidate['mappedRoles']=[];
+                $inventory=json_decode($this->ReadAttributeString('DiscoveryInventory'),true);
+                foreach ((array)($inventory['items']??[]) as $item) {
+                    if((int)($item['sourceId']??0)!==$sourceId)continue;
+                    $vars=$this->discoveryVariablesForSource($sourceId);
+                    $suggestions=$this->suggestAIFields([],$type,$vars);
+                    $high=[];
+                    foreach($suggestions as $suggestion) {
+                        if($suggestion['confidence']==='Hoch' && (int)$suggestion['candidateId']>0)
+                            $high[$suggestion['property']]=(int)$suggestion['candidateId'];
+                    }
+                    $candidate['mappedRoles']=$this->guidedReadingRoles($type,$vars,$high);
+                    break;
+                }
+                if($this->ReadPropertyString('DiscoveryDomainOverride')==='') {
+                    [$candidate['locationDomain'],$candidate['locationGroup']]=$this->guidedTypeLocation($type);
+                }
+                $candidate['confidence']='Pruefen';
+                $candidate['readiness']='Pruefen';
+                $candidate['reason']='Geraetetyp nach Scan geaendert: Variablen bitte pruefen';
+            }
+            foreach(['locationDomain','locationGroup'] as $field) {
+                if(isset($row[$field])) $candidate[$field]=trim((string)$row[$field]);
+            }
             break;
         }
         unset($candidate);
@@ -1698,6 +1968,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
         if (!is_array($preview) || !is_array($preview['rows'] ?? null) || $editId <= 0 || !IPS_ScriptExists($editId)
             || ($preview['roots'] ?? []) !== $this->discoveryRoots()
+            || ($preview['guidedConfigHash'] ?? '')!==RCCGuidedDiscovery::config($this->guidedDiscoveryConfig())
             || time() - (int)($preview['time'] ?? 0) > 600
             || ($preview['editHash'] ?? '') !== hash('sha256', IPS_GetScriptContent($editId))) {
             echo 'Geraetesuche veraltet oder EDIT geaendert. Bitte erneut scannen.';
@@ -1715,12 +1986,18 @@ class RoomsCatalogConfigurator extends IPSModule
             $roomKey = (string)($candidate['roomKey'] ?? '');
             $type = (string)($candidate['deviceType'] ?? '');
             $title = trim((string)($candidate['title'] ?? ''));
+            $domain=(string)($candidate['locationDomain']??'');
+            $group=(string)($candidate['locationGroup']??'');
+            if ($domain==='' || $group==='') [$domain,$group]=$this->guidedTypeLocation($type);
             if ($sourceId <= 0 || !IPS_ObjectExists($sourceId) || !isset($rooms[$roomKey]['domains'])
-                || !array_key_exists($type,RCCDeviceTypeRegistry::roles()) || $title === '') {
+                || !array_key_exists($type,RCCDeviceTypeRegistry::roles()) || $title === ''
+                || !RCCGuidedDiscovery::validLocation($domain,$group)
+                || in_array($domain,['heizung','jalousie'],true)
+                    && [$domain,$group]!==$this->guidedTypeLocation($type)) {
                 $errors[] = 'Geraet ' . $sourceId . ': Raum, Typ oder Name ungueltig.';
                 continue;
             }
-            $variables = $this->getIpsVariablesUnderScope($sourceId);
+            $variables = $this->discoveryVariablesForSource($sourceId);
             $variables = $this->withLearnedRoleHints($variables,
                 $this->learnedModuleTemplate($original,(string)($candidate['moduleId'] ?? '')));
             $ids = array_column($variables, 'id');
@@ -1729,7 +2006,6 @@ class RoomsCatalogConfigurator extends IPSModule
                 $errors[] = 'Geraet ' . $sourceId . ': bereits bekannt oder keine gueltigen Variablen.';
                 continue;
             }
-            [$domain,$group] = $this->guidedTypeLocation($type);
             $key = $this->discoveryDeviceKey($title,$sourceId);
             $entry = [
                 'selected'=>false,'roomKey'=>$roomKey,'roomLabel'=>(string)($rooms[$roomKey]['display'] ?? $roomKey),
@@ -1738,11 +2014,44 @@ class RoomsCatalogConfigurator extends IPSModule
                 'discoverySourceId'=>$sourceId,'discoverySourceType'=>(string)($candidate['sourceType'] ?? 'instance')
             ];
             $used = [];
-            foreach ($this->suggestAIFields($entry,$type,$variables) as $suggestion) {
-                $id = (int)$suggestion['candidateId'];
-                if ($suggestion['confidence'] !== 'Hoch' || $id <= 0 || isset($used[$id])) continue;
-                $entry[RCCDeviceTypeRegistry::fields()[$suggestion['property']]] = $id;
-                $used[$id] = true;
+            // 1. In der Vorschau bestaetigte, lesende Vorschlaege.
+            $validRoles=(array)(RCCDeviceTypeRegistry::roles()[$type]??[]);
+            $dataTypes=RCCDeviceTypeRegistry::dataTypes();
+            $metadata=[];
+            foreach($variables as $variable) $metadata[(int)$variable['id']]=$variable;
+            foreach((array)($candidate['mappedRoles']??[]) as $role=>$id) {
+                $id=(int)$id;
+                if(!in_array($role,$validRoles,true)
+                    || in_array($role,['action','control','targetPosition','targetTemperature','commandValue'],true)
+                    || !isset($metadata[$id]) || !empty($metadata[$id]['action'])
+                    || !in_array((int)$metadata[$id]['type'],$dataTypes[$role]??[],true)
+                    || isset($used[$id])) continue;
+                $entry[RCCDeviceTypeRegistry::fields()[$role]]=$id;
+                $used[$id]=true;
+            }
+            // 2. Bereits bestehende bewertete Rollen nur dort verwenden,
+            // wo die neue Vorschau nichts festlegt. Keine Steuerwerte.
+            foreach($this->suggestAIFields($entry,$type,$variables) as $suggestion) {
+                $role=(string)$suggestion['property'];
+                $id=(int)$suggestion['candidateId'];
+                if(!in_array($role,$validRoles,true)
+                    || $suggestion['confidence']!=='Hoch' || $id<=0
+                    || !isset($metadata[$id])
+                    || ($role==='action' || $role==='control'
+                        ? empty($metadata[$id]['action'])
+                        : !empty($metadata[$id]['action']))
+                    || isset($used[$id])) continue;
+                $entry[RCCDeviceTypeRegistry::fields()[$role]]=$id;
+                $used[$id]=true;
+            }
+            // Verlaesslicher Sensor-Notfallpfad: eine einzige kompatible
+            // Istvariable ist ohne AI eindeutig. Markierung erfolgt bereits
+            // im Vorschau-Dialog, nicht als stille EDIT-Automatik.
+            foreach(RCCGuidedDiscovery::sensorRole($type,$variables) as $role=>$id) {
+                if(!isset($used[$id]) && !isset($entry[RCCDeviceTypeRegistry::fields()[$role]])) {
+                    $entry[RCCDeviceTypeRegistry::fields()[$role]]=$id;
+                    $used[$id]=true;
+                }
             }
             $statusId = (int)($entry['aiStatusId'] ?? $entry['aiOpenId'] ?? $entry['aiPowerId'] ?? 0);
             $stateMapping = $this->inferStateMapping($variables,$statusId,$type);
@@ -1752,7 +2061,9 @@ class RoomsCatalogConfigurator extends IPSModule
                     ? ($value ? 'true' : 'false') : (string)$value;
             }
             $entry['ai'] = [
-                'version'=>2,
+                // KIHouseController akzeptiert genau Schema-Version 1;
+                // Version 2 war zuvor trotz gueltiger Variablen unsichtbar.
+                'version'=>1,
                 'source'=>[
                     'instanceId'=>$sourceId,
                     'moduleId'=>(string)($candidate['moduleId'] ?? ''),
@@ -5696,12 +6007,52 @@ class RoomsCatalogConfigurator extends IPSModule
                     'caption' => 'IP-Symcon-Geraeteinventur',
                     'expanded' => true,
                     'items' => [
-                        ['type'=>'Label','caption'=>'Nur die hier ausgewaehlten Kategorien/Instanzen werden durchsucht. Gefundene Geraete sind erst Vorschlaege; keine automatische KI- oder Schreibfreigabe. Suchwurzeln nach dem Aendern mit Uebernehmen speichern.'],
+                        ['type'=>'Label','caption'=>'1. Knotenpunkt im IP-Symcon-Objektbaum auswaehlen (z.B. KNX > Sicherheit > Bewegung). '
+                            .'Nur dieser Teilbaum wird gelesen. Instanzen und einzelne direkte Sensorvariablen werden erkannt.'],
                         ['type'=>'RowLayout','items'=>[
-                            ['type'=>'SelectObject','name'=>'DiscoveryRootId','caption'=>'Suchwurzel (Kategorie oder Instanz)'],
-                            ['type'=>'ValidationTextBox','name'=>'DiscoveryExtraRootIds','caption'=>'Weitere Suchwurzeln (IPS-IDs, Komma getrennt)']
+                            ['type'=>'SelectObject','name'=>'DiscoveryRootId','caption'=>'Knotenpunkt / Suchwurzel (Kategorie, Instanz oder Variable)'],
+                            ['type'=>'ValidationTextBox','name'=>'DiscoveryExtraRootIds','caption'=>'Weitere Suchwurzeln (optional, IPS-IDs)']
                         ]],
-                        ['type'=>'Button','caption'=>'IP-SYMCON-GERAETE INVENTARISIEREN','onClick'=>'RCC_ScanNewDevices($id);'],
+                        ['type'=>'Label','caption'=>'2. Bereich und Gruppe festlegen. Ohne Eingabe werden die zentralen Typvorlagen verwendet. '
+                            .'Beispiel Bewegungsmelder: Bereich sicherheit, Gruppe bewegung, Typ Bewegungsmelder.'],
+                        ['type'=>'RowLayout','items'=>[
+                            ['type'=>'ValidationTextBox','name'=>'DiscoveryDomainOverride',
+                                'caption'=>'Bereich (z.B. sicherheit) – leer = automatisch'],
+                            ['type'=>'ValidationTextBox','name'=>'DiscoveryGroupOverride',
+                                'caption'=>'Gruppe (z.B. bewegung) – leer = automatisch']
+                        ]],
+                        ['type'=>'RowLayout','items'=>[
+                            ['type'=>'Select','name'=>'DiscoveryTypeOverride',
+                                'caption'=>'Geraetetyp fuer diesen Knotenpunkt',
+                                'options'=>array_merge(
+                                    [['caption'=>'Automatisch aus Name, Profil und Modul bestimmen','value'=>'']],
+                                    array_map(static fn(string $type,string $caption):array =>
+                                        ['caption'=>$caption,'value'=>$type],
+                                        array_keys(RCCDeviceTypeRegistry::captions()),
+                                        array_values(RCCDeviceTypeRegistry::captions()))
+                                )],
+                            ['type'=>'Select','name'=>'DiscoveryRoomOverride',
+                                'caption'=>'Alle Funde einem Raum zuordnen (optional)',
+                                'options'=>array_merge(
+                                    [['caption'=>'Raum aus Geraetenamen bestimmen / einzeln auswaehlen','value'=>'']],
+                                    array_values(array_filter($roomOptions,static fn(array $option):bool =>
+                                        (string)($option['value']??'')!==''
+                                    ))
+                                )]
+                        ]],
+                        ['type'=>'Label','caption'=>'3. Optional: ChatGPT hilft bei unklaren Funden mit Namen, Identifikatoren, '
+                            .'Profilen und Datentypen aus diesem Knotenpunkt. Keine Rohwerte, IPS-IDs oder '
+                            .'Passwoerter an OpenAI; Kosten ueber den vorhandenen Alexa-API-Key.'],
+                        ['type'=>'RowLayout','items'=>[
+                            ['type'=>'CheckBox','name'=>'DiscoveryUseAI',
+                                'caption'=>'KI fuer unklare Vorschlaege verwenden (optional, kostenpflichtig)'],
+                            ['type'=>'SelectObject','name'=>'DiscoveryAlexaInstanceId',
+                                'caption'=>'Alexa-Modulinstanz mit bestehendem OpenAI-Key']
+                        ]],
+                        ['type'=>'Button','caption'=>'KNOTENPUNKT DURCHSUCHEN UND GERAETE VORSCHLAGEN',
+                            'onClick'=>'RCC_ScanNewDevices($id);'],
+                        ['type'=>'Label','name'=>'DiscoveryAIReport',
+                            'caption'=>$this->ReadAttributeString('DiscoveryAIReport')],
                         ['type'=>'Label','name'=>'DiscoverySummary','caption'=>$discoverySummary],
                         ['type'=>'Button','caption'=>'DATENSTAND UND OFFENE PUNKTE PRUEFEN',
                             'onClick'=>'RCC_AuditDiscoveryCoverage($id);'],
@@ -5749,6 +6100,8 @@ class RoomsCatalogConfigurator extends IPSModule
                                         array_keys(RCCDeviceTypeRegistry::captions()),
                                         array_values(RCCDeviceTypeRegistry::captions()))
                                 ]]],
+                                ['caption'=>'Bereich','name'=>'locationDomain','width'=>'120px','edit'=>['type'=>'ValidationTextBox']],
+                                ['caption'=>'Gruppe','name'=>'locationGroup','width'=>'120px','edit'=>['type'=>'ValidationTextBox']],
                                 ['caption'=>'Variablen','name'=>'variableCount','width'=>'80px','save'=>false],
                                 ['caption'=>'Bewertung','name'=>'confidence','width'=>'90px','save'=>false],
                                 ['caption'=>'Datenstand','name'=>'readiness','width'=>'95px','save'=>false],
@@ -5760,7 +6113,9 @@ class RoomsCatalogConfigurator extends IPSModule
                                 . '\'selected\' => ($DiscoveredDevices["selected"] ?? null), '
                                 . '\'roomKey\' => ($DiscoveredDevices["roomKey"] ?? null), '
                                 . '\'title\' => ($DiscoveredDevices["title"] ?? null), '
-                                . '\'deviceType\' => ($DiscoveredDevices["deviceType"] ?? null)'
+                                . '\'deviceType\' => ($DiscoveredDevices["deviceType"] ?? null), '
+                                 . '\'locationDomain\' => ($DiscoveredDevices["locationDomain"] ?? null), '
+                                 . '\'locationGroup\' => ($DiscoveredDevices["locationGroup"] ?? null)'
                                 . '], static fn($v) => $v !== null), JSON_INVALID_UTF8_SUBSTITUTE));'
                         ],
                         ['type'=>'RowLayout','items'=>[
@@ -5770,7 +6125,9 @@ class RoomsCatalogConfigurator extends IPSModule
                                 'confirm'=>'Markierte neue Geraete ausschliesslich nach RoomsCatalogEdit importieren? KI bleibt deaktiviert und PROD unveraendert.',
                                 'onClick'=>'RCC_ApplyDiscoveredDevices($id);']
                         ]],
-                        ['type'=>'Label','caption'=>'Alle 10 Geraeteklassen werden analysiert. Der Bericht unterscheidet die abgeschlossene Suche vom fachlich geprueften Datenstand. Neue Geraete starten mit KI aus und Nur abfragen an. Profile und Namen liefern Vorschlaege, keine ungeprueften Schaltrechte.']
+                        ['type'=>'Label','caption'=>'Alle Typen werden geprueft. Neue Geraete werden erst nach '
+                            .'Markieren ausschliesslich nach EDIT importiert, mit KI ausgeschaltet und ohne '
+                            .'Schaltrechte; PROD und die echten IPS-Geraete bleiben unveraendert.']
                     ]
                 ],
                 [
@@ -5964,7 +6321,8 @@ class RoomsCatalogConfigurator extends IPSModule
                     && $migrationStats['legacy'] === 0) {
                     continue; // Keine Altdaten mehr in EDIT: Assistent entfaellt.
                 }
-                $element['expanded'] = false;
+                // Gefuehrter Baumsuch-Import bleibt dauerhaft sichtbar.
+                $element['expanded'] = $caption === 'IP-Symcon-Geraeteinventur';
                 $assistants[] = $element;
                 continue;
             }
@@ -5979,7 +6337,8 @@ class RoomsCatalogConfigurator extends IPSModule
                     ['type'=>'Label','caption'=>
                         'Geraete koennen hier auch nach abgeschlossener Migration erneut erkannt werden. '
                         .'Vorhandene Konfigurationen und KI-Berechtigungen bleiben bei Analysen unveraendert.']
-                ],$assistants)
+                ],array_values(array_filter($assistants,static fn(array $item):bool=>
+                    ($item['caption']??'')==='IP-Symcon-Geraeteinventur')))
             ]]);
         }
         $form['elements'] = $remaining;
@@ -5988,7 +6347,8 @@ class RoomsCatalogConfigurator extends IPSModule
         // oder Migrations-Publishing-Aktionen in der Hauptansicht.
         // Der regulaere Geraeteeditor mit seinen Prueffeldern bleibt.
         $everyday=['Raeume & Etagen','RoomsCatalog Scripts',
-            'Geraete bearbeiten (RoomsCatalog EDIT)'];
+            'Geraete bearbeiten (RoomsCatalog EDIT)',
+            'Geraete erkennen, inventarisieren und reparieren'];
         $main=[];
         foreach ($form['elements'] as $index=>$element) {
             $caption=(string)($element['caption']??'');
