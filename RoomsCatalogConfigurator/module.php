@@ -5999,12 +5999,52 @@ class RoomsCatalogConfigurator extends IPSModule
                     'caption' => 'IP-Symcon-Geraeteinventur',
                     'expanded' => true,
                     'items' => [
-                        ['type'=>'Label','caption'=>'Nur die hier ausgewaehlten Kategorien/Instanzen werden durchsucht. Gefundene Geraete sind erst Vorschlaege; keine automatische KI- oder Schreibfreigabe. Suchwurzeln nach dem Aendern mit Uebernehmen speichern.'],
+                        ['type'=>'Label','caption'=>'1. Knotenpunkt im IP-Symcon-Objektbaum auswaehlen (z.B. KNX > Sicherheit > Bewegung). '
+                            .'Nur dieser Teilbaum wird gelesen. Instanzen und einzelne direkte Sensorvariablen werden erkannt.'],
                         ['type'=>'RowLayout','items'=>[
-                            ['type'=>'SelectObject','name'=>'DiscoveryRootId','caption'=>'Suchwurzel (Kategorie oder Instanz)'],
-                            ['type'=>'ValidationTextBox','name'=>'DiscoveryExtraRootIds','caption'=>'Weitere Suchwurzeln (IPS-IDs, Komma getrennt)']
+                            ['type'=>'SelectObject','name'=>'DiscoveryRootId','caption'=>'Knotenpunkt / Suchwurzel (Kategorie, Instanz oder Variable)'],
+                            ['type'=>'ValidationTextBox','name'=>'DiscoveryExtraRootIds','caption'=>'Weitere Suchwurzeln (optional, IPS-IDs)']
                         ]],
-                        ['type'=>'Button','caption'=>'IP-SYMCON-GERAETE INVENTARISIEREN','onClick'=>'RCC_ScanNewDevices($id);'],
+                        ['type'=>'Label','caption'=>'2. Bereich und Gruppe festlegen. Ohne Eingabe werden die zentralen Typvorlagen verwendet. '
+                            .'Beispiel Bewegungsmelder: Bereich sicherheit, Gruppe bewegung, Typ Bewegungsmelder.'],
+                        ['type'=>'RowLayout','items'=>[
+                            ['type'=>'ValidationTextBox','name'=>'DiscoveryDomainOverride',
+                                'caption'=>'Bereich (z.B. sicherheit) – leer = automatisch'],
+                            ['type'=>'ValidationTextBox','name'=>'DiscoveryGroupOverride',
+                                'caption'=>'Gruppe (z.B. bewegung) – leer = automatisch']
+                        ]],
+                        ['type'=>'RowLayout','items'=>[
+                            ['type'=>'Select','name'=>'DiscoveryTypeOverride',
+                                'caption'=>'Geraetetyp fuer diesen Knotenpunkt',
+                                'options'=>array_merge(
+                                    [['caption'=>'Automatisch aus Name, Profil und Modul bestimmen','value'=>'']],
+                                    array_map(static fn(string $type,string $caption):array =>
+                                        ['caption'=>$caption,'value'=>$type],
+                                        array_keys(RCCDeviceTypeRegistry::captions()),
+                                        array_values(RCCDeviceTypeRegistry::captions()))
+                                )],
+                            ['type'=>'Select','name'=>'DiscoveryRoomOverride',
+                                'caption'=>'Alle Funde einem Raum zuordnen (optional)',
+                                'options'=>array_merge(
+                                    [['caption'=>'Raum aus Geraetenamen bestimmen / einzeln auswaehlen','value'=>'']],
+                                    array_values(array_filter($roomOptions,static fn(array $option):bool =>
+                                        (string)($option['value']??'')!==''
+                                    )))
+                                )]
+                        ]],
+                        ['type'=>'Label','caption'=>'3. Optional: ChatGPT hilft bei unklaren Funden mit Namen, Identifikatoren, '
+                            .'Profilen und Datentypen aus diesem Knotenpunkt. Keine Rohwerte, IPS-IDs oder '
+                            .'Passwoerter an OpenAI; Kosten ueber den vorhandenen Alexa-API-Key.'],
+                        ['type'=>'RowLayout','items'=>[
+                            ['type'=>'CheckBox','name'=>'DiscoveryUseAI',
+                                'caption'=>'KI fuer unklare Vorschlaege verwenden (optional, kostenpflichtig)'],
+                            ['type'=>'SelectObject','name'=>'DiscoveryAlexaInstanceId',
+                                'caption'=>'Alexa-Modulinstanz mit bestehendem OpenAI-Key']
+                        ]],
+                        ['type'=>'Button','caption'=>'KNOTENPUNKT DURCHSUCHEN UND GERAETE VORSCHLAGEN',
+                            'onClick'=>'RCC_ScanNewDevices($id);'],
+                        ['type'=>'Label','name'=>'DiscoveryAIReport',
+                            'caption'=>$this->ReadAttributeString('DiscoveryAIReport')],
                         ['type'=>'Label','name'=>'DiscoverySummary','caption'=>$discoverySummary],
                         ['type'=>'Button','caption'=>'DATENSTAND UND OFFENE PUNKTE PRUEFEN',
                             'onClick'=>'RCC_AuditDiscoveryCoverage($id);'],
@@ -6052,6 +6092,8 @@ class RoomsCatalogConfigurator extends IPSModule
                                         array_keys(RCCDeviceTypeRegistry::captions()),
                                         array_values(RCCDeviceTypeRegistry::captions()))
                                 ]]],
+                                ['caption'=>'Bereich','name'=>'locationDomain','width'=>'120px','edit'=>['type'=>'ValidationTextBox']],
+                                ['caption'=>'Gruppe','name'=>'locationGroup','width'=>'120px','edit'=>['type'=>'ValidationTextBox']],
                                 ['caption'=>'Variablen','name'=>'variableCount','width'=>'80px','save'=>false],
                                 ['caption'=>'Bewertung','name'=>'confidence','width'=>'90px','save'=>false],
                                 ['caption'=>'Datenstand','name'=>'readiness','width'=>'95px','save'=>false],
@@ -6063,7 +6105,9 @@ class RoomsCatalogConfigurator extends IPSModule
                                 . '\'selected\' => ($DiscoveredDevices["selected"] ?? null), '
                                 . '\'roomKey\' => ($DiscoveredDevices["roomKey"] ?? null), '
                                 . '\'title\' => ($DiscoveredDevices["title"] ?? null), '
-                                . '\'deviceType\' => ($DiscoveredDevices["deviceType"] ?? null)'
+                                . '\'deviceType\' => ($DiscoveredDevices["deviceType"] ?? null), '
+                                 . '\'locationDomain\' => ($DiscoveredDevices["locationDomain"] ?? null), '
+                                 . '\'locationGroup\' => ($DiscoveredDevices["locationGroup"] ?? null)'
                                 . '], static fn($v) => $v !== null), JSON_INVALID_UTF8_SUBSTITUTE));'
                         ],
                         ['type'=>'RowLayout','items'=>[
@@ -6073,7 +6117,9 @@ class RoomsCatalogConfigurator extends IPSModule
                                 'confirm'=>'Markierte neue Geraete ausschliesslich nach RoomsCatalogEdit importieren? KI bleibt deaktiviert und PROD unveraendert.',
                                 'onClick'=>'RCC_ApplyDiscoveredDevices($id);']
                         ]],
-                        ['type'=>'Label','caption'=>'Alle 10 Geraeteklassen werden analysiert. Der Bericht unterscheidet die abgeschlossene Suche vom fachlich geprueften Datenstand. Neue Geraete starten mit KI aus und Nur abfragen an. Profile und Namen liefern Vorschlaege, keine ungeprueften Schaltrechte.']
+                        ['type'=>'Label','caption'=>'Alle Typen werden geprueft. Neue Geraete werden erst nach '
+                            .'Markieren ausschliesslich nach EDIT importiert, mit KI ausgeschaltet und ohne '
+                            .'Schaltrechte; PROD und die echten IPS-Geraete bleiben unveraendert.']
                     ]
                 ],
                 [
