@@ -33,7 +33,6 @@ jobs:
           php -l IPSAlexaHaussteuerung/module.php
           php -l IPSAlexaHaussteuerung/src/RoomsCatalogAutoMigration.php
           php -l IPSAlexaHaussteuerung/resources/action_entry.php
-          php -l IPSAlexaHaussteuerung/resources/helpers/HomeAgentVoiceBridge.php
           php -l IPSAlexaHaussteuerung/resources/helpers/KIHouseController.php
           php -l IPSAlexaHaussteuerung/resources/helpers/HouseQueryEngine.php
           php -l IPSAlexaHaussteuerung/resources/helpers/VoiceIntentRouter.php
