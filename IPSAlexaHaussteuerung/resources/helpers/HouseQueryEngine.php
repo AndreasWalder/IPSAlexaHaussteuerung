@@ -237,6 +237,12 @@ function iah_ai_query_house(array $devices, array $args, string $spoken = ''): a
     $indoorOnly=($args['indoor_only']??false)===true;
     $found=iah_rc_find($devices,$filters);
     $validDevices=0;$measurements=0;$perGroup=[];$dedup=[];
+    // Diagnose nur Aggregatzahlen, keine geraetebezogenen Rohdaten/IDs.
+    // Die KI darf den Unterschied zwischen "alle aus" und
+    // "kein verwertbarer Status" nicht mehr verwechseln.
+    $coverage=['devices'=>0,'readable'=>0,'on'=>0,'off'=>0,
+        'unknown'=>0,'unknownRoles'=>[],'unknownTypes'=>[],
+        'unrecognizedNumericStatus'=>[]];
     $includeLastChange=iah_rc_wants_last_change($spoken);
     foreach ($found as $dev) {
         if (!iah_ai_selected_room($dev,$rooms)) continue;
@@ -246,6 +252,32 @@ function iah_ai_query_house(array $devices, array $args, string $spoken = ''): a
                 iah_rc_norm((string)($dev['room']??'').' '.($dev['roomKey']??''))))) continue;
         $state=iah_rc_state($dev,$includeLastChange);
         $value=iah_ai_property_value($state,$property,$dev);
+        if ($property==='activity') {
+            $coverage['devices']++;
+            if ($value!==null) {
+                $coverage['readable']++;
+                if ($value==='an') $coverage['on']++;
+                elseif ($value==='aus') $coverage['off']++;
+            } else {
+                $coverage['unknown']++;
+                $roles=array_keys((array)($dev['reads']??[]));
+                $roleKey=$roles===[]?'no_feedback_role':implode('+',$roles);
+                $coverage['unknownRoles'][$roleKey]=($coverage['unknownRoles'][$roleKey]??0)+1;
+                foreach (['status','power'] as $role) {
+                    if (!array_key_exists($role,(array)($state['properties']??[]))) continue;
+                    $raw=$state['properties'][$role];
+                    $kind=get_debug_type($raw);
+                    $coverage['unknownTypes'][$role.':'.$kind]
+                        =($coverage['unknownTypes'][$role.':'.$kind]??0)+1;
+                    if ((is_int($raw)||is_float($raw)) && is_finite((float)$raw)
+                        && abs((float)$raw)<10000 && count($coverage['unrecognizedNumericStatus'])<8) {
+                        $code=(string)$raw;
+                        $coverage['unrecognizedNumericStatus'][$code]
+                            =($coverage['unrecognizedNumericStatus'][$code]??0)+1;
+                    }
+                }
+            }
+        }
         if ($value===null) continue; // fehlend ≠ aus / 0
         $validDevices++;
         if (!iah_ai_condition_matches($value,$condition,$expected)) continue;
@@ -338,7 +370,15 @@ function iah_ai_query_house(array $devices, array $args, string $spoken = ''): a
             round((float)$row['value'],1)===round((float)$primary['value'],1)));
         $result['ties']=array_slice($same,0,10);
     }
-    if ($validDevices===0) $result['warning']='Keine gueltigen Istwerte fuer diese Eigenschaft gefunden. Nicht als Null interpretieren.';
+    if ($property==='activity') {
+        $result['statusCoverage']=$coverage;
+        if ($coverage['unknown']>0 && $coverage['readable']===0)
+            $result['warning']='Keine eindeutig lesbare Ein/Aus-Rueckmeldung: '.
+                $coverage['unknown'].' Geraete ohne interpretierbaren Status. '.
+                'Bei Zahlencodes Status-Variablenprofil oder ai.stateMapping on/off pruefen.';
+    }
+    if ($validDevices===0 && !isset($result['warning']))
+        $result['warning']='Keine gueltigen Istwerte fuer diese Eigenschaft gefunden. Nicht als Null interpretieren.';
     elseif ($groupBy!=='none' && $truncated) $result['warning']='Ergebnisliste gekuerzt; Aggregat wurde aus allen Treffern berechnet.';
     return $result;
 }
