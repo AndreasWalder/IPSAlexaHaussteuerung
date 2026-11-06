@@ -133,9 +133,9 @@ IPS_SetScriptContent(41,auditCatalog($updated));
 $allDone=auditReadForm($mod);
 $allDoneUi=json_encode($allDone,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
 auditCheck(!str_contains($allDoneUi,'RCC_AnalyzeLegacyDevices')
-    && !str_contains($allDoneUi,'RCC_ScanNewDevices')
+    && str_contains($allDoneUi,'RCC_ScanNewDevices')
     && str_contains($allDoneUi,'EDIT NACH PROD UEBERNEHMEN'),
-    'Legacy inventory and migration controls should stay out of the simplified UI');
+    'Legacy migration remains hidden, but user-requested device importer stays available');
 ob_start();$mod->AuditMigrationReadiness();$doneReport=ob_get_clean();
 auditCheck(str_contains($doneReport,'Katalog-Modell technisch konsistent'),
     'All-confirmed migration should be recognized without granting KI writes');
