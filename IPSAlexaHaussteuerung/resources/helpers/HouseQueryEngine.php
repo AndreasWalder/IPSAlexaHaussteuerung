@@ -61,6 +61,48 @@ function iah_ai_binary_feedback(mixed $value, bool $numericStatus = false): ?str
     return null;
 }
 
+/**
+ * V3.4.7: Ein numerischer IP-Symcon-Status kann einen anderen Wertebereich
+ * als 0/1 haben. Nur eine tatsaechliche Variablenprofil-Zuordnung
+ * "Ein"/"Aus" ist eine verifizierbare Quelle. Keine Annahme 2 = Ein!
+ * VariableCustomProfile hat in IPS Vorrang vor VariableProfile.
+ */
+function iah_ai_profile_feedback(int $variableId, mixed $value): ?string
+{
+    if ($variableId<=0 || !IPS_VariableExists($variableId)
+        || !function_exists('IPS_GetVariableProfile')) return null;
+    try {
+        $variable=IPS_GetVariable($variableId);
+        $profileName=(string)($variable['VariableCustomProfile']??'');
+        if ($profileName==='') $profileName=(string)($variable['VariableProfile']??'');
+        if ($profileName==='') return null;
+        static $profiles=[];
+        if (!array_key_exists($profileName,$profiles)) {
+            try { $profiles[$profileName]=IPS_GetVariableProfile($profileName); }
+            catch (Throwable $ignored) { $profiles[$profileName]=null; }
+        }
+        $profile=$profiles[$profileName];
+        if (!is_array($profile)) return null;
+        foreach ((array)($profile['Associations']??[]) as $association) {
+            if (!is_array($association) || !array_key_exists('Value',$association)) continue;
+            $code=$association['Value'];
+            $equal=(get_debug_type($code)===get_debug_type($value) && $code===$value)
+                || (is_numeric($code) && is_numeric($value)
+                    && !is_bool($code) && !is_bool($value)
+                    && (float)$code===(float)$value);
+            if (!$equal) continue;
+            // Profiltexte ohne eindeutige Ein/Aus-Bedeutung werden ignoriert.
+            $label=iah_rc_norm((string)($association['Name']??''));
+            return match($label) {
+                'an','ein','eingeschaltet','aktiv','on','true','licht an','licht ein' => 'an',
+                'aus','ausgeschaltet','inaktiv','off','false','licht aus' => 'aus',
+                default=>null
+            };
+        }
+    } catch(Throwable $ignored) {}
+    return null;
+}
+
 /** Nur explizite Endlagen-/Status-Rueckmeldungen koennen offen/zu bestaetigen. */
 function iah_ai_closure_feedback(array $state): ?string
 {
@@ -89,6 +131,8 @@ function iah_ai_property_value(array $state, string $property, array $dev = []):
             if (!array_key_exists($role,$props)) continue;
             $binary=iah_ai_binary_feedback($props[$role],
                 ($switchType && in_array($role,['power','status'],true)) || $role==='motion');
+            if ($binary===null && $switchType && in_array($role,['power','status'],true))
+                $binary=iah_ai_profile_feedback((int)($dev['reads'][$role]??0),$props[$role]);
             if ($binary!==null) return $binary;
         }
         $brightness = $props['brightness'] ?? null;
