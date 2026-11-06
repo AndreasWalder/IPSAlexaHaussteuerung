@@ -6319,7 +6319,8 @@ class RoomsCatalogConfigurator extends IPSModule
                     && $migrationStats['legacy'] === 0) {
                     continue; // Keine Altdaten mehr in EDIT: Assistent entfaellt.
                 }
-                $element['expanded'] = false;
+                // Gefuehrter Baumsuch-Import bleibt dauerhaft sichtbar.
+                $element['expanded'] = $caption === 'IP-Symcon-Geraeteinventur';
                 $assistants[] = $element;
                 continue;
             }
@@ -6343,7 +6344,8 @@ class RoomsCatalogConfigurator extends IPSModule
         // oder Migrations-Publishing-Aktionen in der Hauptansicht.
         // Der regulaere Geraeteeditor mit seinen Prueffeldern bleibt.
         $everyday=['Raeume & Etagen','RoomsCatalog Scripts',
-            'Geraete bearbeiten (RoomsCatalog EDIT)'];
+            'Geraete bearbeiten (RoomsCatalog EDIT)',
+            'Geraete erkennen, inventarisieren und reparieren'];
         $main=[];
         foreach ($form['elements'] as $index=>$element) {
             $caption=(string)($element['caption']??'');
