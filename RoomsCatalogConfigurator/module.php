@@ -1829,6 +1829,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 if(array_intersect($alternative,array_keys($mapped))===[])
                     $missing[]=implode(' oder ',$alternative);
             }
+            if ($type==='generic') $missing[]='Geraetetyp manuell bestimmen';
             [$domain,$group]=$fixedDomain!=='' ? [$fixedDomain,$fixedGroup]
                 : $this->guidedTypeLocation($type);
             $inventory[] = [
