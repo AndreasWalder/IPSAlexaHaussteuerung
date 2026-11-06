@@ -7527,9 +7527,19 @@ class RoomsCatalogConfigurator extends IPSModule
             $control=['type'=>'SelectVariable','name'=>$field,
                 'caption'=>$variableCaptions[$property]??$property,
                 'width'=>'43%','visible'=>$visible,
-                // Der neue Wert wird durch den nativen Auswahldialog erst
-                // beim Bestaetigen in $ai...Id uebernommen.
-                'onChange'=>'RCC_RefreshSelectedVariablePreview($id, "'.$field.'", 
+                // Nach Bestaetigen des IPS-Baumdialogs die Auswahl direkt lesen.
+                'onChange'=>sprintf('RCC_RefreshSelectedVariablePreview($id, "%s", $%s);',$field,$field)];
+            if (isset($invalidBindings[$property])) {
+                // Keine muss veraltete IDs beim Speichern entfernen.
+                $control['value']=0;
+            }
+            $aiItems[]=['type'=>'RowLayout','items'=>[
+                $control,
+                ['type'=>'Label','name'=>'ValuePreview_'.$field,
+                    'caption'=>$this->liveVariablePreview($currentId),
+                    'visible'=>$visible]
+            ]];
+        }
         $stateFields = ['on'=>'Aktiv/Ein ist','off'=>'Inaktiv/Aus ist',
             'open'=>'Offen ist','closed'=>'Geschlossen ist'];
         $controls = [];
