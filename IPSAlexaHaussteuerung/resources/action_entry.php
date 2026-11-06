@@ -2129,7 +2129,7 @@ function Execute($request = null)
         }
         $iahVoiceSpoken = trim(preg_replace('/\s+/u',' ',$iahVoiceSpoken) ?? '');
         if ($iahDedicatedSearchIntent) {
-            $log('info', 'HomeAgentVoice.slot_capture', [
+            $log('info', 'KIVoice.slot_capture', [
                 'intent'=>$intentName,
                 'slotPresent'=>$iahQuestionSlot !== '',
                 'prefix'=>$iahQuestionPrefix,
@@ -2356,7 +2356,7 @@ function Execute($request = null)
             'kiEnabled'=>$homeAgentEnabled
         ]);
         if ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {
-            $log('info', 'HomeAgentVoice.route_gate', [
+            $log('info', 'KIVoice.route_gate', [
                 'category'=>$iahVoiceCategory,
                 'intent'=>$intentName,
                 'allowed'=>(bool)$iahKiGate['allowed'],
@@ -2396,18 +2396,18 @@ function Execute($request = null)
             $homeAgentShouldRoute = $homeAgentDedicatedIntent || $iahVoiceCategory === 'query'
                 || ($homeAgentSpokenQuestion !== '' && $isHomeAgentQuestion);
             if ($homeAgentShouldRoute) {
-                $log('info', 'HomeAgentVoice.received', [
+                $log('info', 'KIVoice.received', [
                     'intent' => $intentName, 'source' => $homeAgentDedicatedIntent ? 'Frage' : 'legacy',
                     'chars' => mb_strlen($homeAgentSpokenQuestion, 'UTF-8')
                 ]);
-                $log('debug', 'HomeAgentVoice.recognized_text', ['chars' => mb_strlen($homeAgentSpokenQuestion, 'UTF-8')]);
+                $log('debug', 'KIVoice.recognized_text', ['chars' => mb_strlen($homeAgentSpokenQuestion, 'UTF-8')]);
                 if (!$homeAgentEnabled) {
-                    $log('warn', 'HomeAgentVoice.disabled');
+                    $log('warn', 'KIVoice.disabled');
                     if ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {
                         return $kiAlexaKeepOpen('Die ChatGPT-Haussteuerung ist noch nicht aktiviert.');
                     }
                 } elseif ($homeAgentSpokenQuestion === '' || $homeAgentSpokenQuestion === '?') {
-                    $log('warn', 'HomeAgentVoice.missing_text', ['intent' => $intentName]);
+                    $log('warn', 'KIVoice.missing_text', ['intent' => $intentName]);
                     if ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {
                         return $kiAlexaKeepOpen('Ich habe keine Frage verstanden. Bitte versuche es erneut.');
                     }
@@ -2422,7 +2422,7 @@ function Execute($request = null)
                     ]);
                     if ($homeAgentBridge > 0 && function_exists('IPS_RunScriptWaitEx')) {
                         try {
-                            $log('info', 'HomeAgentVoice.bridge.start', ['scriptId' => $homeAgentBridge]);
+                            $log('info', 'KIVoice.bridge.start', ['scriptId' => $homeAgentBridge]);
                             // IPS_RunScriptWaitEx akzeptiert nur skalare Parameterwerte.
                             // Die Konfiguration deshalb als JSON-String übertragen (nicht als Array).
                             $kiCatalogJson = json_encode([
@@ -2444,7 +2444,7 @@ function Execute($request = null)
                             // "Keine verwertbare Antwort", ohne Hinweis auf den Grund.
                             $homeAgentPayload = is_string($homeAgentJson)
                                 ? trim((string) $homeAgentJson) : '';
-                            $homeAgentPayload = ltrim($homeAgentPayload, "\xEF\xBB\xBF");
+                            $homeAgentPayload = ltrim($homeAgentPayload, chr(239).chr(187).chr(191));
                             $homeAgentData = $homeAgentPayload !== ''
                                 ? json_decode($homeAgentPayload, true) : null;
                             if (!is_array($homeAgentData)) {
@@ -2460,25 +2460,25 @@ function Execute($request = null)
                             if (is_array($homeAgentData) && ($homeAgentData['handled'] ?? false) === true
                                 && trim((string) ($homeAgentData['answer'] ?? '')) !== '') {
                                 $homeAgentAnswer = trim((string) $homeAgentData['answer']);
-                                $log('info', 'HomeAgentVoice.answer', ['durationSeconds' => $homeAgentElapsed, 'words' => count(preg_split('/\s+/u', $homeAgentAnswer, -1, PREG_SPLIT_NO_EMPTY) ?: [])]);
+                                $log('info', 'KIVoice.answer', ['durationSeconds' => $homeAgentElapsed, 'words' => count(preg_split('/\s+/u', $homeAgentAnswer, -1, PREG_SPLIT_NO_EMPTY) ?: [])]);
                                 $iahVoiceRouter(['op'=>'outcome','deviceId'=>$iahVoiceDeviceId,
                                     'backend'=>$kiVoiceMode,'success'=>true,
                                     'durationMs'=>(int)round($homeAgentElapsed*1000),
                                     'model'=>(string)($propsEarly['KIModelSelection']??'gpt-6-luna')]);
                                 return $kiAlexaKeepOpen($homeAgentAnswer);
                             }
-                            $log('warn', 'HomeAgentVoice.fallback', [
+                            $log('warn', 'KIVoice.fallback', [
                                 'durationSeconds' => $homeAgentElapsed,
                                 'reason' => (string) ($homeAgentData['error'] ?? 'Keine verwertbare Antwort')
                             ]);
                         } catch (Throwable $homeAgentError) {
-                            $log('warn', 'HomeAgentVoice.exception', [
+                            $log('warn', 'KIVoice.exception', [
                                 'durationSeconds' => round(microtime(true) - $homeAgentStarted, 3),
                                 'error' => $homeAgentError->getMessage()
                             ]);
                         }
                     } else {
-                        $log('warn', 'HomeAgentVoice.bridge.missing', ['scriptId' => $homeAgentBridge]);
+                        $log('warn', 'KIVoice.bridge.missing', ['scriptId' => $homeAgentBridge]);
                     }
                     $iahVoiceRouter(['op'=>'outcome','deviceId'=>$iahVoiceDeviceId,
                         'backend'=>$kiVoiceMode,'success'=>false,
@@ -2490,7 +2490,7 @@ function Execute($request = null)
                     }
                 }
             } elseif ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {
-                $log('warn', 'HomeAgentVoice.not_routed', [
+                $log('warn', 'KIVoice.not_routed', [
                     'intent'=>$intentName, 'category'=>$iahVoiceCategory,
                     'reason'=>'no_question_text'
                 ]);
@@ -2498,7 +2498,7 @@ function Execute($request = null)
             }
         } elseif ($iahVoiceCategory === 'query') {
             // Statt still auf main_launch zurueckzufallen den Grund nennen.
-            $log('warn', 'HomeAgentVoice.query_blocked', ['reason'=>(string)$iahKiGate['reason']]);
+            $log('warn', 'KIVoice.query_blocked', ['reason'=>(string)$iahKiGate['reason']]);
             return $kiAlexaKeepOpen('Die Frage wurde erkannt, konnte aber nicht an die KI weitergeleitet werden.');
         }
         // Alexa/GetHaus kann einen IntentRequest mit komplett leeren Slots
@@ -2511,7 +2511,7 @@ function Execute($request = null)
             && $iahLegacyNavKey === ''
             && $iahVoiceCategory === 'passthrough'
             && trim($iahVoiceSpoken) === '') {
-            $log('warn', 'HomeAgentVoice.empty_gethaus', [
+            $log('warn', 'KIVoice.empty_gethaus', [
                 'reason'=>'alexa_sent_no_slot_values',
                 'intent'=>$intentName,
                 'category'=>$iahVoiceCategory
@@ -2524,7 +2524,7 @@ function Execute($request = null)
             && $iahLegacyNavKey === ''
             && $iahVoiceCategory === 'passthrough'
             && gr_norm_text($iahVoiceSpoken) === 'frage') {
-            $log('info', 'HomeAgentVoice.prompt_question', ['reason'=>'question_carrier_without_text']);
+            $log('info', 'KIVoice.prompt_question', ['reason'=>'question_carrier_without_text']);
             return $kiAlexaKeepOpen('Welche Hausfrage möchtest du stellen? Sage zum Beispiel: Frage, welche Fenster offen sind.');
         }
         // HOME_AGENT_VOICE_HOOK_END
