@@ -8125,7 +8125,15 @@ class RoomsCatalogConfigurator extends IPSModule
         if($title==='' || mb_strlen($title,'UTF-8')>200) {
             $fail('Bitte einen Geraetenamen mit maximal 200 Zeichen angeben.');return;
         }
-        $update=['editorOriginalKey'=>$key,'title'=>$title,
+        // SaveToEdit erkennt ein einzelnes Geraet nur anhand der
+        // roomKey/domain/key-Spalten. Ohne diese wuerde das assoziative
+        // Payload als Zeilen-Liste missverstanden und NICHT gespeichert.
+        $update=['editorOriginalKey'=>$key,
+            'roomKey'=>(string)$row['roomKey'],
+            'domain'=>(string)$row['domain'],
+            'group'=>(string)$row['group'],
+            'key'=>(string)$row['key'],
+            'title'=>$title,
             'synonyms'=>(string)($input['synonyms']??''),
             'entityId'=>(string)($input['entityId']??''),
             'kiEnabled'=>(bool)($input['kiEnabled']??false),
