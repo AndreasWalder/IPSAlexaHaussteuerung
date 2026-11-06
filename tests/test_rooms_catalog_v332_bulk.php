@@ -78,8 +78,9 @@ $mod->properties=['RoomsCatalogScriptID'=>40,'RoomsCatalogEditScriptID'=>41];
 $form=json_decode($mod->GetConfigurationForm(),true,512,JSON_THROW_ON_ERROR);
 $ui=json_encode($form,JSON_THROW_ON_ERROR);
 foreach (['RCC_PreviewBulkEdit','RCC_ApplyBulkEdit',
-    'BulkDeviceType','BulkAIMode','BulkSuggestions','BulkReview','BulkSelectionSummary'] as $element) {
-    bulkCheck(!str_contains($ui,$element),'Obsolete bulk UI should be removed: '.$element);
+    'BulkDeviceType','BulkAIMode','BulkSuggestions','BulkReview','BulkSelectionSummary',
+    'RCC_StartMarkedEditor','MarkedEditorPanel'] as $element) {
+    bulkCheck(str_contains($ui,$element),'Shared bulk UI / paged editor missing: '.$element);
 }
 bulkCheck(str_contains($ui,'EDIT NACH PROD UEBERNEHMEN'),'Simple publish action missing');
 
