@@ -61,6 +61,48 @@ function iah_ai_binary_feedback(mixed $value, bool $numericStatus = false): ?str
     return null;
 }
 
+/**
+ * V3.4.7: Ein numerischer IP-Symcon-Status kann einen anderen Wertebereich
+ * als 0/1 haben. Nur eine tatsaechliche Variablenprofil-Zuordnung
+ * "Ein"/"Aus" ist eine verifizierbare Quelle. Keine Annahme 2 = Ein!
+ * VariableCustomProfile hat in IPS Vorrang vor VariableProfile.
+ */
+function iah_ai_profile_feedback(int $variableId, mixed $value): ?string
+{
+    if ($variableId<=0 || !IPS_VariableExists($variableId)
+        || !function_exists('IPS_GetVariableProfile')) return null;
+    try {
+        $variable=IPS_GetVariable($variableId);
+        $profileName=(string)($variable['VariableCustomProfile']??'');
+        if ($profileName==='') $profileName=(string)($variable['VariableProfile']??'');
+        if ($profileName==='') return null;
+        static $profiles=[];
+        if (!array_key_exists($profileName,$profiles)) {
+            try { $profiles[$profileName]=IPS_GetVariableProfile($profileName); }
+            catch (Throwable $ignored) { $profiles[$profileName]=null; }
+        }
+        $profile=$profiles[$profileName];
+        if (!is_array($profile)) return null;
+        foreach ((array)($profile['Associations']??[]) as $association) {
+            if (!is_array($association) || !array_key_exists('Value',$association)) continue;
+            $code=$association['Value'];
+            $equal=(get_debug_type($code)===get_debug_type($value) && $code===$value)
+                || (is_numeric($code) && is_numeric($value)
+                    && !is_bool($code) && !is_bool($value)
+                    && (float)$code===(float)$value);
+            if (!$equal) continue;
+            // Profiltexte ohne eindeutige Ein/Aus-Bedeutung werden ignoriert.
+            $label=iah_rc_norm((string)($association['Name']??''));
+            return match($label) {
+                'an','ein','eingeschaltet','aktiv','on','true','licht an','licht ein' => 'an',
+                'aus','ausgeschaltet','inaktiv','off','false','licht aus' => 'aus',
+                default=>null
+            };
+        }
+    } catch(Throwable $ignored) {}
+    return null;
+}
+
 /** Nur explizite Endlagen-/Status-Rueckmeldungen koennen offen/zu bestaetigen. */
 function iah_ai_closure_feedback(array $state): ?string
 {
@@ -89,6 +131,8 @@ function iah_ai_property_value(array $state, string $property, array $dev = []):
             if (!array_key_exists($role,$props)) continue;
             $binary=iah_ai_binary_feedback($props[$role],
                 ($switchType && in_array($role,['power','status'],true)) || $role==='motion');
+            if ($binary===null && $switchType && in_array($role,['power','status'],true))
+                $binary=iah_ai_profile_feedback((int)($dev['reads'][$role]??0),$props[$role]);
             if ($binary!==null) return $binary;
         }
         $brightness = $props['brightness'] ?? null;
@@ -193,6 +237,12 @@ function iah_ai_query_house(array $devices, array $args, string $spoken = ''): a
     $indoorOnly=($args['indoor_only']??false)===true;
     $found=iah_rc_find($devices,$filters);
     $validDevices=0;$measurements=0;$perGroup=[];$dedup=[];
+    // Diagnose nur Aggregatzahlen, keine geraetebezogenen Rohdaten/IDs.
+    // Die KI darf den Unterschied zwischen "alle aus" und
+    // "kein verwertbarer Status" nicht mehr verwechseln.
+    $coverage=['devices'=>0,'readable'=>0,'on'=>0,'off'=>0,
+        'unknown'=>0,'unknownRoles'=>[],'unknownTypes'=>[],
+        'unrecognizedNumericStatus'=>[]];
     $includeLastChange=iah_rc_wants_last_change($spoken);
     foreach ($found as $dev) {
         if (!iah_ai_selected_room($dev,$rooms)) continue;
@@ -202,6 +252,32 @@ function iah_ai_query_house(array $devices, array $args, string $spoken = ''): a
                 iah_rc_norm((string)($dev['room']??'').' '.($dev['roomKey']??''))))) continue;
         $state=iah_rc_state($dev,$includeLastChange);
         $value=iah_ai_property_value($state,$property,$dev);
+        if ($property==='activity') {
+            $coverage['devices']++;
+            if ($value!==null) {
+                $coverage['readable']++;
+                if ($value==='an') $coverage['on']++;
+                elseif ($value==='aus') $coverage['off']++;
+            } else {
+                $coverage['unknown']++;
+                $roles=array_keys((array)($dev['reads']??[]));
+                $roleKey=$roles===[]?'no_feedback_role':implode('+',$roles);
+                $coverage['unknownRoles'][$roleKey]=($coverage['unknownRoles'][$roleKey]??0)+1;
+                foreach (['status','power'] as $role) {
+                    if (!array_key_exists($role,(array)($state['properties']??[]))) continue;
+                    $raw=$state['properties'][$role];
+                    $kind=get_debug_type($raw);
+                    $coverage['unknownTypes'][$role.':'.$kind]
+                        =($coverage['unknownTypes'][$role.':'.$kind]??0)+1;
+                    if ((is_int($raw)||is_float($raw)) && is_finite((float)$raw)
+                        && abs((float)$raw)<10000 && count($coverage['unrecognizedNumericStatus'])<8) {
+                        $code=(string)$raw;
+                        $coverage['unrecognizedNumericStatus'][$code]
+                            =($coverage['unrecognizedNumericStatus'][$code]??0)+1;
+                    }
+                }
+            }
+        }
         if ($value===null) continue; // fehlend ≠ aus / 0
         $validDevices++;
         if (!iah_ai_condition_matches($value,$condition,$expected)) continue;
@@ -294,7 +370,15 @@ function iah_ai_query_house(array $devices, array $args, string $spoken = ''): a
             round((float)$row['value'],1)===round((float)$primary['value'],1)));
         $result['ties']=array_slice($same,0,10);
     }
-    if ($validDevices===0) $result['warning']='Keine gueltigen Istwerte fuer diese Eigenschaft gefunden. Nicht als Null interpretieren.';
+    if ($property==='activity') {
+        $result['statusCoverage']=$coverage;
+        if ($coverage['unknown']>0 && $coverage['readable']===0)
+            $result['warning']='Keine eindeutig lesbare Ein/Aus-Rueckmeldung: '.
+                $coverage['unknown'].' Geraete ohne interpretierbaren Status. '.
+                'Bei Zahlencodes Status-Variablenprofil oder ai.stateMapping on/off pruefen.';
+    }
+    if ($validDevices===0 && !isset($result['warning']))
+        $result['warning']='Keine gueltigen Istwerte fuer diese Eigenschaft gefunden. Nicht als Null interpretieren.';
     elseif ($groupBy!=='none' && $truncated) $result['warning']='Ergebnisliste gekuerzt; Aggregat wurde aus allen Treffern berechnet.';
     return $result;
 }
