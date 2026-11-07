@@ -70,7 +70,10 @@ assertEditor(str_contains($list['form'], '$Entries["roomKey"]'), 'Selected row k
 assertEditor(!str_contains($list['form'], '$id, $Entries)'), 'Whole list incorrectly passed to dynamic form');
 assertEditor(str_contains($list['onAdd'], 'array_filter(['), 'onAdd must build a real array from IPSList row fields');
 assertEditor(!str_contains($list['onAdd'], 'array_filter($Entries'), 'Never pass IPSList directly to array_filter');
-assertEditor($list['onEdit'] === $list['onAdd'], 'Add and edit must use same safe callback');
+assertEditor(str_contains($list['onEdit'],$list['onAdd'])
+    && str_contains($list['onEdit'],'RCC_SaveHuaweiDataSourceOverview')
+    && str_contains($list['onEdit'],'isDataSource'),
+    'Normal device editing must retain safe callback, with a guarded Huawei source-only branch');
 assertEditor(str_contains($list['onEdit'], "$" . 'Entries['), 'Selected IPSList row values must be accessed by string indices');
 assertEditor(str_contains(json_encode($form), 'RCC_SetVisibleSelection'), 'Bulk selection buttons must be available');
 

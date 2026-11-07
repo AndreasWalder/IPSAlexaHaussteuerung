@@ -56,6 +56,8 @@ jobs:
           php -l RoomsCatalogConfigurator/libs/DeviceTechnicalAudit.php
           php -l RoomsCatalogConfigurator/libs/DeviceTypeRegistry.php
           php -l RoomsCatalogConfigurator/libs/ModuleDataSources.php
+          php -l RoomsCatalogConfigurator/libs/DataSourceEditor.php
+          php -l RoomsCatalogConfigurator/libs/DataSourceEditorTrait.php
           php -l RoomsCatalogConfigurator/libs/SafeAutoRepair.php
       - name: Check Alexa HTML diagnostic JavaScript syntax
         run: |
@@ -96,6 +98,8 @@ jobs:
         run: php tests/test_ai_archive_history_v353.php
       - name: Test V3.6 HuaweiPV datasource import, read-only AI and archive counters
         run: php tests/test_huaweipv_energy_v36.php
+      - name: Test V3.6.1 HuaweiPV virtual table row and grouped metric editor
+        run: php tests/test_huaweipv_editor_v361.php
       - name: Test V3.4.6 HomeAgent removal, statuses, safe Alexa voice bridge
         run: php tests/test_ki_mcp_removal_voice_v346.php
       - name: Test V3.4.7 read light status through IP-Symcon profiles and show diagnostic coverage

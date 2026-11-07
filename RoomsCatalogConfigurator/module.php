@@ -7,6 +7,8 @@ require_once __DIR__ . '/libs/SafeAutoRepair.php';
 require_once __DIR__ . '/libs/DeviceTypeRegistry.php';
 require_once __DIR__ . '/libs/GuidedDiscovery.php';
 require_once __DIR__ . '/libs/ModuleDataSources.php';
+require_once __DIR__ . '/libs/DataSourceEditor.php';
+require_once __DIR__ . '/libs/DataSourceEditorTrait.php';
 
 /**
  * ============================================================
@@ -80,6 +82,7 @@ require_once __DIR__ . '/libs/ModuleDataSources.php';
 
 class RoomsCatalogConfigurator extends IPSModule
 {
+    use RCCDataSourceEditorTrait;
     // V3.4.4: Typen, editierbare Eigenschaften und Rollen nur noch zentral
     // in libs/DeviceTypeRegistry.php pflegen, nicht in diesem Formular.
 
@@ -357,11 +360,11 @@ class RoomsCatalogConfigurator extends IPSModule
 
 
     /** Preview is read-only, derives all IDs from the selected HuaweiPV node. */
-    public function PreviewHuaweiDataSource(): void
+    public function PreviewHuaweiDataSource(int $sourceId=0): void
     {
         $this->WriteAttributeString('HuaweiDataSourcePreview','{}');
         try {
-            $id=$this->ReadPropertyInteger('HuaweiDataSourceInstanceId');
+            $id=$sourceId>0?$sourceId:$this->ReadPropertyInteger('HuaweiDataSourceInstanceId');
             $editId=$this->ReadPropertyInteger('RoomsCatalogEditScriptID');
             $prodId=$this->ReadPropertyInteger('RoomsCatalogScriptID');
             if ($editId<=0 || $editId===$prodId || !IPS_ScriptExists($editId))
@@ -423,11 +426,11 @@ class RoomsCatalogConfigurator extends IPSModule
      * Explicit commit to EDIT only. Preview, source, live object tree and EDIT
      * script must still match; backup + readback + rollback on failure.
      */
-    public function ImportHuaweiDataSourceToEdit(): void
+    public function ImportHuaweiDataSourceToEdit(int $sourceId=0): void
     {
         try {
             $snapshot=json_decode($this->ReadAttributeString('HuaweiDataSourcePreview'),true);
-            $id=$this->ReadPropertyInteger('HuaweiDataSourceInstanceId');
+            $id=$sourceId>0?$sourceId:$this->ReadPropertyInteger('HuaweiDataSourceInstanceId');
             if (!is_array($snapshot) || (int)($snapshot['sourceInstanceId']??0)!==$id
                 || (int)($snapshot['expires']??0)<time())
                 throw new RuntimeException('Bitte die aktuelle Instanz zuerst frisch scannen.');
@@ -607,7 +610,10 @@ class RoomsCatalogConfigurator extends IPSModule
     public function SetRoomFilter(string $roomKey)
     {
         $this->WriteAttributeString('FilterRoom', $roomKey);
-        $this->normalizeCurrentFilters($this->getRuntimeEntries(), $this->getProdEntries());
+        $this->normalizeCurrentFilters(
+            array_merge($this->getRuntimeEntries(),RCCDataSourceEditor::sourceRows(
+                $this->loadConfiguredCatalog('RoomsCatalogEditScriptID','EDIT'))),
+            $this->getProdEntries());
         $this->logDebug('SetRoomFilter: roomKey="' . $roomKey . '"');
         $this->RefreshVisibleLists();
     }
@@ -615,7 +621,10 @@ class RoomsCatalogConfigurator extends IPSModule
     public function SetDomainFilter(string $domainKey)
     {
         $this->WriteAttributeString('FilterDomain', $domainKey);
-        $this->normalizeCurrentFilters($this->getRuntimeEntries(), $this->getProdEntries());
+        $this->normalizeCurrentFilters(
+            array_merge($this->getRuntimeEntries(),RCCDataSourceEditor::sourceRows(
+                $this->loadConfiguredCatalog('RoomsCatalogEditScriptID','EDIT'))),
+            $this->getProdEntries());
                $this->logDebug('SetDomainFilter: domainKey="' . $domainKey . '"');
         $this->RefreshVisibleLists();
     }
@@ -623,7 +632,10 @@ class RoomsCatalogConfigurator extends IPSModule
     public function SetGroupFilter(string $groupKey)
     {
         $this->WriteAttributeString('FilterGroup', $groupKey);
-        $this->normalizeCurrentFilters($this->getRuntimeEntries(), $this->getProdEntries());
+        $this->normalizeCurrentFilters(
+            array_merge($this->getRuntimeEntries(),RCCDataSourceEditor::sourceRows(
+                $this->loadConfiguredCatalog('RoomsCatalogEditScriptID','EDIT'))),
+            $this->getProdEntries());
         $this->logDebug('SetGroupFilter: groupKey="' . $groupKey . '"');
         $this->RefreshVisibleLists();
     }
@@ -5865,7 +5877,13 @@ class RoomsCatalogConfigurator extends IPSModule
         $entriesProd  = $this->getProdEntries();
         $entriesEdit  = $this->getRuntimeEntries();
         $filterAI = $this->ReadAttributeString('FilterAI');
-        $filters = $this->normalizeCurrentFilters($entriesEdit,$entriesProd);
+        // Virtual Huawei source rows are visible ONLY in the table, never
+        // in RuntimeEntries or the generic device bulk-edit pipeline.
+        $tableEdit=array_merge($entriesEdit,RCCDataSourceEditor::sourceRows(
+            $this->loadConfiguredCatalog('RoomsCatalogEditScriptID','EDIT')));
+        $tableProd=array_merge($entriesProd,RCCDataSourceEditor::sourceRows(
+            $this->loadConfiguredCatalog('RoomsCatalogScriptID','PROD')));
+        $filters = $this->normalizeCurrentFilters($tableEdit,$tableProd);
         $filterRoom = $filters['room'];
         $filterDomain = $filters['domain'];
         $filterGroup = $filters['group'];
@@ -5903,10 +5921,11 @@ class RoomsCatalogConfigurator extends IPSModule
             }
         }
 
-        $visibleProd    = $this->filterByAI($this->applyFilters($entriesEdit, $filterRoom, $filterDomain, $filterGroup), $filterAI);
+        $visibleProd    = $this->filterByAI($this->applyFilters($tableEdit, $filterRoom, $filterDomain, $filterGroup), $filterAI);
         $sharedDisplay=$this->sharedFeedbackAssignments($entriesEdit)['byDevice'];
-        $visibleProd    = array_map(fn(array $r): array => $this->decorateRow($r,
-            $sharedDisplay[(string)$this->buildCompositeKey($r)]??[]), $visibleProd);
+        $visibleProd    = array_map(fn(array $r): array => !empty($r['isDataSource'])
+            ? $r : $this->decorateRow($r,
+                $sharedDisplay[(string)$this->buildCompositeKey($r)]??[]), $visibleProd);
         $diffEntriesAll = $this->buildDiffEntries($entriesProd, $entriesEdit);
         $visibleDiff    = $this->filterByAI($this->applyFilters($diffEntriesAll, $filterRoom, $filterDomain, $filterGroup), $filterAI);
         $visibleDiff    = array_map(fn(array $r): array => $this->decorateIpsIds($r), $visibleDiff);
@@ -5922,6 +5941,10 @@ class RoomsCatalogConfigurator extends IPSModule
         // Nur einzelne String-Felder aus der aktuellen Zeile auslesen; niemals
         // das gesamte Objekt direkt an array_filter() übergeben.
         $saveSelectedRowCallback = $this->buildListRowSaveCallback($entriesEdit);
+        $sourceRowSaveCallback='if (!empty($Entries["isDataSource"])) { '
+            .'RCC_SaveHuaweiDataSourceOverview($id, (string)($Entries["key"] ?? ""), '
+            .'(string)($Entries["title"] ?? ""), (bool)($Entries["kiEnabled"] ?? false)); '
+            .'} else { '.$saveSelectedRowCallback.' }';
         $columnsEdit = [];
         foreach ($columnsProd as $col) {
             if (($col['name'] ?? '') === 'selected') {
@@ -6206,14 +6229,18 @@ class RoomsCatalogConfigurator extends IPSModule
                             'caption'  => 'Geraete und KI-Freigaben',
                             'rowCount' => 20,
                             'loadValuesFromConfiguration' => false,
-                            'form' => 'return json_decode(RCC_GetEntryEditForm($id, (string)($Entries["roomKey"] ?? ""), (string)($Entries["domain"] ?? ""), (string)($Entries["group"] ?? ""), (string)($Entries["key"] ?? "")), true);',
+                            'form' => 'return json_decode(!empty($Entries["isDataSource"]) '
+                                .'? RCC_GetHuaweiDataSourceEditForm($id, (string)($Entries["key"] ?? "")) '
+                                .': RCC_GetEntryEditForm($id, (string)($Entries["roomKey"] ?? ""), '
+                                .'(string)($Entries["domain"] ?? ""), (string)($Entries["group"] ?? ""), '
+                                .'(string)($Entries["key"] ?? "")), true);',
                             'add'      => true,
                             'delete'   => false,
                             'sort'     => ['column' => 'roomLabel', 'direction' => 'ascending'],
                             'columns'  => $columnsProd,
                             'values'   => $visibleProd,
                             'rowColor' => 'rowColor',
-                            'onEdit'   => $saveSelectedRowCallback,
+                            'onEdit'   => $sourceRowSaveCallback,
                             'onAdd'    => $saveSelectedRowCallback
                         ],
                         [
@@ -7893,7 +7920,11 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->ensureRuntimeCatalogCurrent();
         $edit = $this->getRuntimeEntries();
         $prod = $this->getProdEntries();
-        $filters = $this->normalizeCurrentFilters($edit,$prod);
+        $tableEdit=array_merge($edit,RCCDataSourceEditor::sourceRows(
+            $this->loadConfiguredCatalog('RoomsCatalogEditScriptID','EDIT')));
+        $tableProd=array_merge($prod,RCCDataSourceEditor::sourceRows(
+            $this->loadConfiguredCatalog('RoomsCatalogScriptID','PROD')));
+        $filters = $this->normalizeCurrentFilters($tableEdit,$tableProd);
         $room = $filters['room'];
         $domain = $filters['domain'];
         $group = $filters['group'];
@@ -7907,10 +7938,11 @@ class RoomsCatalogConfigurator extends IPSModule
             $this->UpdateFormField($name,'value',$value);
         }
 
-        $visible = $this->filterByAI($this->applyFilters($edit, $room, $domain, $group), $ai);
+        $visible = $this->filterByAI($this->applyFilters($tableEdit, $room, $domain, $group), $ai);
         $sharedDisplay=$this->sharedFeedbackAssignments($edit)['byDevice'];
-        $visible = array_map(fn(array $row): array => $this->decorateRow($row,
-            $sharedDisplay[(string)$this->buildCompositeKey($row)]??[]), $visible);
+        $visible = array_map(fn(array $row): array => !empty($row['isDataSource'])
+            ? $row : $this->decorateRow($row,
+                $sharedDisplay[(string)$this->buildCompositeKey($row)]??[]), $visible);
         $diff = $this->buildDiffEntries($prod, $edit);
         $visibleDiff = $this->filterByAI($this->applyFilters($diff, $room, $domain, $group), $ai);
         $visibleDiff = array_map(fn(array $row): array => $this->decorateIpsIds($row), $visibleDiff);
@@ -8107,6 +8139,7 @@ class RoomsCatalogConfigurator extends IPSModule
             ['caption'=>'Freigabe','name'=>'kiStatus','width'=>'105px','add'=>'','save'=>false],
             ['caption'=>'Pruefstatus','name'=>'checkStatus','width'=>'140px','add'=>'','save'=>false,'quickFilter'=>true],
             ['caption'=>'Was ist zu pruefen?','name'=>'checkDetails','width'=>'350px','add'=>'','save'=>false,'quickFilter'=>true],
+            ['caption'=>'Datenquelle','name'=>'isDataSource','visible'=>false,'add'=>false],
             ['caption'=>'Raum-Key','name'=>'roomKey','visible'=>false,'add'=>'','quickFilter'=>true],
             ['caption'=>'Synonyme','name'=>'synonyms','visible'=>false,'add'=>'','quickFilter'=>true]
         ];
