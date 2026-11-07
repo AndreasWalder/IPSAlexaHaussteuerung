@@ -21,6 +21,11 @@ if (!function_exists('iah_archive_query')) {
     require_once __DIR__ . '/ArchiveHistoryEngine.php';
 }
 
+// IAH_ENERGY_QUERY_ENGINE_INSERT
+if (!function_exists('iah_energy_query')) {
+    require_once __DIR__ . '/EnergyQueryEngine.php';
+}
+
 /**
  * Alexa KI -> produktiver RoomsCatalog -> sichere IP-Symcon-Aktionen.
  * Keine Home-Agent-Installation, keine freien PHP-/Variablen-ID-Aufrufe.
@@ -587,6 +592,10 @@ function iah_rc_voice(string $text,array $cfg): array
     $lastReadResult=null;
     try{
         $devices=iah_rc_index($catalogId,$wantsArchive);
+        $energySources=iah_energy_sources($catalogId);
+        $wantsEnergy=$energySources!==[] && (
+            (bool)preg_match('/\b(pv|photovoltaik|solar|wechselrichter|akku|batterie|strom|energie|ertrag|netzbezug|einspeis|autark|eigenverbrauch|hausverbrauch|anlage|smartmeter|ladezustand|leistungsaufnahme)\b/ui',$text)
+            || (string)($cfg['ui_context_domain']??'')==='energie');
         $enableDeviceDiagnostics=(bool)($cfg['device_diagnostics']??true);
         $typeCounts=[];$temperatureMapped=0;
         foreach ($devices as $device) {
@@ -597,8 +606,10 @@ function iah_rc_voice(string $text,array $cfg): array
         }
         iah_rc_log('catalog.loaded',['count'=>count($devices),'writeEnabled'=>$allowWrites,
             'deviceDiagnostics'=>$enableDeviceDiagnostics,
-            'types'=>$typeCounts,'temperatureReadable'=>$temperatureMapped]);
-        if(!$devices)return $costFinish(['handled'=>true,'answer'=>'Im RoomsCatalog sind keine KI-Geräte freigegeben.']);
+            'types'=>$typeCounts,'temperatureReadable'=>$temperatureMapped,
+            'energySources'=>count($energySources)]);
+        if(!$devices && $energySources===[])
+            return $costFinish(['handled'=>true,'answer'=>'Im RoomsCatalog sind keine KI-Geräte oder Energiequellen freigegeben.']);
         // Frage-Requests bekommen gar keine Schreib-Werkzeuge angeboten.
         // Lesende Analysen duerfen durch eine zusaetzliche KI-Runde niemals
         // versehentlich eine Aktion ausloesen.
@@ -634,6 +645,34 @@ function iah_rc_voice(string $text,array $cfg): array
             $make('get_devices','Inventar fuer eindeutige deviceKeys und kontrollierte Schreibfreigaben (keine Livewerte).',$props)
         ];
         $tools[0]['function']['parameters']['required']=['property'];
+        if($energySources!==[]) {
+            $energyIds=[];$energyMetricOverview=[];
+            foreach($energySources as $src) {
+                foreach($src['metrics'] as $metric) {
+                    $energyIds[$metric['ident']]=true;
+                    $energyMetricOverview[$metric['ident']]=$metric['label'].' ('.$metric['unit'].')';
+                }
+            }
+            $tools[]=$make('query_energy',
+                'AUSSCHLIESSLICH LESENDE Datenabfrage fuer Huawei Sun2000 PV-Anlage, Akku, '
+                .'Smartmeter, Hausverbrauch, Einspeisung und Wechselrichter. '
+                .'operation=overview fuer die Frage "Wie laeuft die PV-Anlage". '
+                .'operation=current mit metric=PVPower, DailyYield, BatterySOC, GridPower usw. '
+                .'Fuer vergangene Monate: operation=delta auf kumulierte kWh-Zaehler '
+                .'z.B. TotalYield (NICHT DailyYield aufaddieren), period=last_month. '
+                .'history gibt aufgezeichnete Einzelwerte, stats gibt Tagesminimum/-maximum/-mittelwert. '
+                .'Keine Huawei-Steuerbefehle, keine freien IPS-IDs; niemals aus nicht vorhandenen '
+                .'Archivdaten Werte erfinden.',
+                [
+                    'source'=>['type'=>'string','enum'=>array_keys($energySources)],
+                    'metric'=>['type'=>'string','enum'=>array_keys($energyIds)],
+                    'operation'=>['type'=>'string','enum'=>[
+                        'overview','current','history','delta','stats']],
+                    'period'=>['type'=>'string','enum'=>[
+                        'today','yesterday','7d','30d','this_month','last_month']],
+                    'limit'=>['type'=>'integer','minimum'=>1,'maximum'=>12]
+                ]);
+        }
         if ($archiveId>0) {
             $tools[]=$make('query_archive',
                 'READ-ONLY: Archivierte IP-Symcon-WERTAENDERUNGEN. Nutze fuer Zeitfragen '
@@ -669,7 +708,20 @@ function iah_rc_voice(string $text,array $cfg): array
             'availableLiveProperties'=>$catalogSchema['properties'],
             'rooms'=>$catalogSchema['rooms']
         ],JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
+        $energyContext=$wantsEnergy ? json_encode(iah_energy_schema($energySources),
+            JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE) : '';
         $planningRules='Du bist der deutschsprachige KI-Planer einer Haussteuerung. '
+            .($energySources!==[] ? 'Fuer Solar, Photovoltaik, HuaweiPV, Batterie, Akku, '
+                .'Wechselrichter, Strom, Smartmeter, Energieertrag und Energiefragen '
+                .'query_energy verwenden, NICHT query_house oder query_archive. '
+                .'Bei allgemeinen PV-Fragen overview; bei konkreten Istwerten current. '
+                .'Historische Energieertraege nur als Zaehlerdifferenz aus Archivstaenden '
+                .'mit operation=delta; keine erfundenen Tages-/Monatssummen. '
+                .'W/ kW sowie kWh unterscheiden. Negative GridPower- und BatteryPower-Werte '
+                .'nur nach gelieferten direction-Angaben interpretieren. '
+                .'Null PV-Leistung nachts ist kein Stoerungsbeweis. '
+                .'Alle Huawei-KI-Operationen sind LESEND; niemals die Anlage steuern. '
+                .($energyContext!=='' ? 'Verfuegbare Huawei-Messwerte: '.$energyContext.'. ' : '') : '')
             .($archiveId>0 ? 'Fuer historische Fragen steht query_archive zur Verfuegung: '
                 .'WANN LETZTE BEWEGUNG bedeutet letzte archivierte aktiv=true-Meldung, '
                 .'nicht VariableChanged und nicht die letzte false-Meldung. '
@@ -725,7 +777,8 @@ function iah_rc_voice(string $text,array $cfg): array
             iah_rc_log('openai.start',['round'=>$round+1]);
             $model=(string)($cfg['model']??'gpt-6-luna');
             $request=iah_rc_chat_payload($model,$messages,$tools,$round,
-                $preferRead,$round>=2,$wantsArchive?'query_archive':'query_house');
+                $preferRead,$round>=2,$wantsEnergy?'query_energy':
+                    ($wantsArchive?'query_archive':'query_house'));
             $response=iah_rc_http($request,$key,$deadline);
             $costReport('api',['callId'=>'round-'.$round,'response'=>[
                 'model'=>(string)($response['model']??($cfg['model']??'')),
@@ -752,7 +805,9 @@ function iah_rc_voice(string $text,array $cfg): array
                     ? iah_ai_query_house($devices,$args,$text)
                     : ($name==='query_archive'
                         ? iah_archive_query($devices,$args,$text,$archiveId)
-                        : iah_rc_tool($devices,$name,$args,$allowWrites,$text));
+                        : ($name==='query_energy'
+                            ? iah_energy_query($energySources,$args,$archiveId)
+                            : iah_rc_tool($devices,$name,$args,$allowWrites,$text)));
                 // Diagnose ist ein separater lokaler Logger. Keine
                 // Variablen-IDs, Profile oder unformatierten Istwerte an OpenAI.
                 if ($enableDeviceDiagnostics && in_array($name,['query_house','get_states'],true))
@@ -764,7 +819,7 @@ function iah_rc_voice(string $text,array $cfg): array
                 $diagnostic=['name'=>$name,'ok'=>$result['ok']??true];
                 foreach (['matched','shown','truncated','temperatureAvailable','statusSummary','statusCoverage',
                     'matchedDevices','withProperty','filtersUsed','count','operation','property',
-                    'groupBy','matchedReadings','groups','totalCount','error'] as $field)
+                    'metric','source','groupBy','matchedReadings','groups','totalCount','error'] as $field)
                     if (array_key_exists($field,$result)) $diagnostic[$field]=$result[$field];
                 iah_rc_log('tool',$diagnostic);
                 $messages[]=['role'=>'tool','tool_call_id'=>(string)$call['id'],
