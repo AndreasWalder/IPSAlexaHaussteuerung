@@ -2738,6 +2738,24 @@ PHP;
                     $content = str_replace('// IAH_ARCHIVE_HISTORY_ENGINE_INSERT',
                         'if (!function_exists(\'iah_archive_query\')) {' . "\n"
                         . $archiveSource . "\n" . '}', $content);
+
+                    // V3.6: publish provider-based HuaweiPV read-only query
+                    // engine as part of generated Symcon KIHouseController.
+                    $energyFile = __DIR__.'/resources/helpers/EnergyQueryEngine.php';
+                    $energySource=is_file($energyFile)?file_get_contents($energyFile):false;
+                    if(!is_string($energySource)
+                        || !str_contains($energySource,'function iah_energy_query(')
+                        || !str_contains($content,'// IAH_ENERGY_QUERY_ENGINE_INSERT')) {
+                        IPS_LogMessage('Alexa',
+                            'KIHouseController nicht erneuert: Energie-Datenquellen-Engine fehlt.');
+                        return (int)$id;
+                    }
+                    $energySource=preg_replace('/^<\?php\s*declare\(strict_types=1\);\s*/',
+                        '',$energySource);
+                    if(!is_string($energySource))return (int)$id;
+                    $content=str_replace('// IAH_ENERGY_QUERY_ENGINE_INSERT',
+                        'if (!function_exists(\'iah_energy_query\')) {'."\n"
+                        .$energySource."\n".'}',$content);
                 }
                 IPS_SetScriptContent($id, $content);
             }

@@ -6,6 +6,7 @@ require_once __DIR__ . '/libs/DeviceTechnicalAudit.php';
 require_once __DIR__ . '/libs/SafeAutoRepair.php';
 require_once __DIR__ . '/libs/DeviceTypeRegistry.php';
 require_once __DIR__ . '/libs/GuidedDiscovery.php';
+require_once __DIR__ . '/libs/ModuleDataSources.php';
 
 /**
  * ============================================================
@@ -104,6 +105,7 @@ class RoomsCatalogConfigurator extends IPSModule
         // Anmeldedaten; KEIN zweiter Token im RoomsCatalogConfigurator.
         $this->RegisterPropertyBoolean('DiscoveryUseAI', false);
         $this->RegisterPropertyInteger('DiscoveryAlexaInstanceId', 0);
+        $this->RegisterPropertyInteger('HuaweiDataSourceInstanceId', 0);
 
         $this->RegisterAttributeString('RuntimeEntries', '[]');
         $this->RegisterAttributeString('RuntimeEditHash', '');
@@ -129,6 +131,9 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('MarkedEditorEditHash','');
         $this->RegisterAttributeString('MarkedEditorNotice','');
         $this->RegisterAttributeString('CatalogRestorePreview','{}');
+        $this->RegisterAttributeString('HuaweiDataSourcePreview','{}');
+        $this->RegisterAttributeString('HuaweiDataSourceReport','');
+        $this->RegisterAttributeString('HuaweiDataSourceNotice','Noch kein HuaweiPV-Scan gestartet.');
         $this->RegisterAttributeString('CatalogRestoreNotice','Noch kein Backup zur Wiederherstellung ausgewaehlt.');
         $this->RegisterAttributeString('MigrationReadinessReport', 'Noch nicht geprüft.');
         $this->RegisterAttributeString('MigrationReadinessDetails', '{}');
@@ -188,6 +193,8 @@ class RoomsCatalogConfigurator extends IPSModule
             'MarkedEditorEditHash'=>'',
             'MarkedEditorNotice'=>'',
             'CatalogRestorePreview'=>'{}',
+            'HuaweiDataSourcePreview'=>'{}',
+            'HuaweiDataSourceReport'=>'',
             'MigrationReadinessReport'=>'Noch nicht geprueft.',
             'MigrationReadinessDetails'=>'{}',
             'TechnicalDeviceSnapshot'=>'{}',
@@ -346,6 +353,144 @@ class RoomsCatalogConfigurator extends IPSModule
         if (IPS_GetScriptContent($backup)!==$content)
             throw new \RuntimeException('EDIT-Backup #'.$backup.' konnte nicht verifiziert werden.');
         return $backup;
+    }
+
+
+    /** Preview is read-only, derives all IDs from the selected HuaweiPV node. */
+    public function PreviewHuaweiDataSource(): void
+    {
+        $this->WriteAttributeString('HuaweiDataSourcePreview','{}');
+        try {
+            $id=$this->ReadPropertyInteger('HuaweiDataSourceInstanceId');
+            $editId=$this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+            $prodId=$this->ReadPropertyInteger('RoomsCatalogScriptID');
+            if ($editId<=0 || $editId===$prodId || !IPS_ScriptExists($editId))
+                throw new RuntimeException('EDIT und PROD muessen zwei verschiedene Skripte sein.');
+            $original=(string)IPS_GetScriptContent($editId);
+            if (!RCCDeviceTechnicalAudit::isLiteralArraySource($original))
+                throw new RuntimeException('Nur statische PHP-Array-Kataloge werden unterstuetzt.');
+            $source=RCCModuleDataSources::scanHuawei($id);
+            $catalog=$this->loadRoomsCatalog($editId,'EDIT');
+            $key='huawei_'.$id;
+            $previous=$catalog['dataSources'][$key]??null;
+            if ($previous!==null && (
+                ($previous['provider']??'')!=='HuaweiPV'
+                || (int)($previous['sourceInstanceId']??0)!==$id))
+                throw new RuntimeException('Konflikt mit bereits verwendetem Datenquellen-Key.');
+            $oldIds=is_array($previous) ? array_keys((array)($previous['metrics']??[])):[];
+            $newIds=array_keys($source['metrics']);
+            $snapshot=[
+                'sourceInstanceId'=>$id,'sourceHash'=>hash('sha256',serialize($source)),
+                'editHash'=>hash('sha256',$original),'expires'=>time()+600
+            ];
+            $this->WriteAttributeString('HuaweiDataSourcePreview',json_encode($snapshot,JSON_THROW_ON_ERROR));
+            $report=[
+                'provider'=>'HuaweiPV','sourceInstanceId'=>$id,
+                'key'=>$key,'destination'=>'RoomsCatalogEdit.dataSources.'.$key,
+                'mode'=>$previous===null?'NEU':'AKTUALISIEREN',
+                'found'=>count($newIds),
+                'newMetrics'=>array_values(array_diff($newIds,$oldIds)),
+                'removedMetrics'=>array_values(array_diff($oldIds,$newIds)),
+                'topics'=>$source['scanSummary']['topics'],
+                'excluded'=>$source['scanSummary']['excluded'],
+                'metrics'=>array_map(static fn(array $m):array=>[
+                    'ident'=>$m['ident'],'name'=>$m['label'],
+                    'id'=>$m['id'],'unit'=>$m['unit'],
+                    'topic'=>$m['topic'],'kind'=>$m['kind'],
+                    'writableInIPSymcon'=>$m['writableInIPSymcon']
+                ],array_values($source['metrics'])),
+                'aiPermissions'=>['enabled'=>true,'readOnly'=>true,'writes'=>false],
+                'prodUnchanged'=>true
+            ];
+            $notice='VORSCHAU: '.$report['found'].' HuaweiPV-Messwerte aus Instanz #'.$id.
+                ' erkannt. '.count($report['newMetrics']).' neu, '.
+                count($report['removedMetrics']).' entfallen. Noch nichts gespeichert. '
+                .'Ein Import sichert EDIT und aktualisiert nur dataSources, niemals PROD.';
+            $this->WriteAttributeString('HuaweiDataSourceReport',
+                json_encode($report,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE));
+        } catch(Throwable $e) {
+            $notice='HUAWEIPV-VORSCHAU FEHLGESCHLAGEN: '.$e->getMessage();
+            $this->WriteAttributeString('HuaweiDataSourceReport','');
+        }
+        $this->WriteAttributeString('HuaweiDataSourceNotice',$notice);
+        $this->UpdateFormField('HuaweiDataSourceNotice','caption',$notice);
+        $this->UpdateFormField('HuaweiDataSourceReport','value',
+            $this->ReadAttributeString('HuaweiDataSourceReport'));
+        echo $notice;
+    }
+
+    /**
+     * Explicit commit to EDIT only. Preview, source, live object tree and EDIT
+     * script must still match; backup + readback + rollback on failure.
+     */
+    public function ImportHuaweiDataSourceToEdit(): void
+    {
+        try {
+            $snapshot=json_decode($this->ReadAttributeString('HuaweiDataSourcePreview'),true);
+            $id=$this->ReadPropertyInteger('HuaweiDataSourceInstanceId');
+            if (!is_array($snapshot) || (int)($snapshot['sourceInstanceId']??0)!==$id
+                || (int)($snapshot['expires']??0)<time())
+                throw new RuntimeException('Bitte die aktuelle Instanz zuerst frisch scannen.');
+            $editId=$this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+            $prodId=$this->ReadPropertyInteger('RoomsCatalogScriptID');
+            if($editId<=0 || $prodId===$editId || !IPS_ScriptExists($editId))
+                throw new RuntimeException('EDIT/PROD-Konfiguration ungueltig.');
+            $original=(string)IPS_GetScriptContent($editId);
+            if(hash('sha256',$original)!==($snapshot['editHash']??''))
+                throw new RuntimeException('EDIT wurde nach der Vorschau geaendert; bitte neu scannen.');
+            if(!RCCDeviceTechnicalAudit::isLiteralArraySource($original))
+                throw new RuntimeException('EDIT-Quelle nicht als statisches Array erkannt.');
+            $source=RCCModuleDataSources::scanHuawei($id);
+            if(hash('sha256',serialize($source))!==($snapshot['sourceHash']??''))
+                throw new RuntimeException('HuaweiPV-Objektbaum wurde geaendert; bitte neu scannen.');
+            $catalog=$this->loadRoomsCatalog($editId,'EDIT');
+            $key='huawei_'.$id;
+            $old=$catalog['dataSources'][$key]??null;
+            if($old!==null && (!is_array($old)
+                || ($old['provider']??'')!=='HuaweiPV'
+                || (int)($old['sourceInstanceId']??0)!==$id))
+                throw new RuntimeException('Bestehender Katalogeintrag kollidiert mit HuaweiPV.');
+            if(is_array($old)) {
+                foreach($source['metrics'] as $ident=>&$metric) {
+                    // Explicitly disabled metrics stay disabled across reimport.
+                    if(($old['metrics'][$ident]['enabled']??true)===false)
+                        $metric['enabled']=false;
+                }
+                unset($metric);
+                if(($old['kiEnabled']??true)===false)$source['kiEnabled']=false;
+                if(is_string($old['title']??null) && trim($old['title'])!=='')
+                    $source['title']=$old['title'];
+            }
+            // Never carry over legacy write privileges.
+            $source['kiReadOnly']=true;$source['allowWrites']=false;
+            $catalog['dataSources'][$key]=$source;
+            $next="<?php\nreturn ".var_export($catalog,true).";\n";
+            if(IPS_GetScriptContent($editId)!==$original)
+                throw new RuntimeException('EDIT wurde waehrend der Uebernahme geaendert.');
+            $backup=$this->catalogBackupCurrentEdit($editId,$original,'before_huaweipv_v36');
+            try {
+                IPS_SetScriptContent($editId,$next);
+                if(IPS_GetScriptContent($editId)!==$next)
+                    throw new RuntimeException('EDIT-Schreibverifikation fehlgeschlagen.');
+            } catch(Throwable $e) {
+                IPS_SetScriptContent($editId,$original);
+                if(IPS_GetScriptContent($editId)!==$original)
+                    throw new RuntimeException('Ruecknahme unklar; Sicherheitskopie #'.$backup.' pruefen.');
+                throw $e;
+            }
+            $this->WriteAttributeString('HuaweiDataSourcePreview','{}');
+            $this->reloadAllFromCatalog();
+            $this->RefreshVisibleLists();
+            $notice='HUAWEIPV IMPORTIERT: '.count($source['metrics']).
+                ' Messwerte in RoomsCatalogEdit.dataSources.'.$key.
+                ' gesichert. EDIT-Sicherheitskopie #'.$backup.
+                '. PROD bleibt unveraendert. Schreibzugriff ist gesperrt.';
+        } catch(Throwable $e) {
+            $notice='HUAWEIPV-IMPORT BLOCKIERT: '.$e->getMessage();
+        }
+        $this->WriteAttributeString('HuaweiDataSourceNotice',$notice);
+        $this->UpdateFormField('HuaweiDataSourceNotice','caption',$notice);
+        echo $notice;
     }
 
     public function CreateCatalogEditBackup(): void
@@ -6554,6 +6699,47 @@ class RoomsCatalogConfigurator extends IPSModule
                 $main[]=$element;
             }
         }
+
+        $huaweiId=$this->ReadPropertyInteger('HuaweiDataSourceInstanceId');
+        $huaweiKey='huawei_'.$huaweiId;
+        $huaweiEdit=$editCatalog['dataSources'][$huaweiKey]??null;
+        $huaweiProd=$prodCatalog['dataSources'][$huaweiKey]??null;
+        $main[]=[
+            'type'=>'ExpansionPanel',
+            'caption'=>'ENERGIE-DATENQUELLEN – HuaweiPV automatisch importieren',
+            'expanded'=>true,
+            'items'=>[
+                ['type'=>'Label','caption'=>'Eine HuaweiPV-Quellinstanz auswaehlen: rekursiver '
+                    .'Scan aller Huawei-Variablen unter PV, Akku, Smartmeter, Bilanz und Diagnose. '
+                    .'Erkennung anhand der eindeutigen Huawei-Idents statt Geraetenamen. '
+                    .'Duplikate in kW und Seriennummern werden nicht an die KI uebergeben. '
+                    .'Die KI erhaelt nur Leserechte, auch bei steuerbaren Huawei-Variablen.'],
+                ['type'=>'SelectInstance','name'=>'HuaweiDataSourceInstanceId',
+                    'caption'=>'HuaweiPV-Quellinstanz',
+                    'moduleID'=>RCCModuleDataSources::HUAWEI_MODULE],
+                ['type'=>'Label','caption'=>'EDIT: '.(is_array($huaweiEdit)
+                    ? count((array)($huaweiEdit['metrics']??[])).' Messwerte'
+                    : 'noch nicht importiert').' | PROD: '.(is_array($huaweiProd)
+                    ? count((array)($huaweiProd['metrics']??[])).' Messwerte'
+                    : 'noch nicht uebernommen').'.'],
+                ['type'=>'RowLayout','items'=>[
+                    ['type'=>'Button','caption'=>'1 – HUAWEIPV SCANNEN UND VORSCHAU',
+                        'onClick'=>'RCC_PreviewHuaweiDataSource($id);'],
+                    ['type'=>'Button','caption'=>'2 – GEPRUEFTE DATENQUELLE NACH EDIT',
+                        'confirm'=>'Die in der Vorschau enthaltenen HuaweiPV-Werte aus '
+                            .'der gewaehlten Instanz mit Leserechten in RoomsCatalogEdit '
+                            .'anlegen/aktualisieren? Vorher wird EDIT gesichert. '
+                            .'PROD und Huawei-Steuerungen bleiben unveraendert.',
+                        'onClick'=>'RCC_ImportHuaweiDataSourceToEdit($id);']
+                ]],
+                ['type'=>'Label','name'=>'HuaweiDataSourceNotice',
+                    'caption'=>$this->ReadAttributeString('HuaweiDataSourceNotice')],
+                ['type'=>'ValidationTextBox','name'=>'HuaweiDataSourceReport',
+                    'caption'=>'Import-Vorschau: Messwerte, Gruppen, erkannte IDs',
+                    'multiline'=>true,'width'=>'100%',
+                    'value'=>$this->ReadAttributeString('HuaweiDataSourceReport')]
+            ]
+        ];
         // Backup-Ruecksprung ist bewusst nur EDIT: PROD wird niemals still
         // ueberschrieben. Vor einem Restore ist eine Quelle-Vorschau Pflicht.
         $main[]=[
