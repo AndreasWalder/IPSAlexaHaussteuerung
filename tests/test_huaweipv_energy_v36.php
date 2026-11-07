@@ -147,6 +147,18 @@ check36($edit['buero']===$catalog['buero']
     && isset($edit['dataSources']['huawei_59140']['metrics']['TotalYield']),
     'existing room and new source must coexist');
 check36(IPS_GetScriptContent(9001)===$before,'original EDIT backed up before writing');
+$form=json_decode($m->GetConfigurationForm(),true,512,JSON_THROW_ON_ERROR);
+$foundPicker=false;$foundPreview=false;
+$walk=static function(array $items)use(&$walk,&$foundPicker,&$foundPreview):void {
+    foreach($items as $item) {
+        if(($item['name']??'')==='HuaweiDataSourceInstanceId'
+            && ($item['type']??'')==='SelectInstance')$foundPicker=true;
+        if(($item['caption']??'')==='1 – HUAWEIPV SCANNEN UND VORSCHAU')$foundPreview=true;
+        if(is_array($item['items']??null))$walk($item['items']);
+    }
+};
+$walk($form['elements']??[]);
+check36($foundPicker && $foundPreview,'form should render one HuaweiPV picker and preview button');
 ob_start();$m->ImportHuaweiDataSourceToEdit();$replay=ob_get_clean();
 check36(str_contains($replay,'BLOCKIERT'),'preview cannot be reused');
 require dirname(__DIR__).'/IPSAlexaHaussteuerung/resources/helpers/KIHouseController.php';
@@ -173,6 +185,11 @@ check36(($bad['error']??'')==='not_archived','missing archive must not be fabric
 check36(count(array_unique(array_column($GLOBALS['h36Archive'],'archive')))===1
     && $GLOBALS['h36Archive'][0]['archive']===17597,
     'archive queries use only configured Archive Control');
+// Existing full EDIT -> PROD copy is deliberately a separate, backed-up operation.
+ob_start();$m->SaveEditToProd();$published=ob_get_clean();
+check36(str_contains($published,'ERFOLG') && IPS_GetScriptContent(40)===IPS_GetScriptContent(41)
+    && isset((require $GLOBALS['h36dir'].'/scripts/40.php')['dataSources']['huawei_59140']),
+    'explicit EDIT-to-PROD must include sources 1:1 and preserve backup');
 $edit['dataSources']['huawei_59140']['kiEnabled']=false;
 IPS_SetScriptContent(41,$source($edit));
 check36(iah_energy_sources(41)===[],'disabling source removes all KI access');
