@@ -8139,6 +8139,7 @@ class RoomsCatalogConfigurator extends IPSModule
             ['caption'=>'Freigabe','name'=>'kiStatus','width'=>'105px','add'=>'','save'=>false],
             ['caption'=>'Pruefstatus','name'=>'checkStatus','width'=>'140px','add'=>'','save'=>false,'quickFilter'=>true],
             ['caption'=>'Was ist zu pruefen?','name'=>'checkDetails','width'=>'350px','add'=>'','save'=>false,'quickFilter'=>true],
+            ['caption'=>'Datenquelle','name'=>'isDataSource','visible'=>false,'add'=>false],
             ['caption'=>'Raum-Key','name'=>'roomKey','visible'=>false,'add'=>'','quickFilter'=>true],
             ['caption'=>'Synonyme','name'=>'synonyms','visible'=>false,'add'=>'','quickFilter'=>true]
         ];
