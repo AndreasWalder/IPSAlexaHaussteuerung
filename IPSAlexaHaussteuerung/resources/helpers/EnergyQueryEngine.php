@@ -49,7 +49,7 @@ function iah_energy_sources(int $catalogScriptId): array
     foreach ($rows as $key=>$source) {
         if (!is_string($key) || !is_array($source)
             || ($source['provider']??'')!=='HuaweiPV'
-            || empty($source['kiEnabled']) || empty($source['kiReadOnly'])===false
+            || empty($source['kiEnabled']) || empty($source['kiReadOnly'])
             || !empty($source['allowWrites']) || empty($source['readOnly'])) continue;
         $id=(int)($source['sourceInstanceId']??0);
         if($id<=0 || !function_exists('IPS_InstanceExists')
