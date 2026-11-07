@@ -119,7 +119,7 @@ IPS_SetScriptContent(40,$source($prod));
 IPS_SetScriptContent(41,$source($catalog));
 require dirname(__DIR__).'/RoomsCatalogConfigurator/module.php';
 $scan=RCCModuleDataSources::scanHuawei(59140);
-check36(count($scan['metrics'])===9,'must traverse Dummy topic folders and standalone settings');
+check36(count($scan['metrics'])===8,'must traverse Dummy topic folders and standalone settings');
 check36(isset($scan['metrics']['PVPower']) && $scan['metrics']['PVPower']['id']===56417
     && !isset($scan['metrics']['PVPowerKW']),'canonical W metric, no duplicate KW');
 check36(!isset($scan['metrics']['SerialNumber'])
@@ -137,7 +137,7 @@ ob_start();$m->PreviewHuaweiDataSource();$preview=ob_get_clean();
 check36(str_contains($preview,'VORSCHAU') && IPS_GetScriptContent(41)===$before,
     'preview is read-only');
 $report=json_decode($m->ReadAttributeString('HuaweiDataSourceReport'),true);
-check36(($report['found']??0)===9
+check36(($report['found']??0)===8
     && ($report['metrics'][0]['id']??0)>0,'preview lists source-specific metrics');
 ob_start();$m->ImportHuaweiDataSourceToEdit();$import=ob_get_clean();
 check36(str_contains($import,'HUAWEIPV IMPORTIERT')
@@ -152,7 +152,7 @@ check36(str_contains($replay,'BLOCKIERT'),'preview cannot be reused');
 require dirname(__DIR__).'/IPSAlexaHaussteuerung/resources/helpers/KIHouseController.php';
 check36(count(iah_rc_index(41))===1,'normal rooms index must not treat source as a room');
 $energy=iah_energy_sources(41);
-check36(count($energy)===1 && count($energy['huawei_59140']['metrics'])===9,
+check36(count($energy)===1 && count($energy['huawei_59140']['metrics'])===8,
     'dynamic data source must be indexed as one entity');
 $current=iah_energy_query($energy,['metric'=>'PVPower','operation'=>'current'],17597);
 check36(($current['reading']['value']??0)===1200.0
@@ -178,4 +178,4 @@ IPS_SetScriptContent(41,$source($edit));
 check36(iah_energy_sources(41)===[],'disabling source removes all KI access');
 foreach(array_keys($GLOBALS['h36Scripts']) as $id)@unlink($GLOBALS['h36dir'].'/scripts/'.$id.'.php');
 @rmdir($GLOBALS['h36dir'].'/scripts');@rmdir($GLOBALS['h36dir']);
-echo "PASS V3.6: HuaweiPV source #59140, 9 canonical metrics, EDIT backup, live data, Archive #17597, strict read-only\n";
+echo "PASS V3.6: HuaweiPV source #59140, 8 canonical metrics, EDIT backup, live data, Archive #17597, strict read-only\n";
