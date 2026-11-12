@@ -8,7 +8,29 @@ function ckLegacy371(bool $ok,string $label):void
 {
     if(!$ok)throw new RuntimeException('Legacy migration V3.7.1: '.$label);
 }
-$withGlobal=$catalog;
+// The module-editor fixture has no live IPS variable mock. Create three
+// legitimate action/reading variables for this test, without hardware.
+$GLOBALS['vrVars']=[
+    60003=>['VariableType'=>1,'action'=>true],
+    60005=>['VariableType'=>2,'action'=>false]
+];
+$GLOBALS['vrWrites']=[];
+if(!function_exists('IPS_VariableExists')){
+    function IPS_VariableExists(int $id):bool{return isset($GLOBALS['vrVars'][$id]);}
+}
+if(!function_exists('HasAction')){
+    function HasAction(int $id):bool{return !empty($GLOBALS['vrVars'][$id]['action']);}
+}
+if(!function_exists('IPS_GetVariable')){
+    function IPS_GetVariable(int $id):array{return $GLOBALS['vrVars'][$id]??[];}
+}
+if(!function_exists('RequestAction')){
+    function RequestAction(int $id,mixed $value):bool {
+        $GLOBALS['vrWrites'][]=[$id,$value];
+        return true;
+    }
+}
+$withGlobal=['global'=>['domains'=>['jalousie'=>['open_close_var'=>60003]]]];
 $withGlobal['global']=['domains'=>['jalousie'=>['open_close_var'=>60003]]];
 $old=IAHVoiceLegacyMigration::drafts($withGlobal,60005);
 ckLegacy371(count($old)>=8,'all historical FAQ, blinds, sensor and robot responses included');
