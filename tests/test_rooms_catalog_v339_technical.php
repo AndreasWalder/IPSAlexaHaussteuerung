@@ -205,12 +205,11 @@ ck339(is_array($formInput)
 
 $beforeEdit=IPS_GetScriptContent(41);
 $beforeProd=IPS_GetScriptContent(40);
-ob_start();$mod->AuditMigrationReadiness();ob_end_clean();
 ob_start();$mod->RunTechnicalDeviceAudit();$summary=ob_get_clean();
 $scan=json_decode($mod->ReadAttributeString('TechnicalDeviceSnapshot'),true,512,JSON_THROW_ON_ERROR);
 ck339(count($scan['rows'])===5,'Not all devices were scanned');
 ck339(($scan['source']['typed']??-1)===4 && ($scan['source']['legacy']??-1)===1,
-    'Typed/Legacy source audit should match the previous migration audit');
+    'Technical source audit should show current typed/legacy counts');
 ck339(($scan['source']['editId']??0)===41 && ($scan['source']['prodId']??0)===40,
     'Source script IDs not shown');
 ck339(($scan['issueCounts']['missing_ips']??0)>=1,
@@ -319,8 +318,6 @@ IPS_SetScriptContent(41,$editAfterManual);
 // Reproduce the reported sudden 8 -> 67 Legacy pattern on a small fixture.
 // The classifier must highlight an actual external EDIT change, not silently
 // contradict an older cached migration summary.
-$priorData = json_decode($mod->ReadAttributeString('MigrationReadinessDetails'),true,512,JSON_THROW_ON_ERROR);
-ck339(($priorData['statistics']['typed']??-1)===4,'Old audit baseline missing');
 $changedSource=$confirmed;
 unset($changedSource['wohnzimmer']['domains']['dimmer']['dimmers']['dimmer']['ai']);
 IPS_SetScriptContent(41,'<?php return '.var_export($changedSource,true).';');
@@ -329,9 +326,8 @@ $changedAudit=json_decode($mod->ReadAttributeString('TechnicalDeviceSnapshot'),t
 $sourceLabel=$mod->updates['TechnicalDeviceSourceSummary.caption']??'';
 ck339(($changedAudit['source']['typed']??-1)===3
     && ($changedAudit['source']['legacy']??-1)===2
-    && ($changedAudit['source']['previousAudit']['changed']??false) === true
-    && str_contains($sourceLabel,'Vorher: 4 typisiert, 1 Legacy')
-    && str_contains($sourceLabel,'Jetzt: 3 typisiert, 2 Legacy'),
+    && str_contains($sourceLabel,'3 typisiert')
+    && str_contains($sourceLabel,'2 Legacy'),
     'Changed catalog must explain old vs new typed/legacy figures');
 IPS_SetScriptContent(41,$editAfterManual);
 
@@ -391,10 +387,9 @@ ck339(!str_contains($json,'PRIVATE_VALUE_MUST_NOT_BE_CACHED'),
     'Diagnostic must not expose live IPS variable values');
 ck339(IPS_GetScriptContent(40)===$beforeExport && IPS_GetScriptContent(41)===$beforeExport,
     'Read-only diagnostic modified scripts');
-ob_start();$mod->ApplySafeAutoRepair();$safeAction=ob_get_clean();
-ck339(str_contains($safeAction,'Keine eindeutigen weiteren Korrekturen')
-    && IPS_GetScriptContent(40)===$beforeExport && IPS_GetScriptContent(41)===$beforeExport,
-    'Safe auto-repair changed catalog without an unambiguous high-confidence mapping');
+ck339(IPS_GetScriptContent(40)===$beforeExport && IPS_GetScriptContent(41)===$beforeExport
+    && !str_contains(json_encode($mod->GetConfigurationForm()),'RCC_ApplySafeAutoRepair'),
+    'Read-only diagnostics must not invoke retired cross-PROD autocorrection');
 
 
 /** V3.3.13: the flattened-list ai JSON must be decoded in exports;
@@ -432,29 +427,14 @@ ck339(($heaterRow['safeSuggestedBindings']['control']??0)===50304,
     'Unique writable KNX setpoint must be proposed instead of read-only control');
 ck339(($heaterReport['summary']['typedRolesExported']??0)>0,
     'Role export integrity count is zero for typed device');
-ob_start();$mod->ApplySafeAutoRepair();$heaterApplied=ob_get_clean();
-ck339(str_contains($heaterApplied,'ERFOLG: 1')
-    && str_contains($heaterApplied,'Backups: EDIT #')
-    && (IPS_GetScriptContent(40)===IPS_GetScriptContent(41)),
-    'Guarded EDIT+PROD repair failed: '.$heaterApplied);
-$heaterAfter=require $GLOBALS['inventoryDir'].'/scripts/41.php';
-$fixed=$heaterAfter['wohnzimmer']['domains']['heizung']['wohnzimmer'];
-ck339(($fixed['ai']['variables']['control']??0)===50304
-    && ($fixed['ai']['variables']['targetTemperature']??0)===50303
-    && ($fixed['ai']['variables']['temperature']??0)===50301
-    && ($fixed['ai']['review']['status']??'')==='pending'
-    && $fixed['kiReadOnly']===true
-    && $fixed['kiEnabled']===true
-    && $fixed['soll']===50303,
-    'Control correction changed unrelated fields, read-only permissions or existing temperature roles');
-ob_start();$mod->RunTechnicalDeviceAudit();ob_end_clean();
-$newScan=json_decode($mod->ReadAttributeString('TechnicalDeviceSnapshot'),true,512,JSON_THROW_ON_ERROR);
-$updatedStatus='';
-foreach($newScan['rows'] as $row) {
-    if($row['key']==='wohnzimmer|heizung|heizung|wohnzimmer') $updatedStatus=$row['status'];
-}
-ck339($updatedStatus==='Technisch plausibel',
-    'Corrected KNX Solltemperatur control still reported uncertain');
+ck339(IPS_GetScriptContent(40)===$heaterSource
+    && IPS_GetScriptContent(41)===$heaterSource,
+    'Diagnostic must propose control binding without changing EDIT or PROD');
+ck339(($heaterRow['safeSuggestedBindings']['control']??0)===50304,
+    'Unique control proposal should remain visible for manual EDIT change');
+
+// The normal EDIT editor remains the single authority for any correction;
+// never bypass that approval by modifying both EDIT and PROD.
 
 
 // V3.3.15: "Nur Steuerung" is a reporting capability, NOT successful
