@@ -31,7 +31,6 @@ jobs:
       - name: Check PHP syntax
         run: |
           php -l IPSAlexaHaussteuerung/module.php
-          php -l IPSAlexaHaussteuerung/src/RoomsCatalogAutoMigration.php
           php -l IPSAlexaHaussteuerung/resources/action_entry.php
           php -l IPSAlexaHaussteuerung/resources/helpers/KIHouseController.php
           php -l IPSAlexaHaussteuerung/resources/helpers/HouseQueryEngine.php
