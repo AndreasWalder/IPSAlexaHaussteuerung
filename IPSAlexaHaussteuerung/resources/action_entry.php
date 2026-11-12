@@ -2147,22 +2147,63 @@ function Execute($request = null)
             && is_callable($rawSlotsToText)) {
             $iahVoiceSpoken=trim((string)$rawSlotsToText($rawSlots));
         }
+        // Build safe, exact-match candidates from the spoken transcript
+        // and Alexa GetHaus slots. The previous bridge only checked a single
+        // reconstructed string; e.g. Action=öffnen Device=Jalousien was
+        // reconstructed as "öffnen jalousien" and missed "Jalousien öffnen".
+        $iahRuleCandidates=[];
+        $iahAddRuleCandidate=static function(string $value) use (&$iahRuleCandidates):void {
+            $value=trim(preg_replace('/\\s+/u',' ',$value)??'');
+            if($value===''||mb_strlen($value,'UTF-8')>160)return;
+            $normalized=mb_strtolower($value,'UTF-8');
+            if(!isset($iahRuleCandidates[$normalized])&&count($iahRuleCandidates)<12)
+                $iahRuleCandidates[$normalized]=$value;
+        };
+        $iahAddRuleCandidate($iahVoiceSpoken);
+        $iahAddRuleCandidate(trim((string)$rawUserText));
+        $iahAddRuleCandidate((string)$rawSlotsToText($rawSlotValues));
+        foreach(['a','s','o','al'] as $slotKey)
+            $iahAddRuleCandidate((string)($rawSlotValues[$slotKey]??''));
+        foreach(['a','s','o'] as $slotKey)
+            $iahAddRuleCandidate((string)($rawSlotIds[$slotKey]??''));
+        $iahActionSpoken=trim((string)($action1Val!==''?$action1Val:$action1Id));
+        $iahDeviceSpoken=trim((string)($device1Val!==''?$device1Val:$device1Id));
+        if($iahActionSpoken!=='' && $iahDeviceSpoken!==''){
+            $iahAddRuleCandidate($iahDeviceSpoken.' '.$iahActionSpoken);
+            $iahAddRuleCandidate($iahActionSpoken.' '.$iahDeviceSpoken);
+        }
+        $iahRuleCandidates=array_values($iahRuleCandidates);
+        $iahVoiceRulesBridgeAvailable=$instanceId>0 && function_exists('IAH_ResolveVoiceRule');
+        $log('info','VoiceRules.bridge_probe',[
+            'intent'=>(string)$intentName,
+            'candidateCount'=>count($iahRuleCandidates),
+            'bridgeAvailable'=>$iahVoiceRulesBridgeAvailable,
+            'isApl'=>$iahVoiceIsAplEvent,
+            'isLaunch'=>$IS_LAUNCH,
+            'isBack'=>$IS_BACK,
+            'wantsExit'=>$wantsExit
+        ]);
         // Before hard-coded question answers, legacy GetHaus tile routing,
         // Jalousie renderer or OpenAI: only exact, approved PROD phrases.
         // No APL button events, launches, back/exit or arbitrary script IDs.
         if (!$iahVoiceIsAplEvent && empty($APL['args'])
             && !$IS_LAUNCH && !$IS_BACK && !$wantsExit
-            && ($iahVoiceSpoken!=='' || preg_match(
+            && ($iahRuleCandidates!==[] || preg_match(
                 '/^[A-Za-z][A-Za-z0-9_]{2,55}Intent$/D',(string)$intentName)===1)
-            && $instanceId>0
-            && function_exists('IAH_ResolveVoiceRule')) {
+            && $iahVoiceRulesBridgeAvailable) {
             try {
-                $iahRuleResult=json_decode((string)IAH_ResolveVoiceRule(
-                    $instanceId,json_encode([
-                        'text'=>$iahVoiceSpoken,'intent'=>$intentName,
-                        'aplEvent'=>false,'launch'=>false,'exit'=>false,'back'=>false
-                    ],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)
-                ),true);
+                $iahRuleResult=['matched'=>false];
+                // Never execute a best guess: the module only accepts exact
+                // PROD aliases or an explicit configured custom intent.
+                foreach($iahRuleCandidates!==[]?$iahRuleCandidates:[''] as $iahCandidate) {
+                    $iahRuleResult=json_decode((string)IAH_ResolveVoiceRule(
+                        $instanceId,json_encode([
+                            'text'=>$iahCandidate,'intent'=>$intentName,
+                            'aplEvent'=>false,'launch'=>false,'exit'=>false,'back'=>false
+                        ],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)
+                    ),true);
+                    if(is_array($iahRuleResult) && !empty($iahRuleResult['matched']))break;
+                }
                 if(is_array($iahRuleResult) && !empty($iahRuleResult['matched'])) {
                     $ruleAnswer=trim((string)($iahRuleResult['answer']??''));
                     if($ruleAnswer==='')$ruleAnswer='Der Befehl wurde bearbeitet.';
@@ -2207,8 +2248,13 @@ function Execute($request = null)
                     ]);
                     return $ruleResponse;
                 }
+                $log('info','VoiceRules.no_match',[
+                    'intent'=>(string)$intentName,
+                    'candidates'=>$iahRuleCandidates,
+                    'reason'=>'no_enabled_exact_prod_rule_or_intent'
+                ]);
             }catch(Throwable $ignored) {
-                IPS_LogMessage('Alexa','VoiceRules.V37 bridge unavailable');
+                IPS_LogMessage('Alexa','VoiceRules.V371 bridge exception type='.get_class($ignored));
             }
         }
         // IAH_VOICE_RULES_V37_END
