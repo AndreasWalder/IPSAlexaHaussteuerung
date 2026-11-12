@@ -17,7 +17,7 @@ $sourceCatalog=IPS_GetScriptContent(502);
 $initialBackup=IPS_GetScriptContent($backupId);
 $form=json_decode($module->GetConfigurationForm(),true,512,JSON_THROW_ON_ERROR);
 $html=json_encode($form,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-ck37ui(str_contains($html,'V3.7 – Szenen und eigene Alexa-Befehle')
+ck37ui(str_contains($html,'V3.7.1 – Szenen und eigene Alexa-Befehle')
     && str_contains($html,'VoiceRuleRows')
     && str_contains($html,'VoiceNewKind')
     && str_contains($html,'IAH_ImportLegacyVoiceRuleDrafts')

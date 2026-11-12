@@ -33,6 +33,11 @@ trait IAHVoiceRuleEditorTrait
                 'scriptParams'=>json_encode((array)($rule['scriptParams']??[]),
                     JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),
                 'scriptId'=>(int)($rule['scriptId']??0),
+                'variableId'=>(int)($rule['variableId']??0),
+                'variableValue'=>(string)($rule['variableValue']??''),
+                'readVariableId'=>(int)($rule['readVariableId']??0),
+                'origin'=>(string)($rule['origin']??'custom'),
+                'migrationNote'=>(string)($rule['migrationNote']??''),
                 'steps'=>count((array)($rule['steps']??[])),
                 'enabled'=>!empty($rule['enabled']),
                 'confirmed'=>!empty($rule['confirmed']),
@@ -81,7 +86,9 @@ trait IAHVoiceRuleEditorTrait
         $kindOptions=[
             ['caption'=>'Antwort / Frage','value'=>'answer'],
             ['caption'=>'IP-Symcon-Skript','value'=>'script'],
-            ['caption'=>'Geräteszene','value'=>'scene']
+            ['caption'=>'Geräteszene','value'=>'scene'],
+            ['caption'=>'Variable schalten','value'=>'variable'],
+            ['caption'=>'Variable abfragen','value'=>'read']
         ];
         $rows=$this->voiceRuleRows($edit,$prod);
         $name='VoiceRuleRows';
@@ -99,6 +106,9 @@ trait IAHVoiceRuleEditorTrait
             .'"cardText"=>($'.$name.'["cardText"] ?? ""),'
             .'"scriptParams"=>($'.$name.'["scriptParams"] ?? "{}"),'
             .'"scriptId"=>(int)($'.$name.'["scriptId"] ?? 0),'
+            .'"variableId"=>(int)($'.$name.'["variableId"] ?? 0),'
+            .'"variableValue"=>($'.$name.'["variableValue"] ?? ""),'
+            .'"readVariableId"=>(int)($'.$name.'["readVariableId"] ?? 0),'
             .'"enabled"=>(bool)($'.$name.'["enabled"] ?? false),'
             .'"confirmed"=>(bool)($'.$name.'["confirmed"] ?? false)'
             .']));';
@@ -106,7 +116,7 @@ trait IAHVoiceRuleEditorTrait
             .'(string)($VoiceRuleRows["key"] ?? "")),true);';
         $notice=$this->ReadAttributeString('VoiceRuleEditorNotice');
         return [
-            'type'=>'ExpansionPanel','caption'=>'V3.7 – Szenen und eigene Alexa-Befehle',
+            'type'=>'ExpansionPanel','caption'=>'V3.7.1 – Szenen und eigene Alexa-Befehle',
             'expanded'=>true,'items'=>[
                 ['type'=>'Label','caption'=>'Alle Sprachbefehle, Alternativnamen, '
                     .'Fragen/Antworten, Bildkarten und Szenen werden zentral '
@@ -126,12 +136,17 @@ trait IAHVoiceRuleEditorTrait
                     .'Ein ausgewähltes Skript kann eigenständig Geräte steuern: '
                     .'bitte nur zuvor geprüftes IP-Symcon-Skript auswählen.'],
                 ['type'=>'RowLayout','items'=>[
+                    ['type'=>'Button','caption'=>'ALTBEFEHLE PRÜFEN (VORSCHAU)',
+                        'onClick'=>'IAH_PreviewLegacyVoiceRuleDrafts($id);'],
                     ['type'=>'Button','caption'=>'ALTANTWORTEN ALS ENTWURF EINFÜGEN',
-                        'confirm'=>'Vorhandene hartcodierte Antwortbeispiele '
-                            .'nur als DEAKTIVIERTE Entwürfe nach '
-                            .'SystemConfigurationEdit übernehmen? '
-                            .'Bisherige Funktionen bleiben unverändert.',
+                        'confirm'=>'Bestehende Befehle, Bilder, Texte und Aktionsziele '
+                            .'als DEAKTIVIERTE Entwuerfe nach EDIT uebernehmen? '
+                            .'PROD und Geraete bleiben unveraendert.',
                         'onClick'=>'IAH_ImportLegacyVoiceRuleDrafts($id);'],
+                    ['type'=>'Button','caption'=>'ALLE DEAKTIVIERTEN ALT-ENTWÜRFE AUS EDIT LÖSCHEN',
+                        'confirm'=>'Wirklich ALLE deaktivierten importierten ALT-Entwuerfe aus EDIT '
+                            .'loeschen? Eigene Regeln und PROD bleiben unveraendert.',
+                        'onClick'=>'IAH_DeleteLegacyVoiceRuleDrafts($id);'],
                     ['type'=>'Button','caption'=>'EDITOR NEU LADEN',
                         'onClick'=>'IAH_ReloadVoiceRules($id);'],
                 ]],
@@ -139,7 +154,10 @@ trait IAHVoiceRuleEditorTrait
                     'caption'=>$notice,'visible'=>$notice!==''],
                 ['type'=>'List','name'=>$name,
                     'caption'=>'Eigene Befehle, Szenen und Antworten',
-                    'rowCount'=>12,'add'=>false,'delete'=>false,
+                    'rowCount'=>12,'add'=>false,'delete'=>true,
+                    'onDelete'=>'IAH_DeleteVoiceRule($id, '
+                        .'(string)($VoiceRuleRows["key"] ?? ""), '
+                        .'(string)($VoiceRuleRows["revision"] ?? ""));',
                     'loadValuesFromConfiguration'=>false,
                     'columns'=>[
                         ['caption'=>'Key','name'=>'key','visible'=>false,'save'=>false],
@@ -163,6 +181,14 @@ trait IAHVoiceRuleEditorTrait
                             'edit'=>['type'=>'ValidationTextBox']],
                         ['caption'=>'Skriptparameter JSON','name'=>'scriptParams','width'=>'170px',
                             'edit'=>['type'=>'ValidationTextBox']],
+                        ['caption'=>'Zielvariable','name'=>'variableId','width'=>'110px',
+                            'edit'=>['type'=>'SelectVariable']],
+                        ['caption'=>'Schaltwert','name'=>'variableValue','width'=>'85px',
+                            'edit'=>['type'=>'ValidationTextBox']],
+                        ['caption'=>'Lesevariable','name'=>'readVariableId','width'=>'115px',
+                            'edit'=>['type'=>'SelectVariable']],
+                        ['caption'=>'Herkunft','name'=>'origin','width'=>'85px','save'=>false],
+                        ['caption'=>'Übernahmehinweis','name'=>'migrationNote','width'=>'200px','save'=>false],
                         ['caption'=>'IPS-Skript','name'=>'scriptId','width'=>'120px',
                             'edit'=>['type'=>'SelectScript']],
                         ['caption'=>'Geräteaktionen','name'=>'steps','width'=>'88px',
@@ -241,7 +267,9 @@ trait IAHVoiceRuleEditorTrait
                     'options'=>[
                         ['caption'=>'Freie Antwort','value'=>'answer'],
                         ['caption'=>'IP-Symcon-Skript','value'=>'script'],
-                        ['caption'=>'Geräteszene','value'=>'scene']
+                        ['caption'=>'Geräteszene','value'=>'scene'],
+                        ['caption'=>'Variable schalten','value'=>'variable'],
+                        ['caption'=>'Variable abfragen','value'=>'read']
                     ]],
                 ['type'=>'ValidationTextBox','name'=>'intentName',
                     'caption'=>'Optional: Alexa-Intent (z. B. GutenAbendIntent)',
@@ -261,6 +289,18 @@ trait IAHVoiceRuleEditorTrait
                 ['type'=>'ValidationTextBox','name'=>'cardText',
                     'caption'=>'Alexa-Kartentext (optional)',
                     'multiline'=>true,'value'=>(string)($rule['cardText']??'')],
+                ['type'=>'SelectVariable','name'=>'variableId',
+                    'caption'=>'Schaltvariable aus IP-Symcon auswählen',
+                    'value'=>(int)($rule['variableId']??0)],
+                ['type'=>'ValidationTextBox','name'=>'variableValue',
+                    'caption'=>'Fester Schaltwert (z. B. 1 oder 2)',
+                    'value'=>(string)($rule['variableValue']??'')],
+                ['type'=>'SelectVariable','name'=>'readVariableId',
+                    'caption'=>'Messwertvariable für {value} auswählen',
+                    'value'=>(int)($rule['readVariableId']??0)],
+                ['type'=>'Label','caption'=>'Herkunft: '
+                    .(string)($rule['origin']??'custom')
+                    .' — '.(string)($rule['migrationNote']??'')],
                 ['type'=>'SelectScript','name'=>'scriptId',
                     'caption'=>'IP-Symcon-Skript auswählen',
                     'value'=>(int)($rule['scriptId']??0)],
@@ -350,6 +390,7 @@ trait IAHVoiceRuleEditorTrait
                 'answer'=>$kind==='answer'?'Hier bitte deine Antwort eintragen.':'',
                 'imageUrl'=>'','imageFile'=>'','cardTitle'=>'','cardText'=>'',
                 'scriptId'=>0,'scriptParams'=>[],'steps'=>[],
+                'variableId'=>0,'variableValue'=>'','readVariableId'=>0,
                 'enabled'=>false,'confirmed'=>false
             ];
             $next=IAHVoiceRuleEngine::change($ctx['edit'],$key,$rule);
@@ -373,6 +414,7 @@ trait IAHVoiceRuleEditorTrait
             $input=$old;
             foreach(['title','aliases','kind','intentName','answer','imageUrl',
                 'imageFile','cardTitle','cardText','scriptId','scriptParams',
+                'variableId','variableValue','readVariableId',
                 'enabled','confirmed'] as $field)
                 if(array_key_exists($field,$data))$input[$field]=$data[$field];
             $next=IAHVoiceRuleEngine::change($ctx['edit'],$key,$input);
@@ -382,10 +424,15 @@ trait IAHVoiceRuleEditorTrait
         }catch(Throwable $e){$this->voiceRuleNotice('Nicht gespeichert: '.$e->getMessage());}
     }
 
-    public function DeleteVoiceRule(string $key): void
+    public function DeleteVoiceRule(string $key,string $revision=''): void
     {
         try {
             $ctx=$this->voiceRuleContext();
+            $current=IAHVoiceRuleEngine::rules((array)($ctx['edit']??[]))[$key]??null;
+            if(!is_array($current))throw new RuntimeException('Regel nicht gefunden.');
+            if($revision!=='' && !hash_equals(
+                hash('sha256',serialize($current)),$revision))
+                throw new RuntimeException('Regel zwischenzeitlich geaendert. Bitte neu laden.');
             $next=IAHVoiceRuleEngine::change($ctx['edit'],$key,[],true);
             $this->writeVoiceRuleEdit($ctx,$next);
             $this->voiceRuleNotice('Sprachregel aus EDIT gelöscht. PROD unverändert.');
@@ -429,23 +476,85 @@ trait IAHVoiceRuleEditorTrait
         }catch(Throwable $e){$this->voiceRuleNotice('Nicht entfernt: '.$e->getMessage());}
     }
 
+    private function legacyVoiceRuleDrafts(array $ctx): array
+    {
+        return IAHVoiceLegacyMigration::drafts(
+            (array)($ctx['catalog']??[]),
+            $this->ReadPropertyInteger('VarAussenTemp')
+        );
+    }
+
+    public function PreviewLegacyVoiceRuleDrafts(): void
+    {
+        try{
+            $ctx=$this->voiceRuleContext();
+            $drafts=$this->legacyVoiceRuleDrafts($ctx);
+            $existing=IAHVoiceRuleEngine::rules((array)($ctx['edit']??[]));
+            $lines=[];
+            foreach($drafts as $key=>$rule){
+                $parts=[$rule['title'],'Typ: '.$rule['kind']];
+                if(!empty($rule['imageFile']))$parts[]='Bild: '.$rule['imageFile'];
+                if(!empty($rule['imageUrl']))$parts[]='Bild-URL vorhanden';
+                if(!empty($rule['variableId']))$parts[]='Schaltvariable: '.$rule['variableId'];
+                if(!empty($rule['readVariableId']))$parts[]='Lesevariable: '.$rule['readVariableId'];
+                $parts[]=isset($existing[$key])?'bereits in EDIT':'neuer Entwurf';
+                $lines[]=implode(' | ',$parts);
+            }
+            $this->voiceRuleNotice('Nur Vorschau: '.count($drafts)
+                .' ALT-Befehle gefunden, noch nichts uebernommen. '
+                .implode(' ; ',$lines));
+        }catch(Throwable $e){
+            $this->voiceRuleNotice('ALT-Vorschau fehlgeschlagen: '.$e->getMessage());
+        }
+    }
+
     public function ImportLegacyVoiceRuleDrafts(): void
     {
         try{
             $ctx=$this->voiceRuleContext();
             $next=(array)($ctx['edit']??[]);
-            $count=0;
-            foreach(IAHVoiceRuleEngine::legacyDrafts() as $key=>$r) {
-                if(isset(IAHVoiceRuleEngine::rules($next)[$key]))continue;
-                $next=IAHVoiceRuleEngine::change($next,$key,$r);
-                $count++;
+            $count=0;$skipped=[];
+            foreach($this->legacyVoiceRuleDrafts($ctx) as $key=>$rule){
+                if(isset(IAHVoiceRuleEngine::rules($next)[$key])){
+                    $skipped[]=$key.' (vorhanden)';
+                    continue;
+                }
+                try{
+                    $next=IAHVoiceRuleEngine::change($next,$key,$rule);
+                    $count++;
+                }catch(Throwable $e){
+                    $skipped[]=$key.' ('.$e->getMessage().')';
+                }
             }
             if($count)$this->writeVoiceRuleEdit($ctx,$next);
             $this->voiceRuleNotice($count.' alte Befehle als DEAKTIVIERTE '
-                .'EDIT-Vorlagen angelegt. Nichts ausgeführt. '
-                .'Die Jalousien laufen weiter über ihren bisherigen Renderer.');
+                .'EDIT-Entwuerfe mit Bildern und technischen Zielen uebernommen. '
+                .'Keine alte Steuerung gestartet, PROD unveraendert.'
+                .($skipped?' Uebersprungen: '.implode('; ',$skipped):''));
             $this->ReloadVoiceRules();
-        }catch(Throwable $e){$this->voiceRuleNotice('Vorlagen nicht importiert: '.$e->getMessage());}
+        }catch(Throwable $e){
+            $this->voiceRuleNotice('ALT-Uebernahme fehlgeschlagen: '.$e->getMessage());
+        }
+    }
+
+    public function DeleteLegacyVoiceRuleDrafts(): void
+    {
+        try{
+            $ctx=$this->voiceRuleContext();
+            $next=(array)($ctx['edit']??[]);
+            $count=0;
+            foreach(IAHVoiceRuleEngine::rules($next) as $key=>$rule){
+                if(($rule['origin']??'')!=='legacy'||!empty($rule['enabled']))continue;
+                $next=IAHVoiceRuleEngine::change($next,$key,[],true);
+                $count++;
+            }
+            if($count)$this->writeVoiceRuleEdit($ctx,$next);
+            $this->voiceRuleNotice($count.' deaktivierte importierte ALT-Entwuerfe aus EDIT '
+                .'geloescht. Eigene Regeln, PROD, Originalskripte und Bilder erhalten.');
+            $this->ReloadVoiceRules();
+        }catch(Throwable $e){
+            $this->voiceRuleNotice('ALT-Entwuerfe nicht geloescht: '.$e->getMessage());
+        }
     }
 
     public function ReloadVoiceRules(): void
@@ -584,6 +693,15 @@ trait IAHVoiceRuleEditorTrait
             $result=IAHVoiceRuleEngine::run($rules,$catalog,$event['text'],
                 ['intent'=>(string)($event['intent']??''),
                  'forbiddenScriptIds'=>array_values(array_unique($forbidden))]);
+            // Never fall back to retired hard-coded Alexa shortcuts.
+            if(empty($result['matched']) &&
+                IAHVoiceLegacyMigration::isRetiredPhrase(
+                    $event['text'],$catalog,$this->ReadPropertyInteger('VarAussenTemp'))){
+                $result=['matched'=>true,'ok'=>false,'kind'=>'retired',
+                    'ruleKey'=>'legacy_disabled',
+                    'answer'=>'Dieser alte Befehl ist deaktiviert. '
+                        .'Bitte eine neue Sprachregel im Konfigurator anlegen.'];
+            }
             if(!empty($result['matched']))
                 IPS_LogMessage('Alexa','VoiceRules.V37 '.json_encode([
                     'key'=>$result['ruleKey']??'ambiguous',

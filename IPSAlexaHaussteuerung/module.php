@@ -10,6 +10,7 @@ require_once __DIR__ . '/src/AlexaLogTrait.php';
 require_once __DIR__ . '/src/SystemConfigurationManager.php';
 require_once __DIR__ . '/src/SystemNavigationEditor.php';
 require_once __DIR__ . '/src/VoiceRuleEngine.php';
+require_once __DIR__ . '/src/VoiceLegacyMigration.php';
 require_once __DIR__ . '/src/VoiceRuleEditorTrait.php';
 require_once __DIR__ . '/src/SystemNavigationMigration.php';
 require_once __DIR__ . '/src/KICostTrait.php';
