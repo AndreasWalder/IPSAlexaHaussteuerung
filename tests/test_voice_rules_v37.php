@@ -33,14 +33,14 @@ $catalog=[
             'decke'=>$device('Wohnzimmer Deckenlicht','light',['power'=>60002,'control'=>60001]),
             'unsafe'=>$device('Licht ohne KI-Freigabe','light',['control'=>60001],false)
         ],'dimmers'=>['stehlampe'=>$device('Stehlampe','dimmer',['brightness'=>60003])]],
-        'jalousie'=>['jalousie'=>[
+        'jalousie'=>[
             'fenster'=>$device('Wohnzimmer Jalousie','blind',['position'=>60002,
                 'targetPosition'=>60004,'action'=>60005])
-        ]],
-        'heizung'=>['heizung'=>[
+        ],
+        'heizung'=>[
             'thermostat'=>$device('Thermostat','heating',
                 ['temperature'=>60005,'targetTemperature'=>60005])
-        ]]
+        ]
     ]],
     'laptop'=>['display'=>'Laptop','domains'=>[
         'licht'=>['switches'=>['test'=>$device('Laptop-Test','light',['control'=>60001])]]
