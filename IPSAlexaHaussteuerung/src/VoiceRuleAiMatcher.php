@@ -70,7 +70,8 @@ final class IAHVoiceRuleAiMatcher
     }
 
     public static function openAiCandidate(
-        array $allowed,string $spoken,string $apiKey,string $model
+        array $allowed,string $spoken,string $apiKey,string $model,
+        ?callable $onResponse=null
     ): ?array {
         if(trim($apiKey)==='' || !function_exists('curl_init') || $allowed===[]
             || !preg_match('/^[A-Za-z0-9._:-]{3,80}$/D',$model))return null;
@@ -114,6 +115,9 @@ final class IAHVoiceRuleAiMatcher
             if(!is_string($response)||$status<200||$status>=300)return null;
             $parsed=json_decode($response,true);
             if(!is_array($parsed))return null;
+            if($onResponse!==null){
+                try{$onResponse($parsed);}catch(Throwable $ignored){}
+            }
             $candidate=json_decode((string)($parsed['choices'][0]['message']['content']??''),true);
             return is_array($candidate)?$candidate:null;
         }finally{
