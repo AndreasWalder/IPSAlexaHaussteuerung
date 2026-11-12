@@ -68,4 +68,46 @@ ck371ui(isset((require IPS_GetScriptFile(501))['navigation'])
     && (require IPS_GetScriptFile(501))['var']['Token']==='PRIVATE',
     'other SystemConfiguration PROD areas preserved');
 
+
+/** Backward-compatible patch of already installed V3.7 Action script. */
+function IPS_GetParent(int $id):int {
+    return (int)($GLOBALS['sc333Objects'][$id]['parent']??0);
+}
+function IPS_SetHidden(int $id,bool $hidden):void {
+    $GLOBALS['sc333Hidden'][$id]=$hidden;
+}
+$actionId=850;
+$legacyAction="<?php\nfunction my_custom_handler(): void {\n"
+    ."        // IAH_ALEXA_QUESTION_CAPTURE_END\n"
+    ."        // IAH_VOICE_RULES_V37_BEGIN\n"
+    ."        // V3.7 legacy rule block\n"
+    ."        // IAH_VOICE_RULES_V37_END\n"
+    ."        \$customUserCode = 'KEEP';\n}\n";
+$GLOBALS['sc333Scripts'][$actionId]=$legacyAction;
+$GLOBALS['sc333Objects'][$actionId]=[
+    'parent'=>200,'name'=>'Custom Alexa Action','ident'=>'iahAction'
+];
+file_put_contents(IPS_GetScriptFile($actionId),$legacyAction);
+$backupIdsBefore=array_keys($GLOBALS['sc333Scripts']);
+(new ReflectionMethod(IPSAlexaHaussteuerung::class,
+    'patchActionScriptVoiceRules'))->invoke($module,$actionId);
+$patched=IPS_GetScriptContent($actionId);
+ck371ui(str_contains($patched,'VoiceRules.image_missing')
+    && str_contains($patched,'/hook/iah-alexa-icons?f=')
+    && str_contains($patched,"\$customUserCode = 'KEEP'")
+    && substr_count($patched,'IAH_VOICE_RULES_V37_BEGIN')===1
+    && substr_count($patched,'IAH_VOICE_RULES_V37_END')===1,
+    'upgrader replaces only delimited legacy block and preserves user code');
+$backupIds=array_diff(array_keys($GLOBALS['sc333Scripts']),$backupIdsBefore);
+ck371ui(count($backupIds)===1,'one full backup created for existing action');
+$backupIdNew=(int)array_values($backupIds)[0];
+ck371ui(IPS_GetScriptContent($backupIdNew)===$legacyAction
+    && ($GLOBALS['sc333Hidden'][$backupIdNew]??false)===true,
+    'original customized Action script retained and hidden after verified backup');
+(new ReflectionMethod(IPSAlexaHaussteuerung::class,
+    'patchActionScriptVoiceRules'))->invoke($module,$actionId);
+ck371ui(IPS_GetScriptContent($actionId)===$patched
+    && count(array_diff(array_keys($GLOBALS['sc333Scripts']),$backupIdsBefore))===1,
+    'second module ApplyChanges is idempotent; no additional backups');
+
 echo "PASS V3.7.1 UI: reusable script/image/card fields, EDIT backup, reviewed PROD, runtime RunScriptEx\n";
