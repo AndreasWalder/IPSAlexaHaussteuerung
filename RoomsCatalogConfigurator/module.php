@@ -5114,17 +5114,12 @@ class RoomsCatalogConfigurator extends IPSModule
                     'path'=>(string)($result['key'] ?? ''),
                     'title'=>(string)($result['title'] ?? ''),
                     'room'=>(string)($result['room'] ?? ''),
-                    'message'=>'Typisierung im Bereich "Altgeraete ins neue Modell uebernehmen"'
+                    'message'=>'Typ-/Variablenzuordnung in der regulaeren Geraetetabelle pruefen'
                 ];
             }
         }
         $diff = $this->deviceDiffReport($prodRows,$rows);
         $typeStats = $this->catalogMigrationStatistics($rows,$prodRows);
-        $oldAudit = json_decode($this->ReadAttributeString('MigrationReadinessDetails'),true);
-        $currentHash = hash('sha256',json_encode($catalog,JSON_INVALID_UTF8_SUBSTITUTE));
-        $oldStats = (array)($oldAudit['statistics'] ?? []);
-        $priorAvailable = is_array($oldAudit) && isset($oldAudit['catalogHash'])
-            && isset($oldStats['typed']) && isset($oldStats['legacy']);
         $capabilityCounts=array_count_values(array_map(
             static fn(array $row):string=>(string)($row['capability']??'Technische Zuordnung pruefen'),
             $results
@@ -5138,14 +5133,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $source = [
             'editId'=>$editId,'prodId'=>$prodId,
             'editHash'=>hash('sha256',$editSource),'prodHash'=>hash('sha256',$prodSource),
-            'typed'=>$typeStats['typed'],'legacy'=>$typeStats['legacy'],
-            'previousAudit'=>[
-                'available'=>$priorAvailable,
-                'changed'=>$priorAvailable && !hash_equals(
-                    (string)$oldAudit['catalogHash'],$currentHash),
-                'typed'=>(int)($oldStats['typed'] ?? -1),
-                'legacy'=>(int)($oldStats['legacy'] ?? -1)
-            ]
+            'typed'=>$typeStats['typed'],'legacy'=>$typeStats['legacy']
         ];
         // A scan is a read-only snapshot. Avoid a false current snapshot if
         // the EDIT script was changed during a long inventory read.
@@ -5496,9 +5484,9 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         return sprintf(
             'KI-Zugriff: %d/%d freigegeben (%d nur lesen, %d schalten), %d ohne KI. '
-            .'Neues Modell: %d/%d typisiert, %d bestaetigt. '
-            .'Offen: %d Legacy, %d unbekannte Typen, %d unbestaetigte, %d fehlende Rueckmeldungen, '
-            .'%d EDIT/PROD-Unterschiede, %d uebrige Tabs.',
+            .'Geraetetypen: %d/%d hinterlegt, %d fachlich bestaetigt. '
+            .'Offen: %d ohne Typ, %d ungeklärt, %d unbestaetigt, %d fehlende Rueckmeldungen, '
+            .'%d EDIT/PROD-Unterschiede, %d verbliebene Tab-Eintraege.',
             $s['readOnly']+$s['writable'], $s['total'], $s['readOnly'], $s['writable'],
             $s['disabled'], $s['typed'], $s['total'], $s['confirmed'],
             $s['legacy'], $s['generic'], $s['unreviewed'], $s['missingFeedback'],
@@ -5638,7 +5626,7 @@ class RoomsCatalogConfigurator extends IPSModule
                     'caption'=>'Katalogstatus und KI-Berechtigungen',
                     'expanded'=>true,
                     'items'=>[
-                        ['type'=>'Label','name'=>'MigrationSummary','caption'=>$migrationSummary],
+                        ['type'=>'Label','name'=>'CatalogDeviceStats','caption'=>$migrationSummary],
                         ['type'=>'Label','caption'=>
                             'KI-Lese-/Schreibfreigabe und fachlich bestaetigte Geraetezuordnung sind getrennt. '
                             .'Keine KI-Schreibfreigaben ohne ausdrueckliche Freigabe.'],
@@ -6264,14 +6252,9 @@ class RoomsCatalogConfigurator extends IPSModule
             $caption = (string)($element['caption'] ?? '');
             if (in_array($caption, [
                 'Variablenzuordnungen pruefen',
-                'IP-Symcon-Geraeteinventur',
-                'Altgeraete ins neue Modell uebernehmen'
+                'IP-Symcon-Geraeteinventur'
             ],true)) {
                 if ($insertAt === null) $insertAt = count($remaining);
-                if ($caption === 'Altgeraete ins neue Modell uebernehmen'
-                    && $migrationStats['legacy'] === 0) {
-                    continue; // Keine Altdaten mehr in EDIT: Assistent entfaellt.
-                }
                 // Gefuehrter Baumsuch-Import bleibt dauerhaft sichtbar.
                 $element['expanded'] = $caption === 'IP-Symcon-Geraeteinventur';
                 $assistants[] = $element;
@@ -6286,8 +6269,8 @@ class RoomsCatalogConfigurator extends IPSModule
                 'expanded'=>false,
                 'items'=>array_merge([
                     ['type'=>'Label','caption'=>
-                        'Geraete koennen hier auch nach abgeschlossener Migration erneut erkannt werden. '
-                        .'Vorhandene Konfigurationen und KI-Berechtigungen bleiben bei Analysen unveraendert.']
+                        'Neue IP-Symcon-Geraete koennen jederzeit erkannt und nach EDIT '
+                        .'uebernommen werden. Bestehende KI-Rechte bleiben erhalten.']
                 ],array_values(array_filter($assistants,static fn(array $item):bool=>
                     ($item['caption']??'')==='IP-Symcon-Geraeteinventur')))
             ]]);
@@ -7573,7 +7556,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $summary = 'RoomsCatalog EDIT: '.count($edit).' Eintraege. '
             .($readable-$writable).' KI nur lesen, '.$writable.' KI schaltbar, '
             .(count($edit)-$readable).' ohne KI-Freigabe. EDIT wird erst nach Freigabe produktiv.';
-        $this->UpdateFormField('MigrationSummary','caption',$this->catalogMigrationShortSummary($migrationStats));
+        $this->UpdateFormField('CatalogDeviceStats','caption',$this->catalogMigrationShortSummary($migrationStats));
         $this->UpdateFormField('CatalogSummary', 'caption', $summary);
     }
 
