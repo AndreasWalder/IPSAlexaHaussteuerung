@@ -21,7 +21,7 @@ Der Leser verwendet `IPS_GetLogDir() . 'logfile.log'`, also die **bereits existi
 
 ## KI-Kosten in Euro
 
-Unter `IPSAlexaHaussteuerung → KI-Kosten` und in den drei Backend-Kategorien stehen nun **EUR-Variablen** (`costTodayEUR`, `costMonthEUR`, `costTotalEUR` usw.). Die HTML-Übersicht zeigt EUR einschließlich Monatsprognose, Durchschnitt je Frage und Einzelkosten der letzten Fragen. Die Monatskostenwarnung ist ebenfalls in **EUR** konfigurierbar.
+Unter `IPSAlexaHaussteuerung → KI-Kosten` und in den beiden aktiven Anbindungskategorien (RoomsCatalog und Intent-Parser) sowie der Gesamtansicht stehen **EUR-Variablen** (`costTodayEUR`, `costMonthEUR`, `costTotalEUR` usw.). Die HTML-Übersicht zeigt EUR einschließlich Monatsprognose, Durchschnitt je Frage und Einzelkosten der letzten Fragen. Die Monatskostenwarnung ist ebenfalls in **EUR** konfigurierbar.
 
 Die OpenAI-API rechnet nach wie vor in **USD** ab: die Rohdaten, Tokenpreise pro 1 Mio. Tokens und tatsächlich berechneten USD-Beträge werden zur Nachvollziehbarkeit beibehalten. Der angezeigte EUR-Betrag ist deshalb eine **Kursumrechnung einer USD-Kostenschätzung** und keine offizielle EUR-Rechnung inklusive Umsatzsteuer, Karten-/Bankgebühren oder Abweichungen des Zahlungsdienstleisters. Der jeweils aktuelle EUR-Anzeigewert eines historischen USD-Betrags kann sich bei Wechselkursänderungen verändern.
 
@@ -42,7 +42,7 @@ Die bislang angelegten Variablen mit Endung `USD` werden nicht gelöscht, sonder
 
 1. In IP-Symcon das GitHub-Modul aktualisieren und die Modulinstanz **IPSAlexaHaussteuerung → Übernehmen**.
 2. Eine Alexa-Frage ausführen; unter **Diagnose → Alexa-Protokoll (kopieren)** den Stringwert öffnen, komplett markieren und kopieren.
-3. Unter **KI-Kosten** den Eurobetrag, EZB-Kurs samt Datum und das getrennte Backend prüfen.
+3. Unter **KI-Kosten** den Eurobetrag, EZB-Kurs samt Datum und die getrennten aktiven Anbindungen (RoomsCatalog / Intent-Parser) prüfen. Die frühere KI-Kostenkategorie bleibt ausgeblendet, nicht gelöscht.
 4. Funktionstest im GitHub-Repository: `php tests/test_alexa_log_buffer_eur.php`.
 
 Vorhandene RoomsCatalog-Geräte und Freigaben werden dabei nicht verändert.
