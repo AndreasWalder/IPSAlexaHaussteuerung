@@ -121,7 +121,6 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('DiscoveryInventory', '{}');
         $this->RegisterAttributeString('DiscoveryAuditReport', 'Noch keine Vollstaendigkeitspruefung.');
         $this->RegisterAttributeString('DiscoveryAIReport', 'Keine KI-Unterstuetzung bei der letzten Geraetesuche.');
-        $this->RegisterAttributeString('LegacyMigrationPreview', '{}');
         $this->RegisterAttributeString('BulkDeviceType', 'keep');
         $this->RegisterAttributeString('BulkAIMode', 'keep');
         $this->RegisterAttributeString('BulkSuggestions', 'yes');
@@ -138,8 +137,6 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('HuaweiDataSourceReport','');
         $this->RegisterAttributeString('HuaweiDataSourceNotice','Noch kein HuaweiPV-Scan gestartet.');
         $this->RegisterAttributeString('CatalogRestoreNotice','Noch kein Backup zur Wiederherstellung ausgewaehlt.');
-        $this->RegisterAttributeString('MigrationReadinessReport', 'Noch nicht geprüft.');
-        $this->RegisterAttributeString('MigrationReadinessDetails', '{}');
         $this->RegisterAttributeString('TechnicalDeviceSnapshot', '{}');
         $this->RegisterAttributeString('TechnicalDevicePreview', '{}');
         $this->RegisterAttributeString('TechnicalDeviceSummary', 'Noch keine technische Geraetepruefung ausgefuehrt.');
@@ -189,7 +186,6 @@ class RoomsCatalogConfigurator extends IPSModule
             'DiscoveryInventory'=>'{}',
             'DiscoveryAuditReport'=>'Noch keine Vollstaendigkeitspruefung.',
             'DiscoveryAIReport'=>'Keine KI-Unterstuetzung bei der letzten Geraetesuche.',
-            'LegacyMigrationPreview'=>'{}',
             'BulkPreview'=>'{}',
             'MarkedEditorKeys'=>'[]',
             'MarkedEditorIndex'=>'0',
@@ -198,8 +194,6 @@ class RoomsCatalogConfigurator extends IPSModule
             'CatalogRestorePreview'=>'{}',
             'HuaweiDataSourcePreview'=>'{}',
             'HuaweiDataSourceReport'=>'',
-            'MigrationReadinessReport'=>'Noch nicht geprueft.',
-            'MigrationReadinessDetails'=>'{}',
             'TechnicalDeviceSnapshot'=>'{}',
             'TechnicalDevicePreview'=>'{}',
             'TechnicalDeviceSummary'=>'Noch keine technische Geraetepruefung ausgefuehrt.',
@@ -255,7 +249,6 @@ class RoomsCatalogConfigurator extends IPSModule
             'KnxStatusRepairSummary'=>'Noch keine KNX-Statuskorrektur geprueft.',
             'PartialProdPublishNotice'=>'Noch keine bereichsweise PROD-Vorschau ausgefuehrt.',
             'SinglePositionProdNotice'=>'Noch keine einzelne Positionsaenderung geprueft.',
-            'MigrationReadinessReport'=>'Noch keine aktuelle Migrationspruefung ausgefuehrt.',
             'DiscoverySummary'=>'Noch keine Geraeteinventur gestartet.',
             'DiscoveryAudit'=>'Noch keine Vollstaendigkeitspruefung.'
         ] as $name=>$label) {
@@ -263,7 +256,7 @@ class RoomsCatalogConfigurator extends IPSModule
         }
         foreach ([
             'TechnicalDeviceChecks','TechnicalLegacyDevices','TechnicalDiffRows',
-            'Suggestions','DiscoveryInventoryList','DiscoveredDevices','LegacyDevices',
+            'Suggestions','DiscoveryInventoryList','DiscoveredDevices',
             'PartialProdPublishRows'
         ] as $name) {
             $this->UpdateFormField($name,'values','[]');
@@ -1883,174 +1876,6 @@ class RoomsCatalogConfigurator extends IPSModule
     }
 
     /** Alte Eintraege kontrolliert typisieren: Analyse schreibt keine Katalogdaten. */
-    public function AnalyzeLegacyDevices(): void
-    {
-        $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
-        if ($editId <= 0 || !IPS_ScriptExists($editId)) {
-            echo 'RoomsCatalogEdit ist nicht konfiguriert.';
-            return;
-        }
-        $catalog = $this->loadRoomsCatalog($editId,'EDIT');
-        $rows = $this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($catalog));
-        $candidates = [];
-        $totalLegacy = 0;
-        foreach ($rows as $row) {
-            if ((string)($row['aiType'] ?? '') !== '') continue;
-            $totalLegacy++;
-            if (count($candidates) >= 500) continue;
-            $variables = $this->getScopedIpsVariables($row);
-            $sourceId = 0;
-            foreach ($variables as $variable) {
-                $sourceId = $this->lookupIpsInstanceId((int)$variable['id']);
-                if ($sourceId > 0) break;
-            }
-            $moduleName = '';
-            if ($sourceId > 0 && function_exists('IPS_GetInstance')) {
-                try {
-                    $instance = IPS_GetInstance($sourceId);
-                    $moduleName = (string)($instance['ModuleInfo']['ModuleName'] ?? '');
-                } catch (Throwable $ignored) {}
-            }
-            $typed = $this->inferDeviceTypeFromMetadata($variables,$moduleName,(string)($row['title'] ?? ''));
-            $legacyType = $this->inferredAIType($row);
-            // Vorhandene Raum-/Bereichssemantik hat Vorrang vor beliebigen Namensfunden.
-            $type = $legacyType !== 'generic' ? $legacyType : $typed['type'];
-            $scores = $this->suggestAIFields($row,$type,$variables);
-            $coverage = $this->roleCoverage($type,$scores);
-            $safe = $type !== 'generic' && $coverage['missing'] === [];
-            $candidates[] = [
-                'selected'=>false,'composite'=>$this->buildCompositeKey($row),
-                'title'=>(string)($row['title'] ?? $row['key'] ?? ''),
-                'roomKey'=>(string)($row['roomKey'] ?? ''),
-                'deviceType'=>$type,'sourceId'=>$sourceId,
-                'confidence'=>$safe ? 'Hoch' : 'Pruefen',
-                'reason'=>$safe ? 'Mindestens notwendige Rueckmeldung vorhanden' :
-                    ($coverage['missing'] !== [] ? 'Offen: ' . implode(', ',$coverage['missing']) : 'Typ/IDs pruefen')
-            ];
-        }
-        $preview = [
-            'time'=>time(),'editHash'=>hash('sha256',IPS_GetScriptContent($editId)),
-            'truncated'=>$totalLegacy > count($candidates),'totalLegacy'=>$totalLegacy,'rows'=>$candidates
-        ];
-        $this->WriteAttributeString('LegacyMigrationPreview',json_encode($preview,JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
-        $this->UpdateFormField('LegacyDevices','values',json_encode($candidates,JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
-        echo sprintf('Legacy-Analyse: %d Geraete, %d angezeigt, %d eindeutige. %s',
-            $totalLegacy,count($candidates),count(array_filter($candidates,static fn($r): bool=>$r['confidence']==='Hoch')),
-            $preview['truncated'] ? 'Suchgrenze: nicht vollstaendig!' : 'Keine Aenderung an EDIT/PROD.');
-    }
-
-    public function UpdateLegacyCandidate(string $rowJson): void
-    {
-        $row = json_decode($rowJson,true);
-        $preview = json_decode($this->ReadAttributeString('LegacyMigrationPreview'),true);
-        if (!is_array($row) || !is_array($preview['rows'] ?? null)) return;
-        foreach ($preview['rows'] as &$candidate) {
-            if ($candidate['composite'] !== (string)($row['composite'] ?? '')) continue;
-            if (array_key_exists('selected',$row)) $candidate['selected'] = (bool)$row['selected'];
-            $type = (string)($row['deviceType'] ?? '');
-            if (array_key_exists($type,RCCDeviceTypeRegistry::roles())) $candidate['deviceType'] = $type;
-            break;
-        }
-        unset($candidate);
-        $this->WriteAttributeString('LegacyMigrationPreview',json_encode($preview,JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
-        $this->UpdateFormField('LegacyDevices','values',json_encode($preview['rows'],JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
-    }
-
-    public function SelectLegacyCandidates(bool $select): void
-    {
-        $preview = json_decode($this->ReadAttributeString('LegacyMigrationPreview'),true);
-        if (!is_array($preview['rows'] ?? null)) return;
-        foreach ($preview['rows'] as &$row) $row['selected'] = $select && $row['confidence'] === 'Hoch';
-        unset($row);
-        $this->WriteAttributeString('LegacyMigrationPreview',json_encode($preview,JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
-        $this->UpdateFormField('LegacyDevices','values',json_encode($preview['rows'],JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
-    }
-
-    public function ApplyLegacyCandidates(): void
-    {
-        $preview = json_decode($this->ReadAttributeString('LegacyMigrationPreview'),true);
-        $editId = $this->ReadPropertyInteger('RoomsCatalogEditScriptID');
-        if (!is_array($preview['rows'] ?? null) || $editId <= 0 || !IPS_ScriptExists($editId)
-            || time()-(int)($preview['time'] ?? 0) > 600
-            || ($preview['editHash'] ?? '') !== hash('sha256',IPS_GetScriptContent($editId))) {
-            echo 'Legacy-Vorschau veraltet: bitte erneut analysieren.';
-            return;
-        }
-        $original = $this->loadRoomsCatalog($editId,'EDIT');
-        $rows = $this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($original));
-        $indexes = [];
-        foreach ($rows as $index=>$row) $indexes[$this->buildCompositeKey($row) ?? ''] = $index;
-        $count = 0;
-        foreach ($preview['rows'] as $candidate) {
-            if (empty($candidate['selected'])) continue;
-            $identity = (string)($candidate['composite'] ?? '');
-            $type = (string)($candidate['deviceType'] ?? '');
-            if (!isset($indexes[$identity]) || !array_key_exists($type,RCCDeviceTypeRegistry::roles())
-                || (string)($rows[$indexes[$identity]]['aiType'] ?? '') !== '') {
-                echo 'Legacy-Uebernahme abgebrochen: Eintrag/Typ ungueltig. Bitte neu analysieren.';
-                return;
-            }
-            $index = $indexes[$identity];
-            $row = $rows[$index];
-            $variables = $this->getScopedIpsVariables($row);
-            $used = [];
-            foreach (RCCDeviceTypeRegistry::fields() as $property=>$field) {
-                if ((int)($row[$field] ?? 0) > 0) $used[(int)$row[$field]] = true;
-            }
-            foreach ($this->suggestAIFields($row,$type,$variables) as $suggestion) {
-                $id = (int)$suggestion['candidateId'];
-                if ($suggestion['confidence'] !== 'Hoch' || $id <= 0 || isset($used[$id])) continue;
-                $row[RCCDeviceTypeRegistry::fields()[$suggestion['property']]] = $id;
-                $used[$id] = true;
-            }
-            $stateId = (int)($row['aiStatusId'] ?? $row['aiOpenId'] ?? $row['aiPowerId'] ?? 0);
-            foreach ($this->inferStateMapping($variables,$stateId,$type) as $meaning=>$value) {
-                $field = RCCDeviceTypeRegistry::states()[$meaning] ?? null;
-                if ($field === null || trim((string)($row[$field] ?? '')) !== '') continue;
-                $row[$field] = is_bool($value) ? ($value ? 'true' : 'false') : (string)$value;
-            }
-            $sourceId = (int)($candidate['sourceId'] ?? 0);
-            if ($sourceId > 0 && function_exists('IPS_GetInstance')) {
-                try {
-                    $instance = IPS_GetInstance($sourceId);
-                    $moduleInfo = is_array($instance) ? (array)($instance['ModuleInfo'] ?? []) : [];
-                    $row['ai']['source'] = [
-                        'instanceId'=>$sourceId,
-                        'moduleId'=>(string)($moduleInfo['ModuleID'] ?? ''),
-                        'moduleName'=>(string)($moduleInfo['ModuleName'] ?? ''),
-                        'variableIds'=>array_column($variables,'id'),
-                        'unmappedVariableIds'=>array_values(array_diff(array_column($variables,'id'),array_keys($used)))
-                    ];
-                } catch (Throwable $ignored) {}
-            }
-            $row['aiType'] = $type;
-            $row['aiReviewed'] = false;
-            $row['ai']['review'] = [
-                'status'=>'pending',
-                'note'=>'Legacy-Zuordnung und Statusbedeutung am Geraet bestaetigen'
-            ];
-            $rows[$index] = $row;
-            $count++;
-        }
-        if ($count === 0) { echo 'Keine alten Geraete markiert.'; return; }
-        $updated = $this->rebuildRoomsCatalogFromEntries($rows,$original);
-        $loss = [];
-        $this->findLostCatalogFields($original,$updated,'RoomsCatalogEdit',$loss);
-        if ($loss !== []) {
-            echo 'Legacy-Uebernahme wegen Datenverlust abgebrochen: ' . implode('; ',array_slice($loss,0,3));
-            return;
-        }
-        if (IPS_SetScriptContent($editId,"<?php\nreturn " . var_export($updated,true) . ";\n") === false) {
-            echo 'RoomsCatalogEdit konnte nicht gespeichert werden.';
-            return;
-        }
-        $this->WriteAttributeString('LegacyMigrationPreview','{}');
-        $this->UpdateFormField('LegacyDevices','values','[]');
-        $this->reloadAllFromCatalog();
-        $this->RefreshVisibleLists();
-        echo $count . ' bestehende Geraete im EDIT-Katalog typisiert; Legacy-Felder und PROD unveraendert. Noch am Geraet pruefen.';
-    }
-
     public function ScanNewDevices(): void
     {
         $roots = $this->discoveryRoots();
@@ -5161,150 +4986,6 @@ class RoomsCatalogConfigurator extends IPSModule
         }
     }
 
-    public function ApplySafeAutoRepair(): void
-    {
-        try {
-            $preview=json_decode($this->ReadAttributeString('AutoRepairPreview'),true);
-            if (!is_array($preview) || time()-(int)($preview['time']??0)>600) {
-                throw new \RuntimeException('Bitte zuerst eine aktuelle Diagnose herunterladen (max. zehn Minuten).');
-            }
-            $sources=$this->safeRepairSources();
-            if ($sources['editSource']!==$sources['prodSource']) {
-                throw new \RuntimeException('EDIT und PROD unterscheiden sich – bitte zuerst manuell abgleichen.');
-            }
-            foreach (['edit','prod'] as $name) {
-                if ((int)($preview[$name.'Id']??0)!==$sources[$name.'Id']
-                    || !hash_equals((string)($preview[$name.'Hash']??''),
-                        hash('sha256',$sources[$name.'Source']))) {
-                    throw new \RuntimeException('Katalog seit der Diagnose veraendert: '.$name);
-                }
-            }
-            $plan=$this->safeRepairPlan($sources['catalog']);
-            $signature=hash('sha256',json_encode($plan,JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_UNICODE));
-            if (!hash_equals((string)($preview['signature']??''),$signature)) {
-                throw new \RuntimeException('IP-Symcon-Metadaten seit Diagnose veraendert. Abbruch.');
-            }
-            $changes=$plan['changes'];
-            if ($changes===[]) {
-                $message='Keine eindeutigen weiteren Korrekturen. Unklare Rueckmeldungen und Schaltaktionen bleiben zur Pruefung.';
-                $this->WriteAttributeString('AutoRepairNotice',$message);
-                $this->UpdateFormField('AutoRepairNotice','caption',$message);
-                echo $message;
-                return;
-            }
-            $next=RCCSafeAutoRepair::applyBindings($sources['catalog'],$changes);
-            $loss=[];
-            $this->findLostCatalogFields($sources['catalog'],$next,'RoomsCatalogEdit',$loss);
-            // Authorized replacements are the known KNX heating setpoint or
-            // a fully checked KNX DPT2 light-feedback repair. All other
-            // existing fields and permissions remain unchanged.
-            // All replacements are limited to a control field that formerly
-            // held the same read-only ID as targetTemperature. The exact
-            // original value and full destination are checked against the plan.
-            $approved=[];
-            $flat=$this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($sources['catalog']));
-            foreach ($flat as $flatRow) {
-                $key=$this->buildCompositeKey($flatRow);
-                if ($key===null || !isset($changes[$key]['control'])) continue;
-                $oldAi=$flatRow['ai']??null;
-                if (is_string($oldAi)) $oldAi=json_decode($oldAi,true);
-                if (!is_array($oldAi) || ($oldAi['type']??'')!=='heating') continue;
-                $oldControl=(int)($oldAi['variables']['control']??0);
-                $oldTarget=(int)($oldAi['variables']['targetTemperature']??0);
-                if ($oldControl<=0 || $oldControl!==$oldTarget) continue;
-                [$room,$domain,$group,$device]=explode('|',$key,4);
-                $approved[]='RoomsCatalogEdit.'.$room.'.domains.'.$domain.'.'.$device
-                    .'.ai.variables.control:';
-            }
-            // KNX DPT2 light-only repair: the existing "state" was
-            // incorrectly a KNX priority bit (Value0). The *same*
-            // repair must replace both typed power/status and legacy state
-            // with the read-only Boolean Funktionswert (Value1).
-            foreach ($flat as $flatRow) {
-                $key=$this->buildCompositeKey($flatRow);
-                if ($key===null || !isset($changes[$key]['power'],$changes[$key]['status'])) continue;
-                $oldAi=$flatRow['ai']??null;
-                if (is_string($oldAi)) $oldAi=json_decode($oldAi,true);
-                if (!is_array($oldAi) || ($oldAi['type']??'')!=='light'
-                    || empty($flatRow['kiReadOnly'])
-                    || (int)$changes[$key]['power']!==(int)$changes[$key]['status']) continue;
-                $oldState=(int)($flatRow['state']??0);
-                $oldPower=(int)($oldAi['variables']['power']??0);
-                $oldStatus=(int)($oldAi['variables']['status']??0);
-                if ($oldState<=0 || $oldState!==$oldPower || $oldState!==$oldStatus) continue;
-                [$room,$domain,$group,$device]=explode('|',$key,4);
-                $base='RoomsCatalogEdit.'.$room.'.domains.'.$domain.'.'.$group.'.'.$device.'.';
-                foreach (['state:','ai.variables.power:','ai.variables.status:'] as $field) {
-                    $approved[]=$base.$field;
-                }
-            }
-            $loss=array_values(array_filter($loss,static function(string $error)use($approved):bool {
-                foreach($approved as $prefix) if(str_starts_with($error,$prefix)) return false;
-                return true;
-            }));
-            if ($loss!==[]) throw new \RuntimeException('Datenverlustpruefung: '.implode('; ',array_slice($loss,0,3)));
-            $nextSource="<?php\nreturn ".var_export($next,true).";\n";
-            if (IPS_GetScriptContent($sources['editId'])!==$sources['editSource']
-                || IPS_GetScriptContent($sources['prodId'])!==$sources['prodSource']) {
-                throw new \RuntimeException('Katalog kurz vor der Sicherung veraendert. Abbruch.');
-            }
-            // Both original scripts must have verifiable independent backups
-            // BEFORE either script is modified.
-            $backups=[];
-            foreach (['edit','prod'] as $name) {
-                $scriptId=$sources[$name.'Id'];
-                $backup=IPS_CreateScript(0);
-                if (!is_int($backup) || $backup<=0) {
-                    throw new \RuntimeException('Sicherung konnte nicht angelegt werden. PROD/EDIT unveraendert.');
-                }
-                IPS_SetParent($backup,IPS_GetParent($scriptId));
-                IPS_SetName($backup,'RoomsCatalog_V3312_before_repair_'.strtoupper($name).'_'.date('Ymd_His').'_'.$backup);
-                IPS_SetScriptContent($backup,$sources[$name.'Source']);
-                if (IPS_GetScriptContent($backup)!==$sources[$name.'Source']) {
-                    throw new \RuntimeException('Backup-Verifikation fehlgeschlagen; keine Uebernahme.');
-                }
-                $backups[$name]=$backup;
-            }
-            if (IPS_GetScriptContent($sources['editId'])!==$sources['editSource']
-                || IPS_GetScriptContent($sources['prodId'])!==$sources['prodSource']) {
-                throw new \RuntimeException('Katalog nach Sicherung veraendert; keine Uebernahme.');
-            }
-            try {
-                foreach (['edit','prod'] as $name) {
-                    IPS_SetScriptContent($sources[$name.'Id'],$nextSource);
-                    if (IPS_GetScriptContent($sources[$name.'Id'])!==$nextSource)
-                        throw new \RuntimeException('Schreibverifikation fehlgeschlagen: '.$name);
-                }
-            } catch (\Throwable $writeError) {
-                $failed=[];
-                foreach (['edit','prod'] as $name) {
-                    try {
-                        IPS_SetScriptContent($sources[$name.'Id'],$sources[$name.'Source']);
-                        if (IPS_GetScriptContent($sources[$name.'Id'])!==$sources[$name.'Source']) $failed[]=$name;
-                    } catch (\Throwable $restoreError) { $failed[]=$name; }
-                }
-                throw new \RuntimeException('Schreibfehler: '.$writeError->getMessage().
-                    ($failed!==[]?' ROLLBACK FEHLER: '.implode(',',$failed):' Alte Inhalte wiederhergestellt.').
-                    ' Backups: '.implode(',',$backups));
-            }
-            $this->WriteAttributeString('AutoRepairPreview','{}');
-            $this->reloadAllFromCatalog();
-            $this->RefreshVisibleLists();
-            $message=sprintf('ERFOLG: %d sichere technische Rollen-Zuordnungen in EDIT und PROD korrigiert. '
-                .'Backups: EDIT #%d, PROD #%d. KI-Rechte, Werte und Bestaetigungen unveraendert. '
-                .'Bitte ALLE GERAETE TECHNISCH PRUEFEN erneut ausfuehren.',
-                count($changes),$backups['edit'],$backups['prod']);
-            $this->WriteAttributeString('AutoRepairNotice',$message);
-            $this->UpdateFormField('AutoRepairNotice','caption',$message);
-            echo $message;
-        } catch (\Throwable $e) {
-            $message='AUTO-KORREKTUR BLOCKIERT: '.$e->getMessage();
-            $this->WriteAttributeString('AutoRepairNotice',$message);
-            $this->UpdateFormField('AutoRepairNotice','caption',$message);
-            echo $message;
-        }
-    }
-
     private function technicalDeviceSourceSummary(array $snapshot): string
     {
         if ($snapshot === []) {
@@ -5811,21 +5492,6 @@ class RoomsCatalogConfigurator extends IPSModule
         return $summary;
     }
 
-    private function currentMigrationReport(array $editCatalog): string
-    {
-        $report = $this->ReadAttributeString('MigrationReadinessReport');
-        $meta = json_decode($this->ReadAttributeString('MigrationReadinessDetails'),true);
-        if ($report === '' || !is_array($meta) || !is_string($meta['catalogHash'] ?? null)) {
-            return 'Noch keine aktuelle Migrationspruefung ausgefuehrt.';
-        }
-        $currentHash = hash('sha256',json_encode($editCatalog,JSON_INVALID_UTF8_SUBSTITUTE));
-        if (!hash_equals($meta['catalogHash'],$currentHash)) {
-            return 'RoomsCatalogEdit wurde seit dem letzten Pruefbericht geaendert. '
-                .'Datenstand erneut pruefen; alte Ergebnisse sind nicht mehr gueltig.';
-        }
-        return $report;
-    }
-
     private function catalogMigrationShortSummary(array $s): string
     {
         return sprintf(
@@ -5838,33 +5504,6 @@ class RoomsCatalogConfigurator extends IPSModule
             $s['legacy'], $s['generic'], $s['unreviewed'], $s['missingFeedback'],
             $s['prodDiff'], $s['tabsEdit']+$s['tabsProd']
         );
-    }
-
-    /** Geraetedaten-Check ohne KI- oder Schaltfreigabe. */
-    public function AuditMigrationReadiness(): void
-    {
-        $editCatalog = $this->loadConfiguredCatalog('RoomsCatalogEditScriptID','EDIT');
-        $prodCatalog = $this->loadConfiguredCatalog('RoomsCatalogScriptID','PROD');
-        $edit = $this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($editCatalog));
-        $prod = $this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($prodCatalog));
-        $s = $this->catalogMigrationStatistics($edit,$prod,true);
-        $scan = json_decode($this->ReadAttributeString('DiscoveryInventory'),true);
-        $roots = $this->discoveryRoots();
-        $scanned = is_array($scan) && is_array($scan['items']??null)
-            && ($scan['roots']??null) === $roots && $roots !== [] && empty($scan['truncated']);
-        $report = $this->catalogMigrationShortSummary($s);
-        $report .= $s['migrationReady'] ? ' Katalog-Modell technisch konsistent.'
-            : ' Katalog-Modell noch NICHT vollstaendig migriert.';
-        $report .= $scanned ? ' Inventur vorhanden; IP-Symcon-Zuordnungen fachlich pruefen.'
-            : ' Keine nachweislich vollstaendige Inventur aller Suchwurzeln.';
-        if ($s['examples'] !== []) $report .= "\nOffene Punkte (Auswahl):\n".implode("\n",$s['examples']);
-        $this->WriteAttributeString('MigrationReadinessDetails',json_encode([
-            'checkedAt'=>time(), 'catalogHash'=>hash('sha256',json_encode($editCatalog,JSON_INVALID_UTF8_SUBSTITUTE)),
-            'statistics'=>$s, 'scanAvailable'=>$scanned
-        ],JSON_INVALID_UTF8_SUBSTITUTE));
-        $this->WriteAttributeString('MigrationReadinessReport',$report);
-        $this->UpdateFormField('MigrationReadinessReport','caption',$report);
-        echo $report;
     }
 
     // =====================================================================
@@ -5899,9 +5538,6 @@ class RoomsCatalogConfigurator extends IPSModule
         $discoveryPreview = json_decode($this->ReadAttributeString('DiscoveryCandidates'), true);
         $discoveryRows = is_array($discoveryPreview) && is_array($discoveryPreview['rows'] ?? null)
             ? $discoveryPreview['rows'] : [];
-        $legacyPreview = json_decode($this->ReadAttributeString('LegacyMigrationPreview'),true);
-        $legacyRows = is_array($legacyPreview) && is_array($legacyPreview['rows'] ?? null)
-            ? $legacyPreview['rows'] : [];
         $inventoryPreview = json_decode($this->ReadAttributeString('DiscoveryInventory'),true);
         $discoverySummary = is_array($inventoryPreview) && isset($inventoryPreview['items'])
             ? $this->discoveryInventorySummary($inventoryPreview) : 'Noch keine Geraeteinventur gestartet.';
@@ -7974,10 +7610,6 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->UpdateFormField('DiscoveryInventoryList','values',json_encode(
             is_array($inventory) ? $this->discoveryInventoryRows($inventory) : [],
             JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
-        $legacyPreview = json_decode($this->ReadAttributeString('LegacyMigrationPreview'),true);
-        $legacyRows = is_array($legacyPreview) && is_array($legacyPreview['rows'] ?? null)
-            ? $legacyPreview['rows'] : [];
-        $this->UpdateFormField('LegacyDevices','values',json_encode($legacyRows,JSON_INVALID_UTF8_SUBSTITUTE));
         $roomOptions = $filters['roomOptions'];
         $knownKeys = array_column($roomOptions, 'value');
         foreach ($roomRows as $roomRow) {
