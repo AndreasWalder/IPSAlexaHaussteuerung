@@ -537,39 +537,19 @@ class IPSAlexaHaussteuerung extends IPSModule
         ];
         $notice = $this->ReadAttributeString('SystemNavigationEditorNotice');
         $hasNavigationDraft = is_array($edit['navigation'] ?? null);
-        // Ein einmaliger Importversuch ist nach erfolgreicher Migration
-        // nicht mehr relevant. Meldung nicht als aktuellen Fehler ausgeben.
-        if ($migrationFinished && (
-            str_starts_with($notice, 'Import nicht moeglich:')
-            || str_starts_with($notice, 'Keine Tabs gefunden')
-            || str_starts_with($notice, 'Navigationsbestand nach EDIT uebernommen.')
-        )) {
-            $notice = '';
-        }
         return [
             'type' => 'ExpansionPanel',
             'caption' => 'Navigation & Tabs',
             'expanded' => true,
             'items' => [
-                ['type' => 'Label', 'caption' => $migrationFinished
-                    ? 'Navigation zentral verwalten: hier in EDIT bearbeiten, anschliessend mit Vorschau und Backup in PROD uebernehmen.'
-                    : 'Navigation in EDIT vorbereiten. Vor Aktivierung liest Alexa RoomsCatalog, danach SystemConfiguration PROD.'],
-                ['type' => 'RowLayout', 'items' => $hasNavigationDraft ? [
-                    ['type' => 'Button', 'caption' => 'EDIT NEU LADEN',
-                        'onClick' => 'IAH_ReloadSystemNavigationEditor($id);'],
-                ] : [
-                    ['type' => 'Button', 'caption' => 'BESTANDSVORSCHAU ANZEIGEN',
-                        'onClick' => 'IAH_PreviewSystemNavigationImport($id);'],
-                    ['type' => 'Button', 'caption' => 'GEPRUEFTE TABS NACH EDIT IMPORTIEREN',
-                        'confirm' => 'Vorhandene Navigation nach SystemConfigurationEdit importieren? PROD bleibt unveraendert.',
-                        'onClick' => 'IAH_ApplySystemNavigationImport($id);'],
-                    ['type' => 'Button', 'caption' => 'EDIT NEU LADEN',
-                        'onClick' => 'IAH_ReloadSystemNavigationEditor($id);'],
+                ['type'=>'Label','caption'=>'Navigation zentral verwalten: '
+                    .'SystemConfigurationEdit bearbeiten, mit Vorschau und '
+                    .'gesichertem Backup nach PROD uebernehmen. '
+                    .'Keine Einmal-Migrationswerkzeuge.'],
+                ['type'=>'RowLayout','items'=>[
+                    ['type'=>'Button','caption'=>'EDIT NEU LADEN',
+                        'onClick'=>'IAH_ReloadSystemNavigationEditor($id);'],
                 ]],
-                ...(!$hasNavigationDraft ? [[
-                    'type' => 'Label', 'name' => 'SystemNavigationImportSummary',
-                    'caption' => 'Noch keine aktuelle Importvorschau.',
-                ]] : []),
                 ['type' => 'Label', 'name' => 'SystemNavigationEditorSummary',
                     'caption' => $this->systemNavigationEditorSummary($context)],
                 ['type' => 'Label', 'name' => 'SystemNavigationEditorNotice',
@@ -581,16 +561,14 @@ class IPSAlexaHaussteuerung extends IPSModule
                     'columns' => $fields, 'values' => $rows,
                     'onEdit' => $onEdit,
                 ],
-                ...($migrationFinished ? [[
-                    'type' => 'RowLayout',
-                    'items' => [
-                        ['type' => 'Button', 'caption' => 'ÄNDERUNGEN PRÜFEN',
-                            'onClick' => 'IAH_PreviewSystemNavigationUpdate($id);'],
-                        ['type' => 'Button', 'caption' => 'ÄNDERUNGEN AKTIVIEREN',
-                            'confirm' => 'Geaenderte Navigation aus EDIT nach PROD uebernehmen? Vorher wird automatisch gesichert.',
-                            'onClick' => 'IAH_PublishSystemNavigationUpdate($id);'],
-                    ],
-                ]] : []),
+                ['type'=>'RowLayout','items'=>[
+                    ['type'=>'Button','caption'=>'ÄNDERUNGEN PRÜFEN',
+                        'onClick'=>'IAH_PreviewSystemNavigationUpdate($id);'],
+                    ['type'=>'Button','caption'=>'ÄNDERUNGEN NACH PROD ÜBERNEHMEN',
+                        'confirm'=>'Nur die Navigation aus SystemConfigurationEdit '
+                            .'mit Backup nach PROD uebernehmen?',
+                        'onClick'=>'IAH_PublishSystemNavigationUpdate($id);'],
+                ]],
                 ['type' => 'Label', 'caption' => 'Neuen Navigations-Tab anlegen:'],
                 ['type' => 'RowLayout', 'items' => [
                     ['type' => 'Select', 'name' => 'SystemNavNewRoom', 'caption' => 'Raum',
@@ -610,81 +588,8 @@ class IPSAlexaHaussteuerung extends IPSModule
                 ]],
                 ['type' => 'Button', 'name' => 'SystemNavigationAddButton',
                     'caption' => 'TAB IN EDIT ANLEGEN', 'onClick' => $onCreate],
-                ...(!$migrationFinished ? [[
-                    'type' => 'ExpansionPanel', 'caption' => 'Andere Systemeinstellungen: Wo pflege ich was?',
-                    'expanded' => false, 'items' => [
-                        ['type' => 'Label', 'caption' => 'KI, Alexa, Visualisierung, Launch-Kacheln, Renderer und PageMappings werden bereits ueber die oberen Instanz-Einstellungen bearbeitet.'],
-                        ['type' => 'Label', 'caption' => 'RoomsCatalogConfigurator: Raeume und echte Geraete. Navigation in diesem Hauptmodul.'],
-                    ],
-                ]] : []),
             ],
         ];
-    }
-
-    public function PreviewSystemNavigationImport(): void
-    {
-        $context = $this->navigationEditorContext();
-        $edit = $context['edit'];
-        $catalog = $context['catalog'];
-        $rawEdit = $context['editSource'];
-        $rawCatalog = $context['catalogSource'];
-        if (!is_array($edit) || !is_array($catalog) || !is_string($rawEdit) || !is_string($rawCatalog)
-            || !IAHSystemNavigationEditor::isLiteralArraySource($rawEdit)
-            || array_key_exists('navigation', $edit)) {
-            $this->WriteAttributeString('SystemNavigationImportPreview', '');
-            $this->updateSystemNavigationNotice('Import nicht moeglich: EDIT nicht als einfaches Array lesbar oder navigation bereits vorhanden.');
-            return;
-        }
-        $scan = IAHSystemConfigurationManager::inventoryNavigation($catalog);
-        if (count($scan['entries']) === 0 || count($scan['warnings']) > 0) {
-            $this->WriteAttributeString('SystemNavigationImportPreview', '');
-            $this->updateSystemNavigationNotice('Keine Tabs gefunden oder offene Hinweise. Zuerst V3.3.3-Inventur pruefen.');
-            return;
-        }
-        $preview = [
-            'time' => time(),
-            'editId' => $context['ids']['edit'],
-            'catalogId' => $context['catalogId'],
-            'editHash' => hash('sha256', $rawEdit),
-            'catalogHash' => hash('sha256', $rawCatalog),
-            'count' => count($scan['entries']),
-        ];
-        $this->WriteAttributeString('SystemNavigationImportPreview', json_encode($preview));
-        $message = sprintf('Vorschau: %d Navigationseintraege · 0 Hinweise · nur EDIT #%d · Quelle #%d. Kein PROD-Schreibzugriff.',
-            $preview['count'], $preview['editId'], $preview['catalogId']);
-        $this->UpdateFormField('SystemNavigationImportSummary', 'caption', $message);
-        echo $message;
-    }
-
-    public function ApplySystemNavigationImport(): void
-    {
-        $preview = json_decode($this->ReadAttributeString('SystemNavigationImportPreview'), true);
-        $context = $this->navigationEditorContext();
-        if (!is_array($preview) || time() - (int) ($preview['time'] ?? 0) > 600
-            || ($preview['editId'] ?? null) !== $context['ids']['edit']
-            || ($preview['catalogId'] ?? null) !== $context['catalogId']
-            || !is_string($context['editSource']) || !is_string($context['catalogSource'])
-            || ($preview['editHash'] ?? '') !== hash('sha256', $context['editSource'])
-            || ($preview['catalogHash'] ?? '') !== hash('sha256', $context['catalogSource'])
-            || !is_array($context['edit']) || !is_array($context['catalog'])
-            || array_key_exists('navigation', $context['edit'])) {
-            $this->WriteAttributeString('SystemNavigationImportPreview', '');
-            $this->updateSystemNavigationNotice('Vorschau abgelaufen oder geaendert. Bitte Bestand neu pruefen.');
-            return;
-        }
-        try {
-            $next = IAHSystemNavigationEditor::importDraft(
-                $context['edit'], $context['catalog'], $preview['catalogHash']);
-            if (count(IAHSystemNavigationEditor::items($next)) !== $preview['count']) {
-                throw new RuntimeException('Tab-Anzahl stimmt nicht mit der Vorschau ueberein.');
-            }
-            $this->saveSystemNavigationEdit($context, $next, 'before_navigation_import');
-            $this->WriteAttributeString('SystemNavigationImportPreview', '');
-            $this->updateSystemNavigationNotice('Navigationsbestand nach EDIT uebernommen. PROD und RoomsCatalog unveraendert.');
-            $this->ReloadSystemNavigationEditor();
-        } catch (\Throwable $e) {
-            $this->updateSystemNavigationNotice('Import abgebrochen: ' . $e->getMessage());
-        }
     }
 
     public function SaveSystemNavigationTab(string $payload): void
