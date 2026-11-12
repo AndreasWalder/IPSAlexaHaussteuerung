@@ -102,6 +102,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterAttributeString('SystemNavigationPublishPreview', '');
         $this->RegisterAttributeString('VoiceRuleEditorNotice', '');
         $this->RegisterAttributeString('VoiceRulesPublishPreview', '');
+        $this->RegisterAttributeString('VoiceRulesDiagnosticJson', '');
+        $this->RegisterAttributeString('VoiceRulesDiagnosticTrace', '[]');
         $this->RegisterTimer('DelayedPageSwitch', 0, 'IAH_HandleDelayedPageSwitch($_IPS["TARGET"]);');
         $this->RegisterTimer('KICostRefresh', 60000, 'IAH_UpdateKICostExchangeRate($_IPS["TARGET"]); IAH_RefreshKICostDisplay($_IPS["TARGET"]);');
         $this->RegisterTimer('AlexaLogRefresh', 15000, 'IAH_RefreshAlexaLogBuffer($_IPS["TARGET"]);');
