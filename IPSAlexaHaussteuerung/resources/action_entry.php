@@ -2143,7 +2143,9 @@ function Execute($request = null)
         // No APL button events, launches, back/exit or arbitrary script IDs.
         if (!$iahVoiceIsAplEvent && empty($APL['args'])
             && !$IS_LAUNCH && !$IS_BACK && !$wantsExit
-            && $iahVoiceSpoken!=='' && $instanceId>0
+            && ($iahVoiceSpoken!=='' || preg_match(
+                '/^[A-Za-z][A-Za-z0-9_]{2,55}Intent$/D',(string)$intentName)===1)
+            && $instanceId>0
             && function_exists('IAH_ResolveVoiceRule')) {
             try {
                 $iahRuleResult=json_decode((string)IAH_ResolveVoiceRule(
