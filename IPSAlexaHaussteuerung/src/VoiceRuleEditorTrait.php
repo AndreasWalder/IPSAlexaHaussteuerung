@@ -27,6 +27,11 @@ trait IAHVoiceRuleEditorTrait
                 'intentName'=>(string)($rule['intentName']??''),
                 'answer'=>(string)($rule['answer']??''),
                 'imageUrl'=>(string)($rule['imageUrl']??''),
+                'imageFile'=>(string)($rule['imageFile']??''),
+                'cardTitle'=>(string)($rule['cardTitle']??''),
+                'cardText'=>(string)($rule['cardText']??''),
+                'scriptParams'=>json_encode((array)($rule['scriptParams']??[]),
+                    JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),
                 'scriptId'=>(int)($rule['scriptId']??0),
                 'steps'=>count((array)($rule['steps']??[])),
                 'enabled'=>!empty($rule['enabled']),
@@ -89,6 +94,10 @@ trait IAHVoiceRuleEditorTrait
             .'"intentName"=>($'.$name.'["intentName"] ?? ""),'
             .'"answer"=>($'.$name.'["answer"] ?? ""),'
             .'"imageUrl"=>($'.$name.'["imageUrl"] ?? ""),'
+            .'"imageFile"=>($'.$name.'["imageFile"] ?? ""),'
+            .'"cardTitle"=>($'.$name.'["cardTitle"] ?? ""),'
+            .'"cardText"=>($'.$name.'["cardText"] ?? ""),'
+            .'"scriptParams"=>($'.$name.'["scriptParams"] ?? "{}"),'
             .'"scriptId"=>(int)($'.$name.'["scriptId"] ?? 0),'
             .'"enabled"=>(bool)($'.$name.'["enabled"] ?? false),'
             .'"confirmed"=>(bool)($'.$name.'["confirmed"] ?? false)'
@@ -145,6 +154,14 @@ trait IAHVoiceRuleEditorTrait
                         ['caption'=>'Antworttext','name'=>'answer','width'=>'210px',
                             'edit'=>['type'=>'ValidationTextBox']],
                         ['caption'=>'Bild-URL','name'=>'imageUrl','width'=>'120px',
+                            'edit'=>['type'=>'ValidationTextBox']],
+                        ['caption'=>'Bilddatei','name'=>'imageFile','width'=>'135px',
+                            'edit'=>['type'=>'ValidationTextBox']],
+                        ['caption'=>'Kartentitel','name'=>'cardTitle','width'=>'120px',
+                            'edit'=>['type'=>'ValidationTextBox']],
+                        ['caption'=>'Kartentext','name'=>'cardText','width'=>'140px',
+                            'edit'=>['type'=>'ValidationTextBox']],
+                        ['caption'=>'Skriptparameter JSON','name'=>'scriptParams','width'=>'170px',
                             'edit'=>['type'=>'ValidationTextBox']],
                         ['caption'=>'IPS-Skript','name'=>'scriptId','width'=>'120px',
                             'edit'=>['type'=>'SelectScript']],
@@ -233,11 +250,30 @@ trait IAHVoiceRuleEditorTrait
                     'caption'=>'Antworttext oder Rückmeldung',
                     'multiline'=>true,'value'=>(string)($rule['answer']??'')],
                 ['type'=>'ValidationTextBox','name'=>'imageUrl',
-                    'caption'=>'Öffentliche HTTPS-URL für optionales Alexa-Bild',
+                    'caption'=>'Bild: HTTPS-URL (alternativ zu lokaler Datei)',
                     'value'=>(string)($rule['imageUrl']??'')],
+                ['type'=>'ValidationTextBox','name'=>'imageFile',
+                    'caption'=>'Bilddatei aus user/icons (z. B. Abend.png)',
+                    'value'=>(string)($rule['imageFile']??'')],
+                ['type'=>'ValidationTextBox','name'=>'cardTitle',
+                    'caption'=>'Alexa-Kartentitel (optional)',
+                    'value'=>(string)($rule['cardTitle']??'')],
+                ['type'=>'ValidationTextBox','name'=>'cardText',
+                    'caption'=>'Alexa-Kartentext (optional)',
+                    'multiline'=>true,'value'=>(string)($rule['cardText']??'')],
                 ['type'=>'SelectScript','name'=>'scriptId',
                     'caption'=>'IP-Symcon-Skript auswählen',
                     'value'=>(int)($rule['scriptId']??0)],
+                ['type'=>'ValidationTextBox','name'=>'scriptParams',
+                    'caption'=>'Skriptparameter als JSON-Objekt',
+                    'multiline'=>true,
+                    'value'=>json_encode((array)($rule['scriptParams']??[]),
+                        JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)],
+                ['type'=>'Label','caption'=>'Beispiel: {"Richtung":"Auf","Position":0}. '
+                    .'Die Werte werden als $_IPS-Parameter mit IPS_RunScriptEx '
+                    .'übergeben, nicht aus Alexa-Freitext generiert. '
+                    .'Bilddatei und Bild-URL sind Alternativen; eine lokale '
+                    .'Bilddatei wird über den bestehenden HTTPS-Bilder-WebHook ausgeliefert.'],
                 ['type'=>'CheckBox','name'=>'enabled','caption'=>'Regel aktiv',
                     'value'=>!empty($rule['enabled'])],
                 ['type'=>'CheckBox','name'=>'confirmed',
@@ -312,7 +348,8 @@ trait IAHVoiceRuleEditorTrait
             $rule=[
                 'title'=>$title,'aliases'=>[$alias],'kind'=>$kind,
                 'answer'=>$kind==='answer'?'Hier bitte deine Antwort eintragen.':'',
-                'imageUrl'=>'','scriptId'=>0,'steps'=>[],
+                'imageUrl'=>'','imageFile'=>'','cardTitle'=>'','cardText'=>'',
+                'scriptId'=>0,'scriptParams'=>[],'steps'=>[],
                 'enabled'=>false,'confirmed'=>false
             ];
             $next=IAHVoiceRuleEngine::change($ctx['edit'],$key,$rule);
@@ -334,7 +371,9 @@ trait IAHVoiceRuleEditorTrait
             if(!hash_equals(hash('sha256',serialize($old)),(string)($data['revision']??'')))
                 throw new RuntimeException('Eintrag geaendert. Bitte neu laden.');
             $input=$old;
-            foreach(['title','aliases','kind','intentName','answer','imageUrl','scriptId','enabled','confirmed'] as $field)
+            foreach(['title','aliases','kind','intentName','answer','imageUrl',
+                'imageFile','cardTitle','cardText','scriptId','scriptParams',
+                'enabled','confirmed'] as $field)
                 if(array_key_exists($field,$data))$input[$field]=$data[$field];
             $next=IAHVoiceRuleEngine::change($ctx['edit'],$key,$input);
             $this->writeVoiceRuleEdit($ctx,$next);

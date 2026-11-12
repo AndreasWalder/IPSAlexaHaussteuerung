@@ -1167,6 +1167,39 @@ class IPSAlexaHaussteuerung extends IPSModule
      * verified question-capture anchor, never replace a whole script.
      * Original is preserved as a separately verifiable backup.
      */
+    /**
+     * Back up a customized Action script as a separate hidden PHP script.
+     * The original script stays untouched until this readback succeeds.
+     * This helper is shared by the existing RoomUi and VoiceRules patches.
+     */
+    private function createNavigationCatalogBackup(
+        int $scriptId,string $reason,string $originalSource
+    ): int {
+        if($scriptId<=0 || !IPS_ScriptExists($scriptId)
+            || $this->getScriptContent($scriptId)!==$originalSource
+            || !function_exists('IPS_CreateScript')
+            || !function_exists('IPS_SetScriptContent')
+            || !function_exists('IPS_GetParent')
+            || !function_exists('IPS_SetParent')
+            || !function_exists('IPS_SetName')) {
+            throw new RuntimeException('Action-Backup blockiert: Quelle nicht eindeutig.');
+        }
+        $backupId=(int)IPS_CreateScript(0);
+        if($backupId<=0 || $backupId===$scriptId)
+            throw new RuntimeException('Action-Backup konnte nicht angelegt werden.');
+        $parent=(int)IPS_GetParent($scriptId);
+        IPS_SetParent($backupId,$parent);
+        IPS_SetName($backupId,
+            'AlexaActionBackup_'.preg_replace('/[^A-Za-z0-9_]/','',$reason)
+            .'_'.gmdate('Ymd_His').'_#'.$scriptId);
+        if(function_exists('IPS_SetHidden'))IPS_SetHidden($backupId,true);
+        IPS_SetScriptContent($backupId,$originalSource);
+        if($this->getScriptContent($backupId)!==$originalSource
+            || $this->getScriptContent($scriptId)!==$originalSource)
+            throw new RuntimeException('Action-Backup nicht verifiziert; Original bleibt unveraendert.');
+        return $backupId;
+    }
+
     private function patchActionScriptVoiceRules(int $scriptId): void
     {
         $current=$this->getScriptContent($scriptId);
@@ -1174,17 +1207,36 @@ class IPSAlexaHaussteuerung extends IPSModule
         if(!is_string($current)||$current===''||!is_string($template))return;
         $begin='        // IAH_VOICE_RULES_V37_BEGIN';
         $end='        // IAH_VOICE_RULES_V37_END';
-        if(str_contains($current,$begin) && str_contains($current,$end))return;
         $i=strpos($template,$begin);
         $j=$i===false?false:strpos($template,$end,$i);
         $anchor='        // IAH_ALEXA_QUESTION_CAPTURE_END';
-        if($i===false||$j===false||substr_count($current,$anchor)!==1){
-            IPS_LogMessage('Alexa',
-                'VoiceRules.V37 Action-Patch nicht möglich: eindeutiger Anker fehlt.');
+        if($i===false||$j===false||substr_count($template,$begin)!==1
+            || substr_count($template,$end)!==1){
+            IPS_LogMessage('Alexa','VoiceRules.V371 Action-Vorlage unvollstaendig.');
             return;
         }
         $block=substr($template,$i,$j+strlen($end)-$i);
-        $next=str_replace($anchor,$anchor."\n".$block,$current);
+        $beginCount=substr_count($current,$begin);
+        $endCount=substr_count($current,$end);
+        if($beginCount===1 && $endCount===1) {
+            // Upgrade only this explicitly delimited integration block;
+            // preserve all other customized lines in installed Action script.
+            $start=strpos($current,$begin);
+            $stop=strpos($current,$end,$start+strlen($begin));
+            if($stop===false){
+                IPS_LogMessage('Alexa','VoiceRules.V371 Action-Block ungueltig.');
+                return;
+            }
+            $next=substr($current,0,$start).$block
+                .substr($current,$stop+strlen($end));
+        }elseif($beginCount===0 && $endCount===0
+            && substr_count($current,$anchor)===1) {
+            $next=str_replace($anchor,$anchor."\n".$block,$current);
+        }else {
+            IPS_LogMessage('Alexa',
+                'VoiceRules.V371 Action-Patch blockiert: fehlende oder doppelte Marker.');
+            return;
+        }
         if($next===$current)return;
         $this->createNavigationCatalogBackup($scriptId,'ActionBeforeVoiceRulesV37',$current);
         try {
