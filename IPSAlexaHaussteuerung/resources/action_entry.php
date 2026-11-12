@@ -2193,16 +2193,46 @@ function Execute($request = null)
             && $iahVoiceRulesBridgeAvailable) {
             try {
                 $iahRuleResult=['matched'=>false];
-                // Never execute a best guess: the module only accepts exact
-                // PROD aliases or an explicit configured custom intent.
-                foreach($iahRuleCandidates!==[]?$iahRuleCandidates:[''] as $iahCandidate) {
+                // A legacy-disabled candidate must not prevent a later
+                // *approved* PROD alias from matching. Check all exact
+                // transcript/slot variants first, then try a single optional
+                // informational AI fallback (never for hardware commands).
+                $iahCandidateList=$iahRuleCandidates!==[]?$iahRuleCandidates:[''];
+                foreach($iahCandidateList as $iahCandidateIndex=>$iahCandidate) {
                     $iahRuleResult=json_decode((string)IAH_ResolveVoiceRule(
                         $instanceId,json_encode([
                             'text'=>$iahCandidate,'intent'=>$intentName,
-                            'aplEvent'=>false,'launch'=>false,'exit'=>false,'back'=>false
+                            'aplEvent'=>false,'launch'=>false,'exit'=>false,'back'=>false,
+                            'skipLegacyFallback'=>true,
+                            'aiFallback'=>false,
+                            'candidateIndex'=>$iahCandidateIndex
                         ],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)
                     ),true);
                     if(is_array($iahRuleResult) && !empty($iahRuleResult['matched']))break;
+                }
+                if(empty($iahRuleResult['matched']) && $iahRuleCandidates!==[]) {
+                    $iahRuleResult=json_decode((string)IAH_ResolveVoiceRule(
+                        $instanceId,json_encode([
+                            'text'=>$iahRuleCandidates[0],'intent'=>$intentName,
+                            'aplEvent'=>false,'launch'=>false,'exit'=>false,'back'=>false,
+                            'skipLegacyFallback'=>true,
+                            'aiFallback'=>true,
+                            'candidateIndex'=>count($iahCandidateList)
+                        ],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)
+                    ),true);
+                }
+                if(empty($iahRuleResult['matched']) && $iahRuleCandidates!==[]) {
+                    // Only after every approved candidate failed: do not
+                    // reenable the retired hard-coded control shortcuts.
+                    $iahRuleResult=json_decode((string)IAH_ResolveVoiceRule(
+                        $instanceId,json_encode([
+                            'text'=>$iahRuleCandidates[0],'intent'=>$intentName,
+                            'aplEvent'=>false,'launch'=>false,'exit'=>false,'back'=>false,
+                            'skipLegacyFallback'=>false,
+                            'aiFallback'=>false,
+                            'candidateIndex'=>count($iahCandidateList)+1
+                        ],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)
+                    ),true);
                 }
                 if(is_array($iahRuleResult) && !empty($iahRuleResult['matched'])) {
                     $ruleAnswer=trim((string)($iahRuleResult['answer']??''));

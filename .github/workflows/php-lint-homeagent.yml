@@ -50,6 +50,7 @@ jobs:
           php -l IPSAlexaHaussteuerung/src/SystemConfigurationManager.php
           php -l IPSAlexaHaussteuerung/src/SystemNavigationEditor.php
           php -l IPSAlexaHaussteuerung/src/VoiceRuleEngine.php
+          php -l IPSAlexaHaussteuerung/src/VoiceRuleAiMatcher.php
           php -l IPSAlexaHaussteuerung/src/VoiceLegacyMigration.php
           php -l IPSAlexaHaussteuerung/src/VoiceRuleEditorTrait.php
           php -l IPSAlexaHaussteuerung/src/SystemNavigationMigration.php
@@ -163,6 +164,8 @@ jobs:
         run: php tests/test_voice_rules_legacy_migration_v371.php
       - name: Test V3.7.1 copyable voice-only JSON diagnostic and Alexa bridge trace
         run: php tests/test_voice_rules_json_diagnostics_v371.php
+      - name: Test V3.7.2 published Alexa FAQ, OPcache refresh and optional read-only AI
+        run: php tests/test_voice_rules_prod_refresh_ai_v372.php
       - name: Test Symcon IPSList checkbox callbacks and filtered multi-selection
         run: php tests/test_rooms_catalog_ipslist_multiselect.php
       - name: Test RoomsCatalog quick search for IPS object IDs and parent instance IDs

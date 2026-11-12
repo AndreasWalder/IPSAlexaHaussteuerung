@@ -10,6 +10,7 @@ require_once __DIR__ . '/src/AlexaLogTrait.php';
 require_once __DIR__ . '/src/SystemConfigurationManager.php';
 require_once __DIR__ . '/src/SystemNavigationEditor.php';
 require_once __DIR__ . '/src/VoiceRuleEngine.php';
+require_once __DIR__ . '/src/VoiceRuleAiMatcher.php';
 require_once __DIR__ . '/src/VoiceLegacyMigration.php';
 require_once __DIR__ . '/src/VoiceRuleEditorTrait.php';
 require_once __DIR__ . '/src/SystemNavigationMigration.php';
@@ -71,6 +72,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyString('LaunchHeaderIcon', (string) ($launchDefaults['headerIcon'] ?? 'Icon.png'));
         $this->RegisterPropertyInteger('SystemConfigScriptId', 0);
         $this->RegisterPropertyBoolean('KIIntentEnabled', true);
+        $this->RegisterPropertyBoolean('VoiceRulesAiReadOnlyEnabled', true);
         $this->RegisterPropertyString('KIIntentApiKey', '');
         $this->RegisterPropertyString('KIIntentModel', 'gpt-4.1-mini'); // Altwert: weiterhin für bestehende Konfigurationen gespeichert
         // Neue zentrale Modellauswahl (auch bei bereits installierten Modulen standardmäßig Luna).
