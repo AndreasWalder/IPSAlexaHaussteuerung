@@ -13,7 +13,7 @@ function ckVoice372(bool $pass,string $description):void
     if(!$pass)throw new RuntimeException('V3.7.2 voice fix: '.$description);
 }
 $prod=require IPS_GetScriptFile(501);
-$legacy=IAHVoiceLegacyMigration::drafts();
+$legacy=IAHVoiceLegacyMigration::drafts([]);
 foreach($legacy as $key=>$rule){
     // Fixture rules are safe text answers: don't perform physical operations.
     $rule['kind']='answer';
