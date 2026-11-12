@@ -973,10 +973,30 @@ trait IAHVoiceRuleEditorTrait
                 $key=(string)$this->ReadPropertyString('KIIntentApiKey');
                 $model=(string)$this->ReadPropertyString('KIModelSelection');
                 if($key!==''){
+                    $onAiResponse=function(array $apiResponse) use($model):void {
+                        if(!method_exists($this,'RecordKICostEvent'))return;
+                        try{
+                            // Existing KI EUR statistics accept IntentParser.
+                            $qid='voicerule-'.bin2hex(random_bytes(8));
+                            $events=[
+                                ['type'=>'start','model'=>$model],
+                                ['type'=>'api','callId'=>'voice-ai-0',
+                                    'response'=>[
+                                        'model'=>(string)($apiResponse['model']??$model),
+                                        'usage'=>$apiResponse['usage']??null
+                                    ]],
+                                ['type'=>'finish','success'=>true]
+                            ];
+                            foreach($events as $item)
+                                $this->RecordKICostEvent(json_encode(array_merge(
+                                    ['backend'=>'IntentParser','questionId'=>$qid],$item
+                                ),JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE));
+                        }catch(Throwable $ignored){}
+                    };
                     $selected=IAHVoiceRuleAiMatcher::choose($rules,$event['text'],
                         static fn(array $allowed,string $spoken):?array =>
                             IAHVoiceRuleAiMatcher::openAiCandidate(
-                                $allowed,$spoken,$key,$model));
+                                $allowed,$spoken,$key,$model,$onAiResponse));
                     if($selected!==null && isset($prodRules[$selected])){
                         $alias=IAHVoiceRuleEngine::phrases(
                             $prodRules[$selected]['aliases']??[])[0]??'';
