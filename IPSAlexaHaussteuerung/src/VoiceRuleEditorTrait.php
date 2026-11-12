@@ -24,6 +24,7 @@ trait IAHVoiceRuleEditorTrait
                 'title'=>(string)($rule['title']??$key),
                 'aliases'=>implode(', ',IAHVoiceRuleEngine::phrases($rule['aliases']??[])),
                 'kind'=>(string)($rule['kind']??'answer'),
+                'intentName'=>(string)($rule['intentName']??''),
                 'answer'=>(string)($rule['answer']??''),
                 'imageUrl'=>(string)($rule['imageUrl']??''),
                 'scriptId'=>(int)($rule['scriptId']??0),
@@ -59,7 +60,8 @@ trait IAHVoiceRuleEditorTrait
             if(!is_array($item))continue;
             $lines[]=($item['enabled']??false?'[aktiv] ':'[Entwurf] ')
                 .(string)($item['title']??'').': '
-                .implode(' / ',IAHVoiceRuleEngine::phrases($item['aliases']??[]));
+                .implode(' / ',IAHVoiceRuleEngine::phrases($item['aliases']??[]))
+                .(!empty($item['intentName'])?' | Alexa-Intent: '.$item['intentName']:'');
         }
         $lines[]='Hinweis: Neue frei gesprochene Sätze werden erst erkannt, '
             .'wenn das Alexa-Skill-Interaktionsmodell sie auch als Intent/Slot erfassen kann.';
@@ -84,6 +86,7 @@ trait IAHVoiceRuleEditorTrait
             .'"title"=>($'.$name.'["title"] ?? ""),'
             .'"aliases"=>($'.$name.'["aliases"] ?? ""),'
             .'"kind"=>($'.$name.'["kind"] ?? "answer"),'
+            .'"intentName"=>($'.$name.'["intentName"] ?? ""),'
             .'"answer"=>($'.$name.'["answer"] ?? ""),'
             .'"imageUrl"=>($'.$name.'["imageUrl"] ?? ""),'
             .'"scriptId"=>(int)($'.$name.'["scriptId"] ?? 0),'
@@ -134,6 +137,8 @@ trait IAHVoiceRuleEditorTrait
                             'width'=>'250px','edit'=>['type'=>'ValidationTextBox']],
                         ['caption'=>'Typ','name'=>'kind','width'=>'110px',
                             'edit'=>['type'=>'Select','options'=>$kindOptions]],
+                        ['caption'=>'Alexa-Intent','name'=>'intentName','width'=>'145px',
+                            'edit'=>['type'=>'ValidationTextBox']],
                         ['caption'=>'Antworttext','name'=>'answer','width'=>'210px',
                             'edit'=>['type'=>'ValidationTextBox']],
                         ['caption'=>'Bild-URL','name'=>'imageUrl','width'=>'120px',
@@ -299,7 +304,7 @@ trait IAHVoiceRuleEditorTrait
             if(!hash_equals(hash('sha256',serialize($old)),(string)($data['revision']??'')))
                 throw new RuntimeException('Eintrag geaendert. Bitte neu laden.');
             $input=$old;
-            foreach(['title','aliases','kind','answer','imageUrl','scriptId','enabled','confirmed'] as $field)
+            foreach(['title','aliases','kind','intentName','answer','imageUrl','scriptId','enabled','confirmed'] as $field)
                 if(array_key_exists($field,$data))$input[$field]=$data[$field];
             $next=IAHVoiceRuleEngine::change($ctx['edit'],$key,$input);
             $this->writeVoiceRuleEdit($ctx,$next);
@@ -508,7 +513,8 @@ trait IAHVoiceRuleEditorTrait
                     if(IPS_ScriptExists((int)$childId))$forbidden[]=(int)$childId;
             }
             $result=IAHVoiceRuleEngine::run($rules,$catalog,$event['text'],
-                ['forbiddenScriptIds'=>array_values(array_unique($forbidden))]);
+                ['intent'=>(string)($event['intent']??''),
+                 'forbiddenScriptIds'=>array_values(array_unique($forbidden))]);
             if(!empty($result['matched']))
                 IPS_LogMessage('Alexa','VoiceRules.V37 '.json_encode([
                     'key'=>$result['ruleKey']??'ambiguous',
