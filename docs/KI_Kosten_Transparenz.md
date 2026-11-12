@@ -2,7 +2,7 @@
 
 ## Darstellung in IP-Symcon
 
-Nach dem Modul-Update und Übernehmen legt das Modul unter IPSAlexaHaussteuerung → KI-Kosten die Übersicht und die Kategorien **Alle KI-Anbindungen**, **KI + RoomsCatalog**, **KI + Home Agent** und **Sonstige KI – Intent-Parser** an. Die Rohdaten liegen persistent in der ausgeblendeten String-Variable kiCostData. In jeder Kategorie werden die letzten 100 Fragen ohne persönlichen Fragetext als JSON gespeichert; die HTML-Übersicht zeigt die letzten 25.
+Nach dem Modul-Update und **Übernehmen** zeigt die IPSAlexaHaussteuerung unter **KI-Kosten** die Kategorien **KI-Kosten gesamt**, **ChatGPT + RoomsCatalog** und **KI – Intent-Parser**. Die HTML-Übersicht umfasst Tages-/Monatskosten, Monatsprognose, aktuelle Token- und API-Aufrufzahlen sowie die letzten 25 Fragen. Die persistenten Rohdaten bleiben in der ausgeblendeten String-Variable `kiCostData` erhalten; jede aktive Kategorie hat bis zu 100 gespeicherte Fragen ohne persönlichen Fragetext. **Die nicht mehr genutzte HomeAgent-Kostenkategorie wird ausgeblendet, aber nicht gelöscht.** Bereits angefallene Kosten bleiben unverändert in der Gesamtsumme, in der Historie als *Altbestand* erkennbar.
 
 ## Variablen je Backend und insgesamt
 
@@ -37,17 +37,17 @@ In der IP-Symcon-Instanz **IPSAlexaHaussteuerung → KI Intent Parser → KI-Mod
 - **GPT-6 Luna** (neuer Standard auch bei bestehenden Instanzen, da neue zentrale Einstellungsvariable): günstig und auf kurze Sprachbefehle ausgerichtet.
 - **GPT-4.1 mini**: bisher bewährte Alternative.
 
-Nach der Auswahl in der Instanzkonfiguration **Übernehmen** klicken. Die Auswahl gilt einheitlich für **KI + RoomsCatalog**, **KI + Home Agent** und den älteren KI-Intent-Parser. Die bisherige Property `KIIntentModel` bleibt aus Kompatibilitätsgründen intern erhalten, wird von der neuen Modellauswahl aber nicht mehr verwendet.
+Nach der Auswahl in der Instanzkonfiguration **Übernehmen** klicken. Die Auswahl gilt für **ChatGPT + RoomsCatalog** und den **KI-Intent-Parser**. Es gibt keinen separaten HomeAgent-API-Backendpfad mehr. Die bisherige Property `KIIntentModel` bleibt aus Kompatibilitätsgründen intern erhalten, wird von der neuen Modellauswahl aber nicht mehr verwendet.
 
 Für Luna nutzt die Anbindung weiterhin Chat Completions, stellt bei Funktionsaufrufen jedoch `reasoning_effort: "none"` ein. Für GPT-4.1 mini bleibt das alte Chat-Completions-Format ohne diesen Parameter erhalten. Dokumentation: https://developers.openai.com/api/docs/guides/latest-model
 
-Die KI-Kostenüberwachung trennt weiterhin nach Anbindung, zeigt die Kosten in **Euro** und berücksichtigt im Rohdaten-Detail außerdem das jeweils **wirklich verwendete Modell und dessen USD-Preis** zum Zeitpunkt des Aufrufs. Eine Modellumstellung verändert die gespeicherten historischen Kosten nicht.
+Die KI-Kostenüberwachung trennt die beiden **aktiven** Anbindungen und den Gesamtwert. Sie zeigt Kosten in **Euro**, einschließlich des jeweils tatsächlich verwendeten Modells sowie des USD-Preissnapshots im Rohdaten-Detail. Historische Einträge früherer Routen bleiben in der Gesamtstatistik, statt unbemerkt aus den Zahlen zu verschwinden. Eine Modellumstellung verändert die gespeicherten historischen USD-Kosten nicht.
 
 **Wichtig:** Für beide Modelle genügt derselbe bestehende API-Schlüssel, sofern das jeweilige Modell im API-Projekt nutzbar ist. Die Kombination konnte auf GitHub automatisiert getestet werden, aber echte OpenAI-/Alexa-Sprachaufrufe sind erst nach dem Update vor Ort testbar.
 
 ## Zuverlässigkeit
 
-Die Token-Daten werden unmittelbar nach jedem erfolgreichen OpenAI-Chat-Completions-Aufruf erfasst. Bei zwei Modellrunden einer Alexa-Frage werden beide Runden derselben Frage zugerechnet. Kosten der ersten Runde werden auch dann gezählt, wenn die zweite Runde scheitert.
+Die Token-Daten werden unmittelbar nach jedem erfolgreichen OpenAI-Chat-Completions-Aufruf erfasst. Für die aktive Kostenerfassung sind nur noch die Backends `RoomsCatalog` und `IntentParser` zugelassen; der bisherige `HomeAgent`-Backendname wird nicht mehr für neue Kostenereignisse akzeptiert. Bei zwei Modellrunden einer Alexa-Frage werden beide Runden derselben Frage zugerechnet. Kosten der ersten Runde werden auch dann gezählt, wenn die zweite Runde scheitert.
 
 Der Modul-Timer aktualisiert Tages-/Monatsanzeigen im Zeitzonenbezug Europe/Vienna auch ohne neue Fragen. Die Monatswarnung ist ab 5 EUR eingeschaltet, konfigurierbar auf 0 EUR zum Deaktivieren. Eine Warnung ist kein hartes Ausgabenlimit.
 
@@ -61,7 +61,7 @@ Der Modul-Timer aktualisiert Tages-/Monatsanzeigen im Zeitzonenbezug Europe/Vien
 
 ## Nach dem Merge
 
-IP-Symcon-Modul aktualisieren und Übernehmen klicken; anschließend eine Alexa-Frage stellen. Statistik unter KI-Kosten prüfen. Automatisierter Test: php tests/test_ki_cost_accounting.php. Offizielle OpenAI-Kosten: https://platform.openai.com/usage.
+IP-Symcon-Modul aktualisieren und Übernehmen klicken; anschließend eine Alexa-Frage stellen. Statistik unter KI-Kosten prüfen. Automatisierte Tests: `php tests/test_ki_cost_accounting.php` und `php tests/test_ki_cost_dashboard_v362.php`. Die neue Ansicht blendet historische Kosten nicht aus der Gesamtsumme aus und erstellt keine zusätzlichen OpenAI-Aufrufe. Offizielle OpenAI-Kosten: https://platform.openai.com/usage.
 ## Alexa-Meldungen direkt kopieren
 
 Zusätzlich stellt die Modulinstanz die **letzten 500 Alexa-Meldungen aus dem Systemlog** unter **Diagnose → Alexa-Protokoll (kopieren)** als TextBox-Stringvariable bereit. Sie wird nach Alexa-Aufrufen und im 15-Sekunden-Intervall aktualisiert. Weitere Details stehen in `docs/Alexa_Protokoll_500_Euro_Kosten.md`.
