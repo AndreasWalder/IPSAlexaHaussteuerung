@@ -142,6 +142,19 @@ final class IAHVoiceLegacyMigration
     {
         $value=IAHVoiceRuleEngine::normalize($spoken);
         if($value==='')return false;
+        // Legacy renderer also accepted room names, percentages and extra
+        // words around blinds/robot commands. Those must not slip through
+        // to the old renderer when no new exact rule is configured.
+        // A single 'Jalousie' remains navigation, not a control command.
+        if(preg_match('/\\b(?:jalousie|jalousien|rollo|rollos|rollladen|raffstore|beschattung)\\b/u',$value)
+            && preg_match('/\\b(?:auf|zu|ab|oeffnen|schliessen|fahren|fahre|stelle|stellen|position|prozent|[0-9]+%?)\\b/u',$value))
+            return true;
+        if(preg_match('/\\b(?:maehroboter|roborock|staubsaugen|saugen|vox|wrox)\\b/u',$value))
+            return true;
+        if(preg_match('/\\b(?:aussentemperatur)\\b/u',$value)
+            || (preg_match('/\\b(?:draussen|aussen)\\b/u',$value)
+                && preg_match('/\\b(?:warm|temperatur|kalt|grad)\\b/u',$value)))
+            return true;
         foreach(self::drafts($catalog,$outsideTemperatureId) as $draft){
             foreach(IAHVoiceRuleEngine::phrases($draft['aliases']??[]) as $alias)
                 if(IAHVoiceRuleEngine::normalize($alias)===$value)return true;
