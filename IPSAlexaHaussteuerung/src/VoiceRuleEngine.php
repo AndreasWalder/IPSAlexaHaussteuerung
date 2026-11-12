@@ -103,6 +103,43 @@ final class IAHVoiceRuleEngine
         return $filename;
     }
 
+    /**
+     * Validate the exact typed value without switching the device.
+     * A Boolean true must never be silently cast to an integer blind command.
+     */
+    public static function validateVariableAction(int $id,string $raw): mixed
+    {
+        if($id<=0 || !function_exists('IPS_VariableExists')
+            || !IPS_VariableExists($id))
+            throw new RuntimeException('Die ausgewaehlte Schaltvariable existiert nicht.');
+        if(!function_exists('HasAction')||!HasAction($id))
+            throw new RuntimeException('Die Schaltvariable hat keine IP-Symcon Aktion.');
+        $type=(int)(IPS_GetVariable($id)['VariableType']??-1);
+        $value=trim($raw);
+        if($type===0){
+            if(!in_array(strtolower($value),['true','false','1','0'],true))
+                throw new RuntimeException('Boolean-Variable: true/false oder 1/0 eingeben.');
+            return in_array(strtolower($value),['true','1'],true);
+        }
+        if($type===1){
+            if(!preg_match('/^[+-]?[0-9]+$/D',$value))
+                throw new RuntimeException('Integer-Variable: ganze Zahl eingeben (Jalousie: 1=auf, 2=zu, falls so konfiguriert).');
+            $int=filter_var($value,FILTER_VALIDATE_INT);
+            if($int===false)
+                throw new RuntimeException('Schaltwert ist keine gueltige Integer-Zahl.');
+            return $int;
+        }
+        if($type===2){
+            if(!is_numeric($value))
+                throw new RuntimeException('Float-Variable: gueltige Zahl eingeben.');
+            $float=(float)$value;
+            if(!is_finite($float))
+                throw new RuntimeException('Schaltwert liegt ausserhalb des gueltigen Zahlenbereichs.');
+            return $float;
+        }
+        throw new RuntimeException('Nur Boolean-, Integer- oder Float-Schaltvariablen werden unterstuetzt.');
+    }
+
     public static function validateRule(array $rule): array
     {
         $kind=(string)($rule['kind']??'');
@@ -158,6 +195,9 @@ final class IAHVoiceRuleEngine
             && (!function_exists('IPS_VariableExists')
                 || !IPS_VariableExists($kind==='read'?$readVariableId:$variableId)))
             throw new RuntimeException('Ausgewaehlte Variable existiert nicht.');
+        // Activation is checked before publishing; no hardware action occurs.
+        if($kind==='variable' && !empty($rule['enabled']) && $variableId>0)
+            self::validateVariableAction($variableId,(string)$variableValue);
         if($kind==='answer' && $answer==='')
             throw new RuntimeException('Ein Fragetext benoetigt eine Antwort.');
         // Unvollstaendige Vorlagen sind als deaktivierter EDIT-Entwurf erlaubt.
@@ -403,30 +443,9 @@ final class IAHVoiceRuleEngine
         if(!$rule['confirmed'])return $base+['ok'=>false,
             'answer'=>'Dieser Sprachbefehl ist noch nicht freigegeben.'];
         if($rule['kind']==='variable'){
-            $id=$rule['variableId'];
-            if($id<=0||!function_exists('IPS_VariableExists')
-                || !IPS_VariableExists($id)||!function_exists('HasAction')||!HasAction($id))
-                return $base+['ok'=>false,'answer'=>'Schaltvariable nicht verfuegbar oder nicht schaltbar.'];
             try{
-                $type=(int)(IPS_GetVariable($id)['VariableType']??-1);
-                $raw=$rule['variableValue'];
-                if($type===0){
-                    if(!in_array(strtolower($raw),['0','1','true','false'],true))
-                        throw new RuntimeException('Ungueltiger Boolwert.');
-                    $value=in_array(strtolower($raw),['1','true'],true);
-                }elseif($type===1||$type===2){
-                    if(!is_numeric($raw))throw new RuntimeException('Zahl erwartet.');
-                    $value=$type===1?(int)$raw:(float)$raw;
-                    if($type===1 && (string)$value!==$raw
-                        && (!preg_match('/^[+-]?0*\\d+$/D',$raw)
-                            || (int)$raw!==$value))
-                        throw new RuntimeException('Ganzzahl erwartet.');
-                    if($type===2 && !is_finite($value))
-                        throw new RuntimeException('Ungueltiger Zahlenwert.');
-                }else{
-                    throw new RuntimeException('Nur Bool-, Integer- oder Float-Aktionsvariable.');
-                }
-                if(RequestAction($id,$value)!==true)
+                $value=self::validateVariableAction($rule['variableId'],$rule['variableValue']);
+                if(RequestAction($rule['variableId'],$value)!==true)
                     throw new RuntimeException('Variable nicht geschaltet.');
                 return $base+['ok'=>true,'answer'=>$answer,'executed'=>1];
             }catch(Throwable $ignored){

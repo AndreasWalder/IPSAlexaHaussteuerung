@@ -41,6 +41,8 @@ trait IAHVoiceRuleEditorTrait
                 'steps'=>count((array)($rule['steps']??[])),
                 'enabled'=>!empty($rule['enabled']),
                 'confirmed'=>!empty($rule['confirmed']),
+                'enabledDisplay'=>!empty($rule['enabled'])?'Ja':'Nein',
+                'confirmedDisplay'=>!empty($rule['confirmed'])?'Ja':'Nein',
                 'status'=>$same?'PROD synchron':(isset($production[$key])?'Geaendert':'Nur in EDIT'),
                 'revision'=>hash('sha256',serialize($rule))
             ];
@@ -131,6 +133,7 @@ trait IAHVoiceRuleEditorTrait
                     .'Bestehende Jalousie-Bilder bleiben erhalten.'],
                 ['type'=>'Label','caption'=>'Sicherheit: Skripte und Geräteszenen '
                     .'müssen eigens bestätigt und aktiviert werden. '
+                    .'Aktiv und Bestätigt bitte gemeinsam über das Zahnrad setzen. '
                     .'Geräteszenen verwenden nur im produktiven RoomsCatalog '
                     .'fachlich bestätigte Schreibfähigkeiten. '
                     .'Ein ausgewähltes Skript kann eigenständig Geräte steuern: '
@@ -193,10 +196,15 @@ trait IAHVoiceRuleEditorTrait
                             'edit'=>['type'=>'SelectScript']],
                         ['caption'=>'Geräteaktionen','name'=>'steps','width'=>'88px',
                             'save'=>false],
-                        ['caption'=>'Aktiv','name'=>'enabled','width'=>'65px',
-                            'edit'=>['type'=>'CheckBox']],
-                        ['caption'=>'Bestätigt','name'=>'confirmed','width'=>'80px',
-                            'edit'=>['type'=>'CheckBox']],
+                        // Status only in the table: checkbox inline editing would
+                        // save each flag separately, reject incomplete settings,
+                        // and reset the other selected fields. Change both in gear.
+                        ['caption'=>'Aktiv','name'=>'enabledDisplay','width'=>'65px',
+                            'save'=>false],
+                        ['caption'=>'Bestätigt','name'=>'confirmedDisplay','width'=>'80px',
+                            'save'=>false],
+                        ['name'=>'enabled','visible'=>false,'save'=>true],
+                        ['name'=>'confirmed','visible'=>false,'save'=>true],
                         ['caption'=>'Status','name'=>'status','width'=>'115px',
                             'save'=>false],
                         ['caption'=>'Revision','name'=>'revision','visible'=>false,
@@ -247,6 +255,13 @@ trait IAHVoiceRuleEditorTrait
                     'value'=>(string)($step['value']??'')];
             }
             $q=var_export($key,true);
+            // Old V3.7.1 imports without open_close_var were accidentally
+            // created as 'script'; present the proper control type when edited.
+            $isOldBlind=in_array($key,['jalousien_oeffnen','jalousien_schliessen'],true)
+                && ($rule['origin']??'')==='legacy'
+                && ($rule['kind']??'')==='script'
+                && (int)($rule['scriptId']??0)===0;
+            if($isOldBlind)$rule['kind']='variable';
             $deviceOptions=$this->voiceRuleDeviceOptions((array)($ctx['catalog']??[]));
             $propertyOptions=[
                 ['caption'=>'Ein / Aus','value'=>'power'],
@@ -298,6 +313,10 @@ trait IAHVoiceRuleEditorTrait
                 ['type'=>'SelectVariable','name'=>'readVariableId',
                     'caption'=>'Messwertvariable für {value} auswählen',
                     'value'=>(int)($rule['readVariableId']??0)],
+                ['type'=>'Label','caption'=>'Wichtig: Bei den alten globalen Jalousie-Befehlen '
+                    .'fuer eine Integer-Schaltvariable 1=oeffnen und 2=schliessen '
+                    .'verwenden, NICHT true. true/false gelten nur fuer Boolean-Variablen. '
+                    .'Zuerst Variable und Wert waehlen, dann Aktiv UND Bestaetigt.'],
                 ['type'=>'Label','caption'=>'Herkunft: '
                     .(string)($rule['origin']??'custom')
                     .' — '.(string)($rule['migrationNote']??'')],
@@ -417,9 +436,34 @@ trait IAHVoiceRuleEditorTrait
                 'variableId','variableValue','readVariableId',
                 'enabled','confirmed'] as $field)
                 if(array_key_exists($field,$data))$input[$field]=$data[$field];
-            $next=IAHVoiceRuleEngine::change($ctx['edit'],$key,$input);
+            // Repair imports produced by the first V3.7.1 release.
+            // A manually selected Schaltvariable must not disappear just
+            // because that old imported rule was wrongly typed 'script'.
+            if(in_array($key,['jalousien_oeffnen','jalousien_schliessen'],true)
+                && ($old['origin']??'')==='legacy'
+                && ($input['kind']??'')==='script'
+                && (int)($input['scriptId']??0)===0
+                && (int)($input['variableId']??0)>0){
+                $input['kind']='variable';
+                if(trim((string)($input['variableValue']??''))===''){
+                    $input['variableValue']=$key==='jalousien_oeffnen'?'1':'2';
+                }
+            }
+            $warning='';
+            try{
+                $next=IAHVoiceRuleEngine::change($ctx['edit'],$key,$input);
+            }catch(RuntimeException $e){
+                // Do not discard a correctly chosen variable/image/text just
+                // because activation was premature. Save an inactive draft
+                // and tell the user exactly why activation was rejected.
+                if(empty($input['enabled']))throw $e;
+                $input['enabled']=false;
+                $next=IAHVoiceRuleEngine::change($ctx['edit'],$key,$input);
+                $warning=' Aktiv bleibt AUS: '.$e->getMessage()
+                    .' Bitte Zielvariable, Wert und Bestätigt prüfen.';
+            }
             $this->writeVoiceRuleEdit($ctx,$next);
-            $this->voiceRuleNotice('Sprachregel in EDIT gespeichert.');
+            $this->voiceRuleNotice('Sprachregel in EDIT gespeichert.'.$warning);
             $this->ReloadVoiceRules();
         }catch(Throwable $e){$this->voiceRuleNotice('Nicht gespeichert: '.$e->getMessage());}
     }
