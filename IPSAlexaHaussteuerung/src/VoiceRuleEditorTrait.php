@@ -4,12 +4,34 @@ declare(strict_types=1);
 /** V3.7 – UI/EDIT/PROD for user-defined voice scenes and answers. */
 trait IAHVoiceRuleEditorTrait
 {
+    /**
+     * Read the currently published SystemConfiguration rather than a stale
+     * OPcache copy. IPS_SetScriptContent can update the script while another
+     * PHP worker still has the old compiled include cached.
+     *
+     * Only the PROD config is used for execution; EDIT is never a fallback.
+     */
+    private function readFreshVoiceRuleProd(int $prodId): ?array
+    {
+        if($prodId<=0 || !IPS_ScriptExists($prodId))return null;
+        $path=@IPS_GetScriptFile($prodId);
+        if(is_string($path) && $path!=='' && is_file($path)
+            && function_exists('opcache_invalidate')){
+            // The update is local to the compiled file; no script executed.
+            @opcache_invalidate($path,true);
+        }
+        return $this->readConfigurationArrayFromScript($prodId);
+    }
+
     private function voiceRuleContext(): array
     {
         $ctx=$this->navigationEditorContext();
         $prodId=(int)($ctx['ids']['prod']??0);
         $ctx['prodSource']=$this->getScriptContent($prodId);
-        $ctx['prod']=$this->readConfigurationArrayFromScript($prodId);
+        $ctx['prod']=$this->readFreshVoiceRuleProd($prodId);
+        $ctx['prodId']=$prodId;
+        $ctx['prodVoiceRuleCount']=is_array($ctx['prod'])
+            ?count(IAHVoiceRuleEngine::rules($ctx['prod'])):0;
         return $ctx;
     }
 
