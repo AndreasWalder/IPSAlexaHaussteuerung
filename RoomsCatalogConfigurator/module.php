@@ -5635,22 +5635,18 @@ class RoomsCatalogConfigurator extends IPSModule
                 ],
                 [
                     'type'=>'ExpansionPanel',
-                    'caption'=>'Datenstand und KI-Berechtigungen',
+                    'caption'=>'Katalogstatus und KI-Berechtigungen',
                     'expanded'=>true,
                     'items'=>[
                         ['type'=>'Label','name'=>'MigrationSummary','caption'=>$migrationSummary],
                         ['type'=>'Label','caption'=>
                             'KI-Lese-/Schreibfreigabe und fachlich bestaetigte Geraetezuordnung sind getrennt. '
                             .'Keine KI-Schreibfreigaben ohne ausdrueckliche Freigabe.'],
-                        ['type'=>'Button','caption'=>'MODELL, IPS-VARIABLEN UND MIGRATION PRUEFEN',
-                            'onClick'=>'RCC_AuditMigrationReadiness($id);'],
-                        ['type'=>'Label','name'=>'MigrationReadinessReport',
-                            'caption'=>$this->currentMigrationReport($editCatalog)],
                     ],
                 ],
                 [
                     'type'=>'ExpansionPanel',
-                    'caption'=>'Geraetepruefung & Migrationsabschluss',
+                    'caption'=>'Technische Geraetepruefung',
                     'expanded'=>true,
                     'items'=>[
                         ['type'=>'Label','caption'=>
@@ -5658,27 +5654,21 @@ class RoomsCatalogConfigurator extends IPSModule
                             .'Keine Livewerte, keine Schaltbefehle, keine KI-Freigaben. '
                             .'Technisch plausibel ist noch KEINE fachliche Bestaetigung.'],
                         ['type'=>'Label','caption'=>
-                            'WICHTIG BEI GEANDERTEN KATALOGZAHLEN: Zuerst DIESE technische Pruefung '
-                            .'ausfuehren. Sie vergleicht mit dem gespeicherten alten Migrationsbericht. '
-                            .'Erst danach die Migrationspruefung erneut starten, sonst geht der alte '
-                            .'Vergleichsstand verloren. Keine EDIT-/PROD-Uebernahme vor der Ursachenpruefung.'],
+                            'Bei geaenderten Geraetezahlen, fehlenden Variablen oder neuen '
+                            .'Instanzen diese technische Pruefung ausfuehren. '
+                            .'Sie ist nur lesend und laesst EDIT/PROD unveraendert.'],
                         ['type'=>'Button','caption'=>'ALLE GERAETE TECHNISCH PRUEFEN',
                             'onClick'=>'RCC_RunTechnicalDeviceAudit($id);'],
                         ['type'=>'Label','name'=>'TechnicalDeviceSummary',
                             'caption'=>$this->technicalDeviceSummaryFromSnapshot($this->deviceTechnicalSnapshot())],
                         ['type'=>'Label','name'=>'TechnicalDeviceSourceSummary',
                             'caption'=>$this->technicalDeviceSourceSummary($this->deviceTechnicalSnapshot())],
-                        ['type'=>'Label','caption'=>'V3.3.12: Diagnose mit allen technischen Rollen, Geraeten und IPS-Metadaten als JSON-Datei fuer ChatGPT exportieren. Keine aktuellen Variablenwerte, Zugangsdaten oder Schaltbefehle.'],
+                        ['type'=>'Label','caption'=>'Diagnose mit allen technischen Rollen, Geraeten und IPS-Metadaten fuer die Fehleranalyse exportieren. Keine Schaltbefehle oder automatischen PROD-Korrekturen.'],
                         ['type'=>'RowLayout','items'=>[
-                            ['type'=>'Button','caption'=>'1 – GESAMTDIAGNOSE FUER CHATGPT HERUNTERLADEN',
+                            ['type'=>'Button','caption'=>'GESAMTDIAGNOSE FUER CHATGPT HERUNTERLADEN',
                                 'download'=>'RoomsCatalog_ChatGPT_Diagnose.json',
                                 'onClick'=>'RCC_ExportAIRepairDiagnostics($id);'],
-                            ['type'=>'Button','caption'=>'2 – SICHERE AUTO-KORREKTUREN NACH EDIT + PROD',
-                                'confirm'=>'Nur nach dem Diagnoseexport: Eindeutig erkannte fehlende Lesevariablen nach EDIT UND PROD schreiben? Es werden zuerst zwei vollstaendige Backups erstellt. Keine KI-Rechte, Schaltbefehle oder fachlichen Bestaetigungen. Unklare Geraete bleiben offen.',
-                                'onClick'=>'RCC_ApplySafeAutoRepair($id);']
                         ]],
-                        ['type'=>'Label','name'=>'AutoRepairNotice',
-                            'caption'=>$this->ReadAttributeString('AutoRepairNotice')],
                         [
                             'type'=>'List','name'=>'TechnicalDeviceChecks',
                             'caption'=>'Technische Geraetepruefung (alle Typen)',
@@ -6132,49 +6122,6 @@ class RoomsCatalogConfigurator extends IPSModule
                         ['type'=>'Label','caption'=>'Alle Typen werden geprueft. Neue Geraete werden erst nach '
                             .'Markieren ausschliesslich nach EDIT importiert, mit KI ausgeschaltet und ohne '
                             .'Schaltrechte; PROD und die echten IPS-Geraete bleiben unveraendert.']
-                    ]
-                ],
-                [
-                    'type'=>'ExpansionPanel',
-                    'caption'=>'Altgeraete ins neue Modell uebernehmen',
-                    'expanded'=>false,
-                    'items'=>[
-                        ['type'=>'Label','caption'=>'Bestehende Legacy-Geraete analysieren. Die Uebernahme fuegt nur ai.type/Variablen im EDIT-Katalog hinzu. Alte Felder, KI-Freigaben und PROD bleiben erhalten.'],
-                        ['type'=>'Button','caption'=>'BESTEHENDE GERAETE ANALYSIEREN',
-                            'onClick'=>'RCC_AnalyzeLegacyDevices($id);'],
-                        [
-                            'type'=>'List','name'=>'LegacyDevices','caption'=>'Bestehende Geraete zur Typisierung',
-                            'rowCount'=>12,'loadValuesFromConfiguration'=>false,
-                            'add'=>false,'delete'=>false,
-                            'columns'=>[
-                                ['caption'=>'Uebernehmen','name'=>'selected','width'=>'90px','edit'=>['type'=>'CheckBox']],
-                                ['caption'=>'Katalogpfad','name'=>'composite','width'=>'200px','save'=>false,'quickFilter'=>true],
-                                ['caption'=>'Geraet','name'=>'title','width'=>'150px','save'=>false,'quickFilter'=>true],
-                                ['caption'=>'Raum','name'=>'roomKey','width'=>'105px','save'=>false],
-                                ['caption'=>'IPS-ID','name'=>'sourceId','width'=>'85px','save'=>false],
-                                ['caption'=>'Typ','name'=>'deviceType','width'=>'135px','edit'=>['type'=>'Select','options'=>[
-                                    ...array_map(static fn(string $type,string $caption):array=>
-                                        ['caption'=>$caption,'value'=>$type],
-                                        array_keys(RCCDeviceTypeRegistry::captions()),
-                                        array_values(RCCDeviceTypeRegistry::captions()))
-                                ]]],
-                                ['caption'=>'Bewertung','name'=>'confidence','width'=>'85px','save'=>false],
-                                ['caption'=>'Pruefhinweis','name'=>'reason','width'=>'auto','save'=>false]
-                            ],
-                            'values'=>$legacyRows,
-                            'onEdit'=>'RCC_UpdateLegacyCandidate($id, json_encode(array_filter(['
-                                . '\'composite\' => ($LegacyDevices["composite"] ?? null), '
-                                . '\'selected\' => ($LegacyDevices["selected"] ?? null), '
-                                . '\'deviceType\' => ($LegacyDevices["deviceType"] ?? null)'
-                                . '], static fn($v) => $v !== null), JSON_INVALID_UTF8_SUBSTITUTE));'
-                        ],
-                        ['type'=>'RowLayout','items'=>[
-                            ['type'=>'Button','caption'=>'EINDEUTIGE MARKIEREN','onClick'=>'RCC_SelectLegacyCandidates($id, true);'],
-                            ['type'=>'Button','caption'=>'MARKIERUNGEN AUFHEBEN','onClick'=>'RCC_SelectLegacyCandidates($id, false);'],
-                            ['type'=>'Button','caption'=>'MARKIERTE NACH EDIT UEBERNEHMEN',
-                                'confirm'=>'Bestehende Geraete ohne Aenderung der Legacy-Felder nach ai.type migrieren? Nur EDIT wird beschrieben.',
-                                'onClick'=>'RCC_ApplyLegacyCandidates($id);']
-                        ]]
                     ]
                 ],
                 [
@@ -7627,9 +7574,6 @@ class RoomsCatalogConfigurator extends IPSModule
             .($readable-$writable).' KI nur lesen, '.$writable.' KI schaltbar, '
             .(count($edit)-$readable).' ohne KI-Freigabe. EDIT wird erst nach Freigabe produktiv.';
         $this->UpdateFormField('MigrationSummary','caption',$this->catalogMigrationShortSummary($migrationStats));
-        $this->UpdateFormField('MigrationReadinessReport','caption',$this->currentMigrationReport(
-            $this->loadConfiguredCatalog('RoomsCatalogEditScriptID','EDIT')
-        ));
         $this->UpdateFormField('CatalogSummary', 'caption', $summary);
     }
 
