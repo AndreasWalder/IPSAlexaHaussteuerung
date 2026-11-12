@@ -143,8 +143,8 @@ trait IAHVoiceRuleEditorTrait
                             .'als DEAKTIVIERTE Entwuerfe nach EDIT uebernehmen? '
                             .'PROD und Geraete bleiben unveraendert.',
                         'onClick'=>'IAH_ImportLegacyVoiceRuleDrafts($id);'],
-                    ['type'=>'Button','caption'=>'ALLE IMPORTIERTEN ENTWÜRFE AUS EDIT LÖSCHEN',
-                        'confirm'=>'Wirklich ALLE importierten ALT-Entwuerfe aus EDIT '
+                    ['type'=>'Button','caption'=>'ALLE DEAKTIVIERTEN ALT-ENTWÜRFE AUS EDIT LÖSCHEN',
+                        'confirm'=>'Wirklich ALLE deaktivierten importierten ALT-Entwuerfe aus EDIT '
                             .'loeschen? Eigene Regeln und PROD bleiben unveraendert.',
                         'onClick'=>'IAH_DeleteLegacyVoiceRuleDrafts($id);'],
                     ['type'=>'Button','caption'=>'EDITOR NEU LADEN',
@@ -544,12 +544,12 @@ trait IAHVoiceRuleEditorTrait
             $next=(array)($ctx['edit']??[]);
             $count=0;
             foreach(IAHVoiceRuleEngine::rules($next) as $key=>$rule){
-                if(($rule['origin']??'')!=='legacy')continue;
+                if(($rule['origin']??'')!=='legacy'||!empty($rule['enabled']))continue;
                 $next=IAHVoiceRuleEngine::change($next,$key,[],true);
                 $count++;
             }
             if($count)$this->writeVoiceRuleEdit($ctx,$next);
-            $this->voiceRuleNotice($count.' importierte ALT-Entwuerfe aus EDIT '
+            $this->voiceRuleNotice($count.' deaktivierte importierte ALT-Entwuerfe aus EDIT '
                 .'geloescht. Eigene Regeln, PROD, Originalskripte und Bilder erhalten.');
             $this->ReloadVoiceRules();
         }catch(Throwable $e){
