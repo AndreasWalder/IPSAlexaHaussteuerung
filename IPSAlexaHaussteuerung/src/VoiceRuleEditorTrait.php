@@ -638,9 +638,13 @@ trait IAHVoiceRuleEditorTrait
             $params=(array)($rule['scriptParams']??[]);
             $safeParams=[];
             foreach($params as $param=>$value){
-                $safeParams[$param]=preg_match(
+                $secretName=preg_match(
                     '/(?:password|passwort|token|secret|api.?key|authorization|auth|credential|private.?key)/i',
-                    (string)$param)?'[REDACTED]':$value;
+                    (string)$param)===1;
+                $secretValue=is_string($value) && preg_match(
+                    '/(?:sk-proj-|sk-|ghp_|github_pat_|AIza)[A-Za-z0-9_-]{12,}/',
+                    $value)===1;
+                $safeParams[$param]=($secretName||$secretValue)?'[REDACTED]':$value;
             }
             $entry['scriptParams']=$safeParams;
             // A signed or tokenized image URL must not leak a query secret.
@@ -689,7 +693,15 @@ trait IAHVoiceRuleEditorTrait
         ];
         foreach(array_intersect(array_keys($edit),array_keys($prod)) as $key)
             if($edit[$key]!==$prod[$key])$summary['different'][]=$key;
-        $actionId=(int)$this->getActionScriptId();
+        // Resolve the generated action without mutating object idents.
+        $rendererParent=(int)@IPS_GetObjectIDByIdent('iahRenderers',$this->InstanceID);
+        $actionId=$rendererParent>0
+            ?(int)@IPS_GetObjectIDByIdent('iahActionEntry',$rendererParent):0;
+        if($actionId<=0 && $rendererParent>0)
+            $actionId=(int)@IPS_GetObjectIDByName(
+                'Action (Haus\\\\Übersicht/Einstellungen Entry)',$rendererParent);
+        if($actionId<=0)
+            $actionId=(int)@IPS_GetObjectIDByIdent('iahActionEntry',$this->InstanceID);
         $actionSource=$actionId>0?$this->getScriptContent($actionId):null;
         $trace=json_decode($this->ReadAttributeString('VoiceRulesDiagnosticTrace'),true);
         return [
