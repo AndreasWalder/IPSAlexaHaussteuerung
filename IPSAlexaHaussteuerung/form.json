@@ -106,7 +106,7 @@
     },
     {
       "type": "ExpansionPanel",
-      "caption": "KI-Haussteuerung – ChatGPT + RoomsCatalog (ohne HomeAgent)",
+      "caption": "KI-Haussteuerung – ChatGPT + RoomsCatalog",
       "expanded": false,
       "items": [
         {
@@ -233,7 +233,7 @@
     },
     {
       "type": "ExpansionPanel",
-      "caption": "KI-Kosten & Tokenverbrauch (RoomsCatalog / Home Agent)",
+      "caption": "KI-Kosten & Tokenverbrauch",
       "expanded": false,
       "items": [
         {
@@ -272,7 +272,7 @@
         },
         {
           "type": "Label",
-          "caption": "Anzeigen: Objektbaum → IPSAlexaHaussteuerung → KI-Kosten. Übersicht als HTML-Tabelle, einzelne Zähler je Backend und letzte 100 Fragen (JSON). Die offiziellen OpenAI-API-Rechnungskosten können durch andere Anwendungen/Tarife abweichen."
+          "caption": "Anzeigen: Objektbaum → IPSAlexaHaussteuerung → KI-Kosten. Eine gemeinsame EUR-Übersicht mit Tageskosten, Monatskosten, Prognose, Tokenverbrauch und den beiden aktiven Anbindungen RoomsCatalog und Intent-Parser. Frühere, nicht mehr verwendete Kategorien bleiben aus Gründen der Datenintegrität ausgeblendet."
         }
       ]
     },

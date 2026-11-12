@@ -26,9 +26,10 @@ trait KICostTrait
         $raw=$this->ensureVar($root,'KI-Kosten Rohdaten (nicht bearbeiten)','kiCostData',VARIABLETYPE_STRING,'',null);
         \IPS_SetHidden($raw,true);
         $this->ensureVar($root,'KI-Kosten Übersicht','kiCostOverview',VARIABLETYPE_STRING,'~HTMLBox',null);
+        // Aktive Kostenbereiche: kein HomeAgent-Backend mehr.
         foreach ([
-            'Alle'=>'Alle KI-Anbindungen','RoomsCatalog'=>'KI + RoomsCatalog',
-            'HomeAgent'=>'KI + Home Agent','IntentParser'=>'Sonstige KI – Intent-Parser'
+            'Alle'=>'KI-Kosten gesamt','RoomsCatalog'=>'ChatGPT + RoomsCatalog',
+            'IntentParser'=>'KI – Intent-Parser'
         ] as $ident=>$label) {
             $category=$this->ensureCategory($root,$label,'iahKICost'.$ident);
             foreach ($this->KICostVariableDefinitions() as $key=>[$caption,$type,$profile])
@@ -40,6 +41,14 @@ trait KICostTrait
                 $old=(int)@\IPS_GetObjectIDByIdent($ident,$category);
                 if($old>0&&\IPS_VariableExists($old))\IPS_SetHidden($old,true);
             }
+        }
+        // Bestehende Alt-Kategorie NICHT loeschen: alte Variablen-IDs,
+        // Verknuepfungen und historische Kosten bleiben erhalten, aber die
+        // nicht mehr verwendete Kategorie verschwindet aus dem Objektbaum.
+        $legacy=(int)@\IPS_GetObjectIDByIdent('iahKICostHomeAgent',$root);
+        if($legacy>0 && function_exists('IPS_ObjectExists')
+            && \IPS_ObjectExists($legacy)) {
+            \IPS_SetHidden($legacy,true);
         }
         $this->UpdateKICostExchangeRate();
         $this->RefreshKICostDisplay();
@@ -215,7 +224,7 @@ trait KICostTrait
             $id=(int)@\IPS_GetObjectIDByIdent($ident,$root);
             if($id>0 && \IPS_VariableExists($id))\SetValueString($id,$value);
         }
-        foreach (['Alle','RoomsCatalog','HomeAgent','IntentParser'] as $backend) {
+        foreach (['Alle','RoomsCatalog','IntentParser'] as $backend) {
             $cat=(int)@\IPS_GetObjectIDByIdent('iahKICost'.$backend,$root);
             if ($cat<=0) continue;
             $snap=\iah_ki_section_snapshot($store,$backend,$now);
@@ -275,58 +284,122 @@ trait KICostTrait
     private function RenderKICostOverview(array $store, \DateTimeImmutable $now): string
     {
         $fx=$this->GetKICostCurrency();
-        $eurRate=(float)$fx['rate'];
-        $eur=static fn(float $usd):string=>'€ '.number_format(\iah_ki_eur($usd,$eurRate),6,',','.');
-        $esc=static fn($v):string=>htmlspecialchars((string)$v,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
-        $html='<div style="font-family:Arial,sans-serif;font-size:14px">'
-            .'<h3>KI-Kosten in EUR</h3><p>USD→EUR: '.number_format($eurRate,6,',','.')
-            .' ('.$esc($fx['date']).'; '.$esc($fx['source']).')</p>'
-            .'<table style="width:100%;border-collapse:collapse">'
-            .'<thead><tr style="background:#eee"><th>Backend</th><th>Fragen heute</th>'
-            .'<th>Fragen gesamt</th><th>Heute</th><th>Monat</th><th>Prognose Monat</th><th>Gesamt</th><th>Letzte Frage</th>'
-            .'</tr></thead><tbody>';
+        $rate=(float)$fx['rate'];
+        $eur=static fn(float $usd):string=>'€ '.number_format(
+            \iah_ki_eur($usd,$rate),6,',','.');
+        $int=static fn(int $number):string=>number_format($number,0,',','.');
+        $esc=static fn($value):string=>htmlspecialchars(
+            (string)$value,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+        $all=\iah_ki_section_snapshot($store,'Alle',$now);
+        $day=$all['today'];$month=$all['month'];$total=$all['total'];
+        $cards=[
+            ['Fragen heute',$int((int)$day['questions'])],
+            ['API-Aufrufe heute',$int((int)$day['apiCalls'])],
+            ['Tokens heute',$int((int)$day['totalTokens'])],
+            ['Kosten heute',$eur((float)$day['costUsd'])],
+            ['Kosten diesen Monat',$eur((float)$month['costUsd'])],
+            ['Prognose Monatsende',$eur($this->GetKICostForecast(
+                (float)$month['costUsd'],$now))],
+            ['Kosten gesamt',$eur((float)$total['costUsd'])]
+        ];
+        $html='<div style="font-family:Arial,sans-serif;font-size:13px;line-height:1.45;'
+            .'color:#242424"><h3 style="margin:0 0 4px">KI-Kostenübersicht</h3>'
+            .'<div style="color:#666;margin-bottom:14px">Gesamt · RoomsCatalog · Intent-Parser'
+            .' — alles in EUR. USD→EUR: '.number_format($rate,6,',','.')
+            .' ('.$esc($fx['date']).'; '.$esc($fx['source']).')</div>'
+            .'<div style="display:flex;flex-wrap:wrap;gap:9px;margin-bottom:18px">';
+        foreach($cards as [$label,$value]) {
+            $html.='<div style="flex:1 1 155px;border:1px solid #dedede;'
+                .'border-radius:6px;padding:10px 12px;min-width:120px">'
+                .'<div style="color:#777;font-size:12px">'.$esc($label).'</div>'
+                .'<div style="font-size:17px;font-weight:600;margin-top:5px">'
+                .$esc($value).'</div></div>';
+        }
+        $html.='</div><h4 style="margin:10px 0">Aktive KI-Anbindungen</h4>'
+            .'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;'
+            .'white-space:nowrap">'
+            .'<thead><tr style="background:#eee">';
+        foreach(['Anbindung','Fragen heute','API heute','Eingabe Monat','Cache Monat',
+            'Ausgabe Monat','Kosten heute','Kosten Monat','Prognose','Gesamt'] as $heading)
+            $html.='<th style="padding:7px;text-align:left">'.$esc($heading).'</th>';
+        $html.='</tr></thead><tbody>';
         foreach ([
-            'Alle'=>'Alle KI-Anbindungen','RoomsCatalog'=>'RoomsCatalog',
-            'HomeAgent'=>'Home Agent','IntentParser'=>'Intent-Parser'
+            'Alle'=>'Gesamt','RoomsCatalog'=>'ChatGPT + RoomsCatalog',
+            'IntentParser'=>'Intent-Parser'
         ] as $key=>$label) {
             $snap=\iah_ki_section_snapshot($store,$key,$now);
-            $day=$snap['today'];$month=$snap['month'];$total=$snap['total'];
+            $today=$snap['today'];$m=$snap['month'];$t=$snap['total'];
             $values=[
-                $label,$day['questions'],$total['questions'],
-                $eur((float)$day['costUsd']),$eur((float)$month['costUsd']),
-                $eur($this->GetKICostForecast((float)$month['costUsd'],$now)),
-                $eur((float)$total['costUsd']),$eur((float)($snap['last']['costUsd']??0))
+                $label,
+                $int((int)$today['questions']),
+                $int((int)$today['apiCalls']),
+                $int((int)$m['inputTokens']),
+                $int((int)$m['cachedInputTokens']),
+                $int((int)$m['outputTokens']),
+                $eur((float)$today['costUsd']),
+                $eur((float)$m['costUsd']),
+                $eur($this->GetKICostForecast((float)$m['costUsd'],$now)),
+                $eur((float)$t['costUsd'])
             ];
             $html.='<tr>';
-            foreach ($values as $value) $html.='<td style="padding:7px;border-bottom:1px solid #ddd">'.$esc($value).'</td>';
+            foreach($values as $value)
+                $html.='<td style="padding:7px;border-bottom:1px solid #ddd">'
+                    .$esc($value).'</td>';
             $html.='</tr>';
         }
-        $html.='</tbody></table>';
-        $all=\iah_ki_section_snapshot($store,'Alle',$now);
-        if ((int)$all['total']['callsWithoutPrice']>0 || (int)$all['total']['callsWithoutUsage']>0) {
-            $html.='<p style="color:#b30"><b>Unvollständige Kostenerfassung:</b> '
-                .(int)$all['total']['callsWithoutPrice'].' Aufrufe ohne bekannten Preis, '
-                .(int)$all['total']['callsWithoutUsage'].' ohne Token-Verbrauch.</p>';
+        $html.='</tbody></table></div>';
+        if(!empty($store['sections']['HomeAgent'])) {
+            $html.='<p style="color:#666">Die Gesamtsumme enthaelt auch '
+                .'bereits gespeicherte historische Aufrufe aus einer '
+                .'frueheren KI-Anbindung. Diese Altdaten werden nicht '
+                .'geloescht oder einer neuen Anbindung zugerechnet.</p>';
         }
-        $html.='<h4>Letzte 25 Fragen</h4><table style="width:100%;border-collapse:collapse">'
-            .'<thead><tr style="background:#eee"><th>Zeit</th><th>Backend</th><th>Modell</th>'
-            .'<th>Input</th><th>Cache</th><th>Output</th><th>Calls</th><th>Kosten</th><th>Status</th></tr></thead><tbody>';
-        foreach (array_slice($all['history'],0,25) as $item) {
-            $cells=[
-                $item['finishedAt']??'', $item['backend']??'', $item['model']??'',
-                $item['inputTokens']??0, $item['cachedInputTokens']??0,
-                $item['outputTokens']??0, $item['apiCalls']??0,
-                $eur((float)($item['costUsd']??0)), $item['status']??''
+        if((int)$total['callsWithoutPrice']>0
+            || (int)$total['callsWithoutUsage']>0) {
+            $html.='<p style="color:#975600"><b>Kosten unvollstaendig:</b> '
+                .$int((int)$total['callsWithoutPrice']).' API-Aufrufe ohne Preis, '
+                .$int((int)$total['callsWithoutUsage']).' ohne Token-Verbrauch. '
+                .'Diese Aufrufe werden nicht als kostenlos betrachtet.</p>';
+        }
+        $html.='<h4 style="margin:18px 0 8px">Letzte 25 KI-Fragen</h4>'
+            .'<div style="overflow-x:auto"><table style="width:100%;'
+            .'border-collapse:collapse;white-space:nowrap">'
+            .'<thead><tr style="background:#eee">';
+        foreach(['Zeit','Anbindung','Modell','Eingabe','Cache','Ausgabe',
+            'API-Aufrufe','Kosten','Status'] as $heading)
+            $html.='<th style="padding:7px;text-align:left">'.$esc($heading).'</th>';
+        $html.='</tr></thead><tbody>';
+        $labels=['RoomsCatalog'=>'RoomsCatalog','IntentParser'=>'Intent-Parser',
+            'HomeAgent'=>'Altbestand'];
+        foreach(array_slice($all['history'],0,25) as $item) {
+            if(!is_array($item))continue;
+            $backend=(string)($item['backend']??'');
+            $values=[
+                $item['finishedAt']??'',
+                $labels[$backend]??'Sonstige',
+                $item['model']??'',
+                $int((int)($item['inputTokens']??0)),
+                $int((int)($item['cachedInputTokens']??0)),
+                $int((int)($item['outputTokens']??0)),
+                $int((int)($item['apiCalls']??0)),
+                $eur((float)($item['costUsd']??0)),
+                $item['status']??''
             ];
             $html.='<tr>';
-            foreach ($cells as $value) $html.='<td style="padding:6px;border-bottom:1px solid #ddd">'.$esc($value).'</td>';
+            foreach($values as $value)
+                $html.='<td style="padding:6px;border-bottom:1px solid #ddd">'
+                    .$esc($value).'</td>';
             $html.='</tr>';
         }
-        return $html.'</tbody></table><small>Schätzung in EUR aus echten OpenAI-API-Tokens (ursprünglich USD)'
-            .' und dem oben angezeigten ECB-/manuellen Wechselkurs. Historische USD-Werte bleiben intern unverändert.'
-            .' Frühere EUR-Anzeigen werden beim Kurswechsel erneut umgerechnet. Keine offizielle Rechnung,'
-            .' keine Steuern, Kartengebühren oder fremde API-Projekte. Unbekannte Modellpreise erscheinen'
-            .' als Warnung.</small></div>';
+        $html.='</tbody></table></div>'
+            .'<p style="font-size:11px;color:#666;margin-top:12px">'
+            .'Kostenschaetzung aus echten API-Tokens und hinterlegten USD-Modellpreisen. '
+            .'Die angezeigten Eurobetraege werden anhand des ausgewiesenen '
+            .'EZB-/manuellen Kurses berechnet. Keine offizielle Rechnung '
+            .'und ohne Umsatzsteuer, Zahlungsgebuehren oder externe API-Projekte. '
+            .'Historische USD-Werte bleiben zur Nachvollziehbarkeit unveraendert.'
+            .'</p></div>';
+        return $html;
     }
 
 }

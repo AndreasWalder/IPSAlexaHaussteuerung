@@ -205,7 +205,7 @@ function iah_vir_execute(array $input,array &$data,int $now): array
     }
     if($op==='outcome') {
         $backend=(string)($input['backend']??'');
-        if(!in_array($backend,['RoomsCatalog','HomeAgent','Classic'],true))$backend='unbekannt';
+        if(!in_array($backend,['RoomsCatalog','Classic'],true))$backend='unbekannt';
         $entry=[
             'at'=>date('c',$now),'deviceHash'=>$deviceHash,
             'category'=>'ki_outcome','backend'=>$backend,

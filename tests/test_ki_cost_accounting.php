@@ -28,9 +28,9 @@ ok($c['total']['questions']===1&&$c['total']['apiCalls']===2,'two API calls coun
 ok($c['total']['inputTokens']===10000&&$c['total']['cachedInputTokens']===2000,'tokens');
 ok($c['last']['apiCalls']===2&&$c['last']['status']==='success','last question');
 near($c['total']['costUsd'],2*$u['costUsd'],'combined answer cost');
-evt($store,'HomeAgent','question-two-123','start',['model'=>'gpt-4.1-mini']);
-evt($store,'HomeAgent','question-two-123','api',['callId'=>'one','response'=>['model'=>'unknown-model','usage'=>$usage['usage']]]);
-evt($store,'HomeAgent','question-two-123','finish',['success'=>false]);
+evt($store,'IntentParser','question-two-123','start',['model'=>'gpt-4.1-mini']);
+evt($store,'IntentParser','question-two-123','api',['callId'=>'one','response'=>['model'=>'unknown-model','usage'=>$usage['usage']]]);
+evt($store,'IntentParser','question-two-123','finish',['success'=>false]);
 evt($store,'IntentParser','question-three-123','start',['model'=>'gpt-4.1-mini']);
 evt($store,'IntentParser','question-three-123','api',['callId'=>'one','response'=>$usage]);
 evt($store,'IntentParser','question-three-123','finish',['success'=>true]);
@@ -44,4 +44,22 @@ $rollover=iah_ki_section_snapshot($store,'Alle',$november);
 ok($rollover['today']['questions']===0&&$rollover['month']['questions']===0,'month/day rollover');
 ok($rollover['total']['questions']===3,'lifetime across rollover');
 ok(!iah_ki_apply_event($store,['type'=>'api','backend'=>'INVALID','questionId'=>'test-123456','callId'=>'1'],$prices,$now),'reject invalid backend');
-echo "PASS: cached-token pricing, retry dedup, multiple rounds, backend separation, unknown model, fail, rollover\n";
+ok(!iah_ki_apply_event($store,['type'=>'start','backend'=>'HomeAgent',
+    'questionId'=>'obsolete-12345'],$prices,$now),'retired backend must not accept new cost events');
+// Do not wipe old data: historical counters and legacy entries are still held
+// in Alle and in the old read-only section, which is hidden in the UI.
+$legacy=['sections'=>[
+    'Alle'=>['total'=>array_replace(iah_ki_empty_counters(),
+        ['questions'=>5,'apiCalls'=>7,'costUsd'=>0.034])],
+    'HomeAgent'=>['total'=>array_replace(iah_ki_empty_counters(),
+        ['questions'=>5,'apiCalls'=>7,'costUsd'=>0.034])]
+]];
+$old=iah_ki_section_snapshot($legacy,'Alle',$now);
+near((float)$old['total']['costUsd'],0.034,'historical total cost preserved');
+evt($legacy,'RoomsCatalog','new-question-123','start',['model'=>'gpt-4.1-mini']);
+evt($legacy,'RoomsCatalog','new-question-123','finish',['success'=>true]);
+$after=iah_ki_section_snapshot($legacy,'Alle',$now);
+ok($after['total']['questions']===6
+    && $legacy['sections']['HomeAgent']['total']['questions']===5,
+    'new RoomsCatalog events may not erase old historical costs');
+echo "PASS: cached-token pricing, retry dedup, multiple rounds, two live backends, archived legacy totals, unknown model, fail, rollover\n";
