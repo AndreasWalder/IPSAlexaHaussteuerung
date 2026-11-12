@@ -1167,6 +1167,39 @@ class IPSAlexaHaussteuerung extends IPSModule
      * verified question-capture anchor, never replace a whole script.
      * Original is preserved as a separately verifiable backup.
      */
+    /**
+     * Back up a customized Action script as a separate hidden PHP script.
+     * The original script stays untouched until this readback succeeds.
+     * This helper is shared by the existing RoomUi and VoiceRules patches.
+     */
+    private function createNavigationCatalogBackup(
+        int $scriptId,string $reason,string $originalSource
+    ): int {
+        if($scriptId<=0 || !IPS_ScriptExists($scriptId)
+            || $this->getScriptContent($scriptId)!==$originalSource
+            || !function_exists('IPS_CreateScript')
+            || !function_exists('IPS_SetScriptContent')
+            || !function_exists('IPS_GetParent')
+            || !function_exists('IPS_SetParent')
+            || !function_exists('IPS_SetName')) {
+            throw new RuntimeException('Action-Backup blockiert: Quelle nicht eindeutig.');
+        }
+        $backupId=(int)IPS_CreateScript(0);
+        if($backupId<=0 || $backupId===$scriptId)
+            throw new RuntimeException('Action-Backup konnte nicht angelegt werden.');
+        $parent=(int)IPS_GetParent($scriptId);
+        IPS_SetParent($backupId,$parent);
+        IPS_SetName($backupId,
+            'AlexaActionBackup_'.preg_replace('/[^A-Za-z0-9_]/','',$reason)
+            .'_'.gmdate('Ymd_His').'_#'.$scriptId);
+        if(function_exists('IPS_SetHidden'))IPS_SetHidden($backupId,true);
+        IPS_SetScriptContent($backupId,$originalSource);
+        if($this->getScriptContent($backupId)!==$originalSource
+            || $this->getScriptContent($scriptId)!==$originalSource)
+            throw new RuntimeException('Action-Backup nicht verifiziert; Original bleibt unveraendert.');
+        return $backupId;
+    }
+
     private function patchActionScriptVoiceRules(int $scriptId): void
     {
         $current=$this->getScriptContent($scriptId);
