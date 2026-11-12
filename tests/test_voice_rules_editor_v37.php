@@ -48,12 +48,16 @@ ck37ui(str_contains($created,'angelegt')&&count($newKeys)===1
 $key=$newKeys[0];$rule=$rules[$key];
 $getForm=json_decode($module->GetVoiceRuleEditForm($key),true,512,JSON_THROW_ON_ERROR);
 ck37ui(str_contains(json_encode($getForm),'VoiceRuleSteps')
-    && str_contains(json_encode($getForm),'VoiceRuleStepDevice'),
-    'gear must provide roomscatalog device picker and action list');
+    && str_contains(json_encode($getForm),'VoiceRuleStepDevice')
+    && str_contains(json_encode($getForm),'intentName')
+    && str_contains(json_encode($getForm),'SelectScript')
+    && str_contains(json_encode($getForm),'imageUrl'),
+    'gear must provide editable aliases, intent, script, image and device actions');
 $payload=[
     'key'=>$key,'revision'=>hash('sha256',serialize($rule)),
     'title'=>'Guten Abend','aliases'=>'Guten Abend, Schönen Abend',
     'kind'=>'answer','answer'=>'Einen schönen Abend!',
+    'intentName'=>'GutenAbendIntent',
     'imageUrl'=>'https://example.org/alexa/abend.png','scriptId'=>0,
     'enabled'=>true,'confirmed'=>false
 ];
@@ -99,6 +103,11 @@ $result=json_decode($module->ResolveVoiceRule(json_encode([
 ck37ui(($result['ok']??false) && $result['answer']==='Einen schönen Abend!'
     && $result['imageUrl']==='https://example.org/alexa/abend.png',
     'published central question should resolve via public Alexa module method');
+$intent=json_decode($module->ResolveVoiceRule(
+    '{"text":"","intent":"GutenAbendIntent","aplEvent":false}'),true);
+ck37ui(($intent['ok']??false)===true
+    && ($intent['answer']??'')==='Einen schönen Abend!',
+    'slot-free Alexa intent must resolve verified rule without an utterance slot');
 $apl=json_decode($module->ResolveVoiceRule('{"text":"Schönen Abend","aplEvent":true}'),true);
 ck37ui(($apl['matched']??true)===false,'APL tap never triggers voice rule');
 $repeat=$module->ReadAttributeString('VoiceRulesPublishPreview');
