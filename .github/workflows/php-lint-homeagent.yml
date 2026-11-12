@@ -49,11 +49,14 @@ jobs:
           php -l IPSAlexaHaussteuerung/src/AlexaLogTrait.php
           php -l IPSAlexaHaussteuerung/src/SystemConfigurationManager.php
           php -l IPSAlexaHaussteuerung/src/SystemNavigationEditor.php
+          php -l IPSAlexaHaussteuerung/src/VoiceRuleEngine.php
+          php -l IPSAlexaHaussteuerung/src/VoiceRuleEditorTrait.php
           php -l IPSAlexaHaussteuerung/src/SystemNavigationMigration.php
           php -l IPSAlexaHaussteuerung/resources/helpers/NavigationRuntime.php
           php -l RoomsCatalogConfigurator/module.php
           php -l RoomsCatalogConfigurator/libs/DeviceTechnicalAudit.php
           php -l RoomsCatalogConfigurator/libs/DeviceTypeRegistry.php
+          php -l RoomsCatalogConfigurator/libs/DeviceCapabilities.php
           php -l RoomsCatalogConfigurator/libs/ModuleDataSources.php
           php -l RoomsCatalogConfigurator/libs/DataSourceEditor.php
           php -l RoomsCatalogConfigurator/libs/DataSourceEditorTrait.php
@@ -147,6 +150,10 @@ jobs:
         run: php tests/test_system_configuration_v333.php
       - name: Test V3.6.3 permanent Navigation EDIT-to-PROD publisher with backup
         run: php tests/test_system_navigation_current_v363.php
+      - name: Test V3.7 confirmed Alexa scenes, scripts and free-form FAQ
+        run: php tests/test_voice_rules_v37.php
+      - name: Test V3.7 central rule editor, backups and productive Alexa resolution
+        run: php tests/test_voice_rules_editor_v37.php
       - name: Test Symcon IPSList checkbox callbacks and filtered multi-selection
         run: php tests/test_rooms_catalog_ipslist_multiselect.php
       - name: Test RoomsCatalog quick search for IPS object IDs and parent instance IDs
