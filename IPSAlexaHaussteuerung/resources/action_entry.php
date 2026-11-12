@@ -2160,11 +2160,35 @@ function Execute($request = null)
                     $ruleAnswer=mb_substr($ruleAnswer,0,800,'UTF-8');
                     $ruleResponse=AskResponse::CreatePlainText($ruleAnswer)
                         ->SetRepromptPlainText('Noch eine Frage oder einen Befehl?');
+                    // Same generic image delivery for EVERY configured rule.
+                    // Either an explicit HTTPS URL or a basename from
+                    // user/icons served by the module's token-protected hook.
                     $ruleImage=(string)($iahRuleResult['imageUrl']??'');
+                    $iconFile=(string)($iahRuleResult['imageFile']??'');
+                    if($ruleImage==='' && $iconFile!==''
+                        && preg_match('/^[A-Za-z0-9][A-Za-z0-9_.-]*\.(?:png|jpg|jpeg|gif)$/iD',$iconFile)
+                        && !str_contains($iconFile,'..')
+                        && preg_match('~^https://[a-z0-9.-]+(?::\d{1,5})?(?:/.*)?$~iD',
+                            rtrim((string)$baseUrl,'/'))
+                        && $token!=='') {
+                        $filePath=IPS_GetKernelDir().'user'.DIRECTORY_SEPARATOR
+                            .'icons'.DIRECTORY_SEPARATOR.$iconFile;
+                        if(is_file($filePath)){
+                            $ruleImage=rtrim((string)$baseUrl,'/')
+                                .'/hook/iah-alexa-icons?f='.rawurlencode($iconFile)
+                                .'&token='.rawurlencode((string)$token)
+                                .'&v='.((int)(@filemtime($filePath)?:1));
+                        }else{
+                            $log('warning','VoiceRules.image_missing',['file'=>$iconFile]);
+                        }
+                    }
                     if(!empty($iahRuleResult['ok']) && $ruleImage!==''
-                        && preg_match('~^https://[a-z0-9.-]+(?:/[^\s]*)?$~iD',$ruleImage)) {
-                        $ruleTitle=(string)($iahRuleResult['ruleKey']??'Haussteuerung');
-                        $ruleResponse->SetStandardCard($ruleTitle,$ruleAnswer,
+                        && preg_match('~^https://[a-z0-9.-]+(?::\d{1,5})?(?:/[^\s]*)?$~iD',$ruleImage)){
+                        $ruleTitle=trim((string)($iahRuleResult['cardTitle']??''));
+                        $ruleCardText=trim((string)($iahRuleResult['cardText']??''));
+                        $ruleResponse->SetStandardCard(
+                            $ruleTitle!==''?$ruleTitle:$ruleAnswer,
+                            $ruleCardText!==''?$ruleCardText:$ruleAnswer,
                             $ruleImage,$ruleImage);
                     }
                     $log('info','VoiceRules.result',[
