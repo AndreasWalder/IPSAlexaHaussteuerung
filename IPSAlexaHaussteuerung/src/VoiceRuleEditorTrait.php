@@ -150,6 +150,8 @@ trait IAHVoiceRuleEditorTrait
                         'confirm'=>'Wirklich ALLE deaktivierten importierten ALT-Entwuerfe aus EDIT '
                             .'loeschen? Eigene Regeln und PROD bleiben unveraendert.',
                         'onClick'=>'IAH_DeleteLegacyVoiceRuleDrafts($id);'],
+                    ['type'=>'Button','caption'=>'KONFIG ALS JSON AUSGEBEN',
+                        'onClick'=>'IAH_ExportVoiceRulesDiagnostic($id);'],
                     ['type'=>'Button','caption'=>'EDITOR NEU LADEN',
                         'onClick'=>'IAH_ReloadVoiceRules($id);'],
                 ]],
@@ -233,6 +235,11 @@ trait IAHVoiceRuleEditorTrait
                             .'Es werden keine Szenen ausgeführt.',
                         'onClick'=>'IAH_PublishVoiceRules($id);']
                 ]],
+                ['type'=>'ValidationTextBox','name'=>'VoiceRulesDiagnosticJson',
+                    'caption'=>'Szenen & eigene Alexa-Befehle – kopierbare Diagnose '
+                        .'(EDIT, PROD und letzte Alexa-Abfragen; ohne Systemkonfiguration)',
+                    'multiline'=>true,'width'=>'100%',
+                    'value'=>$this->ReadAttributeString('VoiceRulesDiagnosticJson')],
                 ['type'=>'ValidationTextBox','name'=>'VoiceRuleUtterances',
                     'caption'=>'Alexa-Sätze (für Skill-Interaktionsmodell)',
                     'multiline'=>true,'width'=>'100%',
@@ -612,6 +619,154 @@ trait IAHVoiceRuleEditorTrait
             $this->voiceRuleUtterances($edit));
     }
 
+    /**
+     * Export ONLY the two voiceRules collections. Never export the surrounding
+     * SystemConfiguration (tokens, API keys and app credentials).
+     * Read-only inspection; does not call IPS_RunScript or RequestAction.
+     */
+    private function diagnosticVoiceRules(array $configuration): array
+    {
+        $out=[];
+        foreach(IAHVoiceRuleEngine::rules($configuration) as $key=>$rule){
+            if(!is_array($rule))continue;
+            $entry=[];
+            foreach(['title','aliases','kind','intentName','answer','imageUrl',
+                'imageFile','cardTitle','cardText','scriptId','variableId',
+                'variableValue','readVariableId','steps','enabled','confirmed',
+                'origin','migrationNote'] as $field)
+                $entry[$field]=$rule[$field]??null;
+            $params=(array)($rule['scriptParams']??[]);
+            $safeParams=[];
+            foreach($params as $param=>$value){
+                $secretName=preg_match(
+                    '/(?:password|passwort|token|secret|api.?key|authorization|auth|credential|private.?key)/i',
+                    (string)$param)===1;
+                $secretValue=is_string($value) && preg_match(
+                    '/(?:sk-proj-|sk-|ghp_|github_pat_|AIza)[A-Za-z0-9_-]{12,}/',
+                    $value)===1;
+                $safeParams[$param]=($secretName||$secretValue)?'[REDACTED]':$value;
+            }
+            $entry['scriptParams']=$safeParams;
+            // A signed or tokenized image URL must not leak a query secret.
+            if(is_string($entry['imageUrl']) && str_contains($entry['imageUrl'],'?'))
+                $entry['imageUrl']=explode('?',$entry['imageUrl'],2)[0].'?[QUERY_REDACTED]';
+            try{
+                IAHVoiceRuleEngine::validateRule($rule);
+                $entry['validation']='ok';
+            }catch(Throwable $e){
+                $entry['validation']='invalid: '.$e->getMessage();
+            }
+            $entry['scriptAvailable']=(int)($entry['scriptId']??0)>0
+                ?(function_exists('IPS_ScriptExists')
+                    && IPS_ScriptExists((int)$entry['scriptId'])):null;
+            foreach(['variableId','readVariableId'] as $idField){
+                $id=(int)($entry[$idField]??0);
+                $entry[$idField.'Exists']=$id>0
+                    ?(function_exists('IPS_VariableExists')&&IPS_VariableExists($id)):null;
+            }
+            if($entry['imageFile']!==''){
+                $filename=(string)$entry['imageFile'];
+                $safeFile=preg_match('/^[A-Za-z0-9][A-Za-z0-9_.-]*\\.(?:png|jpg|jpeg|gif)$/iD',$filename)
+                    && !str_contains($filename,'..');
+                $entry['imageFileExists']=$safeFile && function_exists('IPS_GetKernelDir')
+                    ?is_file(IPS_GetKernelDir().'user'.DIRECTORY_SEPARATOR
+                        .'icons'.DIRECTORY_SEPARATOR.$filename):null;
+            }
+            $out[$key]=$entry;
+        }
+        return $out;
+    }
+
+    private function voiceRuleDiagnosticsData(): array
+    {
+        $ctx=$this->voiceRuleContext();
+        $edit=$this->diagnosticVoiceRules((array)($ctx['edit']??[]));
+        $prod=$this->diagnosticVoiceRules((array)($ctx['prod']??[]));
+        $summary=[
+            'editTotal'=>count($edit),
+            'prodTotal'=>count($prod),
+            'editActive'=>count(array_filter($edit,static fn(array $r):bool=>!empty($r['enabled']))),
+            'prodActive'=>count(array_filter($prod,static fn(array $r):bool=>!empty($r['enabled']))),
+            'onlyEdit'=>array_values(array_diff(array_keys($edit),array_keys($prod))),
+            'onlyProd'=>array_values(array_diff(array_keys($prod),array_keys($edit))),
+            'different'=>[]
+        ];
+        foreach(array_intersect(array_keys($edit),array_keys($prod)) as $key)
+            if($edit[$key]!==$prod[$key])$summary['different'][]=$key;
+        // Resolve the generated action without mutating object idents.
+        $rendererParent=(int)@IPS_GetObjectIDByIdent('iahRenderers',$this->InstanceID);
+        $actionId=$rendererParent>0
+            ?(int)@IPS_GetObjectIDByIdent('iahActionEntry',$rendererParent):0;
+        if($actionId<=0 && $rendererParent>0)
+            $actionId=(int)@IPS_GetObjectIDByName(
+                'Action (Haus\\\\Übersicht/Einstellungen Entry)',$rendererParent);
+        if($actionId<=0)
+            $actionId=(int)@IPS_GetObjectIDByIdent('iahActionEntry',$this->InstanceID);
+        $actionSource=$actionId>0?$this->getScriptContent($actionId):null;
+        $trace=json_decode($this->ReadAttributeString('VoiceRulesDiagnosticTrace'),true);
+        return [
+            'schema'=>'IAHVoiceRulesDiagnostics/1',
+            'generatedAt'=>date('c'),
+            'scope'=>'voiceRules EDIT + PROD only; no other SystemConfiguration fields',
+            'summary'=>$summary,
+            'bridge'=>[
+                'actionScriptId'=>$actionId,
+                'actionScriptExists'=>$actionId>0 && function_exists('IPS_ScriptExists')
+                    && IPS_ScriptExists($actionId),
+                'voiceRulesPatchPresent'=>is_string($actionSource)
+                    && str_contains($actionSource,'IAH_VOICE_RULES_V37_BEGIN')
+                    && str_contains($actionSource,'IAH_ResolveVoiceRule('),
+                'hint'=>'A spoken rule is usable only if Alexa supplies the phrase '
+                    .'as a slot/transcript or a registered matching custom Intent.'
+            ],
+            'edit'=>$edit,
+            'prod'=>$prod,
+            'recentRecognition'=>is_array($trace)?array_slice($trace,-30):[]
+        ];
+    }
+
+    public function ExportVoiceRulesDiagnostic(): void
+    {
+        try{
+            $json=json_encode($this->voiceRuleDiagnosticsData(),
+                JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE
+                |JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR);
+            $this->WriteAttributeString('VoiceRulesDiagnosticJson',$json);
+            $this->UpdateFormField('VoiceRulesDiagnosticJson','value',$json);
+            $this->voiceRuleNotice('Szenen/Sprachbefehle: kopierbares JSON '
+                .'erstellt (EDIT, PROD, letzte Erkennungen). '
+                .'Enthaelt keine Systemkonfiguration oder API-Tokens.');
+        }catch(Throwable $e){
+            $this->voiceRuleNotice('JSON-Diagnose fehlgeschlagen: '.$e->getMessage());
+        }
+    }
+
+    private function recordVoiceRuleRecognition(array $event,array $result,string $reason=''): void
+    {
+        try{
+            $trace=json_decode($this->ReadAttributeString('VoiceRulesDiagnosticTrace'),true);
+            if(!is_array($trace))$trace=[];
+            $trace[]=[
+                'time'=>date('c'),
+                'intent'=>mb_substr((string)($event['intent']??''),0,90,'UTF-8'),
+                'spoken'=>mb_substr(trim((string)($event['text']??'')),0,160,'UTF-8'),
+                'normalized'=>IAHVoiceRuleEngine::normalize((string)($event['text']??'')),
+                'matched'=>!empty($result['matched']),
+                'ruleKey'=>(string)($result['ruleKey']??''),
+                'kind'=>(string)($result['kind']??''),
+                'ok'=>!empty($result['ok']),
+                'reason'=>$reason!==''?$reason:(
+                    empty($result['matched'])?'no_exact_prod_phrase_or_custom_intent':
+                    (empty($result['ok'])?'matched_but_not_executed':'executed_or_answered'))
+            ];
+            $this->WriteAttributeString('VoiceRulesDiagnosticTrace',
+                json_encode(array_slice($trace,-30),JSON_UNESCAPED_UNICODE
+                    |JSON_INVALID_UTF8_SUBSTITUTE));
+        }catch(Throwable $e){
+            IPS_LogMessage('Alexa','VoiceRules trace write failed: '.get_class($e));
+        }
+    }
+
     private function voiceRulePreviewPlan(array $ctx): array
     {
         $ids=(array)($ctx['ids']??[]);
@@ -746,6 +901,7 @@ trait IAHVoiceRuleEditorTrait
                     'answer'=>'Dieser alte Befehl ist deaktiviert. '
                         .'Bitte eine neue Sprachregel im Konfigurator anlegen.'];
             }
+            $this->recordVoiceRuleRecognition($event,$result);
             if(!empty($result['matched']))
                 IPS_LogMessage('Alexa','VoiceRules.V37 '.json_encode([
                     'key'=>$result['ruleKey']??'ambiguous',
@@ -755,6 +911,9 @@ trait IAHVoiceRuleEditorTrait
                 ],JSON_UNESCAPED_UNICODE));
             return json_encode($result,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
         }catch(Throwable $e){
+            if(isset($event) && is_array($event))
+                $this->recordVoiceRuleRecognition($event,['matched'=>false],
+                    'resolver_exception_'.get_class($e));
             IPS_LogMessage('Alexa','VoiceRules.V37 failed errorType='.get_class($e));
             return '{"matched":false}';
         }
