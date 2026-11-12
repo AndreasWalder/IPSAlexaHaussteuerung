@@ -1174,17 +1174,36 @@ class IPSAlexaHaussteuerung extends IPSModule
         if(!is_string($current)||$current===''||!is_string($template))return;
         $begin='        // IAH_VOICE_RULES_V37_BEGIN';
         $end='        // IAH_VOICE_RULES_V37_END';
-        if(str_contains($current,$begin) && str_contains($current,$end))return;
         $i=strpos($template,$begin);
         $j=$i===false?false:strpos($template,$end,$i);
         $anchor='        // IAH_ALEXA_QUESTION_CAPTURE_END';
-        if($i===false||$j===false||substr_count($current,$anchor)!==1){
-            IPS_LogMessage('Alexa',
-                'VoiceRules.V37 Action-Patch nicht möglich: eindeutiger Anker fehlt.');
+        if($i===false||$j===false||substr_count($template,$begin)!==1
+            || substr_count($template,$end)!==1){
+            IPS_LogMessage('Alexa','VoiceRules.V371 Action-Vorlage unvollstaendig.');
             return;
         }
         $block=substr($template,$i,$j+strlen($end)-$i);
-        $next=str_replace($anchor,$anchor."\n".$block,$current);
+        $beginCount=substr_count($current,$begin);
+        $endCount=substr_count($current,$end);
+        if($beginCount===1 && $endCount===1) {
+            // Upgrade only this explicitly delimited integration block;
+            // preserve all other customized lines in installed Action script.
+            $start=strpos($current,$begin);
+            $stop=strpos($current,$end,$start+strlen($begin));
+            if($stop===false){
+                IPS_LogMessage('Alexa','VoiceRules.V371 Action-Block ungueltig.');
+                return;
+            }
+            $next=substr($current,0,$start).$block
+                .substr($current,$stop+strlen($end));
+        }elseif($beginCount===0 && $endCount===0
+            && substr_count($current,$anchor)===1) {
+            $next=str_replace($anchor,$anchor."\n".$block,$current);
+        }else {
+            IPS_LogMessage('Alexa',
+                'VoiceRules.V371 Action-Patch blockiert: fehlende oder doppelte Marker.');
+            return;
+        }
         if($next===$current)return;
         $this->createNavigationCatalogBackup($scriptId,'ActionBeforeVoiceRulesV37',$current);
         try {
