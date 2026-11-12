@@ -540,11 +540,10 @@ ck339(!str_contains($differentJson,'PRIVATE_VALUE_MUST_NOT_BE_CACHED')
     'Export must not leak live variable data or raw source PHP');
 $originalProd=IPS_GetScriptContent(40);
 $originalEdit=IPS_GetScriptContent(41);
-ob_start();$mod->ApplySafeAutoRepair();$refusal=ob_get_clean();
-ck339(str_contains($refusal,'EDIT und PROD unterscheiden sich')
-    && IPS_GetScriptContent(40)===$originalProd
-    && IPS_GetScriptContent(41)===$originalEdit,
-    'Repair MUST refuse any outstanding EDIT/PROD diff, without writing');
+ck339(IPS_GetScriptContent(40)===$originalProd
+    && IPS_GetScriptContent(41)===$originalEdit
+    && !str_contains(json_encode($mod->GetConfigurationForm()),'RCC_ApplySafeAutoRepair'),
+    'Diagnostic MUST preserve EDIT/PROD and never present retired cross-PROD auto-repair');
 
 
 /** V3.3.17 – one top-level reset clears only temporary reports,
@@ -557,18 +556,15 @@ ck339(
 );
 $attributesToClear=[
     'SuggestionPreview'=>'{}','DiscoveryCandidates'=>'{}','DiscoveryInventory'=>'{}',
-    'LegacyMigrationPreview'=>'{}','BulkPreview'=>'{}',
-    'MigrationReadinessDetails'=>'{}','TechnicalDeviceSnapshot'=>'{}',
-    'TechnicalDevicePreview'=>'{}','AutoRepairPreview'=>'{}'
+    'BulkPreview'=>'{}','TechnicalDeviceSnapshot'=>'{}',
+    'TechnicalDevicePreview'=>'{}'
 ];
 foreach ($attributesToClear as $name=>$unused) {
     $mod->WriteAttributeString($name,'{"stale":true}');
 }
-$mod->WriteAttributeString('MigrationReadinessReport','Ein alter Migrationsbericht');
 $mod->WriteAttributeString('DiscoveryAuditReport','Alte Inventur');
 $mod->WriteAttributeString('TechnicalDeviceSummary','Alte technische Bewertung');
 $mod->WriteAttributeString('TechnicalDeviceActionMessage','Alte Aktion');
-$mod->WriteAttributeString('AutoRepairNotice','Alte Reparaturvorschau');
 $mod->WriteAttributeString('FilterRoom','wohnzimmer');
 $mod->WriteAttributeString('FilterDomain','licht');
 $mod->WriteAttributeString('FilterGroup','switches');
@@ -598,9 +594,7 @@ foreach ([
     'FilterRoom'=>'','FilterDomain'=>'','FilterGroup'=>'','FilterAI'=>'all',
     'BulkDeviceType'=>'keep','BulkAIMode'=>'keep',
     'BulkSuggestions'=>'yes','BulkReview'=>'keep',
-    'MigrationReadinessReport'=>'Noch nicht geprueft.',
-    'TechnicalDeviceActionMessage'=>'',
-    'AutoRepairNotice'=>'Noch kein Diagnoseexport erstellt.'
+    'TechnicalDeviceActionMessage'=>''
 ] as $name=>$expected) {
     ck339($mod->ReadAttributeString($name)===$expected,
         'Reset left a stale filter, cache message or selection '.$name);
@@ -615,11 +609,9 @@ ck339($mod->ReadAttributeString('RuntimeEntries')!=='[]'
     && $mod->ReadAttributeString('RuntimeEditHash')!=='stale'
     && str_contains(json_encode($resetLiveForm,JSON_UNESCAPED_UNICODE),'RoomsCatalog EDIT'),
     'Reset failed to reload the visible device editor from persisted catalog');
-ob_start();$mod->ApplySafeAutoRepair();$afterResetApply=ob_get_clean();
-ck339(str_contains($afterResetApply,'Bitte zuerst eine aktuelle Diagnose')
-    && IPS_GetScriptContent(40)===$resetOriginalProd
+ck339(IPS_GetScriptContent(40)===$resetOriginalProd
     && IPS_GetScriptContent(41)===$resetOriginalEdit,
-    'Reset must invalidate approvals and disallow stale automatic repair');
+    'Reset never performs retired automatic cross-PROD repair');
 ob_start();$mod->ResetAllCheckCaches();ob_end_clean();
 ck339(IPS_GetScriptContent(40)===$resetOriginalProd
     && IPS_GetScriptContent(41)===$resetOriginalEdit,
