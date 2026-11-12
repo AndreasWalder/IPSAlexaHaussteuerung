@@ -90,6 +90,7 @@ Historische Altkosten bleiben in der Gesamtsumme erhalten;
 nicht mehr benutzte Kostengruppen werden nur ausgeblendet.
 
 [Roadmap: ursprünglich geplant vs. heute offen](docs/RoomsCatalog_Roadmap_nach_V36.md) ·
+[Aufgeräumte Bedienoberfläche ab V3.6.3](docs/RoomsCatalog_PostMigration_Cleanup_V363.md) ·
 [KI-Kosten in EUR](docs/KI_Kosten_Transparenz.md)
 
 ## Alexa: Produktive Kachelvisualisierung „Visu“
