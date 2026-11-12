@@ -18,7 +18,7 @@ $form=json_decode($module->GetConfigurationForm(),true,512,JSON_THROW_ON_ERROR);
 $html=json_encode($form,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
 ck37ui(str_contains($html,'V3.7 – Szenen und eigene Alexa-Befehle')
     && str_contains($html,'VoiceRuleRows')
-    && str_contains($html,'VoiceRuleNewKind')
+    && str_contains($html,'VoiceNewKind')
     && str_contains($html,'IAH_ImportLegacyVoiceRuleDrafts')
     && str_contains($html,'IAH_PublishVoiceRules'),
     'form must expose central rule table, new rules, legacy import and PROD approval');
