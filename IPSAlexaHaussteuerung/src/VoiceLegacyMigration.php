@@ -80,20 +80,21 @@ final class IAHVoiceLegacyMigration
             $r['cardText']="- Küche\n- Wohnzimmer\n- Elternzimmer\n- Bad\n"
                 ."- Stiegenhaus\n\n"
                 .($key==='jalousien_oeffnen'?'Schönen Tag!':'Schönen Abend!');
+            // A missing legacy global target must NOT turn the rule into
+            // 'script': selecting a variable in that editor would be lost
+            // by validateRule, and 'Aktiv' would then fail without scriptId.
+            $r['kind']='variable';
+            $r['variableId']=$globalBlindId>0?$globalBlindId:0;
+            $r['variableValue']=$data['value'];
+            $r['scriptId']=0;
             if($globalBlindId>0){
-                // Use the actual configured legacy target, never the renderer.
-                $r['kind']='variable';
-                $r['variableId']=$globalBlindId;
-                $r['variableValue']=$data['value'];
                 $r['migrationNote']='Globales Jalousie-Ziel aus RoomsCatalog '
                     .'(global.domains.jalousie.open_close_var) uebernommen. '
                     .'Wert '.$data['value'].'. Variable und Ergebnis vor Aktivierung pruefen.';
             }else{
-                $r['kind']='script';
-                $r['scriptId']=0;
                 $r['migrationNote']='Globale open_close_var nicht gefunden. '
-                    .'Alte Steuerung bewusst NICHT aufgerufen. '
-                    .'Bitte ein neues freies IP-Symcon-Skript auswaehlen.';
+                    .'Bitte Schaltvariable im Editor auswaehlen und bestaetigen. '
+                    .'Der alte Renderer wird nicht aufgerufen.';
             }
             unset($r);
         }
