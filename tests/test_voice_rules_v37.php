@@ -57,6 +57,7 @@ $initial=['navigation'=>['mode'=>'active'],'custom'=>['Token'=>'KEEP']];
 $scene=[
     'title'=>'Guten Abend','aliases'=>['Guten Abend','Es ist Abend'],
     'kind'=>'scene','answer'=>'Schönen Abend!','imageUrl'=>'',
+    'intentName'=>'GutenAbendIntent',
     'scriptId'=>0,'steps'=>[
         ['deviceKey'=>'wohnzimmer/licht/switches/decke','property'=>'power','value'=>'false'],
         ['deviceKey'=>'wohnzimmer/licht/dimmers/stehlampe','property'=>'brightness','value'=>'20'],
@@ -79,6 +80,16 @@ $sceneResult=IAHVoiceRuleEngine::run($cfg,$catalog,'Guten Abend');
 ck37($sceneResult['ok'] && $sceneResult['executed']===3
     && $GLOBALS['vrWrites']===[[60001,false],[60003,20],[60004,100]],
     'multi-device scene executes all prevalidated actions with correct typed values');
+$GLOBALS['vrWrites']=[];
+$slotless=IAHVoiceRuleEngine::run($cfg,$catalog,'',
+    ['intent'=>'GutenAbendIntent']);
+ck37($slotless['matched'] && $slotless['ok']
+    && count($GLOBALS['vrWrites'])===3,
+    'dedicated Alexa Intent must trigger approved rule without free text slot');
+$GLOBALS['vrWrites']=[];
+ck37(IAHVoiceRuleEngine::run($cfg,$catalog,'',['intent'=>'DifferentIntent'])['matched']===false
+    && !$GLOBALS['vrWrites'],
+    'unmapped Alexa intent must never execute a script or scene');
 $GLOBALS['vrWrites']=[];
 ck37(IAHVoiceRuleEngine::run($cfg,$catalog,'Guten Morgen')['matched']===false
     && !$GLOBALS['vrWrites'],'no fuzzy command matching and no guessed actions');
@@ -112,6 +123,14 @@ checkException(static fn()=>IAHVoiceRuleEngine::change($cfg,'badimage',$badImg),
 $dup=$answer;$dup['aliases']=['WER ist ANDREAS'];
 checkException(static fn()=>IAHVoiceRuleEngine::change($cfg,'collision',$dup),
     'duplicate phrase across rules');
+$duplicateIntent=$answer;$duplicateIntent['aliases']=['Andere Frage'];
+$duplicateIntent['intentName']='GutenAbendIntent';
+checkException(static fn()=>IAHVoiceRuleEngine::change($cfg,'duplicate_intent',$duplicateIntent),
+    'two rules must not claim the same Alexa Intent');
+$reservedIntent=$answer;$reservedIntent['aliases']=['Test eigener Intent'];
+$reservedIntent['intentName']='HomeAgentFrageIntent';
+checkException(static fn()=>IAHVoiceRuleEngine::change($cfg,'reserved_intent',$reservedIntent),
+    'existing production Alexa question Intent may not be overridden');
 $reserved=$answer;$reserved['aliases']=['Jalousie'];
 checkException(static fn()=>IAHVoiceRuleEngine::change($cfg,'reserved',$reserved),
     'legacy Alexa tile cannot silently be replaced');
