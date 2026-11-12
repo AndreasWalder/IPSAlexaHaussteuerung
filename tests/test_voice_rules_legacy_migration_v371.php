@@ -49,6 +49,26 @@ ckLegacy371(empty($old['jalousien_oeffnen']['enabled'])
     && $old['jalousien_oeffnen']['origin']==='legacy',
     'no migrated actuator enabled without user review');
 
+// A missing legacy open_close_var must NOT switch the editor to
+// 'script': the user needs a SelectVariable that can be persisted.
+$noGlobal=IAHVoiceLegacyMigration::drafts([],0);
+ckLegacy371($noGlobal['jalousien_oeffnen']['kind']==='variable'
+    && $noGlobal['jalousien_oeffnen']['variableId']===0
+    && $noGlobal['jalousien_oeffnen']['variableValue']==='1'
+    && $noGlobal['jalousien_schliessen']['variableValue']==='2',
+    'missing global ID remains editable variable command with historical values');
+
+$invalidTrue=$old['jalousien_oeffnen'];
+$invalidTrue['enabled']=true;$invalidTrue['confirmed']=true;
+$invalidTrue['variableValue']='true';
+try{
+    IAHVoiceRuleEngine::change([],'invalid_int_bool',$invalidTrue);
+    throw new RuntimeException('Integer true should have been rejected');
+}catch(RuntimeException $e){
+    ckLegacy371(str_contains($e->getMessage(),'Integer-Variable'),
+        'integer action does not accept true as a valid blind command');
+}
+
 $conf=[];
 $conf=IAHVoiceRuleEngine::change($conf,'test_old_blind',$old['jalousien_oeffnen']);
 $action=$old['jalousien_oeffnen'];
@@ -59,6 +79,61 @@ $write=IAHVoiceRuleEngine::run($conf,$withGlobal,'Jalousien öffnen');
 ckLegacy371($write['matched'] && $write['ok']
     && $GLOBALS['vrWrites']===[[60003,1]],
     'reviewed rule writes directly without invoking old renderer');
+
+// Simulate a previously imported V3.7.1 command which was incorrectly
+// typed as script while the global open_close_var was missing.
+$importedEdit=require IPS_GetScriptFile($editId);
+$legacyKey='jalousien_oeffnen';
+$broken=IAHVoiceRuleEngine::rules($importedEdit)[$legacyKey];
+$broken['kind']='script';
+$broken['scriptId']=0;
+$broken['variableId']=0;
+$broken['variableValue']='';
+$importedEdit=IAHVoiceRuleEngine::change($importedEdit,$legacyKey,$broken);
+IPS_SetScriptContent($editId,IAHSystemNavigationEditor::encode($importedEdit));
+$legacyRevision=hash('sha256',serialize($broken));
+$prodBeforeRepair=IPS_GetScriptContent(501);
+
+// When a variable is selected and active is requested without confirmation,
+// the selection is kept as an inactive draft, not silently thrown away.
+ob_start();$module->SaveVoiceRule(json_encode([
+    'key'=>$legacyKey,'revision'=>$legacyRevision,'kind'=>'script',
+    'variableId'=>60003,'variableValue'=>'1',
+    'enabled'=>true,'confirmed'=>false
+],JSON_THROW_ON_ERROR));$repairNotice=ob_get_clean();
+$repaired=IAHVoiceRuleEngine::rules(require IPS_GetScriptFile($editId))[$legacyKey];
+ckLegacy371($repaired['kind']==='variable'
+    && $repaired['variableId']===60003
+    && $repaired['variableValue']==='1'
+    && $repaired['enabled']===false
+    && str_contains($repairNotice,'Aktiv bleibt AUS')
+    && IPS_GetScriptContent(501)===$prodBeforeRepair,
+    'old misclassified script retains selected variable, fixed value and warns before activation');
+
+// Invalid typed value should also stay as inactive draft and indicate reason.
+$badVal=['key'=>$legacyKey,'revision'=>hash('sha256',serialize($repaired)),
+    'kind'=>'variable','variableId'=>60003,'variableValue'=>'true',
+    'enabled'=>true,'confirmed'=>true];
+ob_start();$module->SaveVoiceRule(json_encode($badVal,JSON_THROW_ON_ERROR));$invalidNotice=ob_get_clean();
+$repaired=IAHVoiceRuleEngine::rules(require IPS_GetScriptFile($editId))[$legacyKey];
+ckLegacy371($repaired['variableId']===60003
+    && $repaired['variableValue']==='true'
+    && !$repaired['enabled']
+    && str_contains($invalidNotice,'Integer-Variable'),
+    'wrong Boolean input on Integer variable persists draft, not activation');
+
+// The same rule can be activated atomically with a valid value and confirmation.
+$valid=['key'=>$legacyKey,'revision'=>hash('sha256',serialize($repaired)),
+    'kind'=>'variable','variableId'=>60003,'variableValue'=>'1',
+    'enabled'=>true,'confirmed'=>true];
+$GLOBALS['vrWrites']=[];
+ob_start();$module->SaveVoiceRule(json_encode($valid,JSON_THROW_ON_ERROR));$validNotice=ob_get_clean();
+$repaired=IAHVoiceRuleEngine::rules(require IPS_GetScriptFile($editId))[$legacyKey];
+ckLegacy371($repaired['enabled'] && $repaired['confirmed']
+    && $repaired['variableId']===60003
+    && str_contains($validNotice,'gespeichert')
+    && !$GLOBALS['vrWrites'],
+    'activation and confirmation persist together without executing hardware');
 
 $sourceBefore=IPS_GetScriptContent(501);
 ob_start();$module->PreviewLegacyVoiceRuleDrafts();$preview=ob_get_clean();
