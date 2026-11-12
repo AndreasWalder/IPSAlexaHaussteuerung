@@ -106,8 +106,8 @@ final class IAHVoiceRuleEngine
     public static function validateRule(array $rule): array
     {
         $kind=(string)($rule['kind']??'');
-        if(!in_array($kind,['answer','script','scene'],true))
-            throw new RuntimeException('Regeltyp muss Antwort, IPS-Skript oder Geraeteszene sein.');
+        if(!in_array($kind,['answer','script','scene','variable','read'],true))
+            throw new RuntimeException('Regeltyp muss Antwort, IPS-Skript, Geraeteszene, Variable schreiben oder Variable lesen sein.');
         $title=trim((string)($rule['title']??''));
         if($title===''||mb_strlen($title,'UTF-8')>100)
             throw new RuntimeException('Titel fehlt oder ist zu lang.');
@@ -143,6 +143,21 @@ final class IAHVoiceRuleEngine
         $scriptId=(int)($rule['scriptId']??0);
         $steps=is_array($rule['steps']??null)?array_values($rule['steps']):[];
         if(count($steps)>12)throw new RuntimeException('Maximal 12 Geraeteaktionen pro Szene.');
+        $variableId=(int)($rule['variableId']??0);
+        $variableValue=$rule['variableValue']??'';
+        $readVariableId=(int)($rule['readVariableId']??0);
+        if($variableId<0||$readVariableId<0)
+            throw new RuntimeException('Ungueltige Variablen-ID.');
+        if(!is_scalar($variableValue) || strlen((string)$variableValue)>100)
+            throw new RuntimeException('Ungueltiger fester Schaltwert.');
+        if($kind==='variable' && !empty($rule['enabled']) && $variableId===0)
+            throw new RuntimeException('Schaltvariable fuer aktive Regel waehlen.');
+        if($kind==='read' && !empty($rule['enabled']) && $readVariableId===0)
+            throw new RuntimeException('Lesevariable fuer aktive Regel waehlen.');
+        if(in_array($kind,['variable','read'],true) && !empty($rule['enabled'])
+            && (!function_exists('IPS_VariableExists')
+                || !IPS_VariableExists($kind==='read'?$readVariableId:$variableId)))
+            throw new RuntimeException('Ausgewaehlte Variable existiert nicht.');
         if($kind==='answer' && $answer==='')
             throw new RuntimeException('Ein Fragetext benoetigt eine Antwort.');
         // Unvollstaendige Vorlagen sind als deaktivierter EDIT-Entwurf erlaubt.
@@ -170,6 +185,9 @@ final class IAHVoiceRuleEngine
             'cardTitle'=>$cardTitle,'cardText'=>$cardText,
             'scriptId'=>$kind==='script'?$scriptId:0,
             'scriptParams'=>$kind==='script'?$scriptParams:[],
+            'variableId'=>$kind==='variable'?$variableId:0,
+            'variableValue'=>$kind==='variable'?(string)$variableValue:'',
+            'readVariableId'=>$kind==='read'?$readVariableId:0,
             'steps'=>$kind==='scene'?$steps:[],
             'enabled'=>!empty($rule['enabled']),
             'confirmed'=>!empty($rule['confirmed'])
@@ -195,7 +213,7 @@ final class IAHVoiceRuleEngine
                     throw new RuntimeException('Mehrdeutiger Sprachbefehl: '.$phrase);
                 $seen[$n]=$key;
             }
-            if($r['enabled'] && !$r['confirmed'] && $r['kind']!=='answer')
+            if($r['enabled'] && !$r['confirmed'] && !in_array($r['kind'],['answer','read'],true))
                 throw new RuntimeException('Szenen und Skripte benoetigen fachliche Bestaetigung: '.$r['title']);
         }
     }
@@ -366,8 +384,53 @@ final class IAHVoiceRuleEngine
             'cardTitle'=>$rule['cardTitle']!==''?$rule['cardTitle']:$rule['title'],
             'cardText'=>$rule['cardText']!==''?$rule['cardText']:$answer];
         if($rule['kind']==='answer')return $base+['ok'=>true,'answer'=>$answer];
+        if($rule['kind']==='read'){
+            $id=$rule['readVariableId'];
+            if($id<=0||!function_exists('IPS_VariableExists')||!IPS_VariableExists($id))
+                return $base+['ok'=>false,'answer'=>'Messwert ist nicht verfuegbar.'];
+            try {
+                $value=function_exists('GetValueFormatted')
+                    ?GetValueFormatted($id):GetValue($id);
+                $answer=str_replace('{value}',(string)$value,$answer);
+                $base['cardText']=str_replace('{value}',(string)$value,$base['cardText']);
+                return $base+['ok'=>true,'answer'=>$answer];
+            }catch(Throwable $ignored){
+                return $base+['ok'=>false,'answer'=>'Messwert konnte nicht gelesen werden.'];
+            }
+        }
         if(!$rule['confirmed'])return $base+['ok'=>false,
             'answer'=>'Dieser Sprachbefehl ist noch nicht freigegeben.'];
+        if($rule['kind']==='variable'){
+            $id=$rule['variableId'];
+            if($id<=0||!function_exists('IPS_VariableExists')
+                || !IPS_VariableExists($id)||!function_exists('HasAction')||!HasAction($id))
+                return $base+['ok'=>false,'answer'=>'Schaltvariable nicht verfuegbar oder nicht schaltbar.'];
+            try{
+                $type=(int)(IPS_GetVariable($id)['VariableType']??-1);
+                $raw=$rule['variableValue'];
+                if($type===0){
+                    if(!in_array(strtolower($raw),['0','1','true','false'],true))
+                        throw new RuntimeException('Ungueltiger Boolwert.');
+                    $value=in_array(strtolower($raw),['1','true'],true);
+                }elseif($type===1||$type===2){
+                    if(!is_numeric($raw))throw new RuntimeException('Zahl erwartet.');
+                    $value=$type===1?(int)$raw:(float)$raw;
+                    if($type===1 && (string)$value!==$raw
+                        && (!preg_match('/^[+-]?0*\\d+$/D',$raw)
+                            || (int)$raw!==$value))
+                        throw new RuntimeException('Ganzzahl erwartet.');
+                    if($type===2 && !is_finite($value))
+                        throw new RuntimeException('Ungueltiger Zahlenwert.');
+                }else{
+                    throw new RuntimeException('Nur Bool-, Integer- oder Float-Aktionsvariable.');
+                }
+                if(RequestAction($id,$value)!==true)
+                    throw new RuntimeException('Variable nicht geschaltet.');
+                return $base+['ok'=>true,'answer'=>$answer,'executed'=>1];
+            }catch(Throwable $ignored){
+                return $base+['ok'=>false,'answer'=>'Schaltaktion wurde nicht ausgefuehrt.'];
+            }
+        }
         if($rule['kind']==='script'){
             $id=$rule['scriptId'];
             if($id<=0||!function_exists('IPS_ScriptExists')||!IPS_ScriptExists($id)
