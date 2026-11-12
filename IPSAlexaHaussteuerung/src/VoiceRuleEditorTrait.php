@@ -103,10 +103,13 @@ trait IAHVoiceRuleEditorTrait
                     .'Fragen/Antworten, Bildkarten und Szenen werden zentral '
                     .'in SystemConfigurationEdit gespeichert. Erst nach '
                     .'expliziter Vorschau und PROD-Übernahme werden sie live.'],
-                ['type'=>'Label','caption'=>'Anwendungen: „Guten Abend“ als '
-                    .'Geräteszene oder bewusst freigegebenes IPS-Skript, '
-                    .'„Wer ist Andreas“ als eigene Antwort. '
-                    .'Bestehende Jalousie-Bilder bleiben vorerst erhalten.'],
+                ['type'=>'Label','caption'=>'„Guten Abend“ als Szene '
+                    .'oder IPS-Skript, „Wer ist Andreas“ als eigene Antwort: '
+                    .'Wortlaut und Bild frei festlegen. Für slotlose '
+                    .'Alexa-Befehle kann ein eigener Skill-Intent wie '
+                    .'GutenAbendIntent zugeordnet werden. Die Beispiel-Sätze '
+                    .'müssen im Alexa Developer-Modell hinterlegt sein. '
+                    .'Bestehende Jalousie-Bilder bleiben erhalten.'],
                 ['type'=>'Label','caption'=>'Sicherheit: Skripte und Geräteszenen '
                     .'müssen eigens bestätigt und aktiviert werden. '
                     .'Geräteszenen verwenden nur im produktiven RoomsCatalog '
@@ -209,10 +212,37 @@ trait IAHVoiceRuleEditorTrait
                 ['caption'=>'Heizungs-Sollwert °C','value'=>'targetTemperature']
             ];
             $items=[
-                ['type'=>'Label','caption'=>'Sprechregel „'.(string)$rule['title'].'“ '
-                    .'('.(string)$rule['kind'].'). '
-                    .'Name, Aliase, Antwort, Bild-URL, Skript und Freigaben '
-                    .'werden im Hauptlisten-Zahnrad bearbeitet.'],
+                ['type'=>'Label','caption'=>'Sprechregel „'.(string)$rule['title'].'“: '
+                    .'Hier eigene Antworten, Alternativnamen, Bild und Aktionen bearbeiten.'],
+                ['type'=>'ValidationTextBox','name'=>'title','caption'=>'Name',
+                    'value'=>(string)$rule['title']],
+                ['type'=>'ValidationTextBox','name'=>'aliases',
+                    'caption'=>'Alternative Sprachbefehle (Komma getrennt)',
+                    'value'=>implode(', ',IAHVoiceRuleEngine::phrases($rule['aliases']??[]))],
+                ['type'=>'Select','name'=>'kind','caption'=>'Typ',
+                    'value'=>(string)$rule['kind'],
+                    'options'=>[
+                        ['caption'=>'Freie Antwort','value'=>'answer'],
+                        ['caption'=>'IP-Symcon-Skript','value'=>'script'],
+                        ['caption'=>'Geräteszene','value'=>'scene']
+                    ]],
+                ['type'=>'ValidationTextBox','name'=>'intentName',
+                    'caption'=>'Optional: Alexa-Intent (z. B. GutenAbendIntent)',
+                    'value'=>(string)($rule['intentName']??'')],
+                ['type'=>'ValidationTextBox','name'=>'answer',
+                    'caption'=>'Antworttext oder Rückmeldung',
+                    'multiline'=>true,'value'=>(string)($rule['answer']??'')],
+                ['type'=>'ValidationTextBox','name'=>'imageUrl',
+                    'caption'=>'Öffentliche HTTPS-URL für optionales Alexa-Bild',
+                    'value'=>(string)($rule['imageUrl']??'')],
+                ['type'=>'SelectScript','name'=>'scriptId',
+                    'caption'=>'IP-Symcon-Skript auswählen',
+                    'value'=>(int)($rule['scriptId']??0)],
+                ['type'=>'CheckBox','name'=>'enabled','caption'=>'Regel aktiv',
+                    'value'=>!empty($rule['enabled'])],
+                ['type'=>'CheckBox','name'=>'confirmed',
+                    'caption'=>'Skript-/Geräteaktion fachlich bestätigt',
+                    'value'=>!empty($rule['confirmed'])],
                 ['type'=>'Label','caption'=>'Für eine Geräteszene hier Aktionen '
                     .'aus dem RoomsCatalog auswählen. Zulässig sind nur '
                     .'fachlich bestätigte KI-Schreibrollen. '
