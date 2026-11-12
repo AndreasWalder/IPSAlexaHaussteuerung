@@ -136,22 +136,18 @@ jobs:
         run: php tests/test_rooms_catalog_marked_scope_v352.php
       - name: Test RoomsCatalog V3.3.2 selected-device bulk typing and safe EDIT updates
         run: php tests/test_rooms_catalog_v332_bulk.php
-      - name: Test RoomsCatalog stale filters, migration readiness and scoped options
+      - name: Test RoomsCatalog stale filters, permanent device status and scoped options
         run: php tests/test_rooms_catalog_filter_migration.php
       - name: Test RoomsCatalog V3.3.9 full technical audit, manual review, backups and diff
         run: php tests/test_rooms_catalog_v339_technical.php
-      - name: Test V3.3.12 safe repair proposals, heating setpoint mapping and diagnostics form
+      - name: Test Safe diagnostics without retired cross-PROD autocorrection
         run: php tests/test_rooms_catalog_v3312_safe_repair.php
       - name: Test V3.3.14 KNX light real switch feedback vs priority bit and guarded repair
         run: php tests/test_rooms_catalog_v3314_knx_light_feedback.php
-      - name: Test V3.3.11 safe catalog-to-system UI migration and typed metadata
-        run: php tests/test_rooms_catalog_v3311_migration.php
-      - name: Test V3.3.3 lossless SystemConfiguration staging and navigation inventory
+      - name: Test Permanent SystemConfiguration staging and backups
         run: php tests/test_system_configuration_v333.php
-      - name: Test V3.3.4 navigation EDIT editor, backup and stale preview protections
-        run: php tests/test_system_configuration_v334.php
-      - name: Test V3.3.5 controlled migration, runtime navigation and reversible cleanup
-        run: php tests/test_system_configuration_v335.php
+      - name: Test V3.6.3 permanent Navigation EDIT-to-PROD publisher with backup
+        run: php tests/test_system_navigation_current_v363.php
       - name: Test Symcon IPSList checkbox callbacks and filtered multi-selection
         run: php tests/test_rooms_catalog_ipslist_multiselect.php
       - name: Test RoomsCatalog quick search for IPS object IDs and parent instance IDs
