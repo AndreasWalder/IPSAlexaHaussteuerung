@@ -66,7 +66,6 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyString('LaunchHomeIcon', (string) ($launchDefaults['homeIcon'] ?? 'HomeIcon.png'));
         $this->RegisterPropertyString('LaunchHeaderIcon', (string) ($launchDefaults['headerIcon'] ?? 'Icon.png'));
         $this->RegisterPropertyInteger('SystemConfigScriptId', 0);
-        $this->RegisterPropertyInteger('NavigationRoomsCatalogEditScriptId', 0);
         $this->RegisterPropertyBoolean('KIIntentEnabled', true);
         $this->RegisterPropertyString('KIIntentApiKey', '');
         $this->RegisterPropertyString('KIIntentModel', 'gpt-4.1-mini'); // Altwert: weiterhin für bestehende Konfigurationen gespeichert
@@ -94,17 +93,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyString('KICostPriceTableJson', json_encode(iah_ki_price_table()));
         $this->RegisterPropertyBoolean('VoiceRouterStoreTranscript', true);
         $this->RegisterAttributeString('DelayedPageSwitchPayload', '');
-        // V3.3.3: Nur Inventardaten, niemals Zugangsdaten oder Skriptinhalte.
-        $this->RegisterAttributeString('SystemConfigurationInventory', '');
-        $this->RegisterAttributeString('SystemNavigationImportPreview', '');
-        $this->RegisterAttributeString('RoomsCatalogAutoPreview', '');
-        $this->RegisterAttributeString('RoomsCatalogAutoNotice', 'Noch keine Vorschau.');
-        $this->RegisterAttributeString('RoomsCatalogAutoReceipt', '');
         $this->RegisterAttributeString('SystemNavigationEditorNotice', '');
         $this->RegisterAttributeString('LaunchIconDiagnostics', '');
-        $this->RegisterAttributeString('SystemNavigationMigrationPreview', '');
-        $this->RegisterAttributeString('SystemNavigationMigrationReceipt', '');
-        $this->RegisterAttributeString('SystemNavigationMigrationNotice', '');
         $this->RegisterAttributeString('SystemNavigationPublishPreview', '');
         $this->RegisterTimer('DelayedPageSwitch', 0, 'IAH_HandleDelayedPageSwitch($_IPS["TARGET"]);');
         $this->RegisterTimer('KICostRefresh', 60000, 'IAH_UpdateKICostExchangeRate($_IPS["TARGET"]); IAH_RefreshKICostDisplay($_IPS["TARGET"]);');
