@@ -49,6 +49,60 @@ final class IAHVoiceRuleEngine
             'einstellungen','bewaesserung','lueftung','szene','listen'],true);
     }
 
+
+    /**
+     * Static, reviewed literal parameters; NO expressions, interpolation,
+     * callable PHP or user-utterance substitution.
+     *
+     * Input can be the JSON textbox from EDIT or a typed associative array.
+     * Parameters land in $_IPS in the selected script via IPS_RunScriptEx.
+     */
+    public static function scriptParameters(mixed $input): array
+    {
+        if(is_string($input)){
+            $input=trim($input);
+            if($input==='' || $input==='{}')return [];
+            if(strlen($input)>8192)
+                throw new RuntimeException('Skriptparameter zu lang.');
+            try{$input=json_decode($input,true,16,JSON_THROW_ON_ERROR);}
+            catch(JsonException $e){throw new RuntimeException('Skriptparameter muessen gueltiges JSON sein.');}
+        }
+        if($input===null)return [];
+        if(!is_array($input) || (array_is_list($input)&&$input!==[]))
+            throw new RuntimeException('Skriptparameter muessen ein JSON-Objekt sein.');
+        if(count($input)>12)throw new RuntimeException('Maximal 12 Skriptparameter erlaubt.');
+        $result=[];
+        foreach($input as $key=>$value){
+            if(!is_string($key)||!preg_match('/^[A-Za-z][A-Za-z0-9_]{0,39}$/D',$key))
+                throw new RuntimeException('Ungueltiger Skriptparameter-Name.');
+            if(in_array(strtoupper($key),[
+                'SENDER','SELF','INSTANCE','EVENT','THREAD','SCRIPT','TARGET'
+            ],true))
+                throw new RuntimeException('Reservierte IPS-Systemvariable: '.$key);
+            if(!is_string($value)&&!is_int($value)&&!is_float($value)&&!is_bool($value)
+                && $value!==null)
+                throw new RuntimeException('Nur feste Zeichenketten, Zahlen und Boolwerte als Parameter.');
+            if(is_string($value)&&(strlen($value)>4096||str_contains($value,"\0")))
+                throw new RuntimeException('Skriptparameter-Wert zu lang oder ungueltig.');
+            if(is_float($value)&&!is_finite($value))
+                throw new RuntimeException('Ungueltiger numerischer Parameter.');
+            $result[$key]=$value;
+        }
+        return $result;
+    }
+
+    /** Filename under user/icons, served by the existing token-bound hook. */
+    public static function iconFile(string $filename): string
+    {
+        $filename=trim($filename);
+        if($filename==='' )return '';
+        if(strlen($filename)>110 ||
+            !preg_match('/^[A-Za-z0-9][A-Za-z0-9_.-]*\.(?:png|jpg|jpeg|gif)$/iD',$filename)
+            || str_contains($filename,'..'))
+            throw new RuntimeException('Bilddatei muss ein Dateiname aus user/icons sein.');
+        return $filename;
+    }
+
     public static function validateRule(array $rule): array
     {
         $kind=(string)($rule['kind']??'');
@@ -70,6 +124,14 @@ final class IAHVoiceRuleEngine
             !preg_match('~^https://[a-z0-9.-]+(?:/[^\s]*)?$~iD',$image) ||
             preg_match('~(?:localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(?:1[6-9]|2\d|3[01])\.)~i',$image)))
             throw new RuntimeException('Bild muss eine oeffentlich erreichbare HTTPS-URL sein.');
+        $imageFile=self::iconFile((string)($rule['imageFile']??''));
+        if($imageFile!==''&&$image!=='')
+            throw new RuntimeException('Entweder lokale Bilddatei ODER Bild-URL verwenden.');
+        $cardTitle=trim((string)($rule['cardTitle']??''));
+        $cardText=trim((string)($rule['cardText']??''));
+        if(mb_strlen($cardTitle,'UTF-8')>120 || mb_strlen($cardText,'UTF-8')>800)
+            throw new RuntimeException('Titel/Text der Bildkarte ist zu lang.');
+        $scriptParams=self::scriptParameters($rule['scriptParams']??[]);
         $intentName=trim((string)($rule['intentName']??''));
         if($intentName!=='' && (
             !preg_match('/^[A-Z][A-Za-z0-9_]{2,55}Intent$/D',$intentName)
@@ -104,7 +166,10 @@ final class IAHVoiceRuleEngine
         return [
             'title'=>$title,'aliases'=>$aliases,'kind'=>$kind,'answer'=>$answer,
             'intentName'=>$intentName,
-            'imageUrl'=>$image,'scriptId'=>$kind==='script'?$scriptId:0,
+            'imageUrl'=>$image,'imageFile'=>$imageFile,
+            'cardTitle'=>$cardTitle,'cardText'=>$cardText,
+            'scriptId'=>$kind==='script'?$scriptId:0,
+            'scriptParams'=>$kind==='script'?$scriptParams:[],
             'steps'=>$kind==='scene'?$steps:[],
             'enabled'=>!empty($rule['enabled']),
             'confirmed'=>!empty($rule['confirmed'])
@@ -296,21 +361,39 @@ final class IAHVoiceRuleEngine
         $answer=$rule['answer']!==''?$rule['answer']:
             ($rule['kind']==='answer'?'':'Die Aktion wurde gestartet.');
         $base=['matched'=>true,'ruleKey'=>$key,
-            'kind'=>$rule['kind'],'imageUrl'=>$rule['imageUrl']];
+            'title'=>$rule['title'],'kind'=>$rule['kind'],
+            'imageUrl'=>$rule['imageUrl'],'imageFile'=>$rule['imageFile'],
+            'cardTitle'=>$rule['cardTitle']!==''?$rule['cardTitle']:$rule['title'],
+            'cardText'=>$rule['cardText']!==''?$rule['cardText']:$answer];
         if($rule['kind']==='answer')return $base+['ok'=>true,'answer'=>$answer];
         if(!$rule['confirmed'])return $base+['ok'=>false,
             'answer'=>'Dieser Sprachbefehl ist noch nicht freigegeben.'];
         if($rule['kind']==='script'){
             $id=$rule['scriptId'];
             if($id<=0||!function_exists('IPS_ScriptExists')||!IPS_ScriptExists($id)
-                || !function_exists('IPS_RunScript'))
+                || (!function_exists('IPS_RunScript')
+                    && !function_exists('IPS_RunScriptEx')))
                 return $base+['ok'=>false,'answer'=>'Das ausgewaehlte Skript ist nicht verfuegbar.'];
             $forbidden=(array)($context['forbiddenScriptIds']??[]);
             if(in_array($id,$forbidden,true))
                 return $base+['ok'=>false,'answer'=>'Systemskripte duerfen nicht als Szene gestartet werden.'];
             try{
-                IPS_RunScript($id); // No arbitrary Alexa arguments / no LLM-generated PHP.
-                return $base+['ok'=>true,'answer'=>$answer];
+                // IPS_RunScriptEx forwards configured literals to $_IPS.
+                // Runtime speech/input never reaches the script as a parameter.
+                $params=$rule['scriptParams'];
+                if($params!==[]){
+                    if(!function_exists('IPS_RunScriptEx'))
+                        throw new RuntimeException('IPS_RunScriptEx nicht verfuegbar.');
+                    $started=IPS_RunScriptEx($id,$params);
+                }elseif(function_exists('IPS_RunScript')){
+                    $started=IPS_RunScript($id);
+                }else{
+                    $started=IPS_RunScriptEx($id,[]);
+                }
+                if($started===false)
+                    throw new RuntimeException('Skriptstart abgelehnt.');
+                // RunScript/RunScriptEx start asynchronously; report only started.
+                return $base+['ok'=>true,'answer'=>$answer,'scriptStarted'=>true];
             }catch(Throwable $ignored){
                 return $base+['ok'=>false,'answer'=>'Skript konnte nicht gestartet werden.'];
             }
