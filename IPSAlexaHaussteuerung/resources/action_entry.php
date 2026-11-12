@@ -2138,6 +2138,15 @@ function Execute($request = null)
         }
         // IAH_ALEXA_QUESTION_CAPTURE_END
         // IAH_VOICE_RULES_V37_BEGIN
+        // For older GetHaus models the resolved slot display text may be
+        // empty while the action ID still contains the spoken command.
+        // Include this already parsed ID only as a matching candidate;
+        // no script/variable IDs are ever taken from an Alexa slot.
+        if ($iahVoiceSpoken==='' && !empty($rawSlots)
+            && is_array($rawSlots) && isset($rawSlotsToText)
+            && is_callable($rawSlotsToText)) {
+            $iahVoiceSpoken=trim((string)$rawSlotsToText($rawSlots));
+        }
         // Before hard-coded question answers, legacy GetHaus tile routing,
         // Jalousie renderer or OpenAI: only exact, approved PROD phrases.
         // No APL button events, launches, back/exit or arbitrary script IDs.
