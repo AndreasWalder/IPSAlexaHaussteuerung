@@ -205,35 +205,11 @@ auditOk($second !== null && isset($second['mappedRoles']['position'],$second['ma
     $second['mappedRoles']['status'],$second['mappedRoles']['action']),
     'Confirmed module template did not recover opaque variables on second blind');
 
-// Bereits produktiv vorhandene Legacy-Eintraege typisieren, ohne Feld-/Freigabe-Verlust.
-ob_start(); $mod->AnalyzeLegacyDevices(); $legacyMessage = ob_get_clean();
-$legacyPreview = json_decode($mod->ReadAttributeString('LegacyMigrationPreview'),true,512,JSON_THROW_ON_ERROR);
-$legacyLight = null;
-foreach ($legacyPreview['rows'] as $row) {
-    if ($row['composite'] === 'wohnzimmer|licht|switches|bestand') $legacyLight = $row;
-}
-auditOk($legacyLight !== null && $legacyLight['deviceType'] === 'light'
-    && $legacyLight['confidence'] === 'Hoch'
-    && str_contains($legacyMessage,'Legacy-Analyse'),
-    'Legacy device not classified using scope/type/profile');
-$mod->UpdateLegacyCandidate(json_encode(['composite'=>$legacyLight['composite'],
-    'selected'=>true,'deviceType'=>'light'],JSON_THROW_ON_ERROR));
-ob_start(); $mod->ApplyLegacyCandidates(); $legacyImportMessage = ob_get_clean();
-$legacyUpdated = require $GLOBALS['inventoryDir'] . '/scripts/41.php';
-$legacyConfig = $legacyUpdated['wohnzimmer']['domains']['licht']['switches']['bestand'] ?? [];
-auditOk(str_contains($legacyImportMessage,'1 bestehende Geraete')
-    && ($legacyConfig['title'] ?? '') === 'Bestandslicht'
-    && ($legacyConfig['state'] ?? 0) === 50101
-    && $legacyConfig['kiEnabled'] === false && $legacyConfig['kiReadOnly'] === true
-    && ($legacyConfig['ai']['type'] ?? '') === 'light'
-    && ($legacyConfig['ai']['variables']['power'] ?? 0) === 50101
-    && ($legacyConfig['ai']['source']['moduleId'] ?? '') === '{MODULE-2001}'
-    && ($legacyConfig['ai']['review']['status'] ?? '') === 'pending',
-    'Legacy migration changed permissions, discarded fields or omitted metadata/review');
+// Einmalige Legacy-Typisierung ist entfernt. Die regulaere Such- und
+// Vorlagenlogik muss weiterhin funktionieren, ohne PROD zu aendern.
 auditOk((require $GLOBALS['inventoryDir'] . '/scripts/40.php') === $base,
-    'Legacy migration unexpectedly changed production');
-
+    'Discovery or template learning unexpectedly changed PROD');
 foreach (array_keys($GLOBALS['inventoryScripts']) as $id) @unlink($GLOBALS['inventoryDir'] . '/scripts/' . $id . '.php');
 @rmdir($GLOBALS['inventoryDir'] . '/scripts');
 @rmdir($GLOBALS['inventoryDir']);
-echo "PASS V3.3.1: ten types, deep profile inference, no cached values, audit, review, module template and lossless legacy migration\n";
+echo "PASS V3.3.1: ten types, deep profile inference, no cached values, audit, review, module template and safe recurring discovery\n";

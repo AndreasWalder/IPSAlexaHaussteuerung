@@ -90,7 +90,7 @@ $other=['aiType'=>'fan','ai'=>$cfg['ai'],'state'=>28641,'kiReadOnly'=>true];
 ck314(RCCSafeAutoRepair::propose($other,$scope,$score)===[],
     'KNX priority workaround may not be generalized to other device types');
 $source=file_get_contents(__DIR__.'/../RoomsCatalogConfigurator/module.php');
-foreach (['ai.variables.power:','ai.variables.status:','state:'] as $token) {
-    ck314(str_contains($source,$token),'Loss guard missing the exact allowed field '.$token);
-}
+ck314(str_contains($source,'ExportAIRepairDiagnostics')
+    && !str_contains($source,'public function ApplySafeAutoRepair'),
+    'Read-only KNX proposal remains available in diagnostic export, but retired automatic PROD mutation must not return');
 echo "PASS V3.3.14: cautious KNX DPT2 priority vs Funktionswert, atomic state/AI correction, no KI rights changes\n";

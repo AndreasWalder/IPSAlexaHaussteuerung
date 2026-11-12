@@ -66,7 +66,7 @@ ck312($unsafe['status']==='Manuell pruefen'
 $source=file_get_contents(__DIR__.'/../RoomsCatalogConfigurator/module.php');
 ck312((RCCDeviceTypeRegistry::propertyCaptions()['illuminance'] ?? '') === 'Beleuchtungsstaerke (Lux)'
     && str_contains($source,'RCC_ExportAIRepairDiagnostics')
-    && str_contains($source,'RCC_ApplySafeAutoRepair')
+    && !str_contains($source,'RCC_ApplySafeAutoRepair')
     && str_contains($source,"'download'=>'RoomsCatalog_ChatGPT_Diagnose.json'"),
-    'New editor caption and two buttons must exist');
-echo "PASS V3.3.12: safe metadata, corrected edit form, diagnostic export and guarded repair actions\n";
+    'Diagnostics and technical assessment stay; obsolete PROD auto-correction is retired');
+echo "PASS V3.3.12: safe metadata, corrected edit form, diagnostic export with one-off PROD repair retired\n";

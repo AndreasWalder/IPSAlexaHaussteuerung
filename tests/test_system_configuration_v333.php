@@ -127,15 +127,13 @@ sc333_check(IPS_GetScriptContent($editId) === '<?php return ["custom_edit"=>true
 
 $form = json_decode($module->GetConfigurationForm(), true, 512, JSON_THROW_ON_ERROR);
 $ui = json_encode($form, JSON_THROW_ON_ERROR);
-sc333_check(str_contains($ui, 'IAH_ScanSystemConfiguration')
-    && str_contains($ui, 'SystemConfigurationTabInventory'), 'System inventory UI is missing');
-ob_start();
-$module->ScanSystemConfiguration();
-ob_end_clean();
-$inventory = json_decode($module->ReadAttributeString('SystemConfigurationInventory'), true, 512, JSON_THROW_ON_ERROR);
-sc333_check(count($inventory['tabs']) === 4 && $inventory['scriptIds']['edit'] === $editId,
-    'Real catalog scan did not inventory tabs and staging IDs');
-sc333_check(!str_contains(json_encode($inventory), 'PRIVATE')
-    && IPS_GetScriptContent(501) === $source, 'Inventory leaked PROD data or modified its script');
+sc333_check(str_contains($ui, 'Navigation & Tabs')
+    && str_contains($ui, 'IAH_PreviewSystemNavigationUpdate')
+    && !str_contains($ui, 'IAH_ScanSystemConfiguration')
+    && !str_contains($ui, 'IAH_CleanupSystemNavigation')
+    && !str_contains($ui, 'RoomsCatalog automatisch bereinigen'),
+    'Current navigation editor missing or retired migration tools still visible');
+sc333_check(IPS_GetScriptContent(501) === $source,
+    'Showing permanent navigation UI may not modify SystemConfiguration');
 
-echo "V3.3.3 SystemConfiguration staging, safe inventory and legacy preservation: OK\n";
+echo "SystemConfiguration staging/backup and permanent navigation UI without migrations: OK\n";

@@ -109,18 +109,9 @@ auditCheck(in_array('Raeume & Etagen',$top,true)
     && str_contains($ui,'EDIT NACH PROD UEBERNEHMEN')
     && !str_contains($ui,'BEREICHSWEISE PROD-UEBERNAHME')
     && !str_contains($ui,'Weitere Funktionen (Experten)')
-    && !str_contains($ui,'MODELL, IPS-VARIABLEN UND MIGRATION PRUEFEN'),
+    && !str_contains($ui,'MODELL, IPS-VARIABLEN UND MIGRATION PRUEFEN')
+    && !str_contains($ui,'Altgeraete ins neue Modell uebernehmen'),
     'Simple form must retain normal device editing and only one publish button');
-
-$prodBefore=IPS_GetScriptContent(40);
-$editBefore=IPS_GetScriptContent(41);
-ob_start();$mod->AuditMigrationReadiness();$report=ob_get_clean();
-auditCheck(str_contains($report,'KI-Zugriff: 1/2 freigegeben')
-    && str_contains($report,'1 Legacy')
-    && str_contains($report,'noch NICHT vollstaendig'),
-    'Read-only migration report not transparent about missing typing');
-auditCheck(IPS_GetScriptContent(40)===$prodBefore && IPS_GetScriptContent(41)===$editBefore,
-    'Read-only audit must never modify PROD or EDIT');
 
 $updated=$clean;
 $updated['bad']['domains']['heizung']['bad']['ai']=[
@@ -135,12 +126,9 @@ $allDoneUi=json_encode($allDone,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
 auditCheck(!str_contains($allDoneUi,'RCC_AnalyzeLegacyDevices')
     && str_contains($allDoneUi,'RCC_ScanNewDevices')
     && str_contains($allDoneUi,'EDIT NACH PROD UEBERNEHMEN'),
-    'Legacy migration remains hidden, but user-requested device importer stays available');
-ob_start();$mod->AuditMigrationReadiness();$doneReport=ob_get_clean();
-auditCheck(str_contains($doneReport,'Katalog-Modell technisch konsistent'),
-    'All-confirmed migration should be recognized without granting KI writes');
+    'Retired migration handlers must stay gone while safe device discovery remains');
 auditCheck(($updated['bad']['domains']['heizung']['bad']['kiEnabled']??null)===false,
     'Audit must preserve explicit KI opt-out');
 foreach(array_keys($GLOBALS['rccAuditSources']) as $id) @unlink($GLOBALS['rccAuditDir'].'/scripts/'.$id.'.php');
 @rmdir($GLOBALS['rccAuditDir'].'/scripts');@rmdir($GLOBALS['rccAuditDir']);
-echo "PASS: stale tabs filter, scoped filters, KI permissions, read-only migration audit and setup UI\n";
+echo "PASS: stale tabs filter, scoped filters, KI permissions, no retired migration tools\n";
