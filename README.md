@@ -79,6 +79,19 @@ Weitere Diagnose für ungültige/fehlende Skriptrückgaben.
 [Universelle KI-Datenabfragen](docs/Alexa_AI_HouseQuery_V345.md) ·
 [Alexa-Intent-Vorlage (historischer Name)](docs/HomeAgentFrageIntent.json)
 
+## Aktueller Stand und KI-Kosten
+
+Nach V3.6.1 ist die HuaweiPV-Anlage einschließlich Archivabfragen und
+sicherer Messwert-Freigaben über den RoomsCatalog editierbar.
+Die aktive KI-Abrechnung unterscheidet nur **ChatGPT + RoomsCatalog** und
+**Intent-Parser**, jeweils mit EUR-Kosten, Tages-/Monatsübersicht,
+Token-Statistik, Monatsprognose und Modellhistorie.
+Historische Altkosten bleiben in der Gesamtsumme erhalten;
+nicht mehr benutzte Kostengruppen werden nur ausgeblendet.
+
+[Roadmap: ursprünglich geplant vs. heute offen](docs/RoomsCatalog_Roadmap_nach_V36.md) ·
+[KI-Kosten in EUR](docs/KI_Kosten_Transparenz.md)
+
 ## Alexa: Produktive Kachelvisualisierung „Visu“
 
 Sprachbefehl **„Visu“**: „Alexa, öffne Haussteuerung“ → „Visu“. Die erfolgreiche IP-Symcon-Kachelvisualisierung unter `/tile/` verwendet weiterhin den erprobten HTTPS-URL-Bootstrap, AutoLogin mit Passwort und Enter, die leise Alexa-HTML-Sitzung sowie die gerätebezogene Sprachsteuerung ohne neuen Bildschirm. Ihre interne technische Route bleibt für bestehende WebHooks `kacheltest` – nur der Sprachbefehl heißt jetzt „Visu“.
