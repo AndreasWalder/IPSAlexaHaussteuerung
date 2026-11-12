@@ -188,6 +188,8 @@ final class IAHVoiceRuleEngine
             'variableId'=>$kind==='variable'?$variableId:0,
             'variableValue'=>$kind==='variable'?(string)$variableValue:'',
             'readVariableId'=>$kind==='read'?$readVariableId:0,
+            'origin'=>($rule['origin']??'')==='legacy'?'legacy':'custom',
+            'migrationNote'=>mb_substr(trim((string)($rule['migrationNote']??'')),0,400,'UTF-8'),
             'steps'=>$kind==='scene'?$steps:[],
             'enabled'=>!empty($rule['enabled']),
             'confirmed'=>!empty($rule['confirmed'])
