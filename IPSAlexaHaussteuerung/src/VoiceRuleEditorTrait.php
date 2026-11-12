@@ -28,7 +28,20 @@ trait IAHVoiceRuleEditorTrait
         $ctx=$this->navigationEditorContext();
         $prodId=(int)($ctx['ids']['prod']??0);
         $ctx['prodSource']=$this->getScriptContent($prodId);
-        $ctx['prod']=$this->readFreshVoiceRuleProd($prodId);
+        // An IPS_GetScriptContent snapshot can contain the current rules
+        // while a cached PHP include returns an older array or nothing at all.
+        // Prefer strict literal parsing of the very same source bytes used
+        // to generate the diagnostic SHA-256. It NEVER executes PHP.
+        $literal=IAHVoiceRuleLiteralReader::read($ctx['prodSource']);
+        if(is_array($literal)){
+            $ctx['prod']=$literal;
+            $ctx['prodLoadMethod']='literal_source';
+        }else{
+            // Preserve compatibility with explicitly customized, dynamic
+            // SystemConfiguration scripts that cannot be parsed as literals.
+            $ctx['prod']=$this->readFreshVoiceRuleProd($prodId);
+            $ctx['prodLoadMethod']='legacy_include';
+        }
         $ctx['prodId']=$prodId;
         $ctx['prodVoiceRuleCount']=is_array($ctx['prod'])
             ?count(IAHVoiceRuleEngine::rules($ctx['prod'])):0;
@@ -751,8 +764,10 @@ trait IAHVoiceRuleEditorTrait
             'runtimeSource'=>[
                 'prodScriptId'=>(int)($ctx['prodId']??0),
                 'prodSourceSha256'=>hash('sha256',(string)($ctx['prodSource']??'')),
+                'prodLoadMethod'=>(string)($ctx['prodLoadMethod']??'unknown'),
                 'prodRulesRead'=>count($prod),
-                'prodSchemaVersion'=>(int)($ctx['prod']['voiceRules']['schemaVersion']??0)
+                'prodSchemaVersion'=>(int)($ctx['prod']['voiceRules']['schemaVersion']??0),
+                'prodLoadMethod'=>(string)($ctx['prodLoadMethod']??'unknown')
             ],
             'edit'=>$edit,
             'prod'=>$prod,
@@ -816,6 +831,7 @@ trait IAHVoiceRuleEditorTrait
                 'prodRuleCount'=>(int)($meta['prodRuleCount']??0),
                 'prodSourceSha256'=>(string)($meta['prodSourceSha256']??''),
                 'prodSchemaVersion'=>(int)($meta['prodSchemaVersion']??0),
+                'prodLoadMethod'=>(string)($meta['prodLoadMethod']??'unknown'),
                 'candidateIndex'=>(int)($event['candidateIndex']??0),
                 'aiFallbackRequested'=>!empty($event['aiFallback']),
                 'reason'=>$reason!==''?$reason:(
@@ -957,7 +973,8 @@ trait IAHVoiceRuleEditorTrait
                 'prodScriptId'=>(int)($ctx['prodId']??0),
                 'prodRuleCount'=>count($prodRules),
                 'prodSchemaVersion'=>(int)($rules['voiceRules']['schemaVersion']??0),
-                'prodSourceSha256'=>hash('sha256',(string)($ctx['prodSource']??''))
+                'prodSourceSha256'=>hash('sha256',(string)($ctx['prodSource']??'')),
+                'prodLoadMethod'=>(string)($ctx['prodLoadMethod']??'unknown')
             ];
             $result=IAHVoiceRuleEngine::run($rules,$catalog,$event['text'],
                 ['intent'=>(string)($event['intent']??''),
