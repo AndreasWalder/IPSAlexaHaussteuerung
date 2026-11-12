@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/libs/DeviceTechnicalAudit.php';
 require_once __DIR__ . '/libs/SafeAutoRepair.php';
 require_once __DIR__ . '/libs/DeviceTypeRegistry.php';
+require_once __DIR__ . '/libs/DeviceCapabilities.php';
 require_once __DIR__ . '/libs/GuidedDiscovery.php';
 require_once __DIR__ . '/libs/ModuleDataSources.php';
 require_once __DIR__ . '/libs/DataSourceEditor.php';
@@ -8472,6 +8473,23 @@ class RoomsCatalogConfigurator extends IPSModule
                 ]
             ]
         ];
+        // V3.7: Fähigkeiten werden aus vorhandenen IPS-Variablen und
+        // fachlichen KI-Rechten berechnet, nicht als zweites Schema gepflegt.
+        if (!$isNew) {
+            $capabilities = RCCDeviceCapabilities::describe($row);
+            $items[] = [
+                'type'=>'ExpansionPanel',
+                'caption'=>'V3.7 – erkannte Gerätefähigkeiten',
+                'expanded'=>false,
+                'items'=>[
+                    ['type'=>'Label','caption'=>$capabilities['message']],
+                    ['type'=>'Label','caption'=>'Eigenschaften und Berechtigungen '
+                        .'werden weiterhin oben in der Gerätebearbeitung '
+                        .'eingestellt. Szenen und frei gesprochene Befehle '
+                        .'werden in IPSAlexaHaussteuerung verwaltet.']
+                ]
+            ];
+        }
         $variableCaptions = RCCDeviceTypeRegistry::propertyCaptions();
         if ($editorType === 'fan') {
             $variableCaptions['power'] = 'Ein/Aus-Wert (optional; darf dieselbe ID wie Steuerung sein)';

@@ -9,6 +9,8 @@ require_once __DIR__ . '/src/AlexaLogBuffer.php';
 require_once __DIR__ . '/src/AlexaLogTrait.php';
 require_once __DIR__ . '/src/SystemConfigurationManager.php';
 require_once __DIR__ . '/src/SystemNavigationEditor.php';
+require_once __DIR__ . '/src/VoiceRuleEngine.php';
+require_once __DIR__ . '/src/VoiceRuleEditorTrait.php';
 require_once __DIR__ . '/src/SystemNavigationMigration.php';
 require_once __DIR__ . '/src/KICostTrait.php';
 require_once __DIR__ . '/src/Router.php';
@@ -28,6 +30,7 @@ class IPSAlexaHaussteuerung extends IPSModule
     use \IPSAlexaHaussteuerung\LogTrait;
     use \IAHKICost\KICostTrait;
     use \IAHAlexaLog\AlexaLogTrait;
+    use IAHVoiceRuleEditorTrait;
 
     /** @var bool */
     private $isApplyingChanges = false;
@@ -96,6 +99,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterAttributeString('SystemNavigationEditorNotice', '');
         $this->RegisterAttributeString('LaunchIconDiagnostics', '');
         $this->RegisterAttributeString('SystemNavigationPublishPreview', '');
+        $this->RegisterAttributeString('VoiceRuleEditorNotice', '');
+        $this->RegisterAttributeString('VoiceRulesPublishPreview', '');
         $this->RegisterTimer('DelayedPageSwitch', 0, 'IAH_HandleDelayedPageSwitch($_IPS["TARGET"]);');
         $this->RegisterTimer('KICostRefresh', 60000, 'IAH_UpdateKICostExchangeRate($_IPS["TARGET"]); IAH_RefreshKICostDisplay($_IPS["TARGET"]);');
         $this->RegisterTimer('AlexaLogRefresh', 15000, 'IAH_RefreshAlexaLogBuffer($_IPS["TARGET"]);');
@@ -383,6 +388,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         // Nach abgeschlossener Migration nur noch den produktiven
         // Navigation-Editor anzeigen; keine Einmal-Migrationsassistenten.
         $form['elements'][]=$this->buildSystemNavigationEditorForm();
+        $form['elements'][]=$this->buildVoiceRuleEditorForm();
 
         return json_encode($form, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
@@ -1150,8 +1156,45 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->patchActionScriptVisuVoice((int) $id);
         $this->patchActionScriptNavigationMigration((int) $id);
         $this->patchActionScriptRoomUiMigration((int) $id);
+        $this->patchActionScriptVoiceRules((int)$id);
 
         return (int) $id;
+    }
+
+
+    /**
+     * Action is a user-customized generated IPS script. Patch only the
+     * verified question-capture anchor, never replace a whole script.
+     * Original is preserved as a separately verifiable backup.
+     */
+    private function patchActionScriptVoiceRules(int $scriptId): void
+    {
+        $current=$this->getScriptContent($scriptId);
+        $template=@file_get_contents(__DIR__.'/resources/action_entry.php');
+        if(!is_string($current)||$current===''||!is_string($template))return;
+        $begin='        // IAH_VOICE_RULES_V37_BEGIN';
+        $end='        // IAH_VOICE_RULES_V37_END';
+        if(str_contains($current,$begin) && str_contains($current,$end))return;
+        $i=strpos($template,$begin);
+        $j=$i===false?false:strpos($template,$end,$i);
+        $anchor='        // IAH_ALEXA_QUESTION_CAPTURE_END';
+        if($i===false||$j===false||substr_count($current,$anchor)!==1){
+            IPS_LogMessage('Alexa',
+                'VoiceRules.V37 Action-Patch nicht möglich: eindeutiger Anker fehlt.');
+            return;
+        }
+        $block=substr($template,$i,$j+strlen($end)-$i);
+        $next=str_replace($anchor,$anchor."\n".$block,$current);
+        if($next===$current)return;
+        $this->createNavigationCatalogBackup($scriptId,'ActionBeforeVoiceRulesV37',$current);
+        try {
+            IPS_SetScriptContent($scriptId,$next);
+            if($this->getScriptContent($scriptId)!==$next)
+                throw new RuntimeException('VoiceRules Action-Patch nicht verifiziert.');
+        }catch(Throwable $error){
+            IPS_SetScriptContent($scriptId,$current);
+            IPS_LogMessage('Alexa','VoiceRules.V37 Action-Patch rückgängig gemacht.');
+        }
     }
 
     /**

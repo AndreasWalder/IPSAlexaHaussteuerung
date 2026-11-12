@@ -2137,6 +2137,49 @@ function Execute($request = null)
             ]);
         }
         // IAH_ALEXA_QUESTION_CAPTURE_END
+        // IAH_VOICE_RULES_V37_BEGIN
+        // Before hard-coded question answers, legacy GetHaus tile routing,
+        // Jalousie renderer or OpenAI: only exact, approved PROD phrases.
+        // No APL button events, launches, back/exit or arbitrary script IDs.
+        if (!$iahVoiceIsAplEvent && empty($APL['args'])
+            && !$IS_LAUNCH && !$IS_BACK && !$wantsExit
+            && ($iahVoiceSpoken!=='' || preg_match(
+                '/^[A-Za-z][A-Za-z0-9_]{2,55}Intent$/D',(string)$intentName)===1)
+            && $instanceId>0
+            && function_exists('IAH_ResolveVoiceRule')) {
+            try {
+                $iahRuleResult=json_decode((string)IAH_ResolveVoiceRule(
+                    $instanceId,json_encode([
+                        'text'=>$iahVoiceSpoken,'intent'=>$intentName,
+                        'aplEvent'=>false,'launch'=>false,'exit'=>false,'back'=>false
+                    ],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)
+                ),true);
+                if(is_array($iahRuleResult) && !empty($iahRuleResult['matched'])) {
+                    $ruleAnswer=trim((string)($iahRuleResult['answer']??''));
+                    if($ruleAnswer==='')$ruleAnswer='Der Befehl wurde bearbeitet.';
+                    $ruleAnswer=mb_substr($ruleAnswer,0,800,'UTF-8');
+                    $ruleResponse=AskResponse::CreatePlainText($ruleAnswer)
+                        ->SetRepromptPlainText('Noch eine Frage oder einen Befehl?');
+                    $ruleImage=(string)($iahRuleResult['imageUrl']??'');
+                    if(!empty($iahRuleResult['ok']) && $ruleImage!==''
+                        && preg_match('~^https://[a-z0-9.-]+(?:/[^\s]*)?$~iD',$ruleImage)) {
+                        $ruleTitle=(string)($iahRuleResult['ruleKey']??'Haussteuerung');
+                        $ruleResponse->SetStandardCard($ruleTitle,$ruleAnswer,
+                            $ruleImage,$ruleImage);
+                    }
+                    $log('info','VoiceRules.result',[
+                        'key'=>(string)($iahRuleResult['ruleKey']??''),
+                        'kind'=>(string)($iahRuleResult['kind']??''),
+                        'ok'=>(bool)($iahRuleResult['ok']??false)
+                    ]);
+                    return $ruleResponse;
+                }
+            }catch(Throwable $ignored) {
+                IPS_LogMessage('Alexa','VoiceRules.V37 bridge unavailable');
+            }
+        }
+        // IAH_VOICE_RULES_V37_END
+
         // PRIO 1: GetHaus mit genau einem Device-/Action-Slot = UI-Kachel.
         // Alexa meldet bei "Jalousie" typischerweise GetHaus/Device=jalousie,
         // nicht HomeAgentFrageIntent. Das darf auch ohne KI-Helper funktionieren.
