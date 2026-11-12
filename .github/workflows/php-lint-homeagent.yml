@@ -161,6 +161,8 @@ jobs:
         run: php tests/test_voice_rules_generic_editor_v371.php
       - name: Test V3.7.1 legacy migration with images, safe deletion and retired commands
         run: php tests/test_voice_rules_legacy_migration_v371.php
+      - name: Test V3.7.1 copyable voice-only JSON diagnostic and Alexa bridge trace
+        run: php tests/test_voice_rules_json_diagnostics_v371.php
       - name: Test Symcon IPSList checkbox callbacks and filtered multi-selection
         run: php tests/test_rooms_catalog_ipslist_multiselect.php
       - name: Test RoomsCatalog quick search for IPS object IDs and parent instance IDs
