@@ -75,13 +75,14 @@ final class IAHVoiceRuleEngine
         if(count($steps)>12)throw new RuntimeException('Maximal 12 Geraeteaktionen pro Szene.');
         if($kind==='answer' && $answer==='')
             throw new RuntimeException('Ein Fragetext benoetigt eine Antwort.');
-        if($kind==='script' && $scriptId<=0)
-            throw new RuntimeException('IP-Symcon-Skript auswaehlen.');
-        if($kind==='scene' && !$steps)
-            throw new RuntimeException('Eine Szene benoetigt mindestens ein Geraet.');
-        if($kind==='script' && !function_exists('IPS_ScriptExists'))
-            throw new RuntimeException('IPS-Skriptfunktionen nicht vorhanden.');
-        if($kind==='script' && !IPS_ScriptExists($scriptId))
+        // Unvollstaendige Vorlagen sind als deaktivierter EDIT-Entwurf erlaubt.
+        // Bei Aktivierung muss der gewaehlte Ausfuehrungspfad vollstaendig sein.
+        if($kind==='script' && $scriptId<=0 && !empty($rule['enabled']))
+            throw new RuntimeException('Vor Aktivierung ein IP-Symcon-Skript auswaehlen.');
+        if($kind==='scene' && !$steps && !empty($rule['enabled']))
+            throw new RuntimeException('Vor Aktivierung mindestens eine Geraeteaktion anlegen.');
+        if($kind==='script' && $scriptId>0
+            && (!function_exists('IPS_ScriptExists')||!IPS_ScriptExists($scriptId)))
             throw new RuntimeException('Gewaehltetes IPS-Skript existiert nicht.');
         foreach($steps as $s){
             if(!is_array($s)||!isset($s['deviceKey'],$s['property'],$s['value']))
