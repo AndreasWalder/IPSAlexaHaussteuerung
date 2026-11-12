@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 /** V3.7 module integration: SystemConfiguration EDIT -> preview -> PROD. */
 require __DIR__.'/test_system_configuration_v333.php';
+function IPS_LogMessage(string $module,string $message):void{}
 function ck37ui(bool $value,string $message):void{
     if(!$value)throw new RuntimeException('V3.7 UI '.$message);
 }
