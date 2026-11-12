@@ -693,6 +693,15 @@ trait IAHVoiceRuleEditorTrait
             $result=IAHVoiceRuleEngine::run($rules,$catalog,$event['text'],
                 ['intent'=>(string)($event['intent']??''),
                  'forbiddenScriptIds'=>array_values(array_unique($forbidden))]);
+            // Never fall back to retired hard-coded Alexa shortcuts.
+            if(empty($result['matched']) &&
+                IAHVoiceLegacyMigration::isRetiredPhrase(
+                    $event['text'],$catalog,$this->ReadPropertyInteger('VarAussenTemp'))){
+                $result=['matched'=>true,'ok'=>false,'kind'=>'retired',
+                    'ruleKey'=>'legacy_disabled',
+                    'answer'=>'Dieser alte Befehl ist deaktiviert. '
+                        .'Bitte eine neue Sprachregel im Konfigurator anlegen.'];
+            }
             if(!empty($result['matched']))
                 IPS_LogMessage('Alexa','VoiceRules.V37 '.json_encode([
                     'key'=>$result['ruleKey']??'ambiguous',
