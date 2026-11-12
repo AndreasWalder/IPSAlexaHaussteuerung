@@ -177,6 +177,12 @@ trait IAHVoiceRuleEditorTrait
                     ['type'=>'Button','caption'=>'EDITOR NEU LADEN',
                         'onClick'=>'IAH_ReloadVoiceRules($id);'],
                 ]],
+                ['type'=>'CheckBox','name'=>'VoiceRulesAiReadOnlyEnabled',
+                    'caption'=>'KI-Erkennung fuer sinngemaesse Fragen erlauben (nur '
+                        .'Antworten/Messwerte, keine Skripte oder Schaltaktionen; '
+                        .'nutzt die vorhandene KI-API-Konfiguration)',
+                    'value'=>method_exists($this,'ReadPropertyBoolean')
+                        ?$this->ReadPropertyBoolean('VoiceRulesAiReadOnlyEnabled'):false],
                 ['type'=>'Label','name'=>'VoiceRuleEditorNotice',
                     'caption'=>$notice,'visible'=>$notice!==''],
                 ['type'=>'List','name'=>$name,
@@ -741,10 +747,36 @@ trait IAHVoiceRuleEditorTrait
                 'hint'=>'A spoken rule is usable only if Alexa supplies the phrase '
                     .'as a slot/transcript or a registered matching custom Intent.'
             ],
+            'selfTests'=>$this->voiceRuleSelfTests((array)($ctx['prod']??[])),
+            'runtimeSource'=>[
+                'prodScriptId'=>(int)($ctx['prodId']??0),
+                'prodSourceSha256'=>hash('sha256',(string)($ctx['prodSource']??'')),
+                'prodRulesRead'=>count($prod),
+                'prodSchemaVersion'=>(int)($ctx['prod']['voiceRules']['schemaVersion']??0)
+            ],
             'edit'=>$edit,
             'prod'=>$prod,
             'recentRecognition'=>is_array($trace)?array_slice($trace,-30):[]
         ];
+    }
+
+    /** Check each active PROD phrase locally without running any action. */
+    private function voiceRuleSelfTests(array $prod): array
+    {
+        $tests=[];
+        foreach(IAHVoiceRuleEngine::rules($prod) as $key=>$rule){
+            if(!is_array($rule)||empty($rule['enabled']))continue;
+            $phrase=IAHVoiceRuleEngine::phrases($rule['aliases']??[])[0]??'';
+            $match=IAHVoiceRuleEngine::matching($prod,$phrase);
+            $matchedKey=(string)($match['key']??'');
+            $tests[$key]=[
+                'phrase'=>$phrase,
+                'matchedKey'=>$matchedKey,
+                'ok'=>$matchedKey===$key,
+                'status'=>isset($match['status'])?(string)$match['status']:''
+            ];
+        }
+        return $tests;
     }
 
     public function ExportVoiceRulesDiagnostic(): void
@@ -763,7 +795,9 @@ trait IAHVoiceRuleEditorTrait
         }
     }
 
-    private function recordVoiceRuleRecognition(array $event,array $result,string $reason=''): void
+    private function recordVoiceRuleRecognition(
+        array $event,array $result,string $reason='',array $meta=[]
+    ): void
     {
         try{
             $trace=json_decode($this->ReadAttributeString('VoiceRulesDiagnosticTrace'),true);
@@ -777,6 +811,13 @@ trait IAHVoiceRuleEditorTrait
                 'ruleKey'=>(string)($result['ruleKey']??''),
                 'kind'=>(string)($result['kind']??''),
                 'ok'=>!empty($result['ok']),
+                'matchMethod'=>(string)($result['matchMethod']??'exact'),
+                'prodScriptId'=>(int)($meta['prodScriptId']??0),
+                'prodRuleCount'=>(int)($meta['prodRuleCount']??0),
+                'prodSourceSha256'=>(string)($meta['prodSourceSha256']??''),
+                'prodSchemaVersion'=>(int)($meta['prodSchemaVersion']??0),
+                'candidateIndex'=>(int)($event['candidateIndex']??0),
+                'aiFallbackRequested'=>!empty($event['aiFallback']),
                 'reason'=>$reason!==''?$reason:(
                     empty($result['matched'])?'no_exact_prod_phrase_or_custom_intent':
                     (empty($result['ok'])?'matched_but_not_executed':'executed_or_answered'))
@@ -911,19 +952,68 @@ trait IAHVoiceRuleEditorTrait
                 foreach((array)IPS_GetChildrenIDs((int)$parentId) as $childId)
                     if(IPS_ScriptExists((int)$childId))$forbidden[]=(int)$childId;
             }
+            $prodRules=IAHVoiceRuleEngine::rules($rules);
+            $meta=[
+                'prodScriptId'=>(int)($ctx['prodId']??0),
+                'prodRuleCount'=>count($prodRules),
+                'prodSchemaVersion'=>(int)($rules['voiceRules']['schemaVersion']??0),
+                'prodSourceSha256'=>hash('sha256',(string)($ctx['prodSource']??''))
+            ];
             $result=IAHVoiceRuleEngine::run($rules,$catalog,$event['text'],
                 ['intent'=>(string)($event['intent']??''),
                  'forbiddenScriptIds'=>array_values(array_unique($forbidden))]);
-            // Never fall back to retired hard-coded Alexa shortcuts.
-            if(empty($result['matched']) &&
-                IAHVoiceLegacyMigration::isRetiredPhrase(
+            // Only if the caller has exhausted all exact candidates may
+            // optional KI classify a *question* into an enabled read-only rule.
+            // No scripts/scenes/variables are included in the model allowlist.
+            $aiEnabled=method_exists($this,'ReadPropertyBoolean')
+                && $this->ReadPropertyBoolean('VoiceRulesAiReadOnlyEnabled');
+            if(empty($result['matched']) && !empty($event['aiFallback'])
+                && $aiEnabled && $prodRules!==[]
+                && $this->ReadPropertyBoolean('KIIntentEnabled')){
+                $key=(string)$this->ReadPropertyString('KIIntentApiKey');
+                $model=(string)$this->ReadPropertyString('KIModelSelection');
+                if($key!==''){
+                    $selected=IAHVoiceRuleAiMatcher::choose($rules,$event['text'],
+                        static fn(array $allowed,string $spoken):?array =>
+                            IAHVoiceRuleAiMatcher::openAiCandidate(
+                                $allowed,$spoken,$key,$model));
+                    if($selected!==null && isset($prodRules[$selected])){
+                        $alias=IAHVoiceRuleEngine::phrases(
+                            $prodRules[$selected]['aliases']??[])[0]??'';
+                        if($alias!==''){
+                            $checked=IAHVoiceRuleEngine::run($rules,$catalog,$alias,[
+                                'intent'=>'',
+                                'forbiddenScriptIds'=>array_values(array_unique($forbidden))
+                            ]);
+                            if(!empty($checked['matched']) && !empty($checked['ok'])
+                                && ($checked['ruleKey']??'')===$selected
+                                && in_array($checked['kind']??'',['answer','read'],true)){
+                                $checked['matchMethod']='ai_read_only';
+                                $result=$checked;
+                            }
+                        }
+                    }
+                }
+            }
+            if(empty($result['matched']) && $prodRules===[]
+                && is_string($ctx['prodSource']??null)
+                && str_contains($ctx['prodSource'],"'voiceRules'")){
+                $result=['matched'=>true,'ok'=>false,'kind'=>'unavailable',
+                    'ruleKey'=>'prod_rules_unavailable',
+                    'answer'=>'Die produktiven Sprachregeln konnten derzeit nicht '
+                        .'eingelesen werden. Bitte die JSON-Diagnose pruefen.'];
+            }
+            // Never execute old hard-coded Alexa shortcuts. Defer this guard
+            // while the Action is checking other exact phrase candidates.
+            if(empty($result['matched']) && empty($event['skipLegacyFallback'])
+                && IAHVoiceLegacyMigration::isRetiredPhrase(
                     $event['text'],$catalog,$this->ReadPropertyInteger('VarAussenTemp'))){
                 $result=['matched'=>true,'ok'=>false,'kind'=>'retired',
                     'ruleKey'=>'legacy_disabled',
                     'answer'=>'Dieser alte Befehl ist deaktiviert. '
                         .'Bitte eine neue Sprachregel im Konfigurator anlegen.'];
             }
-            $this->recordVoiceRuleRecognition($event,$result);
+            $this->recordVoiceRuleRecognition($event,$result,'',$meta);
             if(!empty($result['matched']))
                 IPS_LogMessage('Alexa','VoiceRules.V37 '.json_encode([
                     'key'=>$result['ruleKey']??'ambiguous',
@@ -935,7 +1025,8 @@ trait IAHVoiceRuleEditorTrait
         }catch(Throwable $e){
             if(isset($event) && is_array($event))
                 $this->recordVoiceRuleRecognition($event,['matched'=>false],
-                    'resolver_exception_'.get_class($e));
+                    'resolver_exception_'.get_class($e),
+                    isset($meta)&&is_array($meta)?$meta:[]);
             IPS_LogMessage('Alexa','VoiceRules.V37 failed errorType='.get_class($e));
             return '{"matched":false}';
         }
