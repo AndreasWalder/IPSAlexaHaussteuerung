@@ -70,6 +70,14 @@ final class IAHVoiceRuleEngine
             !preg_match('~^https://[a-z0-9.-]+(?:/[^\s]*)?$~iD',$image) ||
             preg_match('~(?:localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(?:1[6-9]|2\d|3[01])\.)~i',$image)))
             throw new RuntimeException('Bild muss eine oeffentlich erreichbare HTTPS-URL sein.');
+        $intentName=trim((string)($rule['intentName']??''));
+        if($intentName!=='' && (
+            !preg_match('/^[A-Z][A-Za-z0-9_]{2,55}Intent$/D',$intentName)
+            || in_array(strtolower($intentName),[
+                'gethaus','visuintent','homeagentfrageintent','hauswelcheintent',
+                'hauswieintent','hauswasintent','hausistintent','haussindintent'
+            ],true)))
+            throw new RuntimeException('Ungueltiger oder reservierter Alexa-Intent-Name.');
         $scriptId=(int)($rule['scriptId']??0);
         $steps=is_array($rule['steps']??null)?array_values($rule['steps']):[];
         if(count($steps)>12)throw new RuntimeException('Maximal 12 Geraeteaktionen pro Szene.');
@@ -95,6 +103,7 @@ final class IAHVoiceRuleEngine
         }
         return [
             'title'=>$title,'aliases'=>$aliases,'kind'=>$kind,'answer'=>$answer,
+            'intentName'=>$intentName,
             'imageUrl'=>$image,'scriptId'=>$kind==='script'?$scriptId:0,
             'steps'=>$kind==='scene'?$steps:[],
             'enabled'=>!empty($rule['enabled']),
@@ -104,11 +113,17 @@ final class IAHVoiceRuleEngine
 
     public static function validateCollection(array $config): void
     {
-        $seen=[];
+        $seen=[];$seenIntents=[];
         foreach(self::rules($config) as $key=>$r) {
             if(!is_string($key) || !preg_match('/^[a-z0-9][a-z0-9_-]{1,70}$/D',$key)
                 || !is_array($r)) throw new RuntimeException('Ungueltiger Regelschluessel.');
             $r=self::validateRule($r);
+            if($r['intentName']!==''){
+                $intent=strtolower($r['intentName']);
+                if(isset($seenIntents[$intent])&&$seenIntents[$intent]!==$key)
+                    throw new RuntimeException('Alexa-Intent doppelt zugeordnet: '.$r['intentName']);
+                $seenIntents[$intent]=$key;
+            }
             foreach($r['aliases'] as $phrase){
                 $n=self::normalize($phrase);
                 if(isset($seen[$n]) && $seen[$n]!==$key)
@@ -143,20 +158,31 @@ final class IAHVoiceRuleEngine
         return $config;
     }
 
-    public static function matching(array $configuration,string $text): ?array
+    public static function matching(array $configuration,string $text,string $intentName=''): ?array
     {
         $n=self::normalize($text);
-        if($n===''||mb_strlen($text,'UTF-8')>160)return null;
+        if(mb_strlen($text,'UTF-8')>160)return null;
         $matched=null;
         foreach(self::rules($configuration) as $key=>$rule){
             if(!is_array($rule) || empty($rule['enabled']))continue;
-            foreach(self::phrases($rule['aliases']??[]) as $phrase){
-                if(self::normalize($phrase)!==$n)continue;
-                if($matched!==null)return ['status'=>'ambiguous'];
-                $matched=['key'=>$key,'rule'=>$rule];
+            if($n!==''){
+                foreach(self::phrases($rule['aliases']??[]) as $phrase){
+                    if(self::normalize($phrase)!==$n)continue;
+                    if($matched!==null)return ['status'=>'ambiguous'];
+                    $matched=['key'=>$key,'rule'=>$rule];
+                }
             }
         }
-        return $matched;
+        if($matched!==null)return $matched;
+        // Alexa may deliver only a verified slot-free custom Intent name.
+        // No fallback to an LLM guess or arbitrary partial phrase match.
+        if($intentName!=='' && preg_match('/^[A-Za-z][A-Za-z0-9_]{2,55}Intent$/D',$intentName))
+            foreach(self::rules($configuration) as $key=>$rule)
+                if(is_array($rule)&&!empty($rule['enabled'])
+                    && (string)($rule['intentName']??'')!==''
+                    && strcasecmp((string)$rule['intentName'],$intentName)===0)
+                    return ['key'=>$key,'rule'=>$rule];
+        return null;
     }
 
     /**
@@ -261,7 +287,7 @@ final class IAHVoiceRuleEngine
 
     public static function run(array $configuration,array $catalog,string $text,array $context=[]): array
     {
-        $match=self::matching($configuration,$text);
+        $match=self::matching($configuration,$text,(string)($context['intent']??''));
         if($match===null)return ['matched'=>false];
         if(isset($match['status']))return ['matched'=>true,'ok'=>false,
             'answer'=>'Der Befehl ist mehrdeutig. Bitte die Sprachregeln pruefen.'];
