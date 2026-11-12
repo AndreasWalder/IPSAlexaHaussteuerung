@@ -973,7 +973,8 @@ trait IAHVoiceRuleEditorTrait
                 'prodScriptId'=>(int)($ctx['prodId']??0),
                 'prodRuleCount'=>count($prodRules),
                 'prodSchemaVersion'=>(int)($rules['voiceRules']['schemaVersion']??0),
-                'prodSourceSha256'=>hash('sha256',(string)($ctx['prodSource']??''))
+                'prodSourceSha256'=>hash('sha256',(string)($ctx['prodSource']??'')),
+                'prodLoadMethod'=>(string)($ctx['prodLoadMethod']??'unknown')
             ];
             $result=IAHVoiceRuleEngine::run($rules,$catalog,$event['text'],
                 ['intent'=>(string)($event['intent']??''),
