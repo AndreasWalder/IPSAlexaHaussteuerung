@@ -26,7 +26,7 @@ $GLOBALS['preview38Values'][811]=false;
 ck38($preview($follow,$a)['readQueries'][0]['result']['matchedReadings']===0,'follow-up reads fresh data');
 ck38($preview('Und im Arbeitszimmer?',$a)['questionScope']['name']==='Büro',
     'configured room aliases are resolved');
-ck38(str_contains($preview('Und im Wintergarten?',$a)['answer'],'nicht eindeutig'),
+ck38($preview('Und im Wintergarten?',$a)['answer']==='Welchen Raum oder welche Etage meinst du?',
     'unknown place cannot expand query back to the whole house');
 ck38(str_contains($preview('Und welche Lichter sind ausgeschaltet?',$a)['answer'],'Wandlicht'),
     'a complete new question clears location and switches state filter');

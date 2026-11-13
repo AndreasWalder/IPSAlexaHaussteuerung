@@ -78,7 +78,7 @@ foreach ([
     $out = $run(['name'=>$name,'slots'=>['Frage'=>['name'=>'Frage','value'=>$slot]]], 'wer bist du');
     ck385($out['answer'] === null && $out['spoken'] === $question && $out['candidates'] === [$question]
         && $out['slots'] === []
-        && array_unique(array_column($out['events'],'text')) === [$question],
+        && array_unique(array_column($out['events'],'text')) === ($name==='HausUndIntent' ? [] : [$question]),
         'house query or follow-up reaches the rest of Action without old identity candidates: ' . $name);
 }
 $missing = $run(['name'=>'HausWieIntent','slots'=>[]], 'wer bist du');

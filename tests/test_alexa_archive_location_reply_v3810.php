@@ -44,6 +44,28 @@ ck38(($motionArea['scope']['area']??'')==='indoor' && $motionArea['question']===
 $motionRoom=json_decode($module->PrepareAlexaHouseQuestion($session,$echo,'Und im Wohnzimmer?',502),true);
 ck38($motionRoom['scope']['rooms']===['wohnzimmer'] && $motionRoom['question']===$motionArea['question'],
     'an explicit room replaces the previous outdoor filter too');
+$prompt='Welchen Raum oder welche Etage meinst du?';
+$bad=static fn(string $text,bool $dedicated=true,?string $sid=null,?string $device=null):array=>
+    json_decode($module->PrepareAlexaHouseQuestion($sid??$session,$device??$echo,$text,502,$dedicated),true,512,JSON_THROW_ON_ERROR);
+$module->RememberAlexaHouseQuestion($session,$echo,'Wo wurde zuletzt draußen Bewegung erkannt?');
+foreach (['und inge','und im nirgendwo',''] as $fragment) {
+    $plan=$bad($fragment);
+    ck38($plan['answer']===$prompt && $plan['reason']==='unclear_followup_location'
+        && $plan['awaitingLocation'] && !isset($plan['question']), 'garbled or missing location is not sent to the model');
+}
+ck38($module->IsAlexaHouseLocationReply($session,$echo,'innen',502)
+    && ($bad('innen',false)['scope']['area']??'')==='indoor', 'a bare area can answer the prompt for motion history');
+$module->RememberAlexaHouseQuestion($session,$echo,'Welche Lichter sind eingeschaltet?');
+ck38($bad('und inge',false)['answer']===$prompt
+    && !$module->IsAlexaHouseLocationReply($session,'another-echo','Wohnzimmer',502)
+    && $module->IsAlexaHouseLocationReply($session,$echo,'Wohnzimmer',502)
+    && $bad('Wohnzimmer',false)['scope']['rooms']===['wohnzimmer'],
+    'short room reply reuses only the original same-device topic');
+ck38(!$bad('und inge',true,'another-session')['awaitingLocation'], 'do not invent a topic');
+$module->RememberAlexaHouseQuestion($session,$echo,'Welche Lichter sind eingeschaltet?');
+$bad('und inge');
+ck38($bad('Und welche Fenster sind offen?')['question']==='welche Fenster sind offen?',
+    'a full new question stays a new query after the prompt');
 $action=file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/resources/action_entry.php');
 ck38(strpos($action,'IAH_IsAlexaHouseLocationReply(')<strpos($action,'if (!$iahPendingHouseLocation &&')
     && str_contains($action,"'reason'=>'pending_house_location'")

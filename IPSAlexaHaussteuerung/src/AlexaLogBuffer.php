@@ -16,9 +16,11 @@ function iah_alexalog_redact(string $line): string
     $line=preg_replace('~\bamzn1\.[A-Za-z0-9._-]{12,}\b~iu','[ALEXA_ID]',$line)??$line;
     // Auch URL-Parameter und JSON-Attribute wie "token":"ABC" abfangen.
     $line=preg_replace('~((?:token|passwort|password|api[_ -]?key|client[_ -]?secret|authorization|access[_-]?token)\s*["\x27]?\s*(?:=|:)\s*["\x27]?)([^\s&,"\x27}\];]+)~iu','$1[GESCHUETZT]',$line)??$line;
-    $line=preg_replace('~(?<=\?)(?:[^ \r\n]*)(?:token|passwort|password|api[_-]?key|secret|auth)=[^ \r\n]*~iu','[URL-QUERY-GESCHUETZT]',$line)??$line;
+    $line=preg_replace('~(?<=\?)(?:[^ \r\n"<>]*)(?:token|passwort|password|api[_-]?key|secret|auth)=[^ \r\n"<>]*~iu','[URL-QUERY-GESCHUETZT]',$line)??$line;
     $line=preg_replace('~\b(?:192\.168\.\d{1,3}\.\d{1,3}|10\.(?:\d{1,3}\.){2}\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})\b~','[INTERNE_IP]',$line)??$line;
-    return mb_substr($line,0,2500,'UTF-8');
+    // Bounded summaries already cap fields, but keep complete JSON in the export.
+    $limit = preg_match('/\bIAH\.(?:Request|VariableAction) \{/D',$line) ? 6000 : 2500;
+    return mb_substr($line,0,$limit,'UTF-8');
 }
 function iah_alexalog_is_alexa(string $line): bool
 {
@@ -27,6 +29,10 @@ function iah_alexalog_is_alexa(string $line): bool
     if (stripos($line,'VariableManager')!==false
         || stripos($line,'Alexa-Meldungen (letzte 500)')!==false
         || stripos($line,'iahAlexaLogText')!==false) return false;
+    // Compact request summaries replace repeated raw SDK slots and bulky renderer payloads.
+    if (!str_contains($line,'IAH.Request {')
+        && preg_match('/(?:SLOTSTRUCT_|(?:^|\s)(?:RawSlots|RawSlotIds|RawSlotValues|APL\.DS|roomSummary|domainMap\.beforeCollect)\b)/i',$line))
+        return false;
     return preg_match('/(?<![a-z0-9])Alexa(?![a-z0-9])/iu',$line)===1;
 }
 function iah_alexalog_tail(string $file,int $limit=500,int $maxBytes=16777216): array

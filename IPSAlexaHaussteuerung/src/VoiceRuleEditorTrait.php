@@ -1194,7 +1194,7 @@ trait IAHVoiceRuleEditorTrait
             ||preg_match('/^(?:zeige|nenne|liste|vergleiche|ueberpruefe|frage|status|'
                 .'leuchtet|leuchten|brennt|brennen|laeuft|laufen|wieviele)\b/u',$normalized)===1;
         if($isQuestion||IAHHouseQuestionContext::isNewQuestion($question)
-            ||IAHHouseQuestionContext::followUp($question)!==null)
+            ||IAHHouseQuestionContext::isLocationFollowUp($question))
             return $this->previewAlexaHouseQuestion($question,$catalog,$key);
         return ['category'=>'unresolved','reason'=>$decision['reason'],'matched'=>false,'ok'=>false,
             'error'=>'Aus dem Satz allein konnte keine eindeutige Regel, Hausfrage oder Navigation ermittelt werden.'];
@@ -1208,7 +1208,8 @@ trait IAHVoiceRuleEditorTrait
             return $result+['error'=>'Die Hausabfrage ist in der Alexa-Instanz nicht aktiviert.'];
         if($catalog===null)
             return $result+['error'=>'RoomsCatalog PROD ist kein lesbares statisches PHP-Array.'];
-        if(isset($plan['answer']))return array_replace($result,['ok'=>true,'answer'=>$plan['answer']]);
+        if(isset($plan['answer']))return array_replace($result, array_intersect_key(
+            $plan, array_flip(['answer','answerSource','awaitingLocation','reason'])) + ['ok'=>true]);
         $spoken=$plan['question'];
         $scope=$plan['scope']??null;
         require_once __DIR__.'/../resources/helpers/KIHouseController.php';
@@ -1313,19 +1314,34 @@ trait IAHVoiceRuleEditorTrait
         if ($text==='' || strlen($text)>100
             || preg_match('/\b(?:schalte|schalten|oeffne|schliesse|starte|stoppe|dimme|zurueck|ende)\b/',$text))
             return null;
-        return IAHHouseQuestionContext::scope(IAHHouseQuestionContext::followUp($spoken)??$text,$catalog);
+        $target = IAHHouseQuestionContext::followUp($spoken) ?? preg_replace('/^und +/D', '', $text);
+        if (IAHHouseQuestionContext::latestMotionQuestion((string)($entry['question']??''))) {
+            $area=match($target) {
+                'innen','drinnen','ausser aussen'=>'indoor',
+                'draussen','nur aussen'=>'outdoor',
+                default=>'all',
+            };
+            if ($area!=='all')
+                return ['type'=>'motion_area','name'=>$area==='indoor'?'Innenräume':'Außenbereich','area'=>$area];
+        }
+        return IAHHouseQuestionContext::scope((string)$target,$catalog);
     }
 
-    private function planHouseQuestion(string $spoken,array $catalog,string $key,bool $resolveInitial=true): array
+    private function planHouseQuestion(string $spoken,array $catalog,string $key,bool $resolveInitial=true,
+        bool $dedicatedFollowup=false): array
     {
         $entry=$key!==''?($this->houseQuestionContexts()[$key]??[]):[];
         $pendingScope=$this->pendingHouseLocationScope($spoken,$catalog,$entry);
         if ($pendingScope!==null && !empty($entry['question'])) {
             $this->updateHouseQuestionContext($key,null);
-            return ['question'=>IAHHouseQuestionContext::withoutLocation($entry['question'],$catalog),'scope'=>$pendingScope];
+            $question=IAHHouseQuestionContext::latestMotionQuestion($entry['question'])
+                ? 'Wo wurde zuletzt Bewegung erkannt?'
+                : IAHHouseQuestionContext::withoutLocation($entry['question'],$catalog);
+            return ['question'=>$question,'scope'=>$pendingScope];
         }
         $target=IAHHouseQuestionContext::followUp($spoken);
-        if($target===null){
+        $isFollowup=IAHHouseQuestionContext::isLocationFollowUp($spoken,$dedicatedFollowup);
+        if (!$isFollowup) {
             // Even an unanswered new question must not leave an older topic active.
             $this->updateHouseQuestionContext($key,null);
             $question=IAHHouseQuestionContext::isNewQuestion($spoken)
@@ -1336,8 +1352,15 @@ trait IAHVoiceRuleEditorTrait
             return $scope===null?['question'=>$question]:['question'=>$question,'scope'=>$scope];
         }
         $previous=$entry['question']??'';
-        if($previous==='')
+        if ($target===null) {
+            $candidate = preg_replace('/^und(?: +|$)/D', '', IAHHouseQuestionContext::normalize($spoken));
+            if (is_string($candidate) && $candidate!=='' && IAHHouseQuestionContext::scope($candidate,$catalog)!==null)
+                $target=$candidate;
+        }
+        if ($previous==='' && $target!==null && IAHHouseQuestionContext::scope($target,$catalog)!==null)
             return ['answer'=>'Bitte stelle zuerst die vollständige Hausfrage, dann kann ich den Bereich wechseln.'];
+        if ($previous==='' || $target===null)
+            return $this->clarifyHouseLocation($key,$previous);
         if (IAHHouseQuestionContext::latestMotionQuestion($previous)) {
             $area=match($target) {
                 'innen','drinnen','ausser aussen'=>'indoor',
@@ -1350,11 +1373,20 @@ trait IAHVoiceRuleEditorTrait
         }
         $scope=IAHHouseQuestionContext::scope($target,$catalog);
         if($scope===null)
-            return ['answer'=>'Diesen Raum oder diese Etage kann ich im RoomsCatalog nicht eindeutig zuordnen.'];
+            return $this->clarifyHouseLocation($key,$previous);
         $question=IAHHouseQuestionContext::latestMotionQuestion($previous)
             ? 'Wo wurde zuletzt Bewegung erkannt?'
             : IAHHouseQuestionContext::withoutLocation($previous,$catalog);
         return ['question'=>$question,'scope'=>$scope];
+    }
+
+    private function clarifyHouseLocation(string $key,string $previous): array
+    {
+        // Keep the topic for a short, bare room/level reply. Do not create
+        // a topic if the session never had a complete question.
+        if ($previous!=='') $this->rememberHouseQuestion($key,['question'=>$previous],['awaitingLocation'=>true]);
+        return ['answer'=>IAHHouseQuestionContext::LOCATION_CLARIFICATION,'answerSource'=>'local',
+            'reason'=>'unclear_followup_location','awaitingLocation'=>$previous!==''];
     }
 
     private function rememberHouseQuestion(string $key,array $plan,array $result): void
@@ -1376,11 +1408,12 @@ trait IAHVoiceRuleEditorTrait
     }
 
     /** Called by the verified Alexa Action. Raw Alexa IDs are never stored. */
-    public function PrepareAlexaHouseQuestion(string $sessionId,string $deviceId,string $spoken,int $catalogId): string
+    public function PrepareAlexaHouseQuestion(string $sessionId,string $deviceId,string $spoken,int $catalogId,
+        bool $dedicatedFollowup=false): string
     {
         $catalog=IAHVoiceRuleLiteralReader::read($this->getScriptContent($catalogId));
         $plan=$this->planHouseQuestion($spoken,$catalog??[],
-            $this->alexaHouseQuestionKey($sessionId,$deviceId),$catalog!==null);
+            $this->alexaHouseQuestionKey($sessionId,$deviceId),$catalog!==null,$dedicatedFollowup);
         return self::encodeAlexaVoiceTest($plan);
     }
 
@@ -1392,7 +1425,8 @@ trait IAHVoiceRuleEditorTrait
         $entry=$this->houseQuestionContexts()[$key]??[];
         if ((int)($entry['awaitingLocationUntil']??0)<=time()) return false;
         $catalog=IAHVoiceRuleLiteralReader::read($this->getScriptContent($catalogId))??[];
-        if ($this->pendingHouseLocationScope($spoken,$catalog,$entry)!==null) return true;
+        if ($this->pendingHouseLocationScope($spoken,$catalog,$entry)!==null
+            || IAHHouseQuestionContext::isLocationFollowUp($spoken)) return true;
         // A different command, navigation request, or full question ends the pending prompt.
         if (trim($spoken)!=='')$this->updateHouseQuestionContext($key,null);
         return false;
@@ -1488,14 +1522,14 @@ trait IAHVoiceRuleEditorTrait
                     'ok'=>$result['ok']??false,
                     'executed'=>$result['executed']??0
                 ],JSON_UNESCAPED_UNICODE));
-            return json_encode($result,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
+            return json_encode($result+$meta,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
         }catch(Throwable $e){
             if(isset($event) && is_array($event))
                 $this->recordVoiceRuleRecognition($event,['matched'=>false],
                     'resolver_exception_'.get_class($e),
                     isset($meta)&&is_array($meta)?$meta:[]);
             IPS_LogMessage('Alexa','VoiceRules.V37 failed errorType='.get_class($e));
-            return '{"matched":false}';
+            return '{"matched":false,"resolverFailed":true}';
         }
     }
 }

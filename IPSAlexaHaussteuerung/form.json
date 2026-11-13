@@ -199,7 +199,7 @@
         },
         {
           "type": "Label",
-          "caption": "Alexa-Meldungen ohne Serverzugang kopieren: Objektbaum → Diagnose → Alexa-Protokoll (kopieren) → Alexa-Meldungen (letzte 500). Alle 15 Sekunden und nach einem Alexa-Aufruf werden die neuesten Alexa-Zeilen aus dem bestehenden Symcon-Systemlog als Textvariable aktualisiert. Vertrauliche Zeichenfolgen werden nach Mustern maskiert."
+          "caption": "Alexa-Meldungen ohne Serverzugang kopieren: Objektbaum → Diagnose → Alexa-Protokoll (kopieren) → Alexa-Meldungen (letzte 500). Enthält kompakte IAH.Request-Zeilen mit Intent, erkanntem Text (wenn aktiviert), Verarbeitung und Ergebnis sowie relevante technische Meldungen. Aktualisierung nach Alexa-Aufrufen und alle 15 Sekunden. Vertrauliche Muster werden maskiert."
         }
       ]
     },
