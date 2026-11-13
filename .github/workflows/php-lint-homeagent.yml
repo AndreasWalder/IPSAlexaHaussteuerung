@@ -177,6 +177,8 @@ jobs:
         run: php tests/test_alexa_voice_test_v381.php
       - name: Test V3.8.2 isolated Alexa and test-form house question context
         run: php tests/test_house_question_context_v382.php
+      - name: Test V3.8.3 shared floor aliases and deterministic window feedback
+        run: php tests/test_floor_window_status_v383.php
       - name: Test Symcon IPSList checkbox callbacks and filtered multi-selection
         run: php tests/test_rooms_catalog_ipslist_multiselect.php
       - name: Test RoomsCatalog quick search for IPS object IDs and parent instance IDs

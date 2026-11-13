@@ -1876,6 +1876,15 @@ PHP;
                 // Deshalb die zentrale Typ-Registry beim Installieren
                 // in die Vorlage einbetten (eine Quelle im Repository).
                 if ($ident === 'kiHouseControllerScript') {
+                    $context = file_get_contents(__DIR__ . '/src/HouseQuestionContext.php');
+                    if (!is_string($context) || !str_contains($content, '// IAH_HOUSE_QUESTION_CONTEXT_INSERT')) {
+                        IPS_LogMessage('Alexa', 'KIHouseController nicht erneuert: Etagenauflösung fehlt.');
+                        return (int)$id;
+                    }
+                    $context = preg_replace('/^<\?php\s*declare\(strict_types=1\);\s*/', '', $context);
+                    if (!is_string($context)) return (int)$id;
+                    $content = str_replace('// IAH_HOUSE_QUESTION_CONTEXT_INSERT',
+                        'if (!class_exists(\'IAHHouseQuestionContext\', false)) {' . "\n" . $context . "\n}", $content);
                     $registryFile = dirname(__DIR__) . '/RoomsCatalogConfigurator/libs/DeviceTypeRegistry.php';
                     $registry = is_file($registryFile) ? file_get_contents($registryFile) : false;
                     if (!is_string($registry) || strpos($registry, 'final class RCCDeviceTypeRegistry') === false) {

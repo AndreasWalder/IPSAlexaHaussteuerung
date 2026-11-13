@@ -17,8 +17,11 @@ function IAH_GetVoiceRuleTestPreview(int $id,string $text,string $source,string 
     ck38($id===100,'call goes to the selected Alexa instance');
     return $GLOBALS['preview38Alexa']->GetVoiceRuleTestPreview($text,$source,$intent,$ai);
 }
-function IPS_VariableExists(int $id): bool { return in_array($id,[810,811],true); }
-function IPS_GetVariable(int $id): array { return ['VariableType'=>0]; }
+function IPS_VariableExists(int $id): bool
+{
+    return in_array($id,[810,811],true)||isset($GLOBALS['preview38Variables'][$id]);
+}
+function IPS_GetVariable(int $id): array { return $GLOBALS['preview38Variables'][$id]??['VariableType'=>0]; }
 function HasAction(int $id): bool { return $id===810; }
 function GetValue(int $id): mixed
 {

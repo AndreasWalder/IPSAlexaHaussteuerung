@@ -1,4 +1,4 @@
-# V3.8.2 – Sprachbefehl testen und Orts-Folgefragen
+# V3.8.3 – Sprachbefehl testen, Etagen und Fensterstatus
 
 1. Im **RoomsCatalogConfigurator** das Panel **Sprachbefehl testen** öffnen.
    Dasselbe Panel liegt in **IPSAlexaHaussteuerung → Szenen und eigene Alexa-Befehle**.
@@ -13,6 +13,7 @@
 | --- | --- |
 | „Wer ist Andrea?“ | Eigene Regel, Antwort und gegebenenfalls Bild. |
 | „Welche Lichter sind eingeschaltet?“ | Aktuelle Rückmeldungen der freigegebenen Lichter, Antwort und verwendete Daten. Diese Abfrage braucht keinen OpenAI-Aufruf. |
+| „Sind die Fenster im Erdgeschoss geschlossen?“ | Aktuelle Rückmeldungen der freigegebenen Fensterkontakte aus allen Räumen der Etage. Offen, geschlossen und unbekannt werden getrennt gezählt, ohne OpenAI-Aufruf. |
 | „Welcher Raum ist am wärmsten?“ | Antwort und lesende Abfragen der konfigurierten Haus-KI. Je nach Konfiguration sind auch Archiv- und Energiedaten verfügbar. |
 | „Visu“ | Vorgesehenes Navigationsziel ohne Öffnen der Visualisierung. |
 | „Jalousien schließen“ | Bei aktiver eigener Regel das vorgesehene Skript oder Gerät, ohne Start oder Schaltaktion. |
@@ -32,6 +33,21 @@ Skripte gestartet oder Änderungen nach PROD übernommen.
 
 Beim Öffnen der Instanzkonfiguration sind die Bereiche beider Module
 weiterhin eingeklappt.
+
+## Etagen und Fensterstatus
+
+Erst- und Folgefragen verwenden die Etagenzuordnung unter **Räume & Etagen**
+im produktiven RoomsCatalog. `EG` und `Erdgeschoss`, `OG`, `1. OG` und
+`Obergeschoss`, `KG`, `UG` und `Untergeschoss` sowie `DG` und
+`Dachgeschoss` werden gleich behandelt. Ein nummeriertes zweites Obergeschoss
+bleibt von `OG` getrennt. Die KI kann eine ausdrücklich genannte einzelne
+Etage nicht durch eine eigene Raumliste ersetzen.
+
+Der kopierbare Fensterbericht zeigt unter `closureCoverage` die Zahl der
+offenen, geschlossenen und unbekannten Kontakte. Unter `unknownDevices`
+stehen die zu prüfenden Kontakte mit Raum und Rückmelderollen. Ein Kontakt
+ohne lesbare oder eindeutige Rückmeldung gilt nie als geschlossen. Das Update
+ändert weder Etagenzuordnungen noch Fensterkonfigurationen in PROD.
 
 ## Folgefragen am Echo und im Testfeld
 

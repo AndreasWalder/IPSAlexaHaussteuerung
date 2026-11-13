@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/** Resolve only location-only follow-ups, never invent a device or an action. */
+/** Resolve house-question locations from the published room metadata. */
 final class IAHHouseQuestionContext
 {
     public static function normalize(string $text): string
@@ -31,18 +31,32 @@ final class IAHHouseQuestionContext
             .'leuchtet|leuchten|laeuft|laufen)\b/',self::normalize($text))===1;
     }
 
-    private static function floor(string $label): string
+    public static function floor(string $label): string
     {
         $name=self::normalize($label);
         return match($name){
-            'eg','erdgeschoss','parterre','0','0 eg'=>'eg',
-            'og','1 og','og 1','og1','ober geschoss','obergeschoss','1 obergeschoss',
-                'erstes obergeschoss','ersten obergeschoss','1 stock','ersten stock'=>'og',
-            'kg','ug','keller','kellergeschoss','untergeschoss','1 ug','ug1'=>'ug',
-            'dg','dachgeschoss'=>'dg',
-            default=>preg_match('/^(?:(\d+) ?(?:og|obergeschoss|stock)|og ?(\d+))$/D',$name,$m)
-                ?'og '.($m[1]!==''?$m[1]:$m[2]):$name
+            'eg','e g','erdgeschoss','erd geschoss','parterre','0','0 eg'=>'eg',
+            'og','o g','1 og','og 1','og1','1og','ober geschoss','obergeschoss','1 obergeschoss',
+                'erstes obergeschoss','ersten obergeschoss','1 stock','erster stock','ersten stock',
+            '1 etage','erste etage','ersten etage','stock 1','etage 1'=>'og',
+            'kg','k g','ug','u g','keller','kellergeschoss','untergeschoss','1 ug','ug1','1ug',
+            '1 untergeschoss','ug 1','erstes untergeschoss','ersten untergeschoss'=>'ug',
+            'dg','d g','dachgeschoss','dach geschoss'=>'dg',
+            default=>self::numberedFloor($name)??$name
         };
+    }
+
+    private static function numberedFloor(string $name): ?string
+    {
+        $name=preg_replace_callback('/^(zweite[rsn]?|dritte[rsn]?|vierte[rsn]?) /',
+            static fn(array $m):string=>match(substr($m[1],0,6)){
+                'zweite'=>'2 ','dritte'=>'3 ',default=>'4 '
+            },$name)??$name;
+        if(preg_match('/^(\d+) ?(og|ug|obergeschoss|untergeschoss|stock|etage)$/D',$name,$m))
+            return (in_array($m[2],['ug','untergeschoss'],true)?'ug':'og').' '.(int)$m[1];
+        if(preg_match('/^(og|ug|stock|etage) ?(\d+)$/D',$name,$m))
+            return ($m[1]==='ug'?'ug':'og').' '.(int)$m[2];
+        return null;
     }
 
     private static function locations(array $catalog): array
@@ -50,7 +64,7 @@ final class IAHHouseQuestionContext
         $locations=[];
         foreach(($catalog['rooms']??$catalog) as $key=>$room){
             if(!is_array($room)||!is_array($room['domains']??null)
-                || $key==='global'||$key==='laptop'||!empty($room['aiTestRoom'])
+                || $key==='global'||self::normalize((string)$key)==='laptop'||!empty($room['aiTestRoom'])
                 || !empty($room['excludeFromAI']))continue;
             $floor=(string)($room['floor']??'');
             $floorKey=self::floor($floor);
@@ -67,6 +81,7 @@ final class IAHHouseQuestionContext
 
     public static function scope(string $target,array $catalog): ?array
     {
+        $target=self::normalize($target);
         $locations=self::locations($catalog);
         $floor=self::floor($target);
         $floorRooms=array_filter($locations,static fn(array $r):bool=>$floor!==''&&$r['floorKey']===$floor);
@@ -85,25 +100,69 @@ final class IAHHouseQuestionContext
         return ['type'=>'room','name'=>$first['name'],'rooms'=>array_keys($rooms)];
     }
 
-    /** Remove one explicit old location so the follow-up replaces it. */
-    public static function withoutLocation(string $question,array $catalog): string
+    /** Find explicit room/floor phrases in full questions, using longest labels first. */
+    public static function initialScope(string $question,array $catalog): ?array
+    {
+        if(!self::isNewQuestion($question)&&!str_ends_with(rtrim($question),'?'))return null;
+        $locations=self::locations($catalog);
+        $labels=self::locationLabels($locations);
+        if(!preg_match_all(self::locationPattern($labels,true),$question,$matches,PREG_SET_ORDER))return null;
+        if(!preg_match(self::locationPattern($labels),$question))return null;
+        $scopes=[];
+        foreach($matches as $match){
+            $scope=self::scope($match[1],$catalog);
+            if($scope===null)return ['type'=>'unresolved','name'=>$match[1],'rooms'=>[]];
+            $scopes[implode('|',$scope['rooms'])]=$scope;
+        }
+        if(count($scopes)===1)return reset($scopes);
+        // A comparison can mention several locations. Limit the candidate
+        // set to their union, but leave per-tool filters available to the model.
+        $rooms=[];$names=[];
+        foreach($scopes as $scope){
+            $rooms=array_merge($rooms,$scope['rooms']);
+            $names[]=$scope['name'];
+        }
+        return ['type'=>'multiple','name'=>implode(', ',$names),'rooms'=>array_values(array_unique($rooms))];
+    }
+
+    private static function locationLabels(array $locations): array
     {
         $labels=[];
-        foreach(self::locations($catalog) as $location){
+        foreach($locations as $location){
             foreach($location['aliases'] as $alias)$labels[$alias]=true;
             $floor=self::normalize($location['floor']);
             if($floor!=='')$labels[$floor]=true;
         }
-        foreach(['erdgeschoss','obergeschoss','untergeschoss','keller','dachgeschoss',
-            'erstes obergeschoss','ersten stock','1 obergeschoss','1 stock','eg','og','ug','kg','dg'] as $label)
+        foreach(['erdgeschoss','erd geschoss','parterre','obergeschoss','ober geschoss',
+            'untergeschoss','keller','kellergeschoss','dachgeschoss','dach geschoss',
+            'erstes obergeschoss','ersten obergeschoss','erster stock','ersten stock',
+            'erste etage','ersten etage','1 obergeschoss','1 stock','1 etage','1 og','og 1','og1',
+            'erstes untergeschoss','ersten untergeschoss','1 untergeschoss',
+            'eg','og','ug','kg','dg','e g','o g','u g','k g','d g'] as $label)
             $labels[$label]=true;
         $labels=array_keys($labels);
         usort($labels,static fn($a,$b):int=>strlen((string)$b)<=>strlen((string)$a));
+        return $labels;
+    }
+
+    private static function locationPattern(array $labels,bool $includeConjunction=false): string
+    {
         $pattern=implode('|',array_map(static fn($v):string=>strtr(preg_quote((string)$v,'/'),[
             'ae'=>'(?:ae|ä)','oe'=>'(?:oe|ö)','ue'=>'(?:ue|ü)','ss'=>'(?:ss|ß)',
             ' '=>'[^\pL\pN]+'
         ]),$labels));
-        $result=preg_replace('/\b'.self::LOCATION_PREFIX.'\s+(?:'.$pattern.')\b/ui',' ',$question)??$question;
+        $numbered='(?:\d+\.?\s*(?:obergeschoss|untergeschoss|og|ug|stock|etage)'
+            .'|(?:og|ug|stock|etage)\s*\d+'
+            .'|(?:zweite[rsn]?|dritte[rsn]?|vierte[rsn]?)\s+(?:obergeschoss|untergeschoss|stock|etage))';
+        $prefix=$includeConjunction?'(?:'.self::LOCATION_PREFIX.'|und|oder)':self::LOCATION_PREFIX;
+        return '/(?<![\pL\pN])'.$prefix.'\s+(?:(?:ganzen|gesamten)\s+)?('.$numbered.'|'.$pattern.')(?![\pL\pN])/ui';
+    }
+
+    /** Remove explicit old locations so a follow-up replaces them. */
+    public static function withoutLocation(string $question,array $catalog): string
+    {
+        $result=preg_replace(self::locationPattern(self::locationLabels(self::locations($catalog))),
+            ' ',$question)??$question;
         return trim(preg_replace('/\s+/u',' ',$result)??$result);
     }
 }

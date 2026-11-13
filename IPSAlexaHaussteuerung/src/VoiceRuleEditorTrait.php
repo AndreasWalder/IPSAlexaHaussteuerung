@@ -1195,8 +1195,7 @@ trait IAHVoiceRuleEditorTrait
         $spoken=$plan['question'];
         $scope=$plan['scope']??null;
         require_once __DIR__.'/../resources/helpers/KIHouseController.php';
-        $local=iah_rc_preview_lights($spoken,$catalog,$scope);
-        $query=$local??iah_rc_voice($spoken,[
+        $query=iah_rc_voice($spoken,[
             'api_key'=>$this->ReadPropertyString('KIIntentApiKey'),
             'model'=>$this->ReadPropertyString('KIModelSelection')?:'gpt-6-luna',
             'archive_control_id'=>$this->ReadPropertyInteger('KIArchiveControlId'),
@@ -1205,7 +1204,7 @@ trait IAHVoiceRuleEditorTrait
             'ki_cost_instance_id'=>$this->InstanceID,
             'question_scope'=>$scope
         ],$catalog);
-        $result['matchMethod']=$local!==null?'local_house_query':'ai_house_query';
+        $result['matchMethod']=!empty($query['localHouseQuery'])?'local_house_query':'ai_house_query';
         $result['readQueries']=$query['readQueries']??[];
         $result['ok']=!empty($query['handled'])&&trim((string)($query['answer']??''))!=='';
         if($scope!==null)$result['questionScope']=$scope;
@@ -1249,14 +1248,18 @@ trait IAHVoiceRuleEditorTrait
         }
     }
 
-    private function planHouseQuestion(string $spoken,array $catalog,string $key): array
+    private function planHouseQuestion(string $spoken,array $catalog,string $key,bool $resolveInitial=true): array
     {
         $target=IAHHouseQuestionContext::followUp($spoken);
         if($target===null){
             // Even an unanswered new question must not leave an older topic active.
             $this->updateHouseQuestionContext($key,null);
-            return ['question'=>IAHHouseQuestionContext::isNewQuestion($spoken)
-                ?(preg_replace('/^\s*und\s+/ui','',$spoken)??$spoken):$spoken];
+            $question=IAHHouseQuestionContext::isNewQuestion($spoken)
+                ?(preg_replace('/^\s*und\s+/ui','',$spoken)??$spoken):$spoken;
+            $scope=$resolveInitial?IAHHouseQuestionContext::initialScope($question,$catalog):null;
+            if(($scope['type']??'')==='unresolved')
+                return ['answer'=>'Diesen Raum oder diese Etage kann ich im RoomsCatalog nicht eindeutig zuordnen.'];
+            return $scope===null?['question'=>$question]:['question'=>$question,'scope'=>$scope];
         }
         $previous=$key!==''?($this->houseQuestionContexts()[$key]['question']??''):'';
         if($previous==='')
@@ -1283,11 +1286,9 @@ trait IAHVoiceRuleEditorTrait
     /** Called by the verified Alexa Action. Raw Alexa IDs are never stored. */
     public function PrepareAlexaHouseQuestion(string $sessionId,string $deviceId,string $spoken,int $catalogId): string
     {
-        $target=IAHHouseQuestionContext::followUp($spoken);
-        $catalog=$target!==null
-            ?IAHVoiceRuleLiteralReader::read($this->getScriptContent($catalogId)):null;
+        $catalog=IAHVoiceRuleLiteralReader::read($this->getScriptContent($catalogId));
         $plan=$this->planHouseQuestion($spoken,$catalog??[],
-            $this->alexaHouseQuestionKey($sessionId,$deviceId));
+            $this->alexaHouseQuestionKey($sessionId,$deviceId),$catalog!==null);
         return self::encodeAlexaVoiceTest($plan);
     }
 
