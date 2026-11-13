@@ -2113,7 +2113,7 @@ function Execute($request = null)
             try { $iahHouseSessionId = (string)$request->GetSessionId(); }
             catch (Throwable $ignored) {}
         }
-        if ($iahHouseSessionId !== '' && ($IS_LAUNCH || !empty($iahHouseSession['new']))
+        if ($iahHouseSessionId !== '' && ($IS_LAUNCH || $IS_BACK || !empty($iahHouseSession['new']))
             && function_exists('IAH_ResetAlexaHouseQuestion')) {
             try { IAH_ResetAlexaHouseQuestion($instanceId, $iahHouseSessionId, $iahVoiceDeviceId); }
             catch (Throwable $ignored) {}
@@ -2227,6 +2227,16 @@ function Execute($request = null)
                     ? $value : (($rawSlots[$slot] ?? '') === '?' ? '' : ($rawSlots[$slot] ?? ''));
             }
         }
+        $iahPendingHouseLocation = false;
+        if (!$IS_LAUNCH && !$IS_BACK && !$wantsExit && !$iahVoiceIsAplEvent && empty($APL['args'])
+            && $iahVoiceRequestType === 'IntentRequest' && $iahHouseSessionId !== ''
+            && (bool)($propsEarly['HomeAgentVoiceEnabled']??false)
+            && function_exists('IAH_IsAlexaHouseLocationReply')) {
+            try {
+                $iahPendingHouseLocation = IAH_IsAlexaHouseLocationReply($instanceId,$iahHouseSessionId,
+                    $iahVoiceDeviceId,$iahVoiceSpoken,(int)($S['ROOMS_CATALOG']??0));
+            } catch (Throwable $ignored) {}
+        }
         // Build safe, exact-match candidates from the spoken transcript
         // and Alexa GetHaus slots. The previous bridge only checked a single
         // reconstructed string; e.g. Action=öffnen Device=Jalousien was
@@ -2268,7 +2278,7 @@ function Execute($request = null)
         // Before hard-coded question answers, legacy GetHaus tile routing,
         // Jalousie renderer or OpenAI: only exact, approved PROD phrases.
         // No APL button events, launches, back/exit or arbitrary script IDs.
-        if (!$iahVoiceIsAplEvent && empty($APL['args'])
+        if (!$iahPendingHouseLocation && !$iahVoiceIsAplEvent && empty($APL['args'])
             && !$IS_LAUNCH && !$IS_BACK && !$wantsExit
             && ($iahRuleCandidates!==[] || (!$iahDedicatedSearchIntent && preg_match(
                 '/^[A-Za-z][A-Za-z0-9_]{2,55}Intent$/D',(string)$intentName)===1))
@@ -2501,7 +2511,11 @@ function Execute($request = null)
         // Die verifizierte GetHaus-Einzelslot-Navigation ist unabhängig vom
         // zusätzlichen Helper: selbst wenn IPS_RunScriptWaitEx ausfällt,
         // können "Licht" und "Jalousie" nie als KI-Frage behandelt werden.
-        if ($iahLegacyNavKey !== '') {
+        if ($iahPendingHouseLocation) {
+            $iahLegacyNavKey = '';
+            $iahVoiceDecision = ['category'=>'query','route'=>'','reason'=>'pending_house_location',
+                'contextDomain'=>''];
+        } elseif ($iahLegacyNavKey !== '') {
             $iahVoiceDecision = [
                 'category'=>'navigation','route'=>$iahLegacyNavKey,
                 'reason'=>'legacy_gethaus_single_slot',
@@ -2625,7 +2639,8 @@ function Execute($request = null)
             $homeAgentSpokenQuestion = $homeAgentDedicatedIntent
                 ? $iahVoiceSpoken
                 : trim((string) ($rawUserText !== '' ? $rawUserText : $rawSlotsToText($rawSlotValues)));
-            $iahPossibleFollowup = ($iahVoiceDecision['reason'] ?? '') === 'possible_location_followup';
+            $iahPossibleFollowup = $iahPendingHouseLocation
+                || ($iahVoiceDecision['reason'] ?? '') === 'possible_location_followup';
             if ($iahPossibleFollowup) $homeAgentSpokenQuestion = $iahVoiceSpoken;
             if ($homeAgentDedicatedIntent && ($homeAgentSpokenQuestion === '' || $homeAgentSpokenQuestion === '?')) {
                 $homeAgentSpokenQuestion = trim((string) $rawUserText);
@@ -2741,11 +2756,13 @@ function Execute($request = null)
                             $homeAgentElapsed = round(microtime(true) - $homeAgentStarted, 3);
                             if (is_array($homeAgentData) && ($homeAgentData['handled'] ?? false) === true
                                 && trim((string) ($homeAgentData['answer'] ?? '')) !== '') {
-                                if (!empty($homeAgentData['contextEligible']) && $iahHouseSessionId !== ''
-                                    && function_exists('IAH_RememberAlexaHouseQuestion')) {
+                                $iahAwaitingLocation = !empty($homeAgentData['awaitingLocation']);
+                                if ((!empty($homeAgentData['contextEligible']) || $iahAwaitingLocation)
+                                    && $iahHouseSessionId !== '' && function_exists('IAH_RememberAlexaHouseQuestion')) {
                                     try {
                                         IAH_RememberAlexaHouseQuestion(
-                                            $instanceId, $iahHouseSessionId, $iahVoiceDeviceId, $houseQuestion
+                                            $instanceId, $iahHouseSessionId, $iahVoiceDeviceId, $houseQuestion,
+                                            $iahAwaitingLocation
                                         );
                                     } catch (Throwable $ignored) {}
                                 }
@@ -2757,7 +2774,8 @@ function Execute($request = null)
                                     'backend'=>$kiVoiceMode,'success'=>true,
                                     'durationMs'=>(int)round($homeAgentElapsed*1000),
                                     'model'=>(string)($propsEarly['KIModelSelection']??'gpt-6-luna')]);
-                                return $kiAlexaKeepOpen($homeAgentAnswer, 'Beantwortet');
+                                return $kiAlexaKeepOpen($homeAgentAnswer,
+                                    $iahAwaitingLocation ? 'Rückfrage' : 'Beantwortet');
                             }
                             $log('warn', 'KIVoice.fallback', [
                                 'durationSeconds' => $homeAgentElapsed,

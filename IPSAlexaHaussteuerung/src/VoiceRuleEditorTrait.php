@@ -1085,6 +1085,15 @@ trait IAHVoiceRuleEditorTrait
                 $result=array_replace($result,['matched'=>true,'ok'=>true,'category'=>'session',
                     'route'=>'exit','answer'=>'Ok, bis bald!']);
             }else{
+                $settings=$this->getObjectIDByIdentOrName($this->InstanceID,'iahSettings','Einstellungen');
+                $catalogId=$settings>0?$this->getObjectIDByIdentOrName($settings,'roomsCatalog','RoomsCatalog'):0;
+                $catalog=IAHVoiceRuleLiteralReader::read($this->getScriptContent($catalogId));
+                $entry=$key!==''?($this->houseQuestionContexts()[$key]??[]):[];
+                if ($this->pendingHouseLocationScope($spoken,$catalog??[],$entry)!==null)
+                    return self::encodeAlexaVoiceTest(array_replace($result,
+                        $this->previewAlexaHouseQuestion($spoken,$catalog,$key)));
+                if ((int)($entry['awaitingLocationUntil']??0)>time())
+                    $this->updateHouseQuestionContext($key,null);
                 // The existing rule tester preserves exact alias priority and
                 // the live allowlist for optional semantic FAQ recognition.
                 if($normalized!=='zurueck' && mb_strlen($spoken,'UTF-8')<=160){
@@ -1122,9 +1131,6 @@ trait IAHVoiceRuleEditorTrait
                     if(isset($rule['inactiveMatches']))$result['inactiveMatches']=$rule['inactiveMatches'];
                     elseif(isset($rule['error']))$result['voiceRulesWarning']=$rule['error'];
                 }
-                $settings=$this->getObjectIDByIdentOrName($this->InstanceID,'iahSettings','Einstellungen');
-                $catalogId=$settings>0?$this->getObjectIDByIdentOrName($settings,'roomsCatalog','RoomsCatalog'):0;
-                $catalog=IAHVoiceRuleLiteralReader::read($this->getScriptContent($catalogId));
                 $result=array_replace($result,$this->previewAlexaVoiceRoute(
                     $spoken,$catalog,$this->systemConfigurationScriptIds($settings)['prod'],$key));
             }
@@ -1210,6 +1216,7 @@ trait IAHVoiceRuleEditorTrait
         $result['matchMethod']=!empty($query['localHouseQuery'])?'local_house_query':'ai_house_query';
         $result['readQueries']=$query['readQueries']??[];
         if(isset($query['answerSource']))$result['answerSource']=$query['answerSource'];
+        if(!empty($query['awaitingLocation']))$result['awaitingLocation']=true;
         $result['ok']=!empty($query['handled'])&&trim((string)($query['answer']??''))!=='';
         if($scope!==null)$result['questionScope']=$scope;
         if($result['ok']){
@@ -1298,8 +1305,25 @@ trait IAHVoiceRuleEditorTrait
         }
     }
 
+    private function pendingHouseLocationScope(string $spoken,array $catalog,array $entry): ?array
+    {
+        if ((int)($entry['awaitingLocationUntil']??0)<=time()
+            || IAHHouseQuestionContext::isNewQuestion($spoken)) return null;
+        $text=IAHHouseQuestionContext::normalize($spoken);
+        if ($text==='' || strlen($text)>100
+            || preg_match('/\b(?:schalte|schalten|oeffne|schliesse|starte|stoppe|dimme|zurueck|ende)\b/',$text))
+            return null;
+        return IAHHouseQuestionContext::scope(IAHHouseQuestionContext::followUp($spoken)??$text,$catalog);
+    }
+
     private function planHouseQuestion(string $spoken,array $catalog,string $key,bool $resolveInitial=true): array
     {
+        $entry=$key!==''?($this->houseQuestionContexts()[$key]??[]):[];
+        $pendingScope=$this->pendingHouseLocationScope($spoken,$catalog,$entry);
+        if ($pendingScope!==null && !empty($entry['question'])) {
+            $this->updateHouseQuestionContext($key,null);
+            return ['question'=>IAHHouseQuestionContext::withoutLocation($entry['question'],$catalog),'scope'=>$pendingScope];
+        }
         $target=IAHHouseQuestionContext::followUp($spoken);
         if($target===null){
             // Even an unanswered new question must not leave an older topic active.
@@ -1311,7 +1335,7 @@ trait IAHVoiceRuleEditorTrait
                 return ['answer'=>'Diesen Raum oder diese Etage kann ich im RoomsCatalog nicht eindeutig zuordnen.'];
             return $scope===null?['question'=>$question]:['question'=>$question,'scope'=>$scope];
         }
-        $previous=$key!==''?($this->houseQuestionContexts()[$key]['question']??''):'';
+        $previous=$entry['question']??'';
         if($previous==='')
             return ['answer'=>'Bitte stelle zuerst die vollständige Hausfrage, dann kann ich den Bereich wechseln.'];
         $scope=IAHHouseQuestionContext::scope($target,$catalog);
@@ -1322,9 +1346,14 @@ trait IAHVoiceRuleEditorTrait
 
     private function rememberHouseQuestion(string $key,array $plan,array $result): void
     {
-        if(!empty($result['contextEligible'])&&is_string($plan['question']??null)
+        $awaiting=!empty($result['awaitingLocation']);
+        if(($awaiting||!empty($result['contextEligible']))&&is_string($plan['question']??null)
             && trim($plan['question'])!=='')
-            $this->updateHouseQuestionContext($key,['question'=>mb_substr($plan['question'],0,500,'UTF-8')]);
+            $this->updateHouseQuestionContext($key,[
+                'question'=>mb_substr($plan['question'],0,500,'UTF-8'),
+                'awaitingLocationUntil'=>$awaiting?time()+90:0,
+                'expires'=>time()+($awaiting?90:600),
+            ]);
     }
 
     private function alexaHouseQuestionKey(string $sessionId,string $deviceId): string
@@ -1342,10 +1371,25 @@ trait IAHVoiceRuleEditorTrait
         return self::encodeAlexaVoiceTest($plan);
     }
 
-    public function RememberAlexaHouseQuestion(string $sessionId,string $deviceId,string $question): void
+    /** Only a recognized location answering a pending prompt may bypass normal routing. */
+    public function IsAlexaHouseLocationReply(string $sessionId,string $deviceId,string $spoken,int $catalogId): bool
+    {
+        $key=$this->alexaHouseQuestionKey($sessionId,$deviceId);
+        if ($key==='' || $deviceId==='') return false;
+        $entry=$this->houseQuestionContexts()[$key]??[];
+        if ((int)($entry['awaitingLocationUntil']??0)<=time()) return false;
+        $catalog=IAHVoiceRuleLiteralReader::read($this->getScriptContent($catalogId))??[];
+        if ($this->pendingHouseLocationScope($spoken,$catalog,$entry)!==null) return true;
+        // A different command, navigation request, or full question ends the pending prompt.
+        if (trim($spoken)!=='')$this->updateHouseQuestionContext($key,null);
+        return false;
+    }
+
+    public function RememberAlexaHouseQuestion(string $sessionId,string $deviceId,string $question,
+        bool $awaitingLocation=false): void
     {
         $this->rememberHouseQuestion($this->alexaHouseQuestionKey($sessionId,$deviceId),
-            ['question'=>$question],['contextEligible'=>true]);
+            ['question'=>$question],['contextEligible'=>true,'awaitingLocation'=>$awaitingLocation]);
     }
 
     public function ResetAlexaHouseQuestion(string $sessionId,string $deviceId): void

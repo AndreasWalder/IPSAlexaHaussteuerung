@@ -670,6 +670,8 @@ function iah_rc_latest_light_on(string $text,array $catalog,?array $scope,int $a
 {
     $light='(?:das licht|ein licht|(?:die )?beleuchtung|eine lampe|das letzte licht|welches licht|licht)';
     $text=iah_rc_norm($text);
+    $text=preg_replace('/^(wo|wie|wann) wird wurde /D','$1 wurde ',$text)??$text;
+    $text=preg_replace('/\b(?:zu schluss|zum schluss|zu letzt)\b/u','zuletzt',$text)??$text;
     if (!preg_match('/^(?:(?:(?:wo|wie|wann|in welche[mn] (?:raum|raeumen)) (?:wurde|ist|ging) '
         .'|welches licht wurde )(?:zuletzt (?:'.$light.' )?|'.$light.' zuletzt )'
         .'(?:eingeschaltet(?: worden)?|angeschaltet(?: worden)?|angemacht(?: worden)?|an)'
@@ -695,7 +697,10 @@ function iah_rc_latest_light_on(string $text,array $catalog,?array $scope,int $a
     iah_rc_log('archive.latest_light_on',array_intersect_key($history,array_flip([
         'ok','matchedDevices','archivedDevices','queriedVariables','partial','error'
     ])));
+    $awaitingLocation=$scope===null && $history['partial'];
+    if ($awaitingLocation) $answer.=' Welchen Raum soll ich genauer prüfen?';
     return ['handled'=>true,'answer'=>$answer,'contextEligible'=>$latest!==null,
+        'awaitingLocation'=>$awaitingLocation,
         'requiredWordingNames'=>$names,'readQueries'=>[['tool'=>'query_archive','result'=>$history]]];
 }
 
@@ -861,6 +866,10 @@ function iah_rc_voice(
     $scope=is_array($cfg['question_scope']??null)?$cfg['question_scope']:null;
     $maxWords=max(8,min(45,(int)($cfg['max_words']??20)));
     $lastReadResult=null;
+    $archiveNeedsLocation=false;
+    $archiveReadSucceeded=false;
+    $locationPrompt=['handled'=>true,'answer'=>'Welchen Raum soll ich im Archiv prüfen?',
+        'awaitingLocation'=>true,'answerSource'=>'archive_clarification'];
     try{
         $catalog=$previewCatalog??iah_rc_load_catalog($catalogId);
         if($scope===null && IAHHouseQuestionContext::isNewQuestion($text))
@@ -880,7 +889,8 @@ function iah_rc_voice(
             unset($local['readQueries'],$local['requiredWordingNames']);
             $local['localHouseQuery']=true;
             $local['answerSource']='local';
-            if($key==='' || empty($cfg['prefer_ai']))return $costFinish($local);
+            if($key==='' || empty($cfg['prefer_ai']) || !empty($local['awaitingLocation']))
+                return $costFinish($local);
             $costStarted=true;
             $model=(string)($cfg['model']??'gpt-6-luna');
             $costReport('start',['model'=>$model]);
@@ -1141,6 +1151,7 @@ function iah_rc_voice(
             // API-Timeout. Nicht die ganze Alexa-Frist fuer Round 3 aufbrauchen.
             if($round>0 && is_array($lastReadResult)
                 && microtime(true)>=$deadline-1.8) {
+                if ($archiveNeedsLocation && !$archiveReadSucceeded && !$wrote) return $costFinish($locationPrompt);
                 $safe=iah_ai_safe_voice_answer($lastReadResult,$maxWords);
                 if($safe!==null){
                     iah_rc_log('answer.fallback',[
@@ -1163,6 +1174,7 @@ function iah_rc_voice(
                 },$round,$retryAvailable);
             $calls=$msg['tool_calls']??[];
             if(!$calls){
+                if ($archiveNeedsLocation && !$archiveReadSucceeded && !$wrote) return $costFinish($locationPrompt);
                 $words=preg_split('/\s+/u',trim(strip_tags((string)($msg['content']??''))),-1,PREG_SPLIT_NO_EMPTY)?:[];
                 if(!$words)throw new RuntimeException('Keine Sprachantwort');
                 $answer=implode(' ',array_slice($words,0,$maxWords));
@@ -1188,6 +1200,12 @@ function iah_rc_voice(
                         : ($name==='query_energy'
                             ? iah_energy_query($energySources,$args,$archiveId)
                             : iah_rc_tool($devices,$name,$args,$allowWrites,$toolText)));
+                if ($name==='query_archive') {
+                    if (($result['error']??'')==='too_many_devices' && $scope===null && $preferRead)
+                        $archiveNeedsLocation=true;
+                    if (!empty($result['ok']) && (int)($result['foundHistory']??0)>0)
+                        $archiveReadSucceeded=true;
+                }
                 if($preview)$readDetails[]=['tool'=>$name,'result'=>$result];
                 if(in_array($name,['set_device','set_multiple'],true))$wrote=true;
                 elseif(in_array($name,['query_house','get_states','query_archive'],true)
@@ -1212,6 +1230,7 @@ function iah_rc_voice(
         }
     }catch(Throwable $e){
         iah_rc_log('error',['reason'=>$e->getMessage(),'durationMs'=>round((microtime(true)-$started)*1000)]);
+        if ($archiveNeedsLocation && !$archiveReadSucceeded && !$wrote) return $costFinish($locationPrompt);
         if(is_array($lastReadResult)){
             $safe=iah_ai_safe_voice_answer($lastReadResult,$maxWords);
             if($safe!==null){

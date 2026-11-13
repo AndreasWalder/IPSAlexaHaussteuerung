@@ -43,6 +43,9 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
   „Wo wurde zuletzt das Licht eingeschaltet?“ vergleicht aufgezeichnete
   Ein-Rückmeldungen über die freigegebenen Lichter im gesamten Haus.
   Voraussetzung sind ein eingerichtetes Archive Control und archivierte Schaltzustände.
+  V3.8.10 erkennt bei dieser Frage auch die Alexa-Transkription „wie wird
+  wurde zu Schluss das Licht eingeschaltet“. Fragt der Skill bei einer
+  Archivabfrage nach dem Raum, reicht in derselben Sitzung der Raumname.
 
 - **Sprachbefehl testen (V3.8.3)**
   Im RoomsCatalogConfigurator oder unter „Szenen und eigene Alexa-Befehle“
