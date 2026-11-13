@@ -2651,7 +2651,7 @@ function Execute($request = null)
                 if (!$homeAgentEnabled) {
                     $log('warn', 'KIVoice.disabled');
                     if ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {
-                        return $kiAlexaKeepOpen('Die ChatGPT-Haussteuerung ist noch nicht aktiviert.');
+                        return $kiAlexaKeepOpen('Hausfragen sind deaktiviert.');
                     }
                 } elseif ($homeAgentSpokenQuestion === '' || $homeAgentSpokenQuestion === '?') {
                     $log('warn', 'KIVoice.missing_text', ['intent' => $intentName]);
@@ -2718,7 +2718,9 @@ function Execute($request = null)
                                 $log('warn', 'KIVoice.bridge.decode', [
                                     'length'=>strlen($homeAgentPayload),
                                     'resultType'=>get_debug_type($homeAgentJson),
-                                    'jsonError'=>json_last_error_msg(),
+                                    'jsonError'=>$homeAgentPayload!=='' ? json_last_error_msg() : 'empty_reply',
+                                    'outputKind'=>preg_match('/\b(?:warning|notice|deprecated|fatal error)\b/i',$homeAgentPayload)
+                                        ? 'php_diagnostic' : 'unknown',
                                 ]);
                             }
                             $homeAgentElapsed = round(microtime(true) - $homeAgentStarted, 3);
@@ -2759,7 +2761,7 @@ function Execute($request = null)
                         'model'=>(string)($propsEarly['KIModelSelection']??'gpt-6-luna')]);
                     if ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {
                         // Erkannte Fragen duerfen beim KI-Fehler keine Kachel ausloesen.
-                        return $kiAlexaKeepOpen('Die ChatGPT-Haussteuerung ist gerade nicht erreichbar.', 'Fehler');
+                        return $kiAlexaKeepOpen('Dazu habe ich gerade keine Antwort.', 'Fehler');
                     }
                 }
             } elseif ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {
@@ -2772,7 +2774,7 @@ function Execute($request = null)
         } elseif ($iahVoiceCategory === 'query') {
             // Statt still auf main_launch zurueckzufallen den Grund nennen.
             $log('warn', 'KIVoice.query_blocked', ['reason'=>(string)$iahKiGate['reason']]);
-            return $kiAlexaKeepOpen('Die Frage wurde erkannt, konnte aber nicht an die KI weitergeleitet werden.');
+            return $kiAlexaKeepOpen('Dazu habe ich gerade keine Antwort.');
         }
         // Alexa/GetHaus kann einen IntentRequest mit komplett leeren Slots
         // liefern. Alexa hat dann keinen Wortlaut uebermittelt: weder die
@@ -3689,9 +3691,9 @@ function Execute($request = null)
         }
         $resetState($V);
         // IAH_LAST_ALEXA_NO_MATCH_BEGIN
-        if (isset($iahLastOutcome)) $iahLastOutcome('Sprachbefehl', 'Konnte kein Gerät verstehen. Wie bitte?', 'Nicht erkannt');
+        if (isset($iahLastOutcome)) $iahLastOutcome('Sprachbefehl', 'Nicht verstanden.', 'Nicht erkannt');
+        return AskResponse::CreatePlainText('Nicht verstanden.')->SetRepromptPlainText('');
         // IAH_LAST_ALEXA_NO_MATCH_END
-        return AskResponse::CreatePlainText('Konnte kein Gerät verstehen. Wie bitte?')->SetRepromptPlainText('Wie bitte?');
 
     } catch (Exception $e) {
         IPS_LogMessage('Alexa', "Fehler: " . $e->getMessage() . "\n" . $e->getTraceAsString());

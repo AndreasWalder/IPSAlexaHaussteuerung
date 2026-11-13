@@ -155,6 +155,12 @@ PHP, false],
                     throw new RuntimeException('Action-Anker fehlt: ' . $key);
                 }
             }
+            // V3.8.4/5 kept the old response outside the marker.
+            $oldFallback = $hooks['NO_MATCH'][0];
+            $next = str_replace(
+                ['// IAH_LAST_ALEXA_NO_MATCH_END' . "\n" . $oldFallback,
+                 '// IAH_LAST_ALEXA_NO_MATCH_END' . "\r\n" . $oldFallback],
+                '// IAH_LAST_ALEXA_NO_MATCH_END', $next);
             if ($next === $current) return;
             token_get_all($next, TOKEN_PARSE);
             $backupId = $this->createNavigationCatalogBackup($scriptId, 'LastAlexaInteraction', $current);

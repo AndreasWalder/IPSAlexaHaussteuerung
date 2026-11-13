@@ -99,6 +99,10 @@ ck384($value('alexa') === 'Büro' && $value('iahLastAlexaIntent') === 'GetHaus'
 
 $action = file_get_contents(dirname(__DIR__) . '/IPSAlexaHaussteuerung/resources/action_entry.php');
 $unpatched = preg_replace('/^[ \t]*\/\/ IAH_LAST_ALEXA_(\w+)_BEGIN\R.*?^[ \t]*\/\/ IAH_LAST_ALEXA_\1_END\R/ms', '', $action);
+$fallbackAnchor = '        $resetState($V);' . "\n\n" . '    } catch (Exception $e) {';
+$oldFallback = "        return AskResponse::CreatePlainText('Konnte kein Gerät verstehen. Wie bitte?')->SetRepromptPlainText('Wie bitte?');";
+$unpatched = str_replace($fallbackAnchor,
+    '        $resetState($V);' . "\n" . $oldFallback . "\n\n" . '    } catch (Exception $e) {', $unpatched);
 $old = $unpatched . "\n// Custom Action code retained\n";
 $add(9190, 200, 'iahActionEntryV384Fixture');
 IPS_SetScriptContent(9190, $old);
