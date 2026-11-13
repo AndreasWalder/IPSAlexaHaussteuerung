@@ -8,6 +8,19 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
 
 ## ✨ Features
 
+- **Letzte Alexa-Aktion (V3.8.4)**
+  Unter **Diagnose** stehen der Name des anfragenden Echo in `alexa`,
+  die erkannten Slots und die letzte Verarbeitung mit Antwort, Intent,
+  Regel, Ergebnis und Uhrzeit. Die JSON-Variable fasst dieselbe Aktion zusammen.
+  Start, Sitzungsende und die Textvorschau überschreiben sie nicht.
+  In einer Sprachregel vom Typ **Antwort** wird `{alexa}` bei einer
+  echten Anfrage durch den in IP-Symcon vergebenen Gerätenamen ersetzt.
+  Beispiel für „Wer bist du?“ ist `Ich bin die Alexa {alexa}.`
+  Die bisherige Standardantwort der importierten Regel wird automatisch
+  dynamisch. Eigene Antworttexte bleiben unverändert, außer wenn sie
+  den Platzhalter verwenden. Ein unbekanntes Echo bekommt keinen
+  Namen eines anderen Geräts. Die Textvorschau zeigt stattdessen einen Platzhalter.
+
 - **Sprachbefehl testen (V3.8.3)**
   Im RoomsCatalogConfigurator oder unter „Szenen und eigene Alexa-Befehle“
   der Alexa-Instanz einen Satz eingeben. Der Test erkennt eigene Regeln,

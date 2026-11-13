@@ -363,6 +363,7 @@ trait IAHVoiceRuleEditorTrait
                 ['type'=>'SelectVariable','name'=>'readVariableId',
                     'caption'=>'Messwertvariable für {value} auswählen',
                     'value'=>(int)($rule['readVariableId']??0)],
+                ['type'=>'Label','caption'=>'{alexa} setzt bei einer echten Alexa-Anfrage den Namen des anfragenden Echo ein.'],
                 ['type'=>'Label','caption'=>'Wichtig: Bei den alten globalen Jalousie-Befehlen '
                     .'fuer eine Integer-Schaltvariable 1=oeffnen und 2=schliessen '
                     .'verwenden, NICHT true. true/false gelten nur fuer Boolean-Variablen. '
@@ -1097,14 +1098,24 @@ trait IAHVoiceRuleEditorTrait
                         if(!empty($result['ok'])&&($result['kind']??'')==='read'){
                             $variableId=$result['plannedAction']['variableId'];
                             try {
-                                $value=function_exists('GetValueFormatted')
-                                    ?GetValueFormatted($variableId):GetValue($variableId);
+                                if ($variableId === $this->alexaDiagnosisVariableId()) {
+                                    $value = '(Name des anfragenden Echo)';
+                                    $result['notice'] = 'Die Textvorschau wurde von keinem Echo gestartet.';
+                                } else {
+                                    $value = function_exists('GetValueFormatted')
+                                        ? GetValueFormatted($variableId) : GetValue($variableId);
+                                }
                                 $result['answer']=str_replace('{value}',(string)$value,$result['answer']);
                                 $result['cardText']=str_replace('{value}',(string)$value,$result['cardText']);
                             }catch(Throwable $ignored){
                                 $result['ok']=false;
                                 $result['error']='Der hinterlegte Messwert ist nicht lesbar.';
                             }
+                        }
+                        $withEcho = $this->applyAlexaNameToVoiceRule($result, '(Name des anfragenden Echo)');
+                        if ($withEcho !== $result) {
+                            $result = $withEcho;
+                            $result['notice'] = 'Die Textvorschau wurde von keinem Echo gestartet.';
                         }
                         return self::encodeAlexaVoiceTest($result);
                     }
@@ -1329,9 +1340,10 @@ trait IAHVoiceRuleEditorTrait
                 'prodSourceSha256'=>hash('sha256',(string)($ctx['prodSource']??'')),
                 'prodLoadMethod'=>(string)($ctx['prodLoadMethod']??'unknown')
             ];
+            $alexaContext=$this->currentAlexaRuleContext($event);
             $result=IAHVoiceRuleEngine::run($rules,$catalog,$event['text'],
                 ['intent'=>(string)($event['intent']??''),
-                 'forbiddenScriptIds'=>array_values(array_unique($forbidden))]);
+                 'forbiddenScriptIds'=>array_values(array_unique($forbidden))]+$alexaContext);
             // Only if the caller has exhausted all exact candidates may
             // optional KI classify a *question* into an enabled read-only rule.
             // No scripts/scenes/variables are included in the model allowlist.
@@ -1340,7 +1352,7 @@ trait IAHVoiceRuleEditorTrait
                 if($aiMatch!==null){
                     $checked=IAHVoiceRuleEngine::run($rules,$catalog,$aiMatch['alias'],[
                         'intent'=>'','forbiddenScriptIds'=>$forbidden
-                    ]);
+                    ]+$alexaContext);
                     if(!empty($checked['matched']) && !empty($checked['ok'])
                         && ($checked['ruleKey']??'')===$aiMatch['key']
                         && in_array($checked['kind']??'',['answer','read'],true)){
@@ -1367,6 +1379,7 @@ trait IAHVoiceRuleEditorTrait
                     'answer'=>'Dieser alte Befehl ist deaktiviert. '
                         .'Bitte eine neue Sprachregel im Konfigurator anlegen.'];
             }
+            $result=$this->applyAlexaNameToVoiceRule($result,$alexaContext['alexaName']);
             $this->recordVoiceRuleRecognition($event,$result,'',$meta);
             if(!empty($result['matched']))
                 IPS_LogMessage('Alexa','VoiceRules.V37 '.json_encode([

@@ -495,8 +495,13 @@ final class IAHVoiceRuleEngine
             if($id<=0||!function_exists('IPS_VariableExists')||!IPS_VariableExists($id))
                 return $base+['ok'=>false,'answer'=>'Messwert ist nicht verfuegbar.'];
             try {
-                $value=function_exists('GetValueFormatted')
-                    ?GetValueFormatted($id):GetValue($id);
+                if ($id === ($context['alexaReadVariableId'] ?? 0)) {
+                    $value = (string)($context['alexaName'] ?? '');
+                    if ($value === '') $value = 'unbekanntes Alexa-Gerät';
+                } else {
+                    $value = function_exists('GetValueFormatted')
+                        ? GetValueFormatted($id) : GetValue($id);
+                }
                 $answer=str_replace('{value}',(string)$value,$answer);
                 $base['cardText']=str_replace('{value}',(string)$value,$base['cardText']);
                 return $base+['ok'=>true,'answer'=>$answer];

@@ -16,6 +16,7 @@ require_once __DIR__ . '/src/VoiceRulePreviewForm.php';
 require_once __DIR__ . '/src/HouseQuestionContext.php';
 require_once __DIR__ . '/src/VoiceLegacyMigration.php';
 require_once __DIR__ . '/src/VoiceRuleEditorTrait.php';
+require_once __DIR__ . '/src/LastAlexaInteractionTrait.php';
 require_once __DIR__ . '/src/SystemNavigationMigration.php';
 require_once __DIR__ . '/src/KICostTrait.php';
 require_once __DIR__ . '/src/Router.php';
@@ -36,6 +37,7 @@ class IPSAlexaHaussteuerung extends IPSModule
     use \IAHKICost\KICostTrait;
     use \IAHAlexaLog\AlexaLogTrait;
     use IAHVoiceRuleEditorTrait;
+    use IAHLastAlexaInteractionTrait;
 
     /** @var bool */
     private $isApplyingChanges = false;
@@ -255,8 +257,9 @@ class IPSAlexaHaussteuerung extends IPSModule
         ];
         foreach ($diagVars as [$ident, $name]) {
             $this->adoptChildToCategory($root, $catDiag, $ident, $name);
-            $this->ensureVar($catDiag, $name, $ident, VARIABLETYPE_STRING, '', '');
+            $this->ensureVar($catDiag, $name, $ident, VARIABLETYPE_STRING, '', null);
         }
+        $this->ensureLastAlexaInteraction($catDiag);
 
         // Runtime vars under instance
         $this->ensureVar($root, 'skillActive', 'skillActive', VARIABLETYPE_BOOLEAN, '', false);
@@ -1166,6 +1169,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->patchActionScriptNavigationMigration((int) $id);
         $this->patchActionScriptRoomUiMigration((int) $id);
         $this->patchActionScriptVoiceRules((int)$id);
+        $this->patchActionScriptLastAlexaInteraction((int)$id);
 
         return (int) $id;
     }

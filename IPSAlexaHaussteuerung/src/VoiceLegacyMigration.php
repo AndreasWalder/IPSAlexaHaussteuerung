@@ -36,10 +36,9 @@ final class IAHVoiceLegacyMigration
             'Sage mir deinen Namen','Mit wem spreche ich','In welchem Raum bin ich',
             'werbistdu'
         ];
-        $rules['wer_bist_du']['answer']='Ich bin deine Alexa-Haussteuerung.';
+        $rules['wer_bist_du']['answer']='Ich bin die Alexa {alexa}.';
         $rules['wer_bist_du']['migrationNote']=
-            'Frueher wurde der Alexa-Geraetename in die Antwort eingesetzt; '
-            .'dieser dynamische Teil muss bei Bedarf separat konfiguriert werden.';
+            '{alexa} steht bei einer echten Alexa-Anfrage für den Namen dieses Echo-Geräts.';
 
         $rules['wer_ist_andreas']['aliases']=[
             'Wer ist dein Erfinder','Wer ist dein Programmierer',

@@ -56,6 +56,7 @@ jobs:
           php -l IPSAlexaHaussteuerung/src/HouseQuestionContext.php
           php -l IPSAlexaHaussteuerung/src/VoiceLegacyMigration.php
           php -l IPSAlexaHaussteuerung/src/VoiceRuleEditorTrait.php
+          php -l IPSAlexaHaussteuerung/src/LastAlexaInteractionTrait.php
           php -l IPSAlexaHaussteuerung/src/SystemNavigationMigration.php
           php -l IPSAlexaHaussteuerung/resources/helpers/NavigationRuntime.php
           php -l RoomsCatalogConfigurator/module.php
@@ -179,6 +180,8 @@ jobs:
         run: php tests/test_house_question_context_v382.php
       - name: Test V3.8.3 shared floor aliases and deterministic window feedback
         run: php tests/test_floor_window_status_v383.php
+      - name: Test V3.8.4 Echo identity and persistent last Alexa interaction
+        run: php tests/test_last_alexa_interaction_v384.php
       - name: Test Symcon IPSList checkbox callbacks and filtered multi-selection
         run: php tests/test_rooms_catalog_ipslist_multiselect.php
       - name: Test RoomsCatalog quick search for IPS object IDs and parent instance IDs
