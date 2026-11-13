@@ -1206,17 +1206,10 @@ trait IAHVoiceRuleEditorTrait
         $spoken=$plan['question'];
         $scope=$plan['scope']??null;
         require_once __DIR__.'/../resources/helpers/KIHouseController.php';
-        $query=iah_rc_voice($spoken,[
-            'api_key'=>$this->ReadPropertyString('KIIntentApiKey'),
-            'model'=>$this->ReadPropertyString('KIModelSelection')?:'gpt-6-luna',
-            'archive_control_id'=>$this->ReadPropertyInteger('KIArchiveControlId'),
-            'max_words'=>$this->ReadPropertyInteger('HomeAgentVoiceMaxWords')?:20,
-            'timeout_seconds'=>$this->ReadPropertyInteger('HomeAgentVoiceTimeoutSeconds')?:6,
-            'ki_cost_instance_id'=>$this->InstanceID,
-            'question_scope'=>$scope
-        ],$catalog);
+        $query=iah_rc_voice($spoken,$this->alexaReadOnlyHouseQueryConfig($scope),$catalog);
         $result['matchMethod']=!empty($query['localHouseQuery'])?'local_house_query':'ai_house_query';
         $result['readQueries']=$query['readQueries']??[];
+        if(isset($query['answerSource']))$result['answerSource']=$query['answerSource'];
         $result['ok']=!empty($query['handled'])&&trim((string)($query['answer']??''))!=='';
         if($scope!==null)$result['questionScope']=$scope;
         if($result['ok']){
@@ -1225,6 +1218,52 @@ trait IAHVoiceRuleEditorTrait
         }
         else $result['error']=$query['error']??'Keine verwertbare Antwort der Hausabfrage.';
         return $result;
+    }
+
+    private function alexaReadOnlyHouseQueryConfig(?array $scope): array
+    {
+        return [
+            'api_key'=>$this->ReadPropertyString('KIIntentApiKey'),
+            'model'=>$this->ReadPropertyString('KIModelSelection')?:'gpt-6-luna',
+            'archive_control_id'=>$this->ReadPropertyInteger('KIArchiveControlId'),
+            'max_words'=>$this->ReadPropertyInteger('HomeAgentVoiceMaxWords')?:20,
+            'timeout_seconds'=>$this->ReadPropertyInteger('HomeAgentVoiceTimeoutSeconds')?:6,
+            'ki_cost_instance_id'=>$this->InstanceID,
+            'device_diagnostics'=>$this->ReadPropertyBoolean('KIDetailedQueryDiagnostics'),
+            'prefer_ai'=>$this->ReadPropertyBoolean('KIHousePreferAI'),
+            'question_scope'=>$scope,
+            'allow_writes'=>false,
+        ];
+    }
+
+    /** Read-only Alexa house questions use the module runtime, not generated script stdout. */
+    public function QueryAlexaHouseReadOnly(string $question,int $catalogId,string $scopeJson,string $domain=''): string
+    {
+        if (!$this->ReadPropertyBoolean('HomeAgentVoiceEnabled')
+            || trim($question)==='' || mb_strlen($question,'UTF-8')>500 || strlen($scopeJson)>32000)
+            return '{"handled":false,"error":"house_query_not_available"}';
+        try {
+            $settings=$this->getObjectIDByIdentOrName($this->InstanceID,'iahSettings','Einstellungen');
+            $defaultCatalog=$settings>0?$this->getObjectIDByIdentOrName($settings,'roomsCatalog','RoomsCatalog'):0;
+            if($catalogId<=0 || $catalogId!==$defaultCatalog){
+                $prodId=$this->systemConfigurationScriptIds($settings)['prod'];
+                $prod=IAHVoiceRuleLiteralReader::read($this->getScriptContent($prodId));
+                $configuredCatalog=(int)($prod['script']['ROOMS_CATALOG']??0);
+                if($configuredCatalog<=0 || $configuredCatalog!==$catalogId)
+                    return '{"handled":false,"error":"house_query_catalog_not_available"}';
+            }
+            require_once __DIR__.'/../resources/helpers/KIHouseController.php';
+            $scope=json_decode($scopeJson,true,512,JSON_THROW_ON_ERROR);
+            $config=$this->alexaReadOnlyHouseQueryConfig(is_array($scope)?$scope:null);
+            $config['catalog_script_id']=$catalogId;
+            $config['ui_context_domain']=$domain;
+            return iah_rc_bridge_reply(static fn():array=>iah_rc_voice($question,$config));
+        } catch (Throwable $error) {
+            IPS_LogMessage('Alexa','KIVoice.module.error '.json_encode([
+                'type'=>get_class($error),'file'=>basename($error->getFile()),'line'=>$error->getLine()
+            ]));
+            return '{"handled":false,"error":"house_query_runtime_error"}';
+        }
     }
 
     public function ShowAlexaVoiceTest(string $spoken,string $source,string $conversation=''): void

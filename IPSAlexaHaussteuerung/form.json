@@ -116,6 +116,12 @@
           "value": false
         },
         {
+          "name": "KIHousePreferAI",
+          "type": "CheckBox",
+          "caption": "Hausfragen bevorzugt mit KI beantworten (lokale Istwerte als Rückfall)",
+          "value": true
+        },
+        {
           "name": "HomeAgentVoiceRouteCommands",
           "type": "CheckBox",
           "caption": "KI darf explizite Schaltbefehle ausführen (Gerätefreigabe zusätzlich erforderlich)",

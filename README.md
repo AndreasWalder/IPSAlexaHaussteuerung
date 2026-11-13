@@ -32,6 +32,11 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
   vorübergehend fehlgeschlagenen Modellantwort einen erneuten Versuch
   innerhalb des Alexa-Zeitbudgets. Ohne verwertbare Antwort sagt der
   Skill „Bitte anders formulieren.“ Schaltbefehle werden nicht wiederholt.
+  Seit V3.8.8 laufen lesende Alexa-Hausfragen direkt im Modul. Bei
+  **Hausfragen bevorzugt mit KI beantworten** formuliert das Modell
+  einfache Antworten aus bereits gelesenen Istwerten und plant komplexe
+  Abfragen. Liefert das Modell keinen verwertbaren Text, bleiben
+  verfügbare lokale Antworten erhalten.
 
 - **Sprachbefehl testen (V3.8.3)**
   Im RoomsCatalogConfigurator oder unter „Szenen und eigene Alexa-Befehle“
