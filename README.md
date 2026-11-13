@@ -53,6 +53,18 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
   Die KI darf das geprüfte Ergebnis formulieren, aber nicht die Auswahl
   der Sensoren oder den Zeitpunkt ändern.
 
+- **Alexa-Intents synchronisieren (V3.8.14)**
+  In der IPSAlexaHaussteuerung-Instanz den Abschnitt **Alexa-Intents synchronisieren**
+  öffnen, die vorhandene GetHaus-Instanz wählen und das vollständige
+  Alexa-Interaktionsmodell aus dem JSON Editor einfügen. **Vorschau prüfen**
+  zeigt bestehende Zuordnungen, fehlende Intents und Konflikte am selben
+  Patami-WebHook. **Alexa-Intents synchronisieren** legt die fehlenden
+  Instanzen mit dem lokalen Action-Skript an. Bestehende Skript-Intents
+  werden nur mit der ausdrücklichen Option umgestellt. GetHaus, fremde
+  WebHooks und vorhandene Nicht-Skript-Aktionen bleiben unverändert.
+  Es werden keine bestehenden Instanzen gelöscht und das Alexa-Modell
+  wird nicht veröffentlicht oder geändert.
+
 - **Alexa-Frageanfänge und eigene Befehle (V3.8.13)**
   Separate Frage-Intents erhalten den gesprochenen Anfang, auch bei „Wo …?“,
   „Seit wann …?“ oder „In welchem Raum …?“. `GetHaus` bleibt unverändert.

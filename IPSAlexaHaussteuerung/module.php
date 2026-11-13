@@ -17,6 +17,7 @@ require_once __DIR__ . '/src/HouseQuestionContext.php';
 require_once __DIR__ . '/src/VoiceLegacyMigration.php';
 require_once __DIR__ . '/src/VoiceRuleEditorTrait.php';
 require_once __DIR__ . '/src/LastAlexaInteractionTrait.php';
+require_once __DIR__ . '/src/AlexaIntentSyncTrait.php';
 require_once __DIR__ . '/src/SystemNavigationMigration.php';
 require_once __DIR__ . '/src/KICostTrait.php';
 require_once __DIR__ . '/src/Router.php';
@@ -38,6 +39,7 @@ class IPSAlexaHaussteuerung extends IPSModule
     use \IAHAlexaLog\AlexaLogTrait;
     use IAHVoiceRuleEditorTrait;
     use IAHLastAlexaInteractionTrait;
+    use IAHAlexaIntentSyncTrait;
 
     /** @var bool */
     private $isApplyingChanges = false;
@@ -113,6 +115,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterAttributeString('VoiceRulesDiagnosticJson', '');
         $this->RegisterAttributeString('VoiceRulesDiagnosticTrace', '[]');
         $this->RegisterAttributeString('HouseQuestionContexts', '{}');
+        $this->RegisterAttributeString('AlexaIntentSyncPreview', '');
         $this->RegisterTimer('DelayedPageSwitch', 0, 'IAH_HandleDelayedPageSwitch($_IPS["TARGET"]);');
         $this->RegisterTimer('KICostRefresh', 60000, 'IAH_UpdateKICostExchangeRate($_IPS["TARGET"]); IAH_RefreshKICostDisplay($_IPS["TARGET"]);');
         $this->RegisterTimer('AlexaLogRefresh', 15000, 'IAH_RefreshAlexaLogBuffer($_IPS["TARGET"]);');
@@ -401,6 +404,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         // Navigation-Editor anzeigen; keine Einmal-Migrationsassistenten.
         $form['elements'][]=$this->buildSystemNavigationEditorForm();
         $form['elements'][]=$this->buildVoiceRuleEditorForm();
+        $form['actions'][]=$this->buildAlexaIntentSyncForm();
 
         return json_encode($form, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
