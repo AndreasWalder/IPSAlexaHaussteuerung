@@ -188,6 +188,8 @@ jobs:
         run: php tests/test_house_query_bridge_v386.php
       - name: Test V3.8.7 bounded retry for Alexa house questions
         run: php tests/test_house_question_retry_v387.php
+      - name: Test V3.8.8 module runtime house queries and AI wording with local fallback
+        run: php tests/test_alexa_house_runtime_v388.php
       - name: Test Symcon IPSList checkbox callbacks and filtered multi-selection
         run: php tests/test_rooms_catalog_ipslist_multiselect.php
       - name: Test RoomsCatalog quick search for IPS object IDs and parent instance IDs

@@ -808,6 +808,71 @@ function iah_rc_voice(
             $readDetails=$local['readQueries'];
             unset($local['readQueries']);
             $local['localHouseQuery']=true;
+            $local['answerSource']='local';
+            if($key==='' || empty($cfg['prefer_ai']))return $costFinish($local);
+            $costStarted=true;
+            $model=(string)($cfg['model']??'gpt-6-luna');
+            $costReport('start',['model'=>$model]);
+            // Simple questions already have fresh, scoped facts. Let AI
+            // phrase them in one round, without a second read or write tool.
+            $request=[
+                'model'=>$model,'max_completion_tokens'=>200,
+                'messages'=>[
+                    ['role'=>'system','content'=>'Formuliere die Antwort auf die Hausfrage kurz und natürlich auf Deutsch. '
+                        .'Verwende ausschließlich die gelieferten Istwerte. Keine Anzahl, keinen Zustand, keinen Raum '
+                        .'und keinen Gerätenamen hinzuerfinden oder ändern. Unbekannte Zustände bleiben unbekannt. '
+                        .'Bei einer Ja/Nein-Frage behalte die Bedeutung bei. Keine weiteren Fragen stellen.'],
+                    ['role'=>'user','content'=>json_encode([
+                        'frage'=>$text,'bereich'=>$scope['name']??null,'istwerte'=>$local['answer'],
+                    ],JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_UNICODE)],
+                ],
+            ];
+            if($model==='gpt-6-luna')$request['reasoning_effort']='none';
+            $retry=true;
+            try {
+                iah_rc_log('openai.start',['round'=>1,'purpose'=>'phrase_verified_feedback']);
+                $msg=iah_rc_model_message($request,$key,$deadline,$http??'iah_rc_http',
+                    static function(array $response,string $callId)use($costReport,$model):void{
+                        $costReport('api',['callId'=>$callId,'response'=>[
+                            'model'=>(string)($response['model']??$model),'usage'=>$response['usage']??null,
+                        ]]);
+                    },0,$retry);
+                $answer=is_string($msg['content']??null)?trim(strip_tags($msg['content'])):'';
+                // If numbers are changed or omitted, use the sensor answer.
+                // Comparing all numeric tokens also protects decimal values.
+                preg_match_all('/-?\d+(?:[,.]\d+)?/u',$local['answer'],$expected);
+                preg_match_all('/-?\d+(?:[,.]\d+)?/u',$answer,$received);
+                $expected=$expected[0];$received=$received[0];
+                sort($expected);sort($received);
+                $statuses=static function(string $speech):array{
+                    preg_match_all('/\b(\d+) (offen|geschlossen|unbekannt)\b/u',iah_rc_norm($speech),$matches,PREG_SET_ORDER);
+                    $facts=array_map(static fn(array $fact):string=>$fact[2].'='.$fact[1],$matches);
+                    sort($facts);
+                    return $facts;
+                };
+                $polarity=static fn(string $speech):string=>preg_match('/\b(ja|nein|nicht sicher feststellbar)\b/u',
+                    iah_rc_norm($speech),$match)?$match[1]:'';
+                $expectedNames=[];
+                if(preg_match('/ (?:offen|geschlossen) melden: (.+?)(?: und \d+ weitere)?[.]$/u',
+                    $local['answer'],$listed))$expectedNames=explode(', ',$listed[1]);
+                $answerNormalized=iah_rc_norm($answer);
+                $namesIntact=!array_filter($expectedNames,static fn(string $name):bool=>
+                    !str_contains(' '.$answerNormalized.' ',' '.iah_rc_norm($name).' '));
+                if($answer!=='' && mb_strlen($answer,'UTF-8')<=650 && $expected===$received && $namesIntact
+                    && $statuses($local['answer'])===$statuses($answer)
+                    && $polarity($local['answer'])===$polarity($answer)){
+                    $local['answer']=$answer;
+                    $local['answerSource']='ai_verified_feedback';
+                    $local['localHouseQuery']=false;
+                }else{
+                    $local['answerSource']='local_fallback';
+                    iah_rc_log('answer.fallback',['reason'=>'unverified_ai_wording']);
+                }
+            }catch(Throwable $error){
+                $local['answerSource']='local_fallback';
+                iah_rc_log('answer.fallback',['reason'=>'ai_wording_failed','errorType'=>get_class($error),
+                    'errorCode'=>(int)$error->getCode()]);
+            }
             return $costFinish($local);
         }
         if($key==='')return $costFinish(['handled'=>false,'error'=>'KI-Konfiguration unvollständig']);
@@ -1106,8 +1171,12 @@ function iah_rc_bridge_reply(callable $run): string
     return $reply;
 }
 if(isset($_IPS)&&is_array($_IPS)&&array_key_exists('kiCatalogText',$_IPS)){
-    echo iah_rc_bridge_reply(static function () use ($_IPS): array {
-        $cfg=json_decode((string)($_IPS['kiCatalogConfigJson']??'{}'),true);
-        return iah_rc_voice((string)$_IPS['kiCatalogText'],is_array($cfg)?$cfg:[]);
+    // Symcon may expose $_IPS as an auto-global. Auto-globals must
+    // never be captured with a closure's use clause.
+    $iahBridgeText=(string)$_IPS['kiCatalogText'];
+    $iahBridgeConfig=(string)($_IPS['kiCatalogConfigJson']??'{}');
+    echo iah_rc_bridge_reply(static function () use ($iahBridgeText,$iahBridgeConfig): array {
+        $cfg=json_decode($iahBridgeConfig,true);
+        return iah_rc_voice($iahBridgeText,is_array($cfg)?$cfg:[]);
     });
 }

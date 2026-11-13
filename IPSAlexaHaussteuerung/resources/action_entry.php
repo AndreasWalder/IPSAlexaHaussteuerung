@@ -2664,10 +2664,15 @@ function Execute($request = null)
                     $homeAgentBridge = iah_get_child_object(
                         $homeAgentHelpers, 'kiHouseControllerScript', 'KIHouseController'
                     );
+                    $iahReadOnlyQuery = $iahPossibleFollowup || !$homeAgentSimpleCommand
+                        || !$homeAgentAllowCommands
+                        || strcasecmp((string)$intentName, 'HausUndIntent') === 0;
+                    $iahUseModuleQuery = $iahReadOnlyQuery && function_exists('IAH_QueryAlexaHouseReadOnly');
                     $log('info', 'KIVoice.backend.selected', [
-                        'mode'=>'RoomsCatalog','helper'=>'kiHouseControllerScript'
+                        'mode'=>'RoomsCatalog','helper'=>$iahUseModuleQuery
+                            ? 'module_read_only' : 'kiHouseControllerScript'
                     ]);
-                    if ($homeAgentBridge > 0 && function_exists('IPS_RunScriptWaitEx')) {
+                    if ($iahUseModuleQuery || ($homeAgentBridge > 0 && function_exists('IPS_RunScriptWaitEx'))) {
                         try {
                             // Use the actual Alexa session envelope, not a shared
                             // device fallback. A new session cannot reuse an old topic.
@@ -2682,28 +2687,36 @@ function Execute($request = null)
                                 return $kiAlexaKeepOpen((string)$housePlan['answer']);
                             }
                             $houseQuestion = (string)($housePlan['question'] ?? $homeAgentSpokenQuestion);
-                            $log('info', 'KIVoice.bridge.start', ['scriptId' => $homeAgentBridge]);
-                            // IPS_RunScriptWaitEx akzeptiert nur skalare Parameterwerte.
-                            // Die Konfiguration deshalb als JSON-String übertragen (nicht als Array).
-                            $kiCatalogJson = json_encode([
-                                'catalog_script_id' => (int) ($S['ROOMS_CATALOG'] ?? 0),
-                                'archive_control_id' => (int) ($propsEarly['KIArchiveControlId'] ?? 0),
-                                'api_key' => (string) ($propsEarly['KIIntentApiKey'] ?? ''),
-                                'model' => (string) ($propsEarly['KIModelSelection'] ?? 'gpt-6-luna'),
-                                'max_words' => (int) ($propsEarly['HomeAgentVoiceMaxWords'] ?? 20),
-                                'timeout_seconds' => (int) ($propsEarly['HomeAgentVoiceTimeoutSeconds'] ?? 6),
-                                'device_diagnostics' => (bool) ($propsEarly['KIDetailedQueryDiagnostics'] ?? true),
-                                'allow_writes' => empty($housePlan['scope']) && !$iahPossibleFollowup
-                                    && strcasecmp((string)$intentName, 'HausUndIntent') !== 0
-                                    && $homeAgentAllowCommands,
-                                'question_scope' => $housePlan['scope'] ?? null,
-                                'ki_cost_instance_id' => $instanceId,
-                                'ui_context_domain' => $iahVoiceContextDomain,
-                            ], JSON_THROW_ON_ERROR);
-                            $homeAgentJson = IPS_RunScriptWaitEx($homeAgentBridge, [
-                                'kiCatalogText' => $houseQuestion,
-                                'kiCatalogConfigJson' => $kiCatalogJson,
-                            ]);
+                            if ($iahUseModuleQuery) {
+                                $log('info', 'KIVoice.module.start');
+                                $homeAgentJson = IAH_QueryAlexaHouseReadOnly(
+                                    $instanceId,$houseQuestion,(int)($S['ROOMS_CATALOG']??0),
+                                    json_encode($housePlan['scope']??null,JSON_THROW_ON_ERROR),$iahVoiceContextDomain
+                                );
+                            } else {
+                                $log('info', 'KIVoice.bridge.start', ['scriptId' => $homeAgentBridge]);
+                                // IPS_RunScriptWaitEx akzeptiert nur skalare Parameterwerte.
+                                // Die Konfiguration deshalb als JSON-String übertragen (nicht als Array).
+                                $kiCatalogJson = json_encode([
+                                    'catalog_script_id' => (int) ($S['ROOMS_CATALOG'] ?? 0),
+                                    'archive_control_id' => (int) ($propsEarly['KIArchiveControlId'] ?? 0),
+                                    'api_key' => (string) ($propsEarly['KIIntentApiKey'] ?? ''),
+                                    'model' => (string) ($propsEarly['KIModelSelection'] ?? 'gpt-6-luna'),
+                                    'max_words' => (int) ($propsEarly['HomeAgentVoiceMaxWords'] ?? 20),
+                                    'timeout_seconds' => (int) ($propsEarly['HomeAgentVoiceTimeoutSeconds'] ?? 6),
+                                    'device_diagnostics' => (bool) ($propsEarly['KIDetailedQueryDiagnostics'] ?? true),
+                                    'allow_writes' => !$iahReadOnlyQuery && empty($housePlan['scope']) && !$iahPossibleFollowup
+                                        && strcasecmp((string)$intentName, 'HausUndIntent') !== 0
+                                        && $homeAgentAllowCommands,
+                                    'question_scope' => $housePlan['scope'] ?? null,
+                                    'ki_cost_instance_id' => $instanceId,
+                                    'ui_context_domain' => $iahVoiceContextDomain,
+                                ], JSON_THROW_ON_ERROR);
+                                $homeAgentJson = IPS_RunScriptWaitEx($homeAgentBridge, [
+                                    'kiCatalogText' => $houseQuestion,
+                                    'kiCatalogConfigJson' => $kiCatalogJson,
+                                ]);
+                            }
                             // IPS_RunScriptWaitEx muss das Skript-ECHO zurueckgeben.
                             // Vorher endete eine intern erfolgreiche KI-Antwort oft als
                             // "Keine verwertbare Antwort", ohne Hinweis auf den Grund.
@@ -2735,7 +2748,9 @@ function Execute($request = null)
                                     } catch (Throwable $ignored) {}
                                 }
                                 $homeAgentAnswer = trim((string) $homeAgentData['answer']);
-                                $log('info', 'KIVoice.answer', ['durationSeconds' => $homeAgentElapsed, 'words' => count(preg_split('/\s+/u', $homeAgentAnswer, -1, PREG_SPLIT_NO_EMPTY) ?: [])]);
+                                $log('info', 'KIVoice.answer', ['durationSeconds' => $homeAgentElapsed,
+                                    'source' => $homeAgentData['answerSource'] ?? (!empty($homeAgentData['localHouseQuery']) ? 'local' : 'ai'),
+                                    'words' => count(preg_split('/\s+/u', $homeAgentAnswer, -1, PREG_SPLIT_NO_EMPTY) ?: [])]);
                                 $iahVoiceRouter(['op'=>'outcome','deviceId'=>$iahVoiceDeviceId,
                                     'backend'=>$kiVoiceMode,'success'=>true,
                                     'durationMs'=>(int)round($homeAgentElapsed*1000),

@@ -85,6 +85,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyString('KIIntentLogChannel', 'Alexa');
         $this->RegisterPropertyInteger('KIIntentRateLimit', 60);
         $this->RegisterPropertyBoolean('HomeAgentVoiceEnabled', false);
+        $this->RegisterPropertyBoolean('KIHousePreferAI', true);
         // V3.4.6: Nur noch direkter RoomsCatalog + OpenAI. Alte
         // HomeAgent-MCP-Zugangsdaten werden nicht mehr registriert.
         // Die bisherigen Voice-Flags bleiben fuer Upgrade-Kompatibilitaet.
