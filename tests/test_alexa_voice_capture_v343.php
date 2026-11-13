@@ -81,14 +81,19 @@ checkV343(str_contains($module,'patchActionScriptKIVoice((int) $id)'),
     'existing Action script not migrated on update');
 
 $package=json_decode((string)file_get_contents($root.'/docs/Alexa_Hausfragen_Intent_Paket.json'),true,512,JSON_THROW_ON_ERROR);
-checkV343(count($package['intents']??[])===6,'missing direct Alexa question intents');
+$packageNames=array_column($package['intents']??[],'name');
+foreach ($fixtures as [$intent]) {
+    if ($intent!=='HomeAgentFrageIntent')
+        checkV343(in_array($intent,$packageNames,true), 'missing direct Alexa question intent: '.$intent);
+}
+checkV343(count($packageNames)===count(array_unique($packageNames)), 'duplicate intent name');
 foreach($package['intents'] as $item){
     checkV343(count($item['slots']??[])===1
         && ($item['slots'][0]['type']??null)==='AMAZON.SearchQuery'
         && ($item['slots'][0]['name']??null)==='Frage',
         'only one SearchQuery per new intent');
     checkV343(count($item['samples']??[])===1
-        && preg_match('/^[\\p{L}]+ \\{Frage\\}$/u',(string)$item['samples'][0])===1,
+        && preg_match('/^[\\p{L}]+(?: [\\p{L}]+)* \\{Frage\\}$/u',(string)$item['samples'][0])===1,
         'carrier phrase must precede SearchQuery');
 }
 echo "PASS: Alexa direct W-questions restored, empty SearchQuery preserved, classic navigation isolated, new intents valid\n";

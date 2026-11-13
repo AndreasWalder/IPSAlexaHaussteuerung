@@ -62,7 +62,7 @@ $run = static function (array $data, string $sdkQuestion = '') use ($slotCode, $
     eval($questionCode);
     $result = eval($bridgeCode);
     return ['answer'=>$result?->text, 'spoken'=>$iahVoiceSpoken, 'slots'=>$iahLastInteraction['slots'],
-        'candidates'=>$iahRuleCandidates, 'events'=>$GLOBALS['v385BridgeEvents']];
+        'candidates'=>$iahRuleCandidates ?? [], 'events'=>$GLOBALS['v385BridgeEvents']];
 };
 
 $install(['answer'=>'Ich bin deine Alexa {alexa}.']);

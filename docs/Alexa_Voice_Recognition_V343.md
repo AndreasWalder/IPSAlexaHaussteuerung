@@ -1,5 +1,15 @@
 # Alexa V3.4.3: direkte Hausfragen zuverlässiger erfassen
 
+> **Ab V3.8.13** enthält das [Intent-Paket](Alexa_Hausfragen_Intent_Paket.json)
+> weitere eindeutige Satzanfänge und `HausBefehlIntent`. Beim manuellen
+> Zusammenführen vorhandene Einträge gleichen Namens ersetzen und fehlende
+> ergänzen. `GetHaus`, eigene Slot-Typen und `HomeAgentFrageIntent` nicht
+> ersetzen. „Befehl Staubsaugen unten“ übergibt „Staubsaugen unten“ an
+> die in IP-Symcon aktivierte Sprachregel. Die Regel selbst muss nicht in
+> der Alexa Developer Console stehen. Neue Intents verwenden ebenfalls
+> das bisherige Action-Skript. Vor dem Alexa-Build das Modul und seine
+> Instanz aktualisieren.
+
 ## Auswertung der Live-Logs vom 04.11.2026, 21:04–21:05
 
 **21:04:58 und 21:05:11**: Alexa lieferte `IntentRequest / GetHaus`, alle Slots ohne `value`, `VoiceRouter.category=passthrough`, `transcript=""`; danach kam `ROUTE_ALL → main_launch`.

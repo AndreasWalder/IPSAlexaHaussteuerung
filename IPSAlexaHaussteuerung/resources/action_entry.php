@@ -2166,15 +2166,33 @@ function Execute($request = null)
         // IAH_ALEXA_QUESTION_CAPTURE_BEGIN
         // Alexa liefert bei einem AMAZON.SearchQuery-Slot nur den variablen
         // Text, NICHT das feste Fragewort aus der Sample Utterance.
-        // Pro W-Wort ein eindeutig benannter Intent: dadurch bleibt die
-        // urspruengliche Frage fuer KI und Router rekonstruierbar.
+        // Each intent owns one exact carrier, including multiword prefixes.
+        // Keep this list in sync with docs/Alexa_Hausfragen_Intent_Paket.json.
         $iahQuestionPrefixes = [
             'hauswelcheintent'=>'welche',
+            'hauswelcherintent'=>'welcher',
+            'hauswelchesintent'=>'welches',
+            'hauswelchenintent'=>'welchen',
+            'hauswelchemintent'=>'welchem',
             'hauswieintent'=>'wie',
+            'hauswointent'=>'wo',
+            'hauswannintent'=>'wann',
+            'hausseitwannintent'=>'seit wann',
+            'hauswerintent'=>'wer',
+            'hauswarumintent'=>'warum',
+            'hauswiesointent'=>'wieso',
             'hauswasintent'=>'was',
             'hausistintent'=>'ist',
             'haussindintent'=>'sind',
-            'hausundintent'=>'und'
+            'hauskennstintent'=>'kennst',
+            'haushastintent'=>'hast',
+            'haushatintent'=>'hat',
+            'haushabenintent'=>'haben',
+            'hausgibtintent'=>'gibt',
+            'hausinwelchemintent'=>'in welchem',
+            'hausinwelchenintent'=>'in welchen',
+            'hausinwelcherintent'=>'in welcher',
+            'hausundintent'=>'und',
         ];
         $iahQuestionPrefix = $iahQuestionPrefixes[strtolower((string)$intentName)] ?? '';
         if (strcasecmp((string)$intentName, 'GetHaus') === 0 && isset($iahRequestSlots)) {
@@ -2188,7 +2206,9 @@ function Execute($request = null)
                 }
             }
         }
-        $iahDedicatedSearchIntent = strcasecmp((string)$intentName, 'HomeAgentFrageIntent') === 0
+        $iahOwnCommandIntent = strcasecmp((string)$intentName, 'HausBefehlIntent') === 0;
+        $iahDedicatedSearchIntent = $iahOwnCommandIntent
+            || strcasecmp((string)$intentName, 'HomeAgentFrageIntent') === 0
             || $iahQuestionPrefix !== '';
         $iahQuestionSlot = $iahDedicatedSearchIntent
             ? trim((string)($getSlotCH($request, 'Frage') ?? '')) : '';
@@ -2239,8 +2259,27 @@ function Execute($request = null)
                     ? $value : (($rawSlots[$slot] ?? '') === '?' ? '' : ($rawSlots[$slot] ?? ''));
             }
         }
+        // These built-in intents do not carry house-command text.
+        $iahBuiltIn = strtolower((string)$intentName);
+        if (!$iahVoiceIsAplEvent && empty($APL['args'])) {
+            if (in_array($iahBuiltIn, ['amazon.stopintent', 'amazon.cancelintent'], true)) {
+                if (isset($resetState, $V)) $resetState($V);
+                $iahSkillId = (int)($V['SKILL_ACTIVE'] ?? 0);
+                if ($iahSkillId > 0) SetValueBoolean($iahSkillId, false);
+                $iahLastOutcome('Skill beenden', 'Bis bald.', 'Verarbeitet');
+                return TellResponse::CreatePlainText('Bis bald.');
+            }
+            if (in_array($iahBuiltIn, ['amazon.helpintent', 'amazon.fallbackintent'], true)) {
+                $iahBuiltInText = $iahBuiltIn === 'amazon.helpintent'
+                    ? 'Frag zum Beispiel: Welche Fenster sind offen? Für eigene Regeln sage Befehl und den Namen deiner Regel.'
+                    : 'Das habe ich nicht verstanden. Sage zum Beispiel: Welche Fenster sind offen?';
+                $iahLastOutcome('Skill-Hilfe', $iahBuiltInText, 'Hinweis');
+                return AskResponse::CreatePlainText($iahBuiltInText)
+                    ->SetRepromptPlainText('Was möchtest du wissen?');
+            }
+        }
         $iahPendingHouseLocation = false;
-        if (!$IS_LAUNCH && !$IS_BACK && !$wantsExit && !$iahVoiceIsAplEvent && empty($APL['args'])
+        if (empty($iahOwnCommandIntent) && !$IS_LAUNCH && !$IS_BACK && !$wantsExit && !$iahVoiceIsAplEvent && empty($APL['args'])
             && $iahVoiceRequestType === 'IntentRequest' && $iahHouseSessionId !== ''
             && (bool)($propsEarly['HomeAgentVoiceEnabled']??false)
             && function_exists('IAH_IsAlexaHouseLocationReply')) {
@@ -2315,7 +2354,7 @@ function Execute($request = null)
                     ),true);
                     if(is_array($iahRuleResult) && !empty($iahRuleResult['matched']))break;
                 }
-                if(empty($iahRuleResult['matched']) && $iahRuleCandidates!==[]) {
+                if(empty($iahOwnCommandIntent) && empty($iahRuleResult['matched']) && $iahRuleCandidates!==[]) {
                     $iahRuleResult=json_decode((string)IAH_ResolveVoiceRule(
                         $instanceId,json_encode([
                             'text'=>$iahRuleCandidates[0],'intent'=>$intentName,
@@ -2327,7 +2366,7 @@ function Execute($request = null)
                         ],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)
                     ),true);
                 }
-                if(empty($iahRuleResult['matched']) && $iahRuleCandidates!==[]) {
+                if(empty($iahOwnCommandIntent) && empty($iahRuleResult['matched']) && $iahRuleCandidates!==[]) {
                     // Only after every approved candidate failed: do not
                     // reenable the retired hard-coded control shortcuts.
                     $iahRuleResult=json_decode((string)IAH_ResolveVoiceRule(
@@ -2400,6 +2439,15 @@ function Execute($request = null)
             }catch(Throwable $ignored) {
                 IPS_LogMessage('Alexa','VoiceRules.V371 bridge exception type='.get_class($ignored));
             }
+        }
+        if (!empty($iahOwnCommandIntent)) {
+            // No guessed action or legacy fall-through for an unknown rule.
+            $iahCommandHint = $iahVoiceSpoken === ''
+                ? 'Welchen eigenen Befehl meinst du?'
+                : 'Diesen eigenen Befehl kenne ich nicht.';
+            $iahLastOutcome('Sprachregel', $iahCommandHint, 'Nicht erkannt');
+            return AskResponse::CreatePlainText($iahCommandHint)
+                ->SetRepromptPlainText('Welchen eigenen Befehl meinst du?');
         }
         // IAH_VOICE_RULES_V37_END
 
@@ -2586,7 +2634,7 @@ function Execute($request = null)
             $intent = (string)($ctx['intent'] ?? '');
             $category = (string)($ctx['category'] ?? '');
             $dedicated = strcasecmp($intent, 'HomeAgentFrageIntent') === 0
-                || preg_match('/^Haus(?:Welche|Wie|Was|Ist|Sind|Und)Intent$/i', $intent) === 1;
+                || preg_match('/^Haus(?:Welche[rsnm]?|Wie|Wo|Wann|SeitWann|Wer|Warum|Wieso|Was|Ist|Sind|Kennst|Hast|Hat|Haben|Gibt|InWelche[rnm]|Und)Intent$/i', $intent) === 1;
             if (in_array($category, ['navigation', 'apl_navigation', 'apl_action', 'clarify'], true)) {
                 return ['allowed'=>false, 'reason'=>'navigation_or_clarification'];
             }

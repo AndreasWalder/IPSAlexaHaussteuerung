@@ -13,6 +13,54 @@
       ]
     },
     {
+      "name": "HausWelcherIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "welcher {Frage}"
+      ]
+    },
+    {
+      "name": "HausWelchesIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "welches {Frage}"
+      ]
+    },
+    {
+      "name": "HausWelchenIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "welchen {Frage}"
+      ]
+    },
+    {
+      "name": "HausWelchemIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "welchem {Frage}"
+      ]
+    },
+    {
       "name": "HausWieIntent",
       "slots": [
         {
@@ -22,6 +70,78 @@
       ],
       "samples": [
         "wie {Frage}"
+      ]
+    },
+    {
+      "name": "HausWoIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "wo {Frage}"
+      ]
+    },
+    {
+      "name": "HausWannIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "wann {Frage}"
+      ]
+    },
+    {
+      "name": "HausSeitWannIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "seit wann {Frage}"
+      ]
+    },
+    {
+      "name": "HausWerIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "wer {Frage}"
+      ]
+    },
+    {
+      "name": "HausWarumIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "warum {Frage}"
+      ]
+    },
+    {
+      "name": "HausWiesoIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "wieso {Frage}"
       ]
     },
     {
@@ -61,6 +181,102 @@
       ]
     },
     {
+      "name": "HausKennstIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "kennst {Frage}"
+      ]
+    },
+    {
+      "name": "HausHastIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "hast {Frage}"
+      ]
+    },
+    {
+      "name": "HausHatIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "hat {Frage}"
+      ]
+    },
+    {
+      "name": "HausHabenIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "haben {Frage}"
+      ]
+    },
+    {
+      "name": "HausGibtIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "gibt {Frage}"
+      ]
+    },
+    {
+      "name": "HausInWelchemIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "in welchem {Frage}"
+      ]
+    },
+    {
+      "name": "HausInWelchenIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "in welchen {Frage}"
+      ]
+    },
+    {
+      "name": "HausInWelcherIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "in welcher {Frage}"
+      ]
+    },
+    {
       "name": "HausUndIntent",
       "slots": [
         {
@@ -70,6 +286,18 @@
       ],
       "samples": [
         "und {Frage}"
+      ]
+    },
+    {
+      "name": "HausBefehlIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "befehl {Frage}"
       ]
     }
   ]
