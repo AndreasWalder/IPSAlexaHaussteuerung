@@ -31,7 +31,7 @@ final class IAHHouseQuestionContext
         return preg_match('/^(?:und )?(?:in|aus|bei|auf|vor|hinter|neben|unter|ueber|zwischen|seit|mit|nach|an|von|zu) welche[rsnm]?\s+\S+\s+\S+/u',self::normalize($text))===1
             || preg_match('/^(?:und )?(?:wer|was|wann|wo|wie|wieviel|wieviele|'
             .'welche|welcher|welches|welchen|welchem|ist|sind|hat|haben|gibt|'
-            .'pruefe|kontrolliere|zeige|nenne|liste|vergleiche|zaehle|warum|'
+            .'pruefe|kontrolliere|zeige|nenne|liste|vergleiche|zaehle|warum|wieso|seit wann|kennst|hast|'
             .'leuchtet|leuchten|laeuft|laufen)\b/',self::normalize($text))===1;
     }
 

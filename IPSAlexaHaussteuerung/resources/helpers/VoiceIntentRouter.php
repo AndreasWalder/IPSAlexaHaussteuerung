@@ -146,7 +146,7 @@ function iah_vir_classify(array $input,array $saved=[]): array
         ['category'=>'navigation','route'=>$aliases[$text],'reason'=>'bare_tile']);
     if(preg_match('/^(?:und )?(?:in|aus|bei|auf|vor|hinter|neben|unter|ueber|zwischen|seit|mit|nach|an|von|zu) welche[rsnm]?\s+\S+\s+\S+/u',$text))
         return array_replace($result,['category'=>'query','reason'=>'prepositional_question']);
-    if(preg_match('/^und (?:welche[rsnm]?|wie|was|wann|wo|ist|sind|hat|haben|gibt)\b/u',$text))
+    if(preg_match('/^und (?:welche[rsnm]?|wie|was|wann|seit wann|wo|wer|warum|wieso|ist|sind|hat|haben|hast|kennst|gibt)\b/u',$text))
         return array_replace($result,['category'=>'query','reason'=>'new_question_after_and']);
     if(strcasecmp($intent,'HausUndIntent')===0
         || preg_match('/^und (?:innen|drinnen|draussen|nur aussen|ausser aussen)$/D',$text)
@@ -170,7 +170,7 @@ function iah_vir_classify(array $input,array $saved=[]): array
     if(preg_match('/^(?:schalte|schalt|mach|stelle|stell|fahre|fahr|oeffne|schliesse|starte|start|stoppe|stop|dimme|dimm|aktiviere|deaktiviere|setze)\b/u',$text)) {
         return array_replace($result,['category'=>'action','reason'=>'explicit_action']);
     }
-    if(preg_match('/^(?:wer|was|wann|wo|wie|wieviel|welche|welcher|welches|welchen|welchem|ist|sind|hat|haben|gibt|pruefe|pruef|kontrolliere|zaehle|zeige\s+mir|sag\s+mir|sage\s+mir|warum|kannst\s+du)\b/u',$text)) {
+    if(preg_match('/^(?:wer|was|wann|wo|wie|wieviel|welche|welcher|welches|welchen|welchem|ist|sind|hat|haben|gibt|pruefe|pruef|kontrolliere|zaehle|zeige\s+mir|sag\s+mir|sage\s+mir|warum|wieso|seit\s+wann|kennst|hast|kannst\s+du)\b/u',$text)) {
         return array_replace($result,['category'=>'query','reason'=>'explicit_query']);
     }
     // Kein erratenes Schalten bei unvollständigen Befehlen.

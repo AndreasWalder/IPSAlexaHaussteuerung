@@ -53,6 +53,14 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
   Die KI darf das geprüfte Ergebnis formulieren, aber nicht die Auswahl
   der Sensoren oder den Zeitpunkt ändern.
 
+- **Alexa-Frageanfänge und eigene Befehle (V3.8.13)**
+  Separate Frage-Intents erhalten den gesprochenen Anfang, auch bei „Wo …?“,
+  „Seit wann …?“ oder „In welchem Raum …?“. `GetHaus` bleibt unverändert.
+  „Befehl …“ führt zum vorhandenen Sprachregel-Editor. Eine Trefferregel
+  vom Typ **Antwort** liest nur ihren Text vor. Ein unbekannter Befehl wird
+  nicht als Schaltaktion geraten. Alle Intents verwenden das gleiche
+  Action-Skript. [Intent-Paket für den Alexa JSON-Editor](docs/Alexa_Hausfragen_Intent_Paket.json).
+
 - **Beständige Laufzeitdiagnose (V3.8.12)**
   Modul-Updates und „Alles neu aktualisieren“ erhalten vorhandene Werte und
   Objekt-IDs, auch deaktivierte Schaltfreigaben. `log_recent` enthält die
