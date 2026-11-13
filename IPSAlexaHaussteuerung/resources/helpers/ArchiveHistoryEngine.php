@@ -124,6 +124,85 @@ function iah_archive_matches_active(mixed $value,array $dev,string $property): b
         && $expected===$value;
 }
 
+/** Find the latest logged ON feedback across all eligible lights, not just the first 30. */
+function iah_archive_latest_light_on(array $devices,int $archiveId,float $deadline): array
+{
+    $summary=['ok'=>true,'operation'=>'last_light_on','mostRecent'=>null,
+        'matchedDevices'=>0,'archivedDevices'=>0,'queriedVariables'=>0,'partial'=>false];
+    if (!iah_archive_valid($archiveId))
+        return array_replace($summary,['ok'=>false,'error'=>'archive_not_configured']);
+    $inventory=iah_archive_inventory($archiveId);
+    $candidates=[];
+    foreach ($devices as $device) {
+        if (($device['domain']??'')!=='licht'
+            || !in_array($device['type']??'',['light','dimmer','switch','switches','dimmers'],true)) continue;
+        $summary['matchedDevices']++;
+        $reads=(array)($device['reads']??[]);
+        if (empty($device['typed']) && ($device['group']??'')==='switches')
+            $reads['power']=(int)($device['read']??0);
+        foreach (['power','status'] as $role) {
+            $id=(int)($reads[$role]??0);
+            if ($id<=0 || !isset($inventory[$id])) continue;
+            // A dimming value is not itself an ON/OFF transition.
+            if ($id===($reads['brightness']??0)) {
+                $type=(int)(IPS_GetVariable($id)['VariableType']??-1);
+                if ($type!==0) continue;
+            }
+            $summary['archivedDevices']++;
+            $candidates[$id]??=['device'=>$device,'upper'=>(int)($inventory[$id]['LastTime']??0)];
+            break;
+        }
+    }
+    // Unknown upper bounds first. Once the next archived value is older
+    // than the winner, no later candidate can overtake it.
+    uasort($candidates,static fn(array $a,array $b):int=>
+        ($b['upper']?:PHP_INT_MAX)<=>($a['upper']?:PHP_INT_MAX));
+    foreach ($candidates as $id=>$candidate) {
+        $winner=(int)($summary['mostRecent']['timestamp']??0);
+        if ($winner>0 && $candidate['upper']>0 && $candidate['upper']<$winner) break;
+        if (microtime(true)>=$deadline) {$summary['partial']=true;break;}
+        $device=$candidate['device'];
+        $summary['queriedVariables']++;
+        try {
+            $end=time();
+            for ($page=0;$page<4;$page++) {
+                if (microtime(true)>=$deadline) {$summary['partial']=true;break;}
+                $values=AC_GetLoggedValues($archiveId,$id,$winner,$end,100);
+                if (!is_array($values)) {$summary['partial']=true;break;}
+                if ($values===[]) break;
+                foreach ($values as $row) {
+                    $at=(int)($row['TimeStamp']??0);
+                    if ($at<=0 || $at<$winner) continue;
+                    $value=$row['Value']??null;
+                    $mapping=(array)($device['stateMapping']??[]);
+                    if (array_key_exists('on',$mapping)) {
+                        $expected=$mapping['on'];
+                        $on=$expected===$value || (is_numeric($expected) && is_numeric($value)
+                            && (float)$expected===(float)$value);
+                    } else {
+                        $profile=iah_ai_profile_label($id,$value);
+                        $on=($profile!==null?iah_ai_binary_feedback($profile)
+                            :iah_ai_binary_feedback($value,true))==='an';
+                    }
+                    if (!$on) continue;
+                    if ($at>$winner || $summary['mostRecent']===null) {
+                        $summary['mostRecent']=['name'=>$device['name'],'room'=>$device['room'],
+                            'timestamp'=>$at,'at'=>date('c',$at)];
+                    }
+                    continue 3;
+                }
+                if (count($values)<100) break;
+                $last=end($values);
+                $earliest=(int)($last['TimeStamp']??0);
+                if ($earliest<=max(1,$winner) || $earliest>=$end) break;
+                if ($page===3) $summary['partial']=true;
+                $end=$earliest-1;
+            }
+        } catch (Throwable $error) {$summary['partial']=true;}
+    }
+    return $summary;
+}
+
 /**
  * Uses only devices already authorized by the productive RoomsCatalog.
  * A motion device with an empty binding can resolve a uniquely archived
