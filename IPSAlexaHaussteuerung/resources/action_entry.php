@@ -1750,6 +1750,30 @@ function Execute($request = null)
             return $getSlotCH($request, $slotName);
         };
 
+        // IAH_LAST_ALEXA_CURRENT_SLOTS_BEGIN
+        // A complete request envelope is authoritative, including missing
+        // slots. An SDK/legacy helper may expose values from another turn.
+        $iahCurrentRequest = (array)(((array)$rawData)['request'] ?? []);
+        if (strcasecmp((string)($iahCurrentRequest['type'] ?? ''), 'IntentRequest') === 0) {
+            $iahRequestIntent = (array)($iahCurrentRequest['intent'] ?? []);
+            $iahRequestSlots = [];
+            foreach ((array)($iahRequestIntent['slots'] ?? []) as $iahSlotKey => $iahSlot) {
+                $iahSlot = (array)$iahSlot;
+                $iahSlotName = strtolower((string)($iahSlot['name'] ?? $iahSlotKey));
+                $iahSlotValue = $iahSlot['value'] ?? ((array)($iahSlot['slotValue'] ?? []))['value'] ?? null;
+                if ((is_string($iahSlotValue) || is_int($iahSlotValue) || is_float($iahSlotValue))
+                    && trim((string)$iahSlotValue) !== '') {
+                    $iahRequestSlots[$iahSlotName] = $iahSlotValue;
+                }
+            }
+            $getSlotCH = static fn($req, string $name) => $iahRequestSlots[strtolower($name)] ?? null;
+            $iahLegacyGetSlotId = $getSlotId;
+            $getSlotId = static function ($req, string $name) use ($iahRequestSlots, $iahLegacyGetSlotId) {
+                $value = $iahRequestSlots[strtolower($name)] ?? null;
+                return $value === null ? null : ($iahLegacyGetSlotId($req, $name) ?? $value);
+            };
+        }
+        // IAH_LAST_ALEXA_CURRENT_SLOTS_END
         // Helfer-Skripte
         $DM_HELPERS = require IPS_GetScriptFile((int)$V['DeviceMap']);
         $RBUILDER = require IPS_GetScriptFile((int)$V['RoomBuilderHelpers']);
@@ -2141,6 +2165,17 @@ function Execute($request = null)
             'hausundintent'=>'und'
         ];
         $iahQuestionPrefix = $iahQuestionPrefixes[strtolower((string)$intentName)] ?? '';
+        if (strcasecmp((string)$intentName, 'GetHaus') === 0 && isset($iahRequestSlots)) {
+            // A current slot or a transcript carried by the current envelope
+            // is stronger evidence than free text exposed by the SDK wrapper.
+            $rawUserText = iah_extract_raw_user_text((object)$iahCurrentRequest);
+            if ($rawUserText === '') {
+                foreach (['frage','question','raw','text','utterance'] as $iahTextSlot) {
+                    $rawUserText = trim((string)($iahRequestSlots[$iahTextSlot] ?? ''));
+                    if ($rawUserText !== '') break;
+                }
+            }
+        }
         $iahDedicatedSearchIntent = strcasecmp((string)$intentName, 'HomeAgentFrageIntent') === 0
             || $iahQuestionPrefix !== '';
         $iahQuestionSlot = $iahDedicatedSearchIntent
@@ -2154,6 +2189,9 @@ function Execute($request = null)
         }
         $iahVoiceSpoken = trim(preg_replace('/\s+/u',' ',$iahVoiceSpoken) ?? '');
         if ($iahDedicatedSearchIntent) {
+            // For question intents use only the actual SearchQuery slot.
+            // Do not let old GetHaus slots or SDK text shadow that question.
+            $rawUserText = $iahVoiceSpoken;
             $log('info', 'KIVoice.slot_capture', [
                 'intent'=>$intentName,
                 'slotPresent'=>$iahQuestionSlot !== '',
@@ -2167,7 +2205,7 @@ function Execute($request = null)
         // empty while the action ID still contains the spoken command.
         // Include this already parsed ID only as a matching candidate;
         // no script/variable IDs are ever taken from an Alexa slot.
-        if ($iahVoiceSpoken==='' && !empty($rawSlots)
+        if (!$iahDedicatedSearchIntent && $iahVoiceSpoken==='' && !empty($rawSlots)
             && is_array($rawSlots) && isset($rawSlotsToText)
             && is_callable($rawSlotsToText)) {
             $iahVoiceSpoken=trim((string)$rawSlotsToText($rawSlots));
@@ -2182,7 +2220,7 @@ function Execute($request = null)
                 'status' => 'Empfangen',
                 'slots' => []
             ];
-            foreach (['action'=>'a','device'=>'d','room'=>'r','szene'=>'s',
+            foreach ($iahDedicatedSearchIntent ? [] : ['action'=>'a','device'=>'d','room'=>'r','szene'=>'s',
                 'object'=>'o','number'=>'n','prozent'=>'p','alles'=>'al'] as $field=>$slot) {
                 $value = (string)($rawSlotValues[$slot] ?? '');
                 $iahLastInteraction['slots'][$field] = $value !== '' && $value !== '?'
@@ -2202,17 +2240,19 @@ function Execute($request = null)
                 $iahRuleCandidates[$normalized]=$value;
         };
         $iahAddRuleCandidate($iahVoiceSpoken);
-        $iahAddRuleCandidate(trim((string)$rawUserText));
-        $iahAddRuleCandidate((string)$rawSlotsToText($rawSlotValues));
-        foreach(['a','s','o','al'] as $slotKey)
-            $iahAddRuleCandidate((string)($rawSlotValues[$slotKey]??''));
-        foreach(['a','s','o'] as $slotKey)
-            $iahAddRuleCandidate((string)($rawSlotIds[$slotKey]??''));
-        $iahActionSpoken=trim((string)($action1Val!==''?$action1Val:$action1Id));
-        $iahDeviceSpoken=trim((string)($device1Val!==''?$device1Val:$device1Id));
-        if($iahActionSpoken!=='' && $iahDeviceSpoken!==''){
-            $iahAddRuleCandidate($iahDeviceSpoken.' '.$iahActionSpoken);
-            $iahAddRuleCandidate($iahActionSpoken.' '.$iahDeviceSpoken);
+        if (!$iahDedicatedSearchIntent) {
+            $iahAddRuleCandidate(trim((string)$rawUserText));
+            $iahAddRuleCandidate((string)$rawSlotsToText($rawSlotValues));
+            foreach(['a','s','o','al'] as $slotKey)
+                $iahAddRuleCandidate((string)($rawSlotValues[$slotKey]??''));
+            foreach(['a','s','o'] as $slotKey)
+                $iahAddRuleCandidate((string)($rawSlotIds[$slotKey]??''));
+            $iahActionSpoken=trim((string)($action1Val!==''?$action1Val:$action1Id));
+            $iahDeviceSpoken=trim((string)($device1Val!==''?$device1Val:$device1Id));
+            if($iahActionSpoken!=='' && $iahDeviceSpoken!==''){
+                $iahAddRuleCandidate($iahDeviceSpoken.' '.$iahActionSpoken);
+                $iahAddRuleCandidate($iahActionSpoken.' '.$iahDeviceSpoken);
+            }
         }
         $iahRuleCandidates=array_values($iahRuleCandidates);
         $iahVoiceRulesBridgeAvailable=$instanceId>0 && function_exists('IAH_ResolveVoiceRule');
@@ -2230,8 +2270,8 @@ function Execute($request = null)
         // No APL button events, launches, back/exit or arbitrary script IDs.
         if (!$iahVoiceIsAplEvent && empty($APL['args'])
             && !$IS_LAUNCH && !$IS_BACK && !$wantsExit
-            && ($iahRuleCandidates!==[] || preg_match(
-                '/^[A-Za-z][A-Za-z0-9_]{2,55}Intent$/D',(string)$intentName)===1)
+            && ($iahRuleCandidates!==[] || (!$iahDedicatedSearchIntent && preg_match(
+                '/^[A-Za-z][A-Za-z0-9_]{2,55}Intent$/D',(string)$intentName)===1))
             && $iahVoiceRulesBridgeAvailable) {
             try {
                 $iahRuleResult=['matched'=>false];

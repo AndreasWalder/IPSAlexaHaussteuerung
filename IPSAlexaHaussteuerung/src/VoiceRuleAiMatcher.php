@@ -28,6 +28,9 @@ final class IAHVoiceRuleAiMatcher
         if($userTokens===[])return [];
         $allowed=[];
         foreach(IAHVoiceRuleEngine::rules($prod) as $key=>$rule){
+            // Device identity needs an explicit alias or its own custom intent.
+            // Words like "Raum" or "Namen" in a house question are not enough.
+            if($key==='wer_bist_du')continue;
             if(!is_array($rule) || empty($rule['enabled'])
                 || !in_array($rule['kind']??'', ['answer','read'],true))continue;
             $aliases=IAHVoiceRuleEngine::phrases($rule['aliases']??[]);
