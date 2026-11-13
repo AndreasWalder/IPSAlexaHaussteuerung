@@ -28,6 +28,10 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
   Wenn mehrere Messwerte vorliegen, wird ihr Mittelwert genannt.
   Skriptausgaben können die JSON-Antwort nicht mehr verfälschen.
   Technische Fehler stehen im Log. Alexa verwendet kurze, neutrale Antworten.
+  Bei lesenden Hausfragen gibt es seit V3.8.7 bei einer leeren oder
+  vorübergehend fehlgeschlagenen Modellantwort einen erneuten Versuch
+  innerhalb des Alexa-Zeitbudgets. Ohne verwertbare Antwort sagt der
+  Skill „Bitte anders formulieren.“ Schaltbefehle werden nicht wiederholt.
 
 - **Sprachbefehl testen (V3.8.3)**
   Im RoomsCatalogConfigurator oder unter „Szenen und eigene Alexa-Befehle“

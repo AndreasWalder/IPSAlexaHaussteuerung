@@ -580,7 +580,7 @@ function iah_rc_http(array $payload,string $apiKey,float $deadline): array
             throw new RuntimeException($errno===CURLE_OPERATION_TIMEDOUT
                 ? 'API-Zeitlimit erreicht' : 'API-Transportfehler (cURL '.$errno.')');
         }
-        if ($code!==200) throw new RuntimeException('OpenAI-HTTP-Fehler, Status '.$code);
+        if ($code!==200) throw new RuntimeException('OpenAI-HTTP-Fehler, Status '.$code,$code);
         return json_decode($data,true,512,JSON_THROW_ON_ERROR);
     } finally {unset($ch);} // CurlHandle is released on PHP 8; no deprecated curl_close call.
 }
@@ -595,6 +595,39 @@ function iah_rc_chat_payload(string $model,array $messages,array $tools,int $rou
         'tool_choice'=>$toolChoice,'max_completion_tokens'=>200];
     if($model==='gpt-6-luna')$payload['reasoning_effort']='none';
     return $payload;
+}
+
+/** Ask the model once more for a read-only question without replaying any tool calls. */
+function iah_rc_model_message(array $request,string $key,float $deadline,callable $http,
+    callable $record,int $round,bool &$retryAvailable): array
+{
+    for($attempt=0;$attempt<2;$attempt++){
+        // Leave a little time for a second request within the same Alexa budget.
+        $attemptDeadline=$deadline;
+        if($retryAvailable && $deadline-microtime(true)>=2.6) $attemptDeadline-=1.25;
+        try {
+            $response=$http($request,$key,$attemptDeadline);
+            $record($response,'round-'.$round.($attempt===0?'':'-retry'));
+            $message=$response['choices'][0]['message']??null;
+            if(!is_array($message))throw new RuntimeException('Keine KI-Antwort');
+            if(empty($message['tool_calls'])
+                && (!is_string($message['content']??null) || trim(strip_tags($message['content']))===''))
+                throw new RuntimeException('Keine Sprachantwort');
+            return $message;
+        } catch (RuntimeException | JsonException $error) {
+            $code=(int)$error->getCode();
+            $clientError=$error instanceof RuntimeException && $code>=400 && $code<500 && $code!==408;
+            if(!$retryAvailable || $attempt!==0 || $clientError || $deadline-microtime(true)<0.7)throw $error;
+            $retryAvailable=false;
+            iah_rc_log('openai.retry',['round'=>$round+1,'reason'=>$error instanceof JsonException
+                ?'invalid_json':($code>0?'http_'.$code:$error->getMessage())]);
+            if (($request['messages'][0]['role']??null)==='system') {
+                $request['messages'][0]['content'].=' Ein erneuter Versuch: Gib eine verwertbare Antwort '
+                    .'oder die passende lesende Datenabfrage zurück. Erfinde keine Werte.';
+            }
+        }
+    }
+    throw new RuntimeException('Keine KI-Antwort');
 }
 
 /** Common light questions use the same read-only feedback for the Echo and the test form. */
@@ -962,6 +995,7 @@ function iah_rc_voice(
             ['role'=>'system','content'=>$planningRules],
             ['role'=>'user','content'=>mb_substr($text,0,500,'UTF-8')]
         ];
+        $retryAvailable=$preferRead || !$allowWrites;
         // Zwei Runden sind ueblich; eine dritte erlaubt es der KI,
         // eine unpassende Datenabfrage gezielt zu korrigieren.
         for($round=0;$round<3;$round++){
@@ -982,13 +1016,13 @@ function iah_rc_voice(
             $request=iah_rc_chat_payload($model,$messages,$tools,$round,
                 $preferRead,$round>=2,$wantsEnergy?'query_energy':
                     ($wantsArchive?'query_archive':'query_house'));
-            $response=($http??'iah_rc_http')($request,$key,$deadline);
-            $costReport('api',['callId'=>'round-'.$round,'response'=>[
-                'model'=>(string)($response['model']??($cfg['model']??'')),
-                'usage'=>$response['usage']??null
-            ]]);
-            $msg=$response['choices'][0]['message']??null;
-            if(!is_array($msg))throw new RuntimeException('Keine KI-Antwort');
+            $msg=iah_rc_model_message($request,$key,$deadline,$http??'iah_rc_http',
+                static function (array $response,string $callId) use ($costReport,$model): void {
+                    $costReport('api',['callId'=>$callId,'response'=>[
+                        'model'=>(string)($response['model']??$model),
+                        'usage'=>$response['usage']??null
+                    ]]);
+                },$round,$retryAvailable);
             $calls=$msg['tool_calls']??[];
             if(!$calls){
                 $words=preg_split('/\s+/u',trim(strip_tags((string)($msg['content']??''))),-1,PREG_SPLIT_NO_EMPTY)?:[];
