@@ -1537,6 +1537,9 @@ function Execute($request = null)
         }
 
         $writeRuntimeString = static function ($varId, string $value): void {
+            // IAH_LAST_ALEXA_LEGACY_BEGIN
+            if (function_exists('IAH_RecordAlexaInteraction')) return;
+            // IAH_LAST_ALEXA_LEGACY_END
             $id = (int) $varId;
             if ($id > 0) {
                 @SetValueString($id, $value);
@@ -2045,7 +2048,16 @@ function Execute($request = null)
 
         // AskResponse hält den Alexa-Skill nach einer KI-Antwort für die nächste Frage offen.
         // Ein Reprompt wird nur nach einer Sprechpause ausgegeben; Alexa begrenzt die Sitzungsdauer.
-        $kiAlexaKeepOpen = static function (string $text) {
+        $iahLastInteraction = null;
+        $iahLastOutcome = static function (string $route, string $answer, string $status, string $rule = '') use (&$iahLastInteraction): void {
+            if ($iahLastInteraction === null) return;
+            $iahLastInteraction['route'] = $route;
+            $iahLastInteraction['answer'] = $answer;
+            $iahLastInteraction['status'] = $status;
+            $iahLastInteraction['ruleKey'] = $rule;
+        };
+        $kiAlexaKeepOpen = static function (string $text, string $status = 'Hinweis') use ($iahLastOutcome) {
+            $iahLastOutcome('Hausabfrage', $text, $status);
             return AskResponse::CreatePlainText($text)
                 ->SetRepromptPlainText('Noch eine Frage oder ein Schaltbefehl?');
         };
@@ -2102,7 +2114,7 @@ function Execute($request = null)
             }
         }
         // IAH_TILE_VOICE_BRIDGE_END
-        $iahVoiceRequestType = (string)($request->type ?? '');
+        $iahVoiceRequestType = (string)(((array)(((array)$rawData)['request'] ?? []))['type'] ?? $request->type ?? '');
         $iahVoiceIsAplEvent = $iahVoiceRequestType === 'Alexa.Presentation.APL.UserEvent';
         $iahVoiceHasScreen = isset($request->context->System->device->supportedInterfaces->{'Alexa.Presentation.APL'});
         $iahHtmlInterfaces=$request->context->System->device->supportedInterfaces ?? null;
@@ -2160,6 +2172,23 @@ function Execute($request = null)
             && is_callable($rawSlotsToText)) {
             $iahVoiceSpoken=trim((string)$rawSlotsToText($rawSlots));
         }
+        if (!$IS_LAUNCH && in_array($iahVoiceRequestType, ['IntentRequest', 'Alexa.Presentation.APL.UserEvent'], true)) {
+            $iahLastInteraction = [
+                'requestType' => $iahVoiceRequestType,
+                'deviceId' => $iahVoiceDeviceId,
+                'spoken' => $iahVoiceSpoken,
+                'intent' => (string)$intentName,
+                'route' => $iahVoiceIsAplEvent ? 'Bildschirm' : 'Sprachbefehl',
+                'status' => 'Empfangen',
+                'slots' => []
+            ];
+            foreach (['action'=>'a','device'=>'d','room'=>'r','szene'=>'s',
+                'object'=>'o','number'=>'n','prozent'=>'p','alles'=>'al'] as $field=>$slot) {
+                $value = (string)($rawSlotValues[$slot] ?? '');
+                $iahLastInteraction['slots'][$field] = $value !== '' && $value !== '?'
+                    ? $value : (($rawSlots[$slot] ?? '') === '?' ? '' : ($rawSlots[$slot] ?? ''));
+            }
+        }
         // Build safe, exact-match candidates from the spoken transcript
         // and Alexa GetHaus slots. The previous bridge only checked a single
         // reconstructed string; e.g. Action=öffnen Device=Jalousien was
@@ -2216,6 +2245,7 @@ function Execute($request = null)
                         $instanceId,json_encode([
                             'text'=>$iahCandidate,'intent'=>$intentName,
                             'aplEvent'=>false,'launch'=>false,'exit'=>false,'back'=>false,
+                            'deviceId'=>$iahVoiceDeviceId,
                             'skipLegacyFallback'=>true,
                             'aiFallback'=>false,
                             'candidateIndex'=>$iahCandidateIndex
@@ -2228,6 +2258,7 @@ function Execute($request = null)
                         $instanceId,json_encode([
                             'text'=>$iahRuleCandidates[0],'intent'=>$intentName,
                             'aplEvent'=>false,'launch'=>false,'exit'=>false,'back'=>false,
+                            'deviceId'=>$iahVoiceDeviceId,
                             'skipLegacyFallback'=>true,
                             'aiFallback'=>true,
                             'candidateIndex'=>count($iahCandidateList)
@@ -2241,6 +2272,7 @@ function Execute($request = null)
                         $instanceId,json_encode([
                             'text'=>$iahRuleCandidates[0],'intent'=>$intentName,
                             'aplEvent'=>false,'launch'=>false,'exit'=>false,'back'=>false,
+                            'deviceId'=>$iahVoiceDeviceId,
                             'skipLegacyFallback'=>false,
                             'aiFallback'=>false,
                             'candidateIndex'=>count($iahCandidateList)+1
@@ -2294,6 +2326,8 @@ function Execute($request = null)
                         'kind'=>(string)($iahRuleResult['kind']??''),
                         'ok'=>(bool)($iahRuleResult['ok']??false)
                     ]);
+                    $iahLastOutcome('Sprachregel', $ruleAnswer, !empty($iahRuleResult['ok']) ? 'Verarbeitet' : 'Nicht ausgeführt',
+                        (string)($iahRuleResult['ruleKey'] ?? ''));
                     return $ruleResponse;
                 }
                 $log('info','VoiceRules.no_match',[
@@ -2396,6 +2430,7 @@ function Execute($request = null)
                 'message'=>['type'=>'iah_tile_resume']
             ]);
             IPS_LogMessage('Alexa', 'TileVoice.preserve test_resume');
+            $iahLastOutcome('Visualisierung', '', 'Bereits geöffnet');
             return iah_tile_quiet_html_response($resumed,
                 (bool)($propsEarly['TileQuietNoFollowup'] ?? false));
         }
@@ -2663,7 +2698,7 @@ function Execute($request = null)
                                     'backend'=>$kiVoiceMode,'success'=>true,
                                     'durationMs'=>(int)round($homeAgentElapsed*1000),
                                     'model'=>(string)($propsEarly['KIModelSelection']??'gpt-6-luna')]);
-                                return $kiAlexaKeepOpen($homeAgentAnswer);
+                                return $kiAlexaKeepOpen($homeAgentAnswer, 'Beantwortet');
                             }
                             $log('warn', 'KIVoice.fallback', [
                                 'durationSeconds' => $homeAgentElapsed,
@@ -2684,7 +2719,7 @@ function Execute($request = null)
                         'model'=>(string)($propsEarly['KIModelSelection']??'gpt-6-luna')]);
                     if ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {
                         // Erkannte Fragen duerfen beim KI-Fehler keine Kachel ausloesen.
-                        return $kiAlexaKeepOpen('Die ChatGPT-Haussteuerung ist gerade nicht erreichbar.');
+                        return $kiAlexaKeepOpen('Die ChatGPT-Haussteuerung ist gerade nicht erreichbar.', 'Fehler');
                     }
                 }
             } elseif ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {
@@ -3356,6 +3391,9 @@ function Execute($request = null)
             $res = json_decode(IPS_RunScriptWaitEx($S['ROUTE_ALL'], ['payload'=>json_encode($payload, $JSON)]), true);
 
             if (!is_array($res) || empty($res['ok'])) {
+                // IAH_LAST_ALEXA_RENDER_ERROR_BEGIN
+                if (isset($iahLastOutcome)) $iahLastOutcome((string)$__route, 'Fehler beim Rendern.', 'Fehler');
+                // IAH_LAST_ALEXA_RENDER_ERROR_END
                 return TellResponse::CreatePlainText('Fehler beim Rendern.');
             }
             // Nur ERFOLGREICHE Bildschirm-Navigation als aktuellen Gerätekontext speichern.
@@ -3381,6 +3419,9 @@ function Execute($request = null)
             $tokenApl   = (string)($res['aplToken'] ?? 'hv-main');
             $endSession = !empty($data['endSession']);
             $speech     = (string)($data['speech'] ?? '');
+            // IAH_LAST_ALEXA_RENDER_BEGIN
+            if (isset($iahLastOutcome)) $iahLastOutcome((string)$__route, $speech, 'Verarbeitet');
+            // IAH_LAST_ALEXA_RENDER_END
             $reprompt   = (string)($data['reprompt'] ?? '');
             $r = $endSession
                 ? TellResponse::CreatePlainText($speech)
@@ -3577,6 +3618,9 @@ function Execute($request = null)
                             $tokenAplKi   = (string)($resKi['aplToken'] ?? 'hv-main');
                             $endSessionKi = !empty($dataKi['endSession']);
                             $speechKi     = (string)($dataKi['speech'] ?? '');
+                            // IAH_LAST_ALEXA_RENDER_KI_BEGIN
+                            if (isset($iahLastOutcome)) $iahLastOutcome('KI-Weiterleitung', $speechKi, 'Verarbeitet');
+                            // IAH_LAST_ALEXA_RENDER_KI_END
                             $repromptKi   = (string)($dataKi['reprompt'] ?? '');
                             $rKi = $endSessionKi
                                 ? TellResponse::CreatePlainText($speechKi)
@@ -3598,15 +3642,34 @@ function Execute($request = null)
 
         // --------- Fallback ---------
         if (($APL['a2'] ?? null) != null) {
+            // IAH_LAST_ALEXA_APL_FALLBACK_BEGIN
+            if (isset($iahLastOutcome)) $iahLastOutcome('Bildschirm', $APL['a2'] . ' ausgewählt', 'Verarbeitet');
+            // IAH_LAST_ALEXA_APL_FALLBACK_END
             return AskResponse::CreatePlainText($APL['a2'] . " ausgewählt")->SetRepromptPlainText('');
         }
         $resetState($V);
+        // IAH_LAST_ALEXA_NO_MATCH_BEGIN
+        if (isset($iahLastOutcome)) $iahLastOutcome('Sprachbefehl', 'Konnte kein Gerät verstehen. Wie bitte?', 'Nicht erkannt');
+        // IAH_LAST_ALEXA_NO_MATCH_END
         return AskResponse::CreatePlainText('Konnte kein Gerät verstehen. Wie bitte?')->SetRepromptPlainText('Wie bitte?');
 
     } catch (Exception $e) {
         IPS_LogMessage('Alexa', "Fehler: " . $e->getMessage() . "\n" . $e->getTraceAsString());
+        // IAH_LAST_ALEXA_EXCEPTION_BEGIN
+        if (isset($iahLastOutcome)) $iahLastOutcome('Sprachbefehl', 'Ein Fehler ist aufgetreten! Andreas sagen!', 'Fehler');
+        // IAH_LAST_ALEXA_EXCEPTION_END
         return TellResponse::CreatePlainText('Ein Fehler ist aufgetreten! Andreas sagen!');
     } finally {
+        // IAH_LAST_ALEXA_SAVE_BEGIN
+        if (isset($iahLastInteraction) && $instanceId > 0 && function_exists('IAH_RecordAlexaInteraction')) {
+            try {
+                IAH_RecordAlexaInteraction($instanceId, json_encode($iahLastInteraction,
+                    JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR));
+            } catch (Throwable $ignored) {
+                // The diagnostic must not affect the response sent to Alexa.
+            }
+        }
+        // IAH_LAST_ALEXA_SAVE_END
         // "Ende" nur bei LOG_LEVEL=debug
         $logEarly('debug', 'Ende');
     }
