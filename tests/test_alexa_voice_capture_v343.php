@@ -40,6 +40,7 @@ $fixtures=[
     ['HausIstIntent','ein fenster offen','ist ein fenster offen'],
     ['HausSindIntent','alle jalousien zu','sind alle jalousien zu'],
     ['HomeAgentFrageIntent','welche fenster sind offen','welche fenster sind offen'],
+    ['HausUndIntent','im Obergeschoss','und im Obergeschoss'],
 ];
 foreach($fixtures as [$intent,$slot,$expected]){
     $captured=$capture($intent,$slot);
@@ -80,7 +81,7 @@ checkV343(str_contains($module,'patchActionScriptKIVoice((int) $id)'),
     'existing Action script not migrated on update');
 
 $package=json_decode((string)file_get_contents($root.'/docs/Alexa_Hausfragen_Intent_Paket.json'),true,512,JSON_THROW_ON_ERROR);
-checkV343(count($package['intents']??[])===5,'missing direct Alexa question intents');
+checkV343(count($package['intents']??[])===6,'missing direct Alexa question intents');
 foreach($package['intents'] as $item){
     checkV343(count($item['slots']??[])===1
         && ($item['slots'][0]['type']??null)==='AMAZON.SearchQuery'

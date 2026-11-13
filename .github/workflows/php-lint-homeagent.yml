@@ -53,6 +53,7 @@ jobs:
           php -l IPSAlexaHaussteuerung/src/VoiceRuleLiteralReader.php
           php -l IPSAlexaHaussteuerung/src/VoiceRuleAiMatcher.php
           php -l IPSAlexaHaussteuerung/src/VoiceRulePreviewForm.php
+          php -l IPSAlexaHaussteuerung/src/HouseQuestionContext.php
           php -l IPSAlexaHaussteuerung/src/VoiceLegacyMigration.php
           php -l IPSAlexaHaussteuerung/src/VoiceRuleEditorTrait.php
           php -l IPSAlexaHaussteuerung/src/SystemNavigationMigration.php
@@ -174,6 +175,8 @@ jobs:
         run: php tests/test_voice_rule_preview_v38.php
       - name: Test V3.8.1 automatic voice routing and read-only house questions
         run: php tests/test_alexa_voice_test_v381.php
+      - name: Test V3.8.2 isolated Alexa and test-form house question context
+        run: php tests/test_house_question_context_v382.php
       - name: Test Symcon IPSList checkbox callbacks and filtered multi-selection
         run: php tests/test_rooms_catalog_ipslist_multiselect.php
       - name: Test RoomsCatalog quick search for IPS object IDs and parent instance IDs

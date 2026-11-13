@@ -6,10 +6,14 @@ final class IAHVoiceRulePreviewForm
 {
     public static function panel(string $onClick,?array $instances=null,int $instanceId=0): array
     {
+        // Bind the random conversation to this rendered form, not to an
+        // instance property or a field shared by all open consoles.
+        $onClick=str_replace('$VoiceTestConversation',var_export(bin2hex(random_bytes(16)),true),$onClick);
         $items=[
             ['type'=>'Label','caption'=>'Satz wie zu Alexa eingeben, z. B. „Welche Lichter sind eingeschaltet?“. '
                 .'Eigene Regeln, Hausfragen und Navigation werden automatisch unterschieden. '
-                .'Der Test liest bei Bedarf Istwerte oder nutzt die konfigurierte KI. Nichts wird geschaltet.']
+                .'Danach kannst du „Und im Obergeschoss?“ fragen. Eine neue vollständige Hausfrage startet ein neues Thema. '
+                .'Nichts wird geschaltet.']
         ];
         if($instances!==null)
             $items[]=['type'=>'Select','name'=>'VoiceTestInstance','caption'=>'Alexa-Instanz',

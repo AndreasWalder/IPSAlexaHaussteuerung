@@ -4,10 +4,10 @@ declare(strict_types=1);
 require __DIR__.'/test_voice_rule_preview_v38.php';
 require_once dirname(__DIR__).'/IPSAlexaHaussteuerung/resources/helpers/KIHouseController.php';
 
-function IAH_GetAlexaVoiceTest(int $id,string $text,string $source): string
+function IAH_GetAlexaVoiceTest(int $id,string $text,string $source,string $conversation=''): string
 {
     ck38($id===100,'unified test calls the selected Alexa instance');
-    return $GLOBALS['preview38Alexa']->GetAlexaVoiceTest($text,$source);
+    return $GLOBALS['preview38Alexa']->GetAlexaVoiceTest($text,$source,$conversation);
 }
 
 $catalog['wohnzimmer']['domains']['licht']['switches']['decke']['ai']['variables']['power']=810;

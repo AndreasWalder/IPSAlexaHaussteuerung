@@ -59,6 +59,18 @@
       "samples": [
         "sind {Frage}"
       ]
+    },
+    {
+      "name": "HausUndIntent",
+      "slots": [
+        {
+          "name": "Frage",
+          "type": "AMAZON.SearchQuery"
+        }
+      ],
+      "samples": [
+        "und {Frage}"
+      ]
     }
   ]
 }

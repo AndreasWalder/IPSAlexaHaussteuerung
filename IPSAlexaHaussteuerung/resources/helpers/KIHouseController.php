@@ -141,13 +141,18 @@ function iah_rc_write_roles(string $type, array $ids): array
 }
 function iah_rc_index(int $scriptId, bool $includeArchiveOnly = false): array
 {
+    return iah_rc_index_catalog(iah_rc_load_catalog($scriptId),$includeArchiveOnly);
+}
+
+function iah_rc_load_catalog(int $scriptId): array
+{
     if ($scriptId <= 0 || !IPS_ScriptExists($scriptId)) throw new RuntimeException('RoomsCatalog-Skript fehlt');
     $file = IPS_GetScriptFile($scriptId);
     if (!is_file($file)) $file = rtrim(IPS_GetKernelDir(), '\\/') . '/scripts/' . $file;
     if (!is_file($file)) throw new RuntimeException('RoomsCatalog-Datei fehlt');
     $rooms = require $file;
     if (!is_array($rooms)) throw new RuntimeException('RoomsCatalog ist ungültig');
-    return iah_rc_index_catalog($rooms,$includeArchiveOnly);
+    return $rooms;
 }
 
 function iah_rc_index_catalog(array $rooms,bool $includeArchiveOnly=false): array
@@ -567,16 +572,30 @@ function iah_rc_chat_payload(string $model,array $messages,array $tools,int $rou
     return $payload;
 }
 
-/** Common whole-house light questions can be answered from confirmed feedback without an API call. */
-function iah_rc_preview_lights(string $text,array $catalog): ?array
+/** Common light questions use the same read-only feedback for the Echo and the test form. */
+function iah_rc_preview_lights(string $text,array $catalog,?array $scope=null): ?array
 {
     $normalized=iah_rc_norm($text);
     if(!preg_match('/^(welche|wie viele|wieviele) (lichter|lampen|leuchten) sind '
         .'(?:(?:gerade|aktuell|momentan|noch) ){0,2}(an|ein|eingeschaltet|aus|ausgeschaltet)$/D',
         $normalized,$match))return null;
+    $answer=iah_rc_light_answer($text,iah_rc_scope_devices(iah_rc_index_catalog($catalog),$scope),$match);
+    if($scope!==null)$answer['answer']=$scope['name'].' – '.$answer['answer'];
+    return $answer;
+}
+
+function iah_rc_scope_devices(array $devices,?array $scope): array
+{
+    if($scope===null)return $devices;
+    $rooms=(array)($scope['rooms']??[]);
+    return array_filter($devices,static fn(array $device):bool=>in_array($device['roomKey'],$rooms,true));
+}
+
+function iah_rc_light_answer(string $text,array $devices,array $match): array
+{
     $isOn=in_array($match[3],['an','ein','eingeschaltet'],true);
     $list=$match[1]==='welche';
-    $query=iah_ai_query_house(iah_rc_index_catalog($catalog),[
+    $query=iah_ai_query_house($devices,[
         'property'=>'activity','operation'=>$list?'list':'count','group_by'=>$list?'device':'none',
         'domain'=>'licht','condition'=>$isOn?'active':'inactive','limit'=>50
     ],$text);
@@ -603,7 +622,8 @@ function iah_rc_preview_lights(string $text,array $catalog): ?array
     $unknown=(int)($coverage['unknown']??0);
     if($readable>0&&$unknown>0)
         $answer.=' Bei '.$unknown.' weiteren '.($unknown===1?'Licht fehlt':'Lichtern fehlt').' eine eindeutige Rückmeldung.';
-    return ['handled'=>true,'answer'=>$answer,'readQueries'=>[['tool'=>'query_house','result'=>$query]]];
+    return ['handled'=>true,'answer'=>$answer,'contextEligible'=>true,
+        'readQueries'=>[['tool'=>'query_house','result'=>$query]]];
 }
 
 /**
@@ -616,11 +636,11 @@ function iah_rc_voice(
 {
     $preview=$previewCatalog!==null;
     $key=trim((string)($cfg['api_key']??''));$catalogId=(int)($cfg['catalog_script_id']??0);
-    if($key===''||(!$preview&&$catalogId<=0)||trim($text)==='')
+    if((!$preview&&$catalogId<=0)||trim($text)==='')
         return ['handled'=>false,'error'=>'KI-Konfiguration unvollständig'];
     // Ereignisse an das persistente IPS-Modul melden, ohne den normalen Antwortweg zu beeinflussen.
     $costInstanceId=(int)($cfg['ki_cost_instance_id']??0);
-    $costQuestionId=bin2hex(random_bytes(12));
+    $costQuestionId=bin2hex(random_bytes(12));$costStarted=false;
     $costReport=static function (string $type,array $more=[]) use($costInstanceId,$costQuestionId):void {
         if ($costInstanceId<=0 || !function_exists('IAH_RecordKICostEvent')) return;
         try {
@@ -632,22 +652,33 @@ function iah_rc_voice(
             iah_rc_log('cost.warning',['stage'=>$type,'reason'=>'Statistikfehler']);
         }
     };
-    $costReport('start',['model'=>(string)($cfg['model']??'gpt-4.1-mini')]);
-    $readDetails=[];
-    $costFinish=static function (array $result) use($costReport,$preview,&$readDetails):array {
-        $costReport('finish',['success'=>(bool)($result['handled']??false)]);
+    $readDetails=[];$readSucceeded=false;$wrote=false;
+    $costFinish=static function (array $result) use($costReport,$preview,&$readDetails,&$readSucceeded,&$wrote,&$costStarted):array {
+        if($costStarted)$costReport('finish',['success'=>(bool)($result['handled']??false)]);
         if($preview)$result['readQueries']=$readDetails;
+        if($readSucceeded&&!$wrote&&!empty($result['handled']))$result['contextEligible']=true;
         return $result;
     };
     $started=microtime(true);$deadline=$started+max(2,min(7,(int)($cfg['timeout_seconds']??6)));
     $archiveId=(int)($cfg['archive_control_id']??0);
     $wantsArchive=$archiveId>0 && (bool)preg_match(
         '/\b(wann|zuletzt|letzte[rsn]?|wie oft|wie haeufig|wie häufig|verlauf|historie|ereignisse|gestern|pro tag|in den letzten|vorletzte)\b/ui',$text);
-    $maxWords=max(8,min(45,(int)($cfg['max_words']??20)));$allowWrites=!$preview&&(bool)($cfg['allow_writes']??false);
+    $scope=is_array($cfg['question_scope']??null)?$cfg['question_scope']:null;
+    $maxWords=max(8,min(45,(int)($cfg['max_words']??20)));$allowWrites=!$preview&&$scope===null&&(bool)($cfg['allow_writes']??false);
     $lastReadResult=null;
     try{
-        $devices=$preview?iah_rc_index_catalog($previewCatalog,$wantsArchive):iah_rc_index($catalogId,$wantsArchive);
-        $energySources=$preview?iah_energy_catalog_sources($previewCatalog):iah_energy_sources($catalogId);
+        $catalog=$previewCatalog??iah_rc_load_catalog($catalogId);
+        $local=iah_rc_preview_lights($text,$catalog,$scope);
+        if($local!==null){
+            $readDetails=$local['readQueries'];
+            unset($local['readQueries']);
+            return $costFinish($local);
+        }
+        if($key==='')return $costFinish(['handled'=>false,'error'=>'KI-Konfiguration unvollständig']);
+        $costStarted=true;
+        $costReport('start',['model'=>(string)($cfg['model']??'gpt-4.1-mini')]);
+        $devices=iah_rc_scope_devices(iah_rc_index_catalog($catalog,$wantsArchive),$scope);
+        $energySources=$scope===null?iah_energy_catalog_sources($catalog):[];
         if($preview){
             foreach($devices as &$device){
                 $device['writable']=false;
@@ -678,7 +709,7 @@ function iah_rc_voice(
 
         // Explizite Hausfragen duerfen keine Schalt-Werkzeuge erhalten.
         $preferRead=(bool)preg_match('/^\s*(wie|wo|wann|seit wann|welche|welcher|welches|was|wieviel|wie viel|ist|sind|zeige|nenne|liste|haben|hat)\b/ui',$text);
-        if($preview)$preferRead=true;
+        if($preview||$scope!==null)$preferRead=true;
         $props=[
             'deviceKey'=>['type'=>'string'],'name'=>['type'=>'string'],'room'=>['type'=>'string'],
             'floor'=>['type'=>'string'],'domain'=>['type'=>'string'],'group'=>['type'=>'string'],
@@ -774,6 +805,10 @@ function iah_rc_voice(
         $energyContext=$wantsEnergy ? json_encode(iah_energy_schema($energySources),
             JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE) : '';
         $planningRules='Du bist der deutschsprachige KI-Planer einer Haussteuerung. '
+            .($scope!==null?'Die Sitzung hat die Hausfrage auf genau diese Räume eingegrenzt: '
+                .json_encode(array_values(array_unique(array_column($devices,'room'))),
+                    JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE).'. '
+                .'Beziehe die Antwort ausschließlich darauf. Keine Schreibaktionen. ':'')
             .($energySources!==[] ? 'Fuer Solar, Photovoltaik, HuaweiPV, Batterie, Akku, '
                 .'Wechselrichter, Strom, Smartmeter, Energieertrag und Energiefragen '
                 .'query_energy verwenden, NICHT query_house oder query_archive. '
@@ -864,6 +899,7 @@ function iah_rc_voice(
                 $args=json_decode((string)($call['function']['arguments']??'{}'),true);
                 if(!is_array($args)||!in_array($name,array_column(array_column($tools,'function'),'name'),true))
                     throw new RuntimeException('Ungültiger Werkzeugaufruf');
+                if($scope!==null)unset($args['room'],$args['rooms'],$args['floor']);
                 $result=$name==='query_house'
                     ? iah_ai_query_house($devices,$args,$text)
                     : ($name==='query_archive'
@@ -872,6 +908,9 @@ function iah_rc_voice(
                             ? iah_energy_query($energySources,$args,$archiveId)
                             : iah_rc_tool($devices,$name,$args,$allowWrites,$text)));
                 if($preview)$readDetails[]=['tool'=>$name,'result'=>$result];
+                if(in_array($name,['set_device','set_multiple'],true))$wrote=true;
+                elseif(in_array($name,['query_house','get_states','query_archive'],true)
+                    && ($result['ok']??true)===true)$readSucceeded=true;
                 // Diagnose ist ein separater lokaler Logger. Keine
                 // Variablen-IDs, Profile oder unformatierten Istwerte an OpenAI.
                 if ($enableDeviceDiagnostics && in_array($name,['query_house','get_states'],true))

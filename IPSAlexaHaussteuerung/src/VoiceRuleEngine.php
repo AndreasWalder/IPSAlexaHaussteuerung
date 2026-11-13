@@ -174,7 +174,7 @@ final class IAHVoiceRuleEngine
             !preg_match('/^[A-Z][A-Za-z0-9_]{2,55}Intent$/D',$intentName)
             || in_array(strtolower($intentName),[
                 'gethaus','visuintent','homeagentfrageintent','hauswelcheintent',
-                'hauswieintent','hauswasintent','hausistintent','haussindintent'
+                'hauswieintent','hauswasintent','hausistintent','haussindintent','hausundintent'
             ],true)))
             throw new RuntimeException('Ungueltiger oder reservierter Alexa-Intent-Name.');
         $scriptId=(int)($rule['scriptId']??0);
