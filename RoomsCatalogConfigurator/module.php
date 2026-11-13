@@ -5291,18 +5291,18 @@ class RoomsCatalogConfigurator extends IPSModule
         if(!in_array($default,$ids,true))$default=count($ids)===1?$ids[0]:0;
         $instance=count($ids)===1?(string)$default:'(int)$VoiceTestInstance';
         return IAHVoiceRulePreviewForm::panel('RCC_TestAlexaVoice($id, '
-            .$instance.', (string)$VoiceTestText, (string)$VoiceTestSource);',
+            .$instance.', (string)$VoiceTestText, (string)$VoiceTestSource, (string)$VoiceTestConversation);',
             count($ids)===1?null:$options,$default);
     }
 
-    public function TestAlexaVoice(int $instanceId,string $spoken,string $source): void
+    public function TestAlexaVoice(int $instanceId,string $spoken,string $source,string $conversation=''): void
     {
         try {
             if(!in_array($instanceId,$this->voiceTestInstanceIds(),true))
                 throw new RuntimeException('Bitte eine IPSAlexaHaussteuerung-Instanz auswählen.');
             if(!function_exists('IAH_GetAlexaVoiceTest'))
                 throw new RuntimeException('Bitte das Alexa-Modul auf denselben Stand aktualisieren.');
-            $json=IAH_GetAlexaVoiceTest($instanceId,$spoken,$source);
+            $json=IAH_GetAlexaVoiceTest($instanceId,$spoken,$source,$conversation);
             $result=json_decode($json,true,512,JSON_THROW_ON_ERROR);
         }catch(Throwable $error){
             $result=['dryRun'=>true,'matched'=>false,'ok'=>false,'error'=>$error->getMessage()];

@@ -144,6 +144,13 @@ function iah_vir_classify(array $input,array $saved=[]): array
     }
     if(isset($aliases[$text]))return array_replace($result,
         ['category'=>'navigation','route'=>$aliases[$text],'reason'=>'bare_tile']);
+    if(preg_match('/^und (?:welche[rsnm]?|wie|was|wann|wo|ist|sind|hat|haben|gibt)\b/u',$text))
+        return array_replace($result,['category'=>'query','reason'=>'new_question_after_and']);
+    if(strcasecmp($intent,'HausUndIntent')===0
+        || (preg_match('/^(?:und )?(?:im|in der|in dem|in den|in|auf der|auf dem|am|beim) ([a-z0-9 ]{1,70})$/D',$text,$location)
+            && !preg_match('/\b(?:welche|welcher|wie|ist|sind|schalte|schalten|mach|stelle|'
+                .'oeffne|schliesse|starte|stoppe|dimme|fahre|an|aus|ein|auf|zu|prozent)\b/',$location[1])))
+        return array_replace($result,['category'=>'query','reason'=>'possible_location_followup']);
     // "Öffne die Jalousie" meint eher die physische Beschattung,
     // "Öffne die Kachel Jalousie" dagegen eindeutig die Navigation.
     if(preg_match('/^oeffne\\s+(?:die\\s+)?(?:jalousie|jalousien|rollo|rollos|rollladen|rolllaeden)(?:\\s|$)/u',$text)) {

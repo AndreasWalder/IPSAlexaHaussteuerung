@@ -197,7 +197,7 @@ trait IAHVoiceRuleEditorTrait
                     'value'=>method_exists($this,'ReadPropertyBoolean')
                         ?$this->ReadPropertyBoolean('VoiceRulesAiReadOnlyEnabled'):false],
                 IAHVoiceRulePreviewForm::panel('IAH_ShowAlexaVoiceTest($id, '
-                    .'(string)$VoiceTestText, (string)$VoiceTestSource);'),
+                    .'(string)$VoiceTestText, (string)$VoiceTestSource, (string)$VoiceTestConversation);'),
                 ['type'=>'Label','name'=>'VoiceRuleEditorNotice',
                     'caption'=>$notice,'visible'=>$notice!==''],
                 ['type'=>'List','name'=>$name,
@@ -1065,7 +1065,7 @@ trait IAHVoiceRuleEditorTrait
     }
 
     /** Text-only simulation. Never call the live Action entry, renderers or a device action. */
-    public function GetAlexaVoiceTest(string $spoken,string $source='PROD'): string
+    public function GetAlexaVoiceTest(string $spoken,string $source='PROD',string $conversation=''): string
     {
         $spoken=trim($spoken);
         $result=['dryRun'=>true,'matched'=>false,'ok'=>false,'source'=>$source];
@@ -1077,8 +1077,10 @@ trait IAHVoiceRuleEditorTrait
             $result['spoken']=$spoken;
             $normalized=IAHVoiceRuleEngine::normalize($spoken);
             if($normalized==='')throw new RuntimeException('Bitte einen gesprochenen Satz eingeben.');
+            $key=preg_match('/^[a-f0-9]{32}$/D',$conversation)?'test:'.$conversation:'';
 
             if(in_array($normalized,['ende','fertig','exit'],true)){
+                $this->updateHouseQuestionContext($key,null);
                 $result=array_replace($result,['matched'=>true,'ok'=>true,'category'=>'session',
                     'route'=>'exit','answer'=>'Ok, bis bald!']);
             }else{
@@ -1089,6 +1091,9 @@ trait IAHVoiceRuleEditorTrait
                         true,512,JSON_THROW_ON_ERROR);
                     if(!empty($rule['matched'])){
                         $result=array_replace($result,$rule,['category'=>'voice_rule']);
+                        if(IAHHouseQuestionContext::isNewQuestion($spoken)
+                            || in_array($result['kind']??'',['answer','read'],true))
+                            $this->updateHouseQuestionContext($key,null);
                         if(!empty($result['ok'])&&($result['kind']??'')==='read'){
                             $variableId=$result['plannedAction']['variableId'];
                             try {
@@ -1110,7 +1115,7 @@ trait IAHVoiceRuleEditorTrait
                 $catalogId=$settings>0?$this->getObjectIDByIdentOrName($settings,'roomsCatalog','RoomsCatalog'):0;
                 $catalog=IAHVoiceRuleLiteralReader::read($this->getScriptContent($catalogId));
                 $result=array_replace($result,$this->previewAlexaVoiceRoute(
-                    $spoken,$catalog,$this->systemConfigurationScriptIds($settings)['prod']));
+                    $spoken,$catalog,$this->systemConfigurationScriptIds($settings)['prod'],$key));
             }
         }catch(Throwable $error){
             $result['ok']=false;
@@ -1126,7 +1131,7 @@ trait IAHVoiceRuleEditorTrait
             |JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR);
     }
 
-    private function previewAlexaVoiceRoute(string $spoken,?array $catalog,int $prodId): array
+    private function previewAlexaVoiceRoute(string $spoken,?array $catalog,int $prodId,string $key): array
     {
         require_once __DIR__.'/../resources/helpers/VoiceIntentRouter.php';
         $system=IAHVoiceRuleLiteralReader::read($this->getScriptContent($prodId))??[];
@@ -1171,42 +1176,130 @@ trait IAHVoiceRuleEditorTrait
         $isQuestion=$category==='query'||$question!==$spoken||str_contains($spoken,'?')
             ||preg_match('/^(?:zeige|nenne|liste|vergleiche|ueberpruefe|frage|status|'
                 .'leuchtet|leuchten|brennt|brennen|laeuft|laufen|wieviele)\b/u',$normalized)===1;
-        if($isQuestion)return $this->previewAlexaHouseQuestion($question,$catalog);
+        if($isQuestion||IAHHouseQuestionContext::isNewQuestion($question)
+            ||IAHHouseQuestionContext::followUp($question)!==null)
+            return $this->previewAlexaHouseQuestion($question,$catalog,$key);
         return ['category'=>'unresolved','reason'=>$decision['reason'],'matched'=>false,'ok'=>false,
             'error'=>'Aus dem Satz allein konnte keine eindeutige Regel, Hausfrage oder Navigation ermittelt werden.'];
     }
 
-    private function previewAlexaHouseQuestion(string $spoken,?array $catalog): array
+    private function previewAlexaHouseQuestion(string $spoken,?array $catalog,string $key): array
     {
         $result=['category'=>'house_question','matched'=>true,'ok'=>false,'catalogSource'=>'PROD'];
+        $plan=$this->planHouseQuestion($spoken,$catalog??[],$key);
         if(!method_exists($this,'ReadPropertyBoolean')||!$this->ReadPropertyBoolean('HomeAgentVoiceEnabled'))
             return $result+['error'=>'Die Hausabfrage ist in der Alexa-Instanz nicht aktiviert.'];
         if($catalog===null)
             return $result+['error'=>'RoomsCatalog PROD ist kein lesbares statisches PHP-Array.'];
+        if(isset($plan['answer']))return array_replace($result,['ok'=>true,'answer'=>$plan['answer']]);
+        $spoken=$plan['question'];
+        $scope=$plan['scope']??null;
         require_once __DIR__.'/../resources/helpers/KIHouseController.php';
-        $local=iah_rc_preview_lights($spoken,$catalog);
+        $local=iah_rc_preview_lights($spoken,$catalog,$scope);
         $query=$local??iah_rc_voice($spoken,[
             'api_key'=>$this->ReadPropertyString('KIIntentApiKey'),
             'model'=>$this->ReadPropertyString('KIModelSelection')?:'gpt-6-luna',
             'archive_control_id'=>$this->ReadPropertyInteger('KIArchiveControlId'),
             'max_words'=>$this->ReadPropertyInteger('HomeAgentVoiceMaxWords')?:20,
             'timeout_seconds'=>$this->ReadPropertyInteger('HomeAgentVoiceTimeoutSeconds')?:6,
-            'ki_cost_instance_id'=>$this->InstanceID
+            'ki_cost_instance_id'=>$this->InstanceID,
+            'question_scope'=>$scope
         ],$catalog);
         $result['matchMethod']=$local!==null?'local_house_query':'ai_house_query';
         $result['readQueries']=$query['readQueries']??[];
         $result['ok']=!empty($query['handled'])&&trim((string)($query['answer']??''))!=='';
-        if($result['ok'])$result['answer']=$query['answer'];
+        if($scope!==null)$result['questionScope']=$scope;
+        if($result['ok']){
+            $result['answer']=$query['answer'];
+            $this->rememberHouseQuestion($key,$plan,$query);
+        }
         else $result['error']=$query['error']??'Keine verwertbare Antwort der Hausabfrage.';
         return $result;
     }
 
-    public function ShowAlexaVoiceTest(string $spoken,string $source): void
+    public function ShowAlexaVoiceTest(string $spoken,string $source,string $conversation=''): void
     {
-        $json=$this->GetAlexaVoiceTest($spoken,$source);
+        $json=$this->GetAlexaVoiceTest($spoken,$source,$conversation);
         $this->UpdateFormField('VoiceTestResult','value',$json);
         $this->UpdateFormField('VoiceTestSummary','caption',
             IAHVoiceRulePreviewForm::summary(json_decode($json,true,512,JSON_THROW_ON_ERROR)));
+    }
+
+    private function houseQuestionContexts(): array
+    {
+        $entries=json_decode($this->ReadAttributeString('HouseQuestionContexts'),true);
+        return array_filter(is_array($entries)?$entries:[],static fn($entry):bool=>
+            is_array($entry)&&(int)($entry['expires']??0)>time());
+    }
+
+    private function updateHouseQuestionContext(string $key,?array $entry): void
+    {
+        if($key==='')return;
+        $lock='IAH.HouseQuestionContext.'.$this->InstanceID;
+        $semaphore=function_exists('IPS_SemaphoreEnter');
+        if($semaphore&&!IPS_SemaphoreEnter($lock,500))return;
+        try {
+            $entries=$this->houseQuestionContexts();
+            unset($entries[$key]);
+            if($entry!==null)$entries[$key]=$entry+['expires'=>time()+600];
+            $this->WriteAttributeString('HouseQuestionContexts',json_encode(
+                array_slice($entries,-40,null,true),JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE));
+        }finally{
+            if($semaphore)IPS_SemaphoreLeave($lock);
+        }
+    }
+
+    private function planHouseQuestion(string $spoken,array $catalog,string $key): array
+    {
+        $target=IAHHouseQuestionContext::followUp($spoken);
+        if($target===null){
+            // Even an unanswered new question must not leave an older topic active.
+            $this->updateHouseQuestionContext($key,null);
+            return ['question'=>IAHHouseQuestionContext::isNewQuestion($spoken)
+                ?(preg_replace('/^\s*und\s+/ui','',$spoken)??$spoken):$spoken];
+        }
+        $previous=$key!==''?($this->houseQuestionContexts()[$key]['question']??''):'';
+        if($previous==='')
+            return ['answer'=>'Bitte stelle zuerst die vollständige Hausfrage, dann kann ich den Bereich wechseln.'];
+        $scope=IAHHouseQuestionContext::scope($target,$catalog);
+        if($scope===null)
+            return ['answer'=>'Diesen Raum oder diese Etage kann ich im RoomsCatalog nicht eindeutig zuordnen.'];
+        return ['question'=>IAHHouseQuestionContext::withoutLocation($previous,$catalog),'scope'=>$scope];
+    }
+
+    private function rememberHouseQuestion(string $key,array $plan,array $result): void
+    {
+        if(!empty($result['contextEligible'])&&is_string($plan['question']??null)
+            && trim($plan['question'])!=='')
+            $this->updateHouseQuestionContext($key,['question'=>mb_substr($plan['question'],0,500,'UTF-8')]);
+    }
+
+    private function alexaHouseQuestionKey(string $sessionId,string $deviceId): string
+    {
+        if($sessionId===''||strlen($sessionId)>512||strlen($deviceId)>1024)return '';
+        return 'alexa:'.hash('sha256',$sessionId."\0".$deviceId);
+    }
+
+    /** Called by the verified Alexa Action. Raw Alexa IDs are never stored. */
+    public function PrepareAlexaHouseQuestion(string $sessionId,string $deviceId,string $spoken,int $catalogId): string
+    {
+        $target=IAHHouseQuestionContext::followUp($spoken);
+        $catalog=$target!==null
+            ?IAHVoiceRuleLiteralReader::read($this->getScriptContent($catalogId)):null;
+        $plan=$this->planHouseQuestion($spoken,$catalog??[],
+            $this->alexaHouseQuestionKey($sessionId,$deviceId));
+        return self::encodeAlexaVoiceTest($plan);
+    }
+
+    public function RememberAlexaHouseQuestion(string $sessionId,string $deviceId,string $question): void
+    {
+        $this->rememberHouseQuestion($this->alexaHouseQuestionKey($sessionId,$deviceId),
+            ['question'=>$question],['contextEligible'=>true]);
+    }
+
+    public function ResetAlexaHouseQuestion(string $sessionId,string $deviceId): void
+    {
+        $this->updateHouseQuestionContext($this->alexaHouseQuestionKey($sessionId,$deviceId),null);
     }
 
     /**

@@ -1,4 +1,4 @@
-# V3.8.1 – Sprachbefehl testen
+# V3.8.2 – Sprachbefehl testen und Orts-Folgefragen
 
 1. Im **RoomsCatalogConfigurator** das Panel **Sprachbefehl testen** öffnen.
    Dasselbe Panel liegt in **IPSAlexaHaussteuerung → Szenen und eigene Alexa-Befehle**.
@@ -32,3 +32,42 @@ Skripte gestartet oder Änderungen nach PROD übernommen.
 
 Beim Öffnen der Instanzkonfiguration sind die Bereiche beider Module
 weiterhin eingeklappt.
+
+## Folgefragen am Echo und im Testfeld
+
+„Welche Lichter sind eingeschaltet?“ beantwortet die Frage fürs Haus.
+„Und im Obergeschoss?“ oder „Und im Büro?“ behält danach das Thema bei
+und liest aktuelle Werte nur für die angegebene Etage bzw. den Raum.
+In **Räume & Etagen** hinterlegte Werte wie `OG` und `1. OG` sowie
+Raumaliasse werden berücksichtigt. Ein unbekannter oder mehrdeutiger Ort
+führt zu einer Rückfrage, nicht zu einer Abfrage fürs ganze Haus.
+
+Eine vollständige neue Frage, auch „Und wie warm ist es?“, ersetzt das
+vorherige Thema. Eine neue Alexa-Sitzung bzw. ein neu geöffnetes Testformular
+beginnt ohne Kontext. Ohne vorherige Hausfrage wird um eine vollständige
+Frage gebeten. Folgefragen schalten keine Geräte.
+
+### Einmalig im Alexa-Interaktionsmodell ergänzen
+
+1. In der Alexa Developer Console den vorhandenen Skill und das deutsche
+   Interaktionsmodell öffnen.
+2. Im JSON Editor **nur** diesen Intent in `interactionModel.languageModel.intents`
+   ergänzen. Bestehende Intents nicht ersetzen.
+
+```json
+{
+  "name": "HausUndIntent",
+  "slots": [{"name": "Frage", "type": "AMAZON.SearchQuery"}],
+  "samples": ["und {Frage}"]
+}
+```
+
+3. **Save Model** und **Build Model** ausführen. In IP-Symcon das Modul
+   aktualisieren und die Alexa-Instanz bei Bedarf einmal **Übernehmen**,
+   damit das bestehende Action-Skript den aktualisierten Sprachblock erhält.
+4. Skill öffnen, „Welche Lichter sind eingeschaltet?“ sagen und direkt
+   nach der Antwort „Und im Obergeschoss?“ fragen.
+
+Der neue Intent ist auch im [Intent-Paket](Alexa_Hausfragen_Intent_Paket.json)
+enthalten. Wenn Alexa den kurzen Satz nicht erfasst, lässt sich über den
+bestehenden Frage-Intent auch „Frage, und im Obergeschoss“ probieren.

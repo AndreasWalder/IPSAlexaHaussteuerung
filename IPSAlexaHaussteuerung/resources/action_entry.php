@@ -2070,6 +2070,18 @@ function Execute($request = null)
             }
         };
         $iahVoiceDeviceId = method_exists($request, 'GetDeviceId') ? (string)$request->GetDeviceId() : '';
+        $iahHouseSession = (array)(((array)$rawData)['session'] ?? []);
+        $iahHouseSessionId = is_string($iahHouseSession['sessionId'] ?? null)
+            ? $iahHouseSession['sessionId'] : '';
+        if ($iahHouseSessionId === '' && is_callable([$request, 'GetSessionId'])) {
+            try { $iahHouseSessionId = (string)$request->GetSessionId(); }
+            catch (Throwable $ignored) {}
+        }
+        if ($iahHouseSessionId !== '' && ($IS_LAUNCH || !empty($iahHouseSession['new']))
+            && function_exists('IAH_ResetAlexaHouseQuestion')) {
+            try { IAH_ResetAlexaHouseQuestion($instanceId, $iahHouseSessionId, $iahVoiceDeviceId); }
+            catch (Throwable $ignored) {}
+        }
         // IAH_TILE_VOICE_BRIDGE_BEGIN
         // Nur die aktuell geoeffnete HTML-Seite auf DEMSELBEN Echo
         // bleibt bei Sprachbefehlen erhalten. Andere Geraete behalten APL.
@@ -2113,7 +2125,8 @@ function Execute($request = null)
             'hauswieintent'=>'wie',
             'hauswasintent'=>'was',
             'hausistintent'=>'ist',
-            'haussindintent'=>'sind'
+            'haussindintent'=>'sind',
+            'hausundintent'=>'und'
         ];
         $iahQuestionPrefix = $iahQuestionPrefixes[strtolower((string)$intentName)] ?? '';
         $iahDedicatedSearchIntent = strcasecmp((string)$intentName, 'HomeAgentFrageIntent') === 0
@@ -2235,6 +2248,11 @@ function Execute($request = null)
                     ),true);
                 }
                 if(is_array($iahRuleResult) && !empty($iahRuleResult['matched'])) {
+                    if ($iahHouseSessionId !== '' && in_array($iahRuleResult['kind'] ?? '', ['answer','read'], true)
+                        && function_exists('IAH_ResetAlexaHouseQuestion')) {
+                        try { IAH_ResetAlexaHouseQuestion($instanceId, $iahHouseSessionId, $iahVoiceDeviceId); }
+                        catch (Throwable $ignored) {}
+                    }
                     $ruleAnswer=trim((string)($iahRuleResult['answer']??''));
                     if($ruleAnswer==='')$ruleAnswer='Der Befehl wurde bearbeitet.';
                     $ruleAnswer=mb_substr($ruleAnswer,0,800,'UTF-8');
@@ -2465,7 +2483,7 @@ function Execute($request = null)
             $intent = (string)($ctx['intent'] ?? '');
             $category = (string)($ctx['category'] ?? '');
             $dedicated = strcasecmp($intent, 'HomeAgentFrageIntent') === 0
-                || preg_match('/^Haus(?:Welche|Wie|Was|Ist|Sind)Intent$/i', $intent) === 1;
+                || preg_match('/^Haus(?:Welche|Wie|Was|Ist|Sind|Und)Intent$/i', $intent) === 1;
             if (in_array($category, ['navigation', 'apl_navigation', 'apl_action', 'clarify'], true)) {
                 return ['allowed'=>false, 'reason'=>'navigation_or_clarification'];
             }
@@ -2530,6 +2548,8 @@ function Execute($request = null)
             $homeAgentSpokenQuestion = $homeAgentDedicatedIntent
                 ? $iahVoiceSpoken
                 : trim((string) ($rawUserText !== '' ? $rawUserText : $rawSlotsToText($rawSlotValues)));
+            $iahPossibleFollowup = ($iahVoiceDecision['reason'] ?? '') === 'possible_location_followup';
+            if ($iahPossibleFollowup) $homeAgentSpokenQuestion = $iahVoiceSpoken;
             if ($homeAgentDedicatedIntent && ($homeAgentSpokenQuestion === '' || $homeAgentSpokenQuestion === '?')) {
                 $homeAgentSpokenQuestion = trim((string) $rawUserText);
             }
@@ -2574,6 +2594,19 @@ function Execute($request = null)
                     ]);
                     if ($homeAgentBridge > 0 && function_exists('IPS_RunScriptWaitEx')) {
                         try {
+                            // Use the actual Alexa session envelope, not a shared
+                            // device fallback. A new session cannot reuse an old topic.
+                            $housePlan = [];
+                            if (function_exists('IAH_PrepareAlexaHouseQuestion')) {
+                                $housePlan = json_decode(IAH_PrepareAlexaHouseQuestion(
+                                    $instanceId, $iahHouseSessionId, $iahVoiceDeviceId, $homeAgentSpokenQuestion,
+                                    (int)($S['ROOMS_CATALOG'] ?? 0)
+                                ), true, 512, JSON_THROW_ON_ERROR);
+                            }
+                            if (isset($housePlan['answer'])) {
+                                return $kiAlexaKeepOpen((string)$housePlan['answer']);
+                            }
+                            $houseQuestion = (string)($housePlan['question'] ?? $homeAgentSpokenQuestion);
                             $log('info', 'KIVoice.bridge.start', ['scriptId' => $homeAgentBridge]);
                             // IPS_RunScriptWaitEx akzeptiert nur skalare Parameterwerte.
                             // Die Konfiguration deshalb als JSON-String übertragen (nicht als Array).
@@ -2585,12 +2618,15 @@ function Execute($request = null)
                                 'max_words' => (int) ($propsEarly['HomeAgentVoiceMaxWords'] ?? 20),
                                 'timeout_seconds' => (int) ($propsEarly['HomeAgentVoiceTimeoutSeconds'] ?? 6),
                                 'device_diagnostics' => (bool) ($propsEarly['KIDetailedQueryDiagnostics'] ?? true),
-                                'allow_writes' => $homeAgentAllowCommands,
+                                'allow_writes' => empty($housePlan['scope']) && !$iahPossibleFollowup
+                                    && strcasecmp((string)$intentName, 'HausUndIntent') !== 0
+                                    && $homeAgentAllowCommands,
+                                'question_scope' => $housePlan['scope'] ?? null,
                                 'ki_cost_instance_id' => $instanceId,
                                 'ui_context_domain' => $iahVoiceContextDomain,
                             ], JSON_THROW_ON_ERROR);
                             $homeAgentJson = IPS_RunScriptWaitEx($homeAgentBridge, [
-                                'kiCatalogText' => $homeAgentSpokenQuestion,
+                                'kiCatalogText' => $houseQuestion,
                                 'kiCatalogConfigJson' => $kiCatalogJson,
                             ]);
                             // IPS_RunScriptWaitEx muss das Skript-ECHO zurueckgeben.
@@ -2613,6 +2649,14 @@ function Execute($request = null)
                             $homeAgentElapsed = round(microtime(true) - $homeAgentStarted, 3);
                             if (is_array($homeAgentData) && ($homeAgentData['handled'] ?? false) === true
                                 && trim((string) ($homeAgentData['answer'] ?? '')) !== '') {
+                                if (!empty($homeAgentData['contextEligible']) && $iahHouseSessionId !== ''
+                                    && function_exists('IAH_RememberAlexaHouseQuestion')) {
+                                    try {
+                                        IAH_RememberAlexaHouseQuestion(
+                                            $instanceId, $iahHouseSessionId, $iahVoiceDeviceId, $houseQuestion
+                                        );
+                                    } catch (Throwable $ignored) {}
+                                }
                                 $homeAgentAnswer = trim((string) $homeAgentData['answer']);
                                 $log('info', 'KIVoice.answer', ['durationSeconds' => $homeAgentElapsed, 'words' => count(preg_split('/\s+/u', $homeAgentAnswer, -1, PREG_SPLIT_NO_EMPTY) ?: [])]);
                                 $iahVoiceRouter(['op'=>'outcome','deviceId'=>$iahVoiceDeviceId,
