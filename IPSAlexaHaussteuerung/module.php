@@ -227,18 +227,15 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->ensureVar($catSettings, 'lueftung_toggle', 'lueftungToggle', VARIABLETYPE_BOOLEAN, '', true);
         $this->ensureVar($catSettings, 'szene_toggle', 'szeneToggle', VARIABLETYPE_BOOLEAN, '', true);
 
-        // WFC PageSwitch Params → Default aus Instanz-Settings
+        // This value is derived from the instance settings, not runtime state.
         $wfc = $this->ReadPropertyInteger('WfcId');
         $pageMappings = $this->readPageMappingsProperty();
         $page = $this->findDefaultWfcPageId($pageMappings);
-        $this->ensureVar(
-            $catSettings,
-            'WFC PageSwitch Params',
-            'wfcPageParams',
-            VARIABLETYPE_STRING,
-            '',
-            json_encode(['page' => $page, 'wfc' => $wfc], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
-        );
+        $wfcParamsId = $this->ensureVar($catSettings, 'WFC PageSwitch Params', 'wfcPageParams', VARIABLETYPE_STRING, '');
+        $wfcParams = json_encode(['page' => $page, 'wfc' => $wfc], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if (is_string($wfcParams) && GetValueString($wfcParamsId) !== $wfcParams) {
+            SetValueString($wfcParamsId, $wfcParams);
+        }
 
         // Helper
         $this->ensureVar($catHelper, 'DeviceMapJson', 'deviceMapJson', VARIABLETYPE_STRING, '', null);
@@ -332,7 +329,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         }
 
         // 2) create if still missing
-        if (!$id) {
+        $created = !$id;
+        if ($created) {
             $id = IPS_CreateVariable($type);
             IPS_SetParent($id, $parent);
             IPS_SetName($id, $name);
@@ -342,8 +340,9 @@ class IPSAlexaHaussteuerung extends IPSModule
             }
         }
 
-        // 3) initialize value if provided and variable was just created or empty
-        if ($defaultValue !== null) {
+        // Defaults are for new variables only. In particular, refreshing the
+        // instance must not clear diagnostics or re-enable existing actions.
+        if ($created && $defaultValue !== null) {
             switch ($type) {
                 case VARIABLETYPE_BOOLEAN:
                     @SetValueBoolean($id, (bool) $defaultValue);
@@ -1876,6 +1875,18 @@ PHP;
         if (is_file($template)) {
             $content = file_get_contents($template);
             if ($content !== false) {
+                if (str_contains($content, '// IAH_RENDERER_ACTION_DIAGNOSTICS_INSERT')) {
+                    $helper = file_get_contents(__DIR__ . '/resources/helpers/RendererActionDiagnostics.php');
+                    $helper = is_string($helper)
+                        ? preg_replace('/^<\?php\s*declare\(strict_types=1\);\s*/', '', $helper)
+                        : null;
+                    if (!is_string($helper) || !str_contains($helper, 'function iah_renderer_action_dispatch(')) {
+                        IPS_LogMessage('Alexa', 'Renderer nicht erneuert: Variablenaktions-Diagnose fehlt.');
+                        return (int)$id;
+                    }
+                    $content = str_replace('// IAH_RENDERER_ACTION_DIAGNOSTICS_INSERT',
+                        'if (!function_exists(\'iah_renderer_action_dispatch\')) {' . "\n" . $helper . "\n}", $content);
+                }
                 // KIHouseController wird als IPS-Skript gespeichert: relative
                 // Modulpfade existieren zur Ausfuehrungszeit dort NICHT.
                 // Deshalb die zentrale Typ-Registry beim Installieren
@@ -2503,6 +2514,7 @@ PHP;
             'PENDING_STAGE'  => $getVar($helperCat, 'pendingStage', 'PendingStage'),
             'DOMAIN_FLAG'    => $getVar($root, 'domainFlag', 'domain_flag'),
             'SKILL_ACTIVE'   => $getVar($root, 'skillActive', 'skillActive'),
+            'ACTIVE_TAB_STATE' => $getVar($root, 'activeTabState', 'activeTabState'),
             'lastVariableDevice' => $getVar($root, 'lastVarDevice', 'lastVariableDevice'),
             'lastVariableId'     => $getVar($root, 'lastVarId', 'lastVariableId'),
             'lastVariableAction' => $getVar($root, 'lastVarAction', 'lastVariableAction'),
@@ -2595,7 +2607,7 @@ PHP;
         $router = new \IPSAlexaHaussteuerung\Router();
         $res = $router->route($payload, $this->BuildConfig());
 
-        return json_encode($res, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        return $this->writeDiagnosticDump($res);
     }
 
     /**
@@ -2612,15 +2624,17 @@ PHP;
 
         $router = new \IPSAlexaHaussteuerung\Router();
         $res = $router->route($payload, $this->BuildConfig());
-        $out = json_encode($res, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-
-        // write to dumpFile variable if present
-        $dumpId = (int) ($this->BuildVars()['vars']['dump_file'] ?? 0);
-        if ($dumpId > 0) {
-            @SetValueString($dumpId, $out);
-        }
-
+        $out = $this->writeDiagnosticDump($res);
         $this->log('info', 'DiagSendCustom result', ['len' => strlen($out)]);
+        return $out;
+    }
+
+    private function writeDiagnosticDump(array $result): string
+    {
+        $out = json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+        if (!is_string($out)) return '';
+        $dumpId = (int) ($this->BuildVars()['vars']['dump_file'] ?? 0);
+        if ($dumpId > 0) @SetValueString($dumpId, $out);
         return $out;
     }
 

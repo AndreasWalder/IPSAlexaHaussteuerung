@@ -516,6 +516,7 @@ final class IAHVoiceRuleEngine
                 $value=self::validateVariableAction($rule['variableId'],$rule['variableValue']);
                 if(RequestAction($rule['variableId'],$value)!==true)
                     throw new RuntimeException('Variable nicht geschaltet.');
+                self::reportAcceptedAction($context, $rule['variableId'], $value);
                 return $base+['ok'=>true,'answer'=>$answer,'executed'=>1];
             }catch(Throwable $ignored){
                 return $base+['ok'=>false,'answer'=>'Schaltaktion wurde nicht ausgefuehrt.'];
@@ -555,8 +556,9 @@ final class IAHVoiceRuleEngine
         $completed=0;
         foreach($plan as $action){
             try {
-                if(RequestAction($action['id'],$action['value']))$completed++;
-                else break;
+                if (!RequestAction($action['id'],$action['value'])) break;
+                $completed++;
+                self::reportAcceptedAction($context, $action['id'], $action['value']);
             }catch(Throwable $ignored){break;}
         }
         if($completed!==count($plan))
@@ -564,6 +566,14 @@ final class IAHVoiceRuleEngine
                 'answer'=>'Szene nur teilweise ausgefuehrt. Bitte den Geraetestatus pruefen.'];
         return $base+['ok'=>true,'executed'=>$completed,'total'=>count($plan),
             'answer'=>$answer];
+    }
+
+    private static function reportAcceptedAction(array $context, int $id, mixed $value): void
+    {
+        $record = $context['recordAction'] ?? null;
+        if (is_callable($record)) {
+            try { $record($id, $value); } catch (Throwable $ignored) {}
+        }
     }
 
     public static function legacyDrafts(): array

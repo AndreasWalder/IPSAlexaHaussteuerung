@@ -1491,6 +1491,18 @@ function Execute($request = null)
 
         $V = $CFG['var'];
         $S = $CFG['script'];
+        // IAH_LAST_ALEXA_RUNTIME_BEGIN
+        $iahRuntimeStarted = hrtime(true);
+        $iahRuntimeRequestType = (string)(((array)(((array)$rawData)['request'] ?? []))['type'] ?? $request->type ?? '');
+        $iahRecordAplWrite = static function (int $id, int $value, string $source) use ($instanceId): void {
+            if (RequestAction($id, $value) === true && $instanceId > 0 && function_exists('IAH_RecordAlexaVariableAction')) {
+                try {
+                    IAH_RecordAlexaVariableAction($instanceId, $id, $source, 'RequestAction',
+                        json_encode($value, JSON_THROW_ON_ERROR));
+                } catch (Throwable $ignored) {}
+            }
+        };
+        // IAH_LAST_ALEXA_RUNTIME_END
         $pageMappings = is_array($V['pageMappings'] ?? null) ? $V['pageMappings'] : [];
         $launchCatalog = is_array($CFG['launchCatalog'] ?? null) ? $CFG['launchCatalog'] : [];
         $rendererDomains = is_array($CFG['rendererDomains'] ?? null) ? $CFG['rendererDomains'] : [];
@@ -2767,6 +2779,12 @@ function Execute($request = null)
                                     } catch (Throwable $ignored) {}
                                 }
                                 $homeAgentAnswer = trim((string) $homeAgentData['answer']);
+                                // IAH_LAST_ALEXA_ANSWER_SOURCE_BEGIN
+                                if (isset($iahLastInteraction)) {
+                                    $iahLastInteraction['answerSource'] = $homeAgentData['answerSource']
+                                        ?? (!empty($homeAgentData['localHouseQuery']) ? 'local' : 'ai');
+                                }
+                                // IAH_LAST_ALEXA_ANSWER_SOURCE_END
                                 $log('info', 'KIVoice.answer', ['durationSeconds' => $homeAgentElapsed,
                                     'source' => $homeAgentData['answerSource'] ?? (!empty($homeAgentData['localHouseQuery']) ? 'local' : 'ai'),
                                     'words' => count(preg_split('/\s+/u', $homeAgentAnswer, -1, PREG_SPLIT_NO_EMPTY) ?: [])]);
@@ -3110,13 +3128,19 @@ function Execute($request = null)
             $domain = 'geraete';
         }
         if (($APL['a1'] ?? null) === 'geraete.setEnum' && is_numeric($APL['a2'] ?? null) && is_numeric($APL['a3'] ?? null)) {
-            RequestAction((int)$APL['a2'], (int)$APL['a3']);
+            // IAH_LAST_ALEXA_APL_GERAETE_BEGIN
+            if (isset($iahRecordAplWrite)) $iahRecordAplWrite((int)$APL['a2'], (int)$APL['a3'], 'Geräte');
+            else RequestAction((int)$APL['a2'], (int)$APL['a3']);
+            // IAH_LAST_ALEXA_APL_GERAETE_END
         }
         if ($domain === null && is_string($APL['a1']) && str_starts_with((string)$APL['a1'], 'bewaesserung.')) {
             $domain = 'bewaesserung';
         }
         if (($APL['a1'] ?? null) === 'bewaesserung.setEnum' && is_numeric($APL['a2'] ?? null) && is_numeric($APL['a3'] ?? null)) {
-            RequestAction((int)$APL['a2'], (int)$APL['a3']);
+            // IAH_LAST_ALEXA_APL_BEWAESSERUNG_BEGIN
+            if (isset($iahRecordAplWrite)) $iahRecordAplWrite((int)$APL['a2'], (int)$APL['a3'], 'Bewässerung');
+            else RequestAction((int)$APL['a2'], (int)$APL['a3']);
+            // IAH_LAST_ALEXA_APL_BEWAESSERUNG_END
         }
 
         if ($domain === null && !$navForce && !empty($tabDomainSynonyms)) {
@@ -3738,6 +3762,15 @@ function Execute($request = null)
         return TellResponse::CreatePlainText('Ein Fehler ist aufgetreten! Andreas sagen!');
     } finally {
         // IAH_LAST_ALEXA_SAVE_BEGIN
+        if (($iahRuntimeRequestType ?? '') === 'SessionEndedRequest') {
+            try {
+                $iahSkillVar = (int)($V['SKILL_ACTIVE'] ?? 0);
+                if ($iahSkillVar > 0 && GetValueBoolean($iahSkillVar)) SetValueBoolean($iahSkillVar, false);
+            } catch (Throwable $ignored) {}
+        }
+        if (isset($iahLastInteraction, $iahRuntimeStarted)) {
+            $iahLastInteraction['durationMs'] = (int)round((hrtime(true) - $iahRuntimeStarted) / 1000000);
+        }
         if (isset($iahLastInteraction) && $instanceId > 0 && function_exists('IAH_RecordAlexaInteraction')) {
             try {
                 IAH_RecordAlexaInteraction($instanceId, json_encode($iahLastInteraction,

@@ -182,6 +182,8 @@ jobs:
         run: php tests/test_floor_window_status_v383.php
       - name: Test V3.8.4 Echo identity and persistent last Alexa interaction
         run: php tests/test_last_alexa_interaction_v384.php
+      - name: Test persistent runtime variables and accepted write diagnostics
+        run: php tests/test_runtime_diagnostics_v3812.php
       - name: Test V3.8.5 Alexa FAQ and house question slot isolation
         run: php tests/test_alexa_question_slot_isolation_v385.php
       - name: Test V3.8.6 local room temperature and robust house question JSON

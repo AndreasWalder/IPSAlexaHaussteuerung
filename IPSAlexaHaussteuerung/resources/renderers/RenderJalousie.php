@@ -33,6 +33,11 @@ $in = json_decode($_IPS['payload'] ?? '{}', true) ?: [];
    CFG / ACTION FLAG (Unified)
    ========================= */
 $CFG = is_array($in['CFG'] ?? null) ? $in['CFG'] : [];
+// IAH_RENDERER_ACTION_DIAGNOSTICS_INSERT
+if (!function_exists('iah_renderer_action_dispatch')) {
+    require_once __DIR__ . '/../helpers/RendererActionDiagnostics.php';
+}
+$iahDispatch = iah_renderer_action_dispatch((int)($CFG['diagnosticsInstanceId'] ?? 0), 'Jalousie');
 
 $VAR = [];
 if (is_array($CFG['actions_vars'] ?? null)) {
@@ -340,11 +345,6 @@ if ($targetEntityId !== '') {
     $preVarId = (int)$GLOBAL_OPEN_CLOSE_VAR ?: null;
 }
 
-SetValueString($V['lastVariableDevice'], 'Jalousie');
-SetValueString($V['lastVariableId'], $preVarId);
-SetValueString($V['lastVariableAction'], $actionNorm);
-SetValueString($V['lastVariableValue'], $percent);
-
 $logKV('TARGET_PRE', [
     'entityId'       => $targetEntityId !== '' ? $targetEntityId : null,
     'wertVarId'      => $preVarId,
@@ -432,11 +432,6 @@ if (
 
     $varId = (int)$GLOBAL_OPEN_CLOSE_VAR;
 
-    SetValueString($V['lastVariableDevice'], 'Jalousie');
-    SetValueString($V['lastVariableId'], $varId);
-    SetValueString($V['lastVariableAction'], $actionNorm);
-    SetValueString($V['lastVariableValue'], $percent);
-
     $logKV('TARGET', [
         'entityId'       => null,
         'wertVarId'      => $varId ?: null,
@@ -450,7 +445,7 @@ if (
         if ($varId > 0) {
             $val = $isOpen ? 1 : 2;
             $logKV('WRITE', ['entityId'=>null,'wertVarId'=>$varId,'value'=>$val]);
-            RequestAction($varId, $val);
+            $iahDispatch('RequestAction', $varId, $val);
         } else {
             $logB("GLOBAL var not set → no write");
         }
@@ -511,14 +506,14 @@ function applyBlindAction(?int $wertVarId, ?string $action, ?int $percent, bool 
     }
     return true;
 }
-function applySceneAction(array $scene2Var, string $sceneId, string $action, bool $canAct, callable $logB): bool {
+function applySceneAction(array $scene2Var, string $sceneId, string $action, bool $canAct, callable $logB, callable $iahDispatch): bool {
     $varId = $scene2Var[$sceneId] ?? 0;
     if (!$varId) return false;
     if (!$canAct) { $logB("ACTIONS_DISABLED(jalousie_steuern - scenes): skip write"); return false; }
 
     $a = j_norm($action);
     $val = ($a === 'öffnen' || $a === 'oeffnen') ? 1 : 2;
-    RequestAction($varId, $val);
+    $iahDispatch('RequestAction', $varId, $val);
     return true;
 }
 
@@ -566,7 +561,7 @@ if ($percent !== null || in_array($actionNorm, $validAct, true)) {
 
     /* Szene schreiben */
     if ($targetEntityId !== '' && isset($scene2Var[$targetEntityId])) {
-        $ok = applySceneAction($scene2Var, $targetEntityId, $actionNorm, $CAN_JAL, $logB);
+        $ok = applySceneAction($scene2Var, $targetEntityId, $actionNorm, $CAN_JAL, $logB, $iahDispatch);
         if ($ok) {
             $key = (string)mb_substr($targetEntityId, 6);
             $title = $sceneTitles[$key] ?? mb_convert_case(str_replace(['_','-'],' ',$key), MB_CASE_TITLE, 'UTF-8');
@@ -605,7 +600,7 @@ if ($percent !== null || in_array($actionNorm, $validAct, true)) {
         }
         if ($valueToWrite !== null) {
             $logKV('WRITE', ['entityId'=>$targetEntityId,'wertVarId'=>$wertId,'value'=>$valueToWrite]);
-            RequestAction($wertId, $valueToWrite);
+            $iahDispatch('RequestAction', $wertId, $valueToWrite);
         }
 
         $title  = titleByEntity($rows, $targetEntityId);

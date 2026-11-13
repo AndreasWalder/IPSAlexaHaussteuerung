@@ -289,6 +289,7 @@ try {
     $room_raw       = (string)($payload['room_raw'] ?? '');
     $szene          = (string)($payload['szene'] ?? '');
     $CFG            = is_array($payload['CFG'] ?? null) ? $payload['CFG'] : [];
+    $CFG['diagnosticsInstanceId'] = (int)($V['InstanceID'] ?? 0);
 
     $mkCid = static function(): string { return substr(hash('crc32b', microtime(true) . mt_rand()), 0, 8); };
     $j = static function(array $a) use($JSON){ return json_encode($a, $JSON); };

@@ -433,7 +433,7 @@ function iah_rc_state(array $dev, bool $includeLastChange = false): array
     }
     return $out;
 }
-function iah_rc_write(array $dev, mixed $value, string $property = ''): array
+function iah_rc_write(array $dev, mixed $value, string $property = '', ?callable $recordAction = null): array
 {
     if (!$dev['writable']) return ['ok'=>false,'reason'=>'Dieses Gerät ist nur lesbar'];
     if (!empty($dev['typed'])) {
@@ -472,6 +472,9 @@ function iah_rc_write(array $dev, mixed $value, string $property = ''): array
     } else return ['ok'=>false,'reason'=>'Schalten für diesen Gerätetyp nicht unterstützt'];
     try {
         $ok=RequestAction($id,$value);
+        if ($ok === true && $recordAction !== null) {
+            try { $recordAction($id, $value); } catch (Throwable $ignored) {}
+        }
         return ['ok'=>(bool)$ok,'name'=>$dev['name'],'room'=>$dev['room'],
             'result'=>$ok?'Aktion gesendet; Rückmeldung noch nicht verifiziert':'IP-Symcon hat die Aktion abgelehnt'];
     } catch (Throwable $e) {
@@ -492,7 +495,7 @@ function iah_rc_bounded_rows(array $rows): array
     }
     return $result;
 }
-function iah_rc_tool(array $devices, string $name, array $args, bool $allowWrites, string $spoken): array
+function iah_rc_tool(array $devices, string $name, array $args, bool $allowWrites, string $spoken, ?callable $recordAction = null): array
 {
     if ($name === 'get_devices') {
         $found=iah_rc_find($devices,$args);
@@ -545,7 +548,7 @@ function iah_rc_tool(array $devices, string $name, array $args, bool $allowWrite
     if ($name === 'set_device') {
         $found=iah_rc_find($devices,$args);
         if (count($found)!==1) return ['ok'=>false,'reason'=>count($found)?'Gerätename ist mehrdeutig':'Gerät nicht gefunden','matches'=>count($found)];
-        return iah_rc_write($found[0],$args['value']??null,(string)($args['property']??''));
+        return iah_rc_write($found[0],$args['value']??null,(string)($args['property']??''),$recordAction);
     }
     if ($name === 'set_multiple') {
         if (!preg_match('/\b(alle|alles|sämtliche|saemtliche|gesamten)\b/ui',$spoken))
@@ -556,7 +559,7 @@ function iah_rc_tool(array $devices, string $name, array $args, bool $allowWrite
         foreach (iah_rc_find($devices,$args) as $dev)
             if(in_array($dev['group'],['switches','fans'],true) && $dev['writable'])$list[$dev['write']]=$dev;
         if (!$list || count($list)>15) return ['ok'=>false,'reason'=>'Keine oder mehr als 15 freigegebene Geräte','count'=>count($list)];
-        $results=[];foreach($list as $dev)$results[]=iah_rc_write($dev,$args['value']);
+        $results=[];foreach($list as $dev)$results[]=iah_rc_write($dev,$args['value'],'',$recordAction);
         return ['requested'=>count($results),'accepted'=>count(array_filter($results,static fn($r)=>$r['ok']??false)),
             'results'=>$results];
     }
@@ -890,6 +893,12 @@ function iah_rc_voice(
         return ['handled'=>false,'error'=>'KI-Konfiguration unvollständig'];
     // Ereignisse an das persistente IPS-Modul melden, ohne den normalen Antwortweg zu beeinflussen.
     $costInstanceId=(int)($cfg['ki_cost_instance_id']??0);
+    $recordAction = !$preview && $costInstanceId > 0 && function_exists('IAH_RecordAlexaVariableAction')
+        ? static function (int $id, mixed $value) use ($costInstanceId): void {
+            IAH_RecordAlexaVariableAction($costInstanceId, $id, 'KI-Haussteuerung', 'RequestAction',
+                json_encode($value, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
+        }
+        : null;
     $costQuestionId=bin2hex(random_bytes(12));$costStarted=false;
     $costReport=static function (string $type,array $more=[]) use($costInstanceId,$costQuestionId):void {
         if ($costInstanceId<=0 || !function_exists('IAH_RecordKICostEvent')) return;
@@ -1261,7 +1270,7 @@ function iah_rc_voice(
                         ? iah_archive_query($devices,$args,$text,$archiveId)
                         : ($name==='query_energy'
                             ? iah_energy_query($energySources,$args,$archiveId)
-                            : iah_rc_tool($devices,$name,$args,$allowWrites,$toolText)));
+                            : iah_rc_tool($devices,$name,$args,$allowWrites,$toolText,$recordAction)));
                 if ($name==='query_archive') {
                     if (($result['error']??'')==='too_many_devices' && $scope===null && $preferRead)
                         $archiveNeedsLocation=true;

@@ -29,6 +29,11 @@ $in = json_decode($_IPS['payload'] ?? '{}', true) ?: [];
    CFG / ACTION FLAGS
    ========================= */
 $CFG = is_array($in['CFG'] ?? null) ? $in['CFG'] : [];
+// IAH_RENDERER_ACTION_DIAGNOSTICS_INSERT
+if (!function_exists('iah_renderer_action_dispatch')) {
+    require_once __DIR__ . '/../helpers/RendererActionDiagnostics.php';
+}
+$iahDispatch = iah_renderer_action_dispatch((int)($CFG['diagnosticsInstanceId'] ?? 0), 'Licht');
 
 $VAR = [];
 if (is_array($CFG['actions_vars'] ?? null)) {
@@ -294,11 +299,6 @@ if (is_string($args2) && preg_match('/^(szene|scene)\.[a-z0-9_]+$/i', $args2)) {
         ? (string)$sceneItems[$sceneKey]['title']
         : ucwords(str_replace('_',' ', $sceneKey));
 
-    SetValueString($V['lastVariableDevice'], 'Licht');
-    SetValueString($V['lastVariableId'], $sceneVar);
-    SetValueString($V['lastVariableAction'], 'tap');
-    SetValueString($V['lastVariableValue'], $sceneTitle);
-
     $logV("[$RID] TARGET_RESOLVED ".json_encode([
         'sceneId'=>$sceneId, 'szeneVarId'=>$sceneVar, 'title'=>$sceneTitle
     ], $J));
@@ -471,10 +471,6 @@ if ($sceneTargetId !== null) {
     if (in_array($actNorm, $ON_WORDS, true)  || in_array($arg1Str, $ON_WORDS, true)  || $powerStr === 'on')  $wantOn = true;
     if (in_array($actNorm, $OFF_WORDS, true) || in_array($arg1Str, $OFF_WORDS, true) || $powerStr === 'off') $wantOn = false;
     
-    SetValueString($V['lastVariableDevice'], 'Licht');
-    SetValueString($V['lastVariableId'], $sceneVar);
-    SetValueString($V['lastVariableAction'], $wantOn);
-    SetValueString($V['lastVariableValue'], 'Scenes');
 
     $logV("[$RID] TARGET_RESOLVED ".json_encode([
         'title'=>(string)($target['title']??''),
@@ -487,7 +483,7 @@ if ($sceneTargetId !== null) {
         return;
     }
   
-    @RequestAction($sceneVar, $wantOn ? 1 : 0);
+    @$iahDispatch('RequestAction', $sceneVar, $wantOn ? 1 : 0);
     $didAction = true;
 }
 
@@ -512,10 +508,6 @@ if ($number !== null) {
         $max = isset($target['max']) ? (float)$target['max'] : 100.0;
         $valClamped = max($min, min($max, (float)$number));
 
-        SetValueString($V['lastVariableDevice'], 'Licht');
-        SetValueString($V['lastVariableId'], $setVarId);
-        SetValueString($V['lastVariableAction'], 'dimmen');
-        SetValueString($V['lastVariableValue'], $valClamped);
 
          $logV("[$RID] TARGET_RESOLVED ".json_encode([
             'title'=>(string)($target['title']??''),
@@ -528,7 +520,7 @@ if ($number !== null) {
           return;
         }
     
-        @RequestAction($setVarId, $valClamped);
+        @$iahDispatch('RequestAction', $setVarId, $valClamped);
         $didAction     = true;
         $lastDimEntity = (string)$target['entityId'];
         $lastDimValue  = $valClamped;
@@ -581,11 +573,6 @@ else {
             $now      = asBool(readVal($stateVar));
             $setTo    = ($targetState === null) ? !$now : (bool)$targetState;
 
-            SetValueString($V['lastVariableDevice'], 'Licht');
-            SetValueString($V['lastVariableId'], $toggleVar);
-            SetValueString($V['lastVariableAction'], $setTo);
-            SetValueString($V['lastVariableValue'], 'schalten');
-
             $logV("[$RID] TARGET_RESOLVED ".json_encode([
                 'title'=>(string)($target['title']??''),
                 'entityId'=>(string)($target['entityId']??''),
@@ -597,7 +584,7 @@ else {
                 return;
             }
 
-            @RequestAction($toggleVar, $setTo ? 1 : 0);
+            @$iahDispatch('RequestAction', $toggleVar, $setTo ? 1 : 0);
             $didAction     = true;
             $lastSwEntity  = (string)$target['entityId'];
             $lastSwDesired = $setTo ? true : false;
