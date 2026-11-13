@@ -53,6 +53,24 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
   Die KI darf das geprüfte Ergebnis formulieren, aber nicht die Auswahl
   der Sensoren oder den Zeitpunkt ändern.
 
+- **Beständige Laufzeitdiagnose (V3.8.12)**
+  Modul-Updates und „Alles neu aktualisieren“ erhalten vorhandene Werte und
+  Objekt-IDs, auch deaktivierte Schaltfreigaben. `log_recent` enthält die
+  letzten 200 Modulmeldungen. `dumpFile` enthält die letzte Renderer-Vorschau
+  über die Diagnosefunktionen. `domain_flag` merkt sich die aktuelle
+  Navigation, `activeTabState` den zuletzt gewählten Tab je Renderer-Route.
+  `skillActive` ist ein globaler Navigationsmerker, kein Online-Status eines Echo.
+  `Diagnose → alexa` zeigt das anfragende, registrierte Echo auch bei normalen
+  Skill-Fragen und Bildschirmaktionen. Es zeigt nicht das im Satz genannte Zielgerät.
+  Die Aktionsdiagnose enthält jetzt Verarbeitungsdauer und bei beantworteten
+  Hausfragen die Antwortquelle. **Letzte Variablenaktion (JSON)** bleibt beim
+  Lesen oder Testen stehen und zeigt bei einer angenommenen Schreibaktion
+  Zeitpunkt, Quelle, Ziel-ID, Variablenname, übergebenen Wert und Ergebnis.
+  Die vier bestehenden `lastVariable*` bleiben erhalten und zeigen dieselbe
+  letzte Variablenaktion. Eine angenommene Schaltaktion bestätigt noch keinen
+  physischen Gerätezustand. Interne Schreibvorgänge selbst gestarteter
+  benutzerdefinierter Skripte werden nicht mitverfolgt.
+
 - **Sprachbefehl testen (V3.8.3)**
   Im RoomsCatalogConfigurator oder unter „Szenen und eigene Alexa-Befehle“
   der Alexa-Instanz einen Satz eingeben. Der Test erkennt eigene Regeln,

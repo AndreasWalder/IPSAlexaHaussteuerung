@@ -24,6 +24,11 @@ IPS_LogMessage('Alexa', 'AE(in)=' . json_encode($in['ACTIONS_ENABLED'] ?? null, 
    Feature-Flags (nur Variablen)
    ========================= */
 $CFG = is_array($in['CFG'] ?? null) ? $in['CFG'] : [];
+// IAH_RENDERER_ACTION_DIAGNOSTICS_INSERT
+if (!function_exists('iah_renderer_action_dispatch')) {
+    require_once __DIR__ . '/../helpers/RendererActionDiagnostics.php';
+}
+$iahDispatch = iah_renderer_action_dispatch((int)($CFG['diagnosticsInstanceId'] ?? 0), 'Heizung');
 
 // Nur über CFG.actions_vars → IPS-Variablen lesen (kein Fallback mehr)
 $VAR = [];
@@ -559,11 +564,6 @@ if ($number !== null) {
     if (!empty($targetRow['eingestelltVarId']) && is_int($targetRow['eingestelltVarId']) && $targetRow['eingestelltVarId'] > 0) {
         $eingestelltVarId = (int)$targetRow['eingestelltVarId'];
 
-        SetValueString($V['lastVariableDevice'], 'Heizung');
-        SetValueString($V['lastVariableId'], $eingestelltVarId);
-        SetValueString($V['lastVariableAction'], $targetRow['room']);
-        SetValueString($V['lastVariableValue'], $valClamped);
-
         $logKV('TARGET', [
             'room'             => $targetRow['room'] ?? null,
             'entityId'         => $targetRow['entityId'] ?? null,
@@ -575,9 +575,9 @@ if ($number !== null) {
 
         if ($CAN_SET_TEMP) {
             if (function_exists('EIB_Value')) {
-                RequestAction($eingestelltVarId, $valClamped);
+                $iahDispatch('RequestAction', $eingestelltVarId, $valClamped);
             } else {
-                RequestAction($eingestelltVarId, $valClamped);
+                $iahDispatch('RequestAction', $eingestelltVarId, $valClamped);
             }
             IPS_Sleep(200);
             $logB("[$RID] ACTION Heizungs-Soll gesetzt");

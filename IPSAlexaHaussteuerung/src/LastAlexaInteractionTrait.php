@@ -18,6 +18,7 @@ trait IAHLastAlexaInteractionTrait
         foreach(self::LAST_ALEXA_FIELDS as [$ident,$name])
             $this->ensureVar($diag,$name,$ident,VARIABLETYPE_STRING,'',null);
         $this->ensureVar($diag,'Letzte Alexa-Aktion (JSON)','iahLastAlexaInteraction',VARIABLETYPE_STRING,'~TextBox',null);
+        $this->ensureVar($diag,'Letzte Variablenaktion (JSON)','iahLastVariableAction',VARIABLETYPE_STRING,'~TextBox',null);
     }
 
     private function alexaNameForDevice(string $deviceId): string
@@ -76,11 +77,7 @@ trait IAHLastAlexaInteractionTrait
             $snapshot=['at'=>date(DATE_ATOM),'requestType'=>$entry['requestType']];
             $name=$this->alexaNameForDevice(is_string($entry['deviceId']??null)?$entry['deviceId']:'');
             $snapshot['alexa']=self::lastAlexaText($name,100);
-            $save=static function(string $ident,string $value)use($diag):void{
-                $id=(int)@IPS_GetObjectIDByIdent($ident,$diag);
-                if($id>0&&IPS_VariableExists($id)&&(int)(IPS_GetVariable($id)['VariableType']??-1)===3
-                    &&GetValueString($id)!==$value)SetValueString($id,$value);
-            };
+            $save=fn(string $ident,string $value) => $this->writeAlexaDiagnosticString($diag,$ident,$value);
             // Do not associate an unregistered Echo with the last known one.
             $save('alexa',$snapshot['alexa']);
             $transcript=$this->ReadPropertyBoolean('VoiceRouterStoreTranscript');
@@ -93,11 +90,63 @@ trait IAHLastAlexaInteractionTrait
                     ?'':self::lastAlexaText($entry[$key]??'',800);
                 $save($ident,$snapshot[$key]);
             }
+            if (isset($entry['answerSource'])) $snapshot['answerSource'] = self::lastAlexaText($entry['answerSource'], 80);
+            if (is_int($entry['durationMs'] ?? null)) $snapshot['durationMs'] = max(0, $entry['durationMs']);
             $save('iahLastAlexaInteraction',json_encode($snapshot,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE
                 |JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR));
         }finally{
             if($useLock)IPS_SemaphoreLeave($lock);
         }
+    }
+
+    /**
+     * A separate trace for accepted writes; queries and preview do not overwrite it.
+     * RequestAction acceptance is not a confirmation of physical device feedback.
+     */
+    public function RecordAlexaVariableAction(int $variableId, string $source, string $operation, string $valueJson): void
+    {
+        if ($variableId <= 0 || strlen($valueJson) > 8192 || !IPS_VariableExists($variableId)
+            || !in_array($operation, ['RequestAction','SetValueBoolean','SetValueInteger','SetValueFloat','SetValueString'], true)) return;
+        $value = json_decode($valueJson, true);
+        if (!is_scalar($value)) return;
+        if (is_string($value)) $value = self::lastAlexaText($value, 300);
+        $source = self::lastAlexaText($source, 100);
+        $diag = $this->getObjectIDByIdentOrName($this->InstanceID, 'iahDiag', 'Diagnose');
+        if ($diag <= 0) return;
+
+        $lock = 'IAH.LastVariableAction.' . $this->InstanceID;
+        $useLock = function_exists('IPS_SemaphoreEnter');
+        if ($useLock && !IPS_SemaphoreEnter($lock, 150)) return;
+        try {
+            $snapshot = [
+                'at' => date(DATE_ATOM),
+                'source' => $source,
+                'variableId' => $variableId,
+                'variableName' => self::lastAlexaText(@IPS_GetName($variableId), 200),
+                'operation' => $operation,
+                'value' => $value,
+                'status' => $operation === 'RequestAction' ? 'accepted_by_symcon' : 'value_set_in_symcon',
+            ];
+            foreach ([
+                'lastVarDevice' => $source,
+                'lastVarId' => (string)$variableId,
+                'lastVarAction' => $operation,
+                'lastVarValue' => is_string($value) ? $value : json_encode($value, JSON_THROW_ON_ERROR),
+            ] as $ident => $text) {
+                $this->writeAlexaDiagnosticString($this->InstanceID, $ident, $text);
+            }
+            $this->writeAlexaDiagnosticString($diag, 'iahLastVariableAction', json_encode(
+                $snapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+        } finally {
+            if ($useLock) IPS_SemaphoreLeave($lock);
+        }
+    }
+
+    private function writeAlexaDiagnosticString(int $parent, string $ident, string $value): void
+    {
+        $id = (int)@IPS_GetObjectIDByIdent($ident, $parent);
+        if ($id > 0 && IPS_VariableExists($id) && (int)(IPS_GetVariable($id)['VariableType'] ?? -1) === 3
+            && GetValueString($id) !== $value) SetValueString($id, $value);
     }
 
     private function applyAlexaNameToVoiceRule(array $result, string $name): array
@@ -126,6 +175,19 @@ trait IAHLastAlexaInteractionTrait
         $hooks = [
             'LEGACY' => ['        $writeRuntimeString = static function ($varId, string $value): void {', true],
             'CURRENT_SLOTS' => ['        // Helfer-Skripte', false],
+            'RUNTIME' => ['        $S = $CFG[\'script\'];', true],
+            'ANSWER_SOURCE' => ['                                $homeAgentAnswer = trim((string) $homeAgentData[\'answer\']);', true],
+            'APL_GERAETE' => [<<<'PHP'
+            RequestAction((int)$APL['a2'], (int)$APL['a3']);
+        }
+        if ($domain === null && is_string($APL['a1']) && str_starts_with((string)$APL['a1'], 'bewaesserung.')) {
+PHP, false],
+            'APL_BEWAESSERUNG' => [<<<'PHP'
+            RequestAction((int)$APL['a2'], (int)$APL['a3']);
+        }
+
+        if ($domain === null && !$navForce && !empty($tabDomainSynonyms)) {
+PHP, false],
             'RENDER' => ["            \$speech     = (string)(\$data['speech'] ?? '');", true],
             'RENDER_KI' => ["                            \$speechKi     = (string)(\$dataKi['speech'] ?? '');", true],
             'RENDER_ERROR' => ["                return TellResponse::CreatePlainText('Fehler beim Rendern.');", false],
@@ -149,6 +211,13 @@ PHP, false],
                         || preg_match_all($pattern, $next) !== 1)
                         throw new RuntimeException('Action-Abschnitt uneindeutig: ' . $key);
                     $next = preg_replace_callback($pattern, static fn(): string => $blocks[0][0], $next, 1);
+                } elseif (str_starts_with($key, 'APL_') && $key !== 'APL_FALLBACK') {
+                    $bareAnchor = substr($anchor, strpos($anchor, "\n") + 1);
+                    if (substr_count($next, $anchor) === 1) {
+                        $next = str_replace($anchor, $blocks[0][0] . "\n" . $bareAnchor, $next);
+                    } elseif (substr_count($next, $bareAnchor) === 1) {
+                        $next = str_replace($bareAnchor, $blocks[0][0] . "\n" . $bareAnchor, $next);
+                    }
                 } elseif (substr_count($next, $anchor) === 1) {
                     $next = str_replace($anchor, $after ? $anchor . "\n" . $blocks[0][0] : $blocks[0][0] . "\n" . $anchor, $next);
                 } elseif (in_array($key, ['LEGACY', 'CURRENT_SLOTS', 'SAVE'], true)) {

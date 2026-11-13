@@ -25,6 +25,11 @@ $in = json_decode($_IPS['payload'] ?? '{}', true) ?: [];
    Flags / Logging
    ========================= */
 $CFG   = is_array($in['CFG'] ?? null) ? $in['CFG'] : [];
+// IAH_RENDERER_ACTION_DIAGNOSTICS_INSERT
+if (!function_exists('iah_renderer_action_dispatch')) {
+    require_once __DIR__ . '/../helpers/RendererActionDiagnostics.php';
+}
+$iahDispatch = iah_renderer_action_dispatch((int)($CFG['diagnosticsInstanceId'] ?? 0), 'Lüftung');
 $FLAGS = is_array($CFG['flags'] ?? null) ? $CFG['flags'] : [];
 $AE    = is_array($in['ACTIONS_ENABLED'] ?? null) ? $in['ACTIONS_ENABLED'] : [];
 
@@ -373,11 +378,6 @@ if ($target !== null) {
             $desired = ($cur === 1) ? 0 : 1;
         }
 
-        SetValueString($V['lastVariableDevice'], 'Lüftung');
-        SetValueString($V['lastVariableId'], $toggleVar);
-        SetValueString($V['lastVariableAction'], $desired);
-        SetValueString($V['lastVariableValue'], 'schalten');
-
 
         $logV("[$RID] TARGET_RESOLVED ".json_encode([
             'title'=>(string)($target['title']??''),
@@ -391,8 +391,8 @@ if ($target !== null) {
         } else {
             $ok = false;
             try {
-                if     ($toggleVar > 0) { RequestAction($toggleVar, $desired); $ok = true; }
-                elseif ($stateVar  > 0) { RequestAction($stateVar,  $desired); $ok = true; }
+                if     ($toggleVar > 0) { $iahDispatch('RequestAction', $toggleVar, $desired); $ok = true; }
+                elseif ($stateVar  > 0) { $iahDispatch('RequestAction', $stateVar,  $desired); $ok = true; }
             } catch (\Throwable $e) {
                 $ok = false;
                 $logB("[$RID] RequestAction fehlgeschlagen: ".$e->getMessage());

@@ -72,6 +72,11 @@ $voice_szene  = (string)($in['szene'] ?? '');
    ========================= */
 
 $CFG = is_array($in['CFG'] ?? null) ? $in['CFG'] : [];
+// IAH_RENDERER_ACTION_DIAGNOSTICS_INSERT
+if (!function_exists('iah_renderer_action_dispatch')) {
+    require_once __DIR__ . '/../helpers/RendererActionDiagnostics.php';
+}
+$iahDispatch = iah_renderer_action_dispatch((int)($CFG['diagnosticsInstanceId'] ?? 0), 'Geräte');
 $routeKey = strtolower((string)($in['route'] ?? ''));
 if ($routeKey === '') { $routeKey = 'geraete'; }
 $rendererCfg = gr_renderer_config($routeKey, $CFG);
@@ -432,7 +437,7 @@ if ($action === 'toggle' && $varId > 0) {
                 $now = @GetValue($varId);
                 $set = gr_asBool($now) ? 0 : 1;
             }
-            if (gr_hasAction($var)) { @RequestAction($varId, $set); } else { @SetValueBoolean($varId, (bool)$set); }
+            if (gr_hasAction($var)) { @$iahDispatch('RequestAction', $varId, $set); } else { @$iahDispatch('SetValueBoolean', $varId, (bool)$set); }
             $didAction = true; $logB("[$RID][{$rendererLogName}] TOGGLE var=$varId set=".$set);
             $speechOut = gr_format_value_speech($varId);
         } else {
@@ -458,16 +463,16 @@ elseif ($action === 'set' && $varId > 0) {
         if (gr_hasAction($var)) {
             $lastWarn = null;
             set_error_handler(function($no,$str) use (&$lastWarn){ $lastWarn = $str; return true; });
-            @RequestAction($varId, $finalValue);
+            @$iahDispatch('RequestAction', $varId, $finalValue);
             restore_error_handler();
             if ($lastWarn) { echo json_encode(['speech'=>gr_hc_humanize_error($lastWarn),'reprompt'=>'','apl'=>null,'endSession'=>false], GR_JF); return; }
         } else {
             $vt = (int)($var['VariableType'] ?? 3);
             switch ($vt) {
-                case 0: @SetValueBoolean($varId, gr_asBool($finalValue)); break;
-                case 1: @SetValueInteger($varId, (int)round((float)$finalValue)); break;
-                case 2: @SetValueFloat($varId, (float)$finalValue); break;
-                default: @SetValueString($varId, (string)$finalValue); break;
+                case 0: @$iahDispatch('SetValueBoolean', $varId, gr_asBool($finalValue)); break;
+                case 1: @$iahDispatch('SetValueInteger', $varId, (int)round((float)$finalValue)); break;
+                case 2: @$iahDispatch('SetValueFloat', $varId, (float)$finalValue); break;
+                default: @$iahDispatch('SetValueString', $varId, (string)$finalValue); break;
             }
         }
         $didAction = true; $logB("[$RID][{$rendererLogName}] SET var=$varId value=".json_encode($finalValue, GR_JF));

@@ -1439,7 +1439,11 @@ trait IAHVoiceRuleEditorTrait
             $alexaContext=$this->currentAlexaRuleContext($event);
             $result=IAHVoiceRuleEngine::run($rules,$catalog,$event['text'],
                 ['intent'=>(string)($event['intent']??''),
-                 'forbiddenScriptIds'=>array_values(array_unique($forbidden))]+$alexaContext);
+                 'forbiddenScriptIds'=>array_values(array_unique($forbidden)),
+                 'recordAction'=>function (int $id, mixed $value): void {
+                     $this->RecordAlexaVariableAction($id, 'Sprachregel', 'RequestAction',
+                         json_encode($value, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
+                 }]+$alexaContext);
             // Only if the caller has exhausted all exact candidates may
             // optional KI classify a *question* into an enabled read-only rule.
             // No scripts/scenes/variables are included in the model allowlist.
