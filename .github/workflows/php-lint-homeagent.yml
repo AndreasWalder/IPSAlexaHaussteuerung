@@ -190,6 +190,10 @@ jobs:
         run: php tests/test_house_question_retry_v387.php
       - name: Test V3.8.8 module runtime house queries and AI wording with local fallback
         run: php tests/test_alexa_house_runtime_v388.php
+      - name: Test V3.8.9 Alexa room questions and measured illuminance
+        run: php tests/test_alexa_prepositional_room_questions_v389.php
+      - name: Test V3.8.9 last archived light activation across all rooms
+        run: php tests/test_alexa_latest_light_v389.php
       - name: Test Symcon IPSList checkbox callbacks and filtered multi-selection
         run: php tests/test_rooms_catalog_ipslist_multiselect.php
       - name: Test RoomsCatalog quick search for IPS object IDs and parent instance IDs

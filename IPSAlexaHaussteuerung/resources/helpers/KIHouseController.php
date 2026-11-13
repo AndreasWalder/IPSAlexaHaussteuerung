@@ -665,6 +665,74 @@ function iah_rc_room_temperature(string $text,array $catalog,?array $scope): ?ar
         'readQueries'=>[['tool'=>'query_house','result'=>$query]]];
 }
 
+/** Alexa sometimes selects HausWieIntent for the spoken "Wo wurde zuletzt ...". */
+function iah_rc_latest_light_on(string $text,array $catalog,?array $scope,int $archiveId,float $deadline): ?array
+{
+    $light='(?:das licht|ein licht|(?:die )?beleuchtung|eine lampe|das letzte licht|welches licht|licht)';
+    $text=iah_rc_norm($text);
+    if (!preg_match('/^(?:(?:(?:wo|wie|wann|in welche[mn] (?:raum|raeumen)) (?:wurde|ist|ging) '
+        .'|welches licht wurde )(?:zuletzt (?:'.$light.' )?|'.$light.' zuletzt )'
+        .'(?:eingeschaltet(?: worden)?|angeschaltet(?: worden)?|angemacht(?: worden)?|an)'
+        .'|wo ging '.$light.' zuletzt an)$/D',$text)) return null;
+    $devices=iah_rc_scope_devices(iah_rc_index_catalog($catalog),$scope);
+    $history=iah_archive_latest_light_on($devices,$archiveId,$deadline);
+    $latest=$history['mostRecent'];
+    $names=[];
+    if ($latest!==null) {
+        $names=[$latest['name'],$latest['room']];
+        $answer=($history['partial']?'Letzter gefundener Eintrag':'Laut Archiv zuletzt eingeschaltet')
+            .': '.$latest['name'].' in '.$latest['room'].' am '
+            .date('d.m.Y', $latest['timestamp']).' um '.date('H:i',$latest['timestamp']).' Uhr.';
+    } elseif (empty($history['ok'])) {
+        $answer='Für diese Frage fehlt die Archivverbindung.';
+    } elseif ($history['archivedDevices']===0) {
+        $answer='Für die freigegebenen Lichter finde ich keine archivierten Schaltzustände.';
+    } elseif ($history['partial']) {
+        $answer='Ich konnte das Archiv nicht vollständig prüfen und habe keinen Einschaltzeitpunkt gefunden.';
+    } else {
+        $answer='Für die archivierten Lichter finde ich keinen aufgezeichneten Einschaltzeitpunkt.';
+    }
+    iah_rc_log('archive.latest_light_on',array_intersect_key($history,array_flip([
+        'ok','matchedDevices','archivedDevices','queriedVariables','partial','error'
+    ])));
+    return ['handled'=>true,'answer'=>$answer,'contextEligible'=>$latest!==null,
+        'requiredWordingNames'=>$names,'readQueries'=>[['tool'=>'query_archive','result'=>$history]]];
+}
+
+/** Compare measured room illuminance, never lamp dimming or switch feedback. */
+function iah_rc_room_illuminance_extreme(string $text,array $catalog,?array $scope): ?array
+{
+    if (($scope['type']??'')==='multiple')return null;
+    $phrase=iah_rc_norm($text);
+    if(!preg_match('/^(?:(?:(?:in )?welche[rsnm]? (?:raum|raeumen|raeume|zimmer)|wo) '
+        .'(?:ist es |ist |sind )(?:(?:gerade|aktuell|momentan) )?am (hellsten|dunkelsten)'
+        .'|welche[rsnm]? (?:raum|zimmer) hat (?:(?:gerade|aktuell|momentan) )?den '
+        .'(hoechsten|niedrigsten) lux ?wert)$/D',$phrase,$matches))return null;
+    $maximum=in_array(($matches[1]??'')!==''?$matches[1]:$matches[2],['hellsten','hoechsten'],true);
+    $devices=iah_rc_scope_devices(iah_rc_index_catalog($catalog),$scope);
+    $devices=array_filter($devices,static fn(array $d):bool=>isset($d['reads']['illuminance']));
+    $query=iah_ai_query_house($devices,[
+        'property'=>'illuminance','operation'=>$maximum?'max':'min','group_by'=>'room',
+        'indoor_only'=>true,'limit'=>50,
+    ]);
+    $best=$query['best']??null;
+    $answer='Ich finde keine lesbaren Lux-Messwerte in Innenräumen.';
+    $names=[];
+    if ($best!==null) {
+        $ties=$query['ties']??[$best];
+        $names=array_column(array_slice($ties,0,4),'name');
+        $more=count($ties)-count($names);
+        $labels=implode(', ',$names).($more>0?' und weitere Räume':'');
+        $value=rtrim(rtrim(number_format((float)$best['value'],1,',',''),'0'),',');
+        $answer=($maximum?'Am hellsten':'Am dunkelsten').' laut Lux-Sensoren'
+            .(($scope['type']??'')==='floor'?' für '.$scope['name']:'').': '.$labels
+            .' mit '.$value.' Lux.';
+    }
+    return ['handled'=>true,'answer'=>$answer,'contextEligible'=>$best!==null,
+        'requiredWordingNames'=>($scope['type']??'')==='floor'?[...$names,$scope['name']]:$names,
+        'readQueries'=>[['tool'=>'query_house','result'=>$query]]];
+}
+
 /** Unambiguous current window questions are answered from contacts, not model guesses. */
 function iah_rc_window_answer(string $text,array $catalog,?array $scope): ?array
 {
@@ -803,10 +871,13 @@ function iah_rc_voice(
         $localText=$scope===null?$text:IAHHouseQuestionContext::withoutLocation($text,$catalog);
         $local=iah_rc_preview_lights($localText,$catalog,$scope)
             ??iah_rc_window_answer($localText,$catalog,$scope)
-            ??iah_rc_room_temperature($localText,$catalog,$scope);
+            ??iah_rc_room_temperature($localText,$catalog,$scope)
+            ??iah_rc_room_illuminance_extreme($localText,$catalog,$scope)
+            ??iah_rc_latest_light_on($localText,$catalog,$scope,$archiveId,min($deadline,microtime(true)+2));
         if($local!==null){
             $readDetails=$local['readQueries'];
-            unset($local['readQueries']);
+            $requiredWordingNames=(array)($local['requiredWordingNames']??[]);
+            unset($local['readQueries'],$local['requiredWordingNames']);
             $local['localHouseQuery']=true;
             $local['answerSource']='local';
             if($key==='' || empty($cfg['prefer_ai']))return $costFinish($local);
@@ -852,7 +923,7 @@ function iah_rc_voice(
                 };
                 $polarity=static fn(string $speech):string=>preg_match('/\b(ja|nein|nicht sicher feststellbar)\b/u',
                     iah_rc_norm($speech),$match)?$match[1]:'';
-                $expectedNames=[];
+                $expectedNames=$requiredWordingNames;
                 if(preg_match('/ (?:offen|geschlossen) melden: (.+?)(?: und \d+ weitere)?[.]$/u',
                     $local['answer'],$listed))$expectedNames=explode(', ',$listed[1]);
                 $answerNormalized=iah_rc_norm($answer);
@@ -910,7 +981,7 @@ function iah_rc_voice(
 
         // Explizite Hausfragen duerfen keine Schalt-Werkzeuge erhalten.
         $preferRead=(bool)preg_match('/^\s*(wie|wo|wann|seit wann|welche|welcher|welches|was|wieviel|wie viel|ist|sind|zeige|nenne|liste|haben|hat)\b/ui',$text);
-        if($preview||$scope!==null)$preferRead=true;
+        if($preview||$scope!==null||IAHHouseQuestionContext::isNewQuestion($text))$preferRead=true;
         $props=[
             'deviceKey'=>['type'=>'string'],'name'=>['type'=>'string'],'room'=>['type'=>'string'],
             'floor'=>['type'=>'string'],'domain'=>['type'=>'string'],'group'=>['type'=>'string'],
@@ -1038,6 +1109,8 @@ function iah_rc_voice(
             .'Eine Frage "welcher Raum ist am waermsten" erfordert property=temperature, '
             .'operation=max, group_by=room, indoor_only=true; beruecksichtige alle verfuegbaren Raeume, '
             .'nur IST-Temperaturen und bei mehreren Sensoren den Raum-Mittelwert. '
+            .'Raumhelligkeit aus Lux-Sensoren ist property=illuminance, nicht brightness, power oder activity. '
+            .'Für hellste oder dunkelste Räume operation=max/min, group_by=room, indoor_only=true. '
             .'Ein/Aus-Status kann property=activity mit condition=active/inactive verwenden. '
             .'Bei Fenstern und Tueren fuer Offen/Geschlossen property=closure nutzen. '
             .'closureCoverage trennt offene, geschlossene und unbekannte Rueckmeldungen. '

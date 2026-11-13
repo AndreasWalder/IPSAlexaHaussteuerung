@@ -144,6 +144,8 @@ function iah_vir_classify(array $input,array $saved=[]): array
     }
     if(isset($aliases[$text]))return array_replace($result,
         ['category'=>'navigation','route'=>$aliases[$text],'reason'=>'bare_tile']);
+    if(preg_match('/^(?:und )?(?:in|aus|bei|auf|vor|hinter|neben|unter|ueber|zwischen|seit|mit|nach|an|von|zu) welche[rsnm]?\s+\S+\s+\S+/u',$text))
+        return array_replace($result,['category'=>'query','reason'=>'prepositional_question']);
     if(preg_match('/^und (?:welche[rsnm]?|wie|was|wann|wo|ist|sind|hat|haben|gibt)\b/u',$text))
         return array_replace($result,['category'=>'query','reason'=>'new_question_after_and']);
     if(strcasecmp($intent,'HausUndIntent')===0

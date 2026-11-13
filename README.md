@@ -37,6 +37,12 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
   einfache Antworten aus bereits gelesenen Istwerten und plant komplexe
   Abfragen. Liefert das Modell keinen verwertbaren Text, bleiben
   verfügbare lokale Antworten erhalten.
+  V3.8.9 erkennt auch „In welchem Raum …?“ als Hausfrage.
+  Für „Wo ist es am hellsten?“ vergleicht der Skill die gemessenen Lux-Werte
+  pro Innenraum, nicht die Dimmerstellung. Die KI kann das Ergebnis formulieren.
+  „Wo wurde zuletzt das Licht eingeschaltet?“ vergleicht aufgezeichnete
+  Ein-Rückmeldungen über die freigegebenen Lichter im gesamten Haus.
+  Voraussetzung sind ein eingerichtetes Archive Control und archivierte Schaltzustände.
 
 - **Sprachbefehl testen (V3.8.3)**
   Im RoomsCatalogConfigurator oder unter „Szenen und eigene Alexa-Befehle“

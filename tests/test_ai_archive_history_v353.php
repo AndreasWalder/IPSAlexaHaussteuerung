@@ -48,9 +48,11 @@ function GetValue(int $id):bool{return false;}
 function IPS_LogMessage(string $prefix,string $msg):void{}
 function AC_GetAggregationVariables(int $archiveId,bool $full):array{
     $result=[];
-    foreach(array_keys($GLOBALS['archiveValues']) as $varId)
-        $result[]=['VariableID'=>$varId,'FirstTime'=>1793890000,
-            'LastTime'=>1793900000,'RecordCount'=>5,'AggregationActive'=>true];
+    foreach($GLOBALS['archiveValues'] as $varId=>$values) {
+        $timestamps=array_column($values,'TimeStamp');
+        $result[]=['VariableID'=>$varId,'FirstTime'=>min($timestamps?:[0]),
+            'LastTime'=>max($timestamps?:[0]),'RecordCount'=>count($values),'AggregationActive'=>true];
+    }
     return $result;
 }
 function AC_GetLoggedValues(int $archiveId,int $variableId,int $from,int $to,int $limit):array{

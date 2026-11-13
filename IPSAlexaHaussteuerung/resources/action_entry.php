@@ -2536,6 +2536,8 @@ function Execute($request = null)
             if (isset($fallbackTiles[$fallbackWord])) {
                 $iahVoiceDecision=['category'=>'navigation','route'=>$fallbackTiles[$fallbackWord],
                     'reason'=>'local_router_fallback'];
+            } elseif (preg_match('/^(?:und )?(?:in|aus|bei|auf|vor|hinter|neben|unter|ueber|zwischen|seit|mit|nach|an|von|zu) welche[rsnm]?\s+\S+\s+\S+/u',$fallbackWord)) {
+                $iahVoiceDecision=['category'=>'query','route'=>'','reason'=>'local_question_fallback'];
             } elseif (!preg_match('/^(?:wer|was|wann|wo|wie|welche|ist|sind|hat|haben|schalte|schalt|mach|stelle|fahre|fahr|oeffne|schliesse|starte|stoppe|dimme|dimme|pruefe)\b/u',$fallbackWord)) {
                 $iahVoiceDecision=['category'=>'clarify','route'=>'','reason'=>'router_unavailable_clarify'];
             }

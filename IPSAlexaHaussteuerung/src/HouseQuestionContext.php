@@ -16,6 +16,7 @@ final class IAHHouseQuestionContext
     public static function followUp(string $text): ?string
     {
         $text=self::normalize($text);
+        if(self::isNewQuestion($text))return null;
         if(!preg_match('/^(?:und )?'.self::LOCATION_PREFIX.' ([a-z0-9 ]{1,70})$/D',$text,$m)
             || preg_match('/\b(?:welche|welcher|wie|ist|sind|schalte|schalten|mach|stelle|'
                 .'oeffne|schliesse|starte|stoppe|dimme|fahre|an|aus|ein|auf|zu|prozent)\b/',$m[1]))
@@ -25,7 +26,8 @@ final class IAHHouseQuestionContext
 
     public static function isNewQuestion(string $text): bool
     {
-        return preg_match('/^(?:und )?(?:wer|was|wann|wo|wie|wieviel|wieviele|'
+        return preg_match('/^(?:und )?(?:in|aus|bei|auf|vor|hinter|neben|unter|ueber|zwischen|seit|mit|nach|an|von|zu) welche[rsnm]?\s+\S+\s+\S+/u',self::normalize($text))===1
+            || preg_match('/^(?:und )?(?:wer|was|wann|wo|wie|wieviel|wieviele|'
             .'welche|welcher|welches|welchen|welchem|ist|sind|hat|haben|gibt|'
             .'pruefe|kontrolliere|zeige|nenne|liste|vergleiche|zaehle|warum|'
             .'leuchtet|leuchten|laeuft|laufen)\b/',self::normalize($text))===1;
