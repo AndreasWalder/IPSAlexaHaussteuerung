@@ -1338,10 +1338,23 @@ trait IAHVoiceRuleEditorTrait
         $previous=$entry['question']??'';
         if($previous==='')
             return ['answer'=>'Bitte stelle zuerst die vollständige Hausfrage, dann kann ich den Bereich wechseln.'];
+        if (IAHHouseQuestionContext::latestMotionQuestion($previous)) {
+            $area=match($target) {
+                'innen','drinnen','ausser aussen'=>'indoor',
+                'draussen','nur aussen'=>'outdoor',
+                default=>'all',
+            };
+            if ($area!=='all')
+                return ['question'=>'Wo wurde zuletzt Bewegung erkannt?',
+                    'scope'=>['type'=>'motion_area','name'=>$area==='indoor'?'Innenräume':'Außenbereich','area'=>$area]];
+        }
         $scope=IAHHouseQuestionContext::scope($target,$catalog);
         if($scope===null)
             return ['answer'=>'Diesen Raum oder diese Etage kann ich im RoomsCatalog nicht eindeutig zuordnen.'];
-        return ['question'=>IAHHouseQuestionContext::withoutLocation($previous,$catalog),'scope'=>$scope];
+        $question=IAHHouseQuestionContext::latestMotionQuestion($previous)
+            ? 'Wo wurde zuletzt Bewegung erkannt?'
+            : IAHHouseQuestionContext::withoutLocation($previous,$catalog);
+        return ['question'=>$question,'scope'=>$scope];
     }
 
     private function rememberHouseQuestion(string $key,array $plan,array $result): void

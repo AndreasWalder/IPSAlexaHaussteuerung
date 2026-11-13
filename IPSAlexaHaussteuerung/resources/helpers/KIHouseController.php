@@ -672,6 +672,8 @@ function iah_rc_latest_light_on(string $text,array $catalog,?array $scope,int $a
     $text=iah_rc_norm($text);
     $text=preg_replace('/^(wo|wie|wann) wird wurde /D','$1 wurde ',$text)??$text;
     $text=preg_replace('/\b(?:zu schluss|zum schluss|zu letzt)\b/u','zuletzt',$text)??$text;
+    $text=preg_replace('/\b(?:im (?:ganzen |gesamten )?haus|hausweit)\b/u',' ',$text)??$text;
+    $text=trim(preg_replace('/\s+/u',' ',$text)??$text);
     if (!preg_match('/^(?:(?:(?:wo|wie|wann|in welche[mn] (?:raum|raeumen)) (?:wurde|ist|ging) '
         .'|welches licht wurde )(?:zuletzt (?:'.$light.' )?|'.$light.' zuletzt )'
         .'(?:eingeschaltet(?: worden)?|angeschaltet(?: worden)?|angemacht(?: worden)?|an)'
@@ -701,7 +703,55 @@ function iah_rc_latest_light_on(string $text,array $catalog,?array $scope,int $a
     if ($awaitingLocation) $answer.=' Welchen Raum soll ich genauer prüfen?';
     return ['handled'=>true,'answer'=>$answer,'contextEligible'=>$latest!==null,
         'awaitingLocation'=>$awaitingLocation,
-        'requiredWordingNames'=>$names,'readQueries'=>[['tool'=>'query_archive','result'=>$history]]];
+        'requiredWordingNames'=>$names,'archiveWordingEvent'=>$latest,
+        'readQueries'=>[['tool'=>'query_archive','result'=>$history]]];
+}
+
+/** Find real past motion, not the current sensor state. */
+function iah_rc_latest_motion(string $text,array $catalog,?array $scope,int $archiveId,float $deadline): ?array
+{
+    if (!IAHHouseQuestionContext::latestMotionQuestion($text))return null;
+    $area=($scope['type']??'')==='motion_area'
+        && in_array($scope['area']??'',['indoor','outdoor'],true)
+        ? $scope['area'] : IAHHouseQuestionContext::motionArea($text);
+    $devices=iah_rc_scope_devices(iah_rc_index_catalog($catalog,true),
+        ($scope['type']??'')==='motion_area'?null:$scope);
+    if ($area!=='all') {
+        $devices=array_filter($devices,static function(array $d)use($area):bool {
+            // Check room and sensor name. An outdoor sensor can be assigned
+            // to a room whose name alone does not identify it as outdoors.
+            $outdoor=(bool)preg_match('/\b(?:aussen|aussenbereich|garten|terrasse|balkon|outdoor|draussen)\b/u',
+                iah_rc_norm(($d['room']??'').' '.($d['roomKey']??'').' '.($d['name']??'')));
+            return $area==='outdoor'?$outdoor:!$outdoor;
+        });
+    }
+    $history=iah_archive_latest_activation($devices,$archiveId,$deadline,'motion');
+    $history['area']=$area;
+    $latest=$history['mostRecent'];
+    $label=$area==='indoor'?' in Innenräumen':($area==='outdoor'?' im Außenbereich':'');
+    $names=[];
+    if ($latest!==null) {
+        $names=array_values(array_unique([$latest['name'],$latest['room']]));
+        $answer=($history['partial']?'Letzte gefundene Bewegung':'Laut Archiv zuletzt Bewegung')
+            .$label.': '.$latest['name'].' in '.$latest['room'].' am '
+            .date('d.m.Y',$latest['timestamp']).' um '.date('H:i:s',$latest['timestamp']).' Uhr.';
+    } elseif (empty($history['ok'])) {
+        $answer='Für diese Frage fehlt die Archivverbindung.';
+    } elseif ($history['archivedDevices']===0) {
+        $answer='Ich finde'.$label.' keine archivierten Bewegungsmelder.';
+    } elseif ($history['partial']) {
+        $answer='Ich konnte das Archiv nicht vollständig prüfen und habe keine Bewegung gefunden.';
+    } else {
+        $answer='Ich finde'.$label.' keine aufgezeichnete Bewegung.';
+    }
+    iah_rc_log('archive.latest_motion',array_intersect_key($history,array_flip([
+        'ok','area','matchedDevices','archivedDevices','queriedVariables','partial','error'
+    ])));
+    $awaitingLocation=$scope===null && $history['partial'];
+    if ($awaitingLocation)$answer.=' Welchen Raum soll ich genauer prüfen?';
+    return ['handled'=>true,'answer'=>$answer,'contextEligible'=>$latest!==null,
+        'awaitingLocation'=>$awaitingLocation,'requiredWordingNames'=>$names,'archiveWordingEvent'=>$latest,
+        'readQueries'=>[['tool'=>'query_archive','result'=>$history]]];
 }
 
 /** Compare measured room illuminance, never lamp dimming or switch feedback. */
@@ -882,14 +932,17 @@ function iah_rc_voice(
             ??iah_rc_window_answer($localText,$catalog,$scope)
             ??iah_rc_room_temperature($localText,$catalog,$scope)
             ??iah_rc_room_illuminance_extreme($localText,$catalog,$scope)
-            ??iah_rc_latest_light_on($localText,$catalog,$scope,$archiveId,min($deadline,microtime(true)+2));
+            ??iah_rc_latest_light_on($localText,$catalog,$scope,$archiveId,min($deadline,microtime(true)+2))
+            ??iah_rc_latest_motion($localText,$catalog,$scope,$archiveId,min($deadline,microtime(true)+2));
         if($local!==null){
             $readDetails=$local['readQueries'];
             $requiredWordingNames=(array)($local['requiredWordingNames']??[]);
-            unset($local['readQueries'],$local['requiredWordingNames']);
+            $archiveWordingEvent=$local['archiveWordingEvent']??null;
+            $archivePartial=is_array($archiveWordingEvent) && !empty($readDetails[0]['result']['partial']);
+            unset($local['readQueries'],$local['requiredWordingNames'],$local['archiveWordingEvent']);
             $local['localHouseQuery']=true;
             $local['answerSource']='local';
-            if($key==='' || empty($cfg['prefer_ai']) || !empty($local['awaitingLocation']))
+            if($key==='' || empty($cfg['prefer_ai']) || !empty($local['awaitingLocation']) || $archivePartial)
                 return $costFinish($local);
             $costStarted=true;
             $model=(string)($cfg['model']??'gpt-6-luna');
@@ -902,7 +955,8 @@ function iah_rc_voice(
                     ['role'=>'system','content'=>'Formuliere die Antwort auf die Hausfrage kurz und natürlich auf Deutsch. '
                         .'Verwende ausschließlich die gelieferten Istwerte. Keine Anzahl, keinen Zustand, keinen Raum '
                         .'und keinen Gerätenamen hinzuerfinden oder ändern. Unbekannte Zustände bleiben unbekannt. '
-                        .'Bei einer Ja/Nein-Frage behalte die Bedeutung bei. Keine weiteren Fragen stellen.'],
+                        .'Bei einer Ja/Nein-Frage behalte die Bedeutung bei. Keine weiteren Fragen stellen. '
+                        .'Schreibe bei einem Archiv-Ereignis Datum, Uhrzeit und beteiligte Namen unverändert.'],
                     ['role'=>'user','content'=>json_encode([
                         'frage'=>$text,'bereich'=>$scope['name']??null,'istwerte'=>$local['answer'],
                     ],JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_UNICODE)],
@@ -939,7 +993,15 @@ function iah_rc_voice(
                 $answerNormalized=iah_rc_norm($answer);
                 $namesIntact=!array_filter($expectedNames,static fn(string $name):bool=>
                     !str_contains(' '.$answerNormalized.' ',' '.iah_rc_norm($name).' '));
-                if($answer!=='' && mb_strlen($answer,'UTF-8')<=650 && $expected===$received && $namesIntact
+                $archiveTimeIntact=true;
+                if (is_array($archiveWordingEvent)) {
+                    $timestamp=(int)$archiveWordingEvent['timestamp'];
+                    $format=($readDetails[0]['result']['property']??'')==='motion'?'H:i:s':'H:i';
+                    $archiveTimeIntact=str_contains($answer,date('d.m.Y',$timestamp))
+                        && str_contains($answer,date($format,$timestamp))
+                        && !preg_match('/\b(?:keine bewegung|nicht erkannt|ausgeschaltet)\b/u',$answerNormalized);
+                }
+                if($answer!=='' && mb_strlen($answer,'UTF-8')<=650 && $expected===$received && $namesIntact && $archiveTimeIntact
                     && $statuses($local['answer'])===$statuses($answer)
                     && $polarity($local['answer'])===$polarity($answer)){
                     $local['answer']=$answer;

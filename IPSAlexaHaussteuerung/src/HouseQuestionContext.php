@@ -17,6 +17,8 @@ final class IAHHouseQuestionContext
     {
         $text=self::normalize($text);
         if(self::isNewQuestion($text))return null;
+        if(preg_match('/^(?:und )?(innen|drinnen|draussen|nur aussen|ausser aussen)$/D',$text,$area))
+            return $area[1];
         if(!preg_match('/^(?:und )?'.self::LOCATION_PREFIX.' ([a-z0-9 ]{1,70})$/D',$text,$m)
             || preg_match('/\b(?:welche|welcher|wie|ist|sind|schalte|schalten|mach|stelle|'
                 .'oeffne|schliesse|starte|stoppe|dimme|fahre|an|aus|ein|auf|zu|prozent)\b/',$m[1]))
@@ -31,6 +33,28 @@ final class IAHHouseQuestionContext
             .'welche|welcher|welches|welchen|welchem|ist|sind|hat|haben|gibt|'
             .'pruefe|kontrolliere|zeige|nenne|liste|vergleiche|zaehle|warum|'
             .'leuchtet|leuchten|laeuft|laufen)\b/',self::normalize($text))===1;
+    }
+
+    /** Interpret only recognizable historical motion questions, not live status or counts. */
+    public static function latestMotionQuestion(string $text): bool
+    {
+        $text=self::normalize($text);
+        if (!preg_match('/\bbewegung(?:en)?\b/',$text)
+            || preg_match('/\b(?:wie oft|wie haeufig|wie viele|wieviele|seit wann|verlauf|historie|gestern|vorgestern|letzte woche|letzten tage|heute|letzten \d+|zwischen|vorhin)\b/',$text))
+            return false;
+        if (!preg_match('/^(?:und )?(?:wo|wie|wann|welche[rsnm]?|in welche[rsnm]?)\b/',$text))return false;
+        return (bool)preg_match('/\b(?:zuletzt|zu letzt|zu schluss|zum schluss|letzte[rsnm]?)\b/',$text)
+            || ((self::motionArea($text)!=='all' || preg_match('/^(?:und )?(?:wo|wann|in welche[rsnm]?)\b/',$text))
+                && preg_match('/\b(?:wurde|wurden|war)\b.*\b(?:erkannt|bekannt|gemeldet|festgestellt)\b/',$text));
+    }
+
+    public static function motionArea(string $text): string
+    {
+        $text=self::normalize($text);
+        if (preg_match('/\b(?:innen|drinnen|innerhalb des hauses|(?:nur )?im (?:ganzen |gesamten )?haus|'
+            .'ausser(?:halb)? (?:dem )?aussen(?:bereich)?|ohne aussen(?:bereich)?)\b/',$text))return 'indoor';
+        if (preg_match('/\b(?:draussen|im aussenbereich|nur aussen|ausserhalb des hauses)\b/',$text))return 'outdoor';
+        return 'all';
     }
 
     /** Older GetHaus joins the question and the Room slot without a preposition. */

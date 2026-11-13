@@ -46,6 +46,12 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
   V3.8.10 erkennt bei dieser Frage auch die Alexa-Transkription „wie wird
   wurde zu Schluss das Licht eingeschaltet“. Fragt der Skill bei einer
   Archivabfrage nach dem Raum, reicht in derselben Sitzung der Raumname.
+  V3.8.11 erkennt bei der Einschaltfrage auch „im Haus“ und nutzt dieselbe
+  Archivsuche für eine eingegrenzte Raumfrage. „Wo wurde zuletzt Bewegung
+  erkannt?“ vergleicht archivierte Aktivmeldungen ohne die alte Grenze von
+  30 Geräten. „Innen“, „außer außen“ und „draußen“ grenzen den Bereich ein.
+  Die KI darf das geprüfte Ergebnis formulieren, aber nicht die Auswahl
+  der Sensoren oder den Zeitpunkt ändern.
 
 - **Sprachbefehl testen (V3.8.3)**
   Im RoomsCatalogConfigurator oder unter „Szenen und eigene Alexa-Befehle“

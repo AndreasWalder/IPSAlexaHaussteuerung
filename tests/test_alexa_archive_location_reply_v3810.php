@@ -37,6 +37,13 @@ $result=json_decode($module->GetAlexaVoiceTest('Wohnzimmer','PROD',substr($key,5
 ck38(($result['category']??'')==='house_question'
     && ($result['questionScope']['rooms']??[])===['wohnzimmer'],
     'text test uses the same scoped room follow-up');
+$module->RememberAlexaHouseQuestion($session,$echo,'Wo wurde zuletzt draußen Bewegung erkannt?');
+$motionArea=json_decode($module->PrepareAlexaHouseQuestion($session,$echo,'Und innen?',502),true);
+ck38(($motionArea['scope']['area']??'')==='indoor' && $motionArea['question']==='Wo wurde zuletzt Bewegung erkannt?',
+    'inside replaces the previous outdoor filter while retaining the archive question');
+$motionRoom=json_decode($module->PrepareAlexaHouseQuestion($session,$echo,'Und im Wohnzimmer?',502),true);
+ck38($motionRoom['scope']['rooms']===['wohnzimmer'] && $motionRoom['question']===$motionArea['question'],
+    'an explicit room replaces the previous outdoor filter too');
 $action=file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/resources/action_entry.php');
 ck38(strpos($action,'IAH_IsAlexaHouseLocationReply(')<strpos($action,'if (!$iahPendingHouseLocation &&')
     && str_contains($action,"'reason'=>'pending_house_location'")
