@@ -20,7 +20,13 @@ function IAH_GetVoiceRuleTestPreview(int $id,string $text,string $source,string 
 function IPS_VariableExists(int $id): bool { return in_array($id,[810,811],true); }
 function IPS_GetVariable(int $id): array { return ['VariableType'=>0]; }
 function HasAction(int $id): bool { return $id===810; }
-function GetValue(int $id): mixed { throw new LogicException('Never read live values'); }
+function GetValue(int $id): mixed
+{
+    if(!array_key_exists($id,$GLOBALS['preview38Values']??[]))
+        throw new LogicException('Unexpected live value read');
+    $GLOBALS['preview38Reads'][]=$id;
+    return $GLOBALS['preview38Values'][$id];
+}
 function RequestAction(int $id,mixed $value): bool
 {
     $GLOBALS['preview38Actions'][]=[$id,$value];
@@ -141,8 +147,9 @@ $rcc->TestAlexaVoiceRule(200,'Abends testen','EDIT','',false);
 ck38(str_contains($rcc->updates['VoiceTestSummary.caption']??'','Instanz auswählen'),
     'reject an unrelated instance');
 $rccPanel=(new ReflectionMethod($rcc,'buildVoiceTestPanel'))->invoke($rcc);
-ck38($rccPanel['expanded']===false&&$rccPanel['items'][1]['value']===100
-    && str_contains(json_encode($rccPanel),'RCC_TestAlexaVoiceRule'),
+ck38($rccPanel['expanded']===false
+    && str_contains(json_encode($rccPanel),'RCC_TestAlexaVoice($id, 100,')
+    && !str_contains(json_encode($rccPanel),'VoiceTestInstance'),
     'RoomsCatalog panel starts collapsed and auto-selects the only Alexa instance');
 
 $form=json_decode($module->GetConfigurationForm(),true,512,JSON_THROW_ON_ERROR);

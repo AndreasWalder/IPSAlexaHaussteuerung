@@ -7,8 +7,9 @@ final class IAHVoiceRulePreviewForm
     public static function panel(string $onClick,?array $instances=null,int $instanceId=0): array
     {
         $items=[
-            ['type'=>'Label','caption'=>'Testet nur eigene Sprachregeln. Kein Skriptstart, keine '
-                .'Geräteaktion und keine Veröffentlichung. Die Echo-Spracherkennung wird nicht getestet.']
+            ['type'=>'Label','caption'=>'Satz wie zu Alexa eingeben, z. B. „Welche Lichter sind eingeschaltet?“. '
+                .'Eigene Regeln, Hausfragen und Navigation werden automatisch unterschieden. '
+                .'Der Test liest bei Bedarf Istwerte oder nutzt die konfigurierte KI. Nichts wird geschaltet.']
         ];
         if($instances!==null)
             $items[]=['type'=>'Select','name'=>'VoiceTestInstance','caption'=>'Alexa-Instanz',
@@ -16,16 +17,12 @@ final class IAHVoiceRulePreviewForm
         $items[]=['type'=>'RowLayout','items'=>[
             ['type'=>'ValidationTextBox','name'=>'VoiceTestText','caption'=>'Gesprochener Satz',
                 'value'=>'','width'=>'350px'],
-            ['type'=>'Select','name'=>'VoiceTestSource','caption'=>'Sprachregeln','value'=>'PROD',
+            ['type'=>'Select','name'=>'VoiceTestSource','caption'=>'Stand eigener Regeln','value'=>'PROD',
                 'options'=>[
                     ['caption'=>'PROD – veröffentlicht','value'=>'PROD'],
                     ['caption'=>'EDIT – Entwurf','value'=>'EDIT']
-                ]],
-            ['type'=>'ValidationTextBox','name'=>'VoiceTestIntent','caption'=>'Alexa-Intent (optional)',
-                'value'=>'']
+                ]]
         ]];
-        $items[]=['type'=>'CheckBox','name'=>'VoiceTestAi','value'=>false,
-            'caption'=>'Bei Bedarf auch KI testen (nur Antworten/Messwerte, verwendet die konfigurierte API)'];
         $items[]=['type'=>'Button','caption'=>'SPRACHBEFEHL TESTEN','onClick'=>$onClick];
         $items[]=['type'=>'Label','name'=>'VoiceTestSummary','caption'=>'Noch kein Sprachbefehl getestet.'];
         $items[]=['type'=>'ValidationTextBox','name'=>'VoiceTestResult','caption'=>'Vorschau (kopierbares JSON)',
@@ -37,15 +34,23 @@ final class IAHVoiceRulePreviewForm
     {
         $source=(string)($result['source']??'');
         $prefix=$source!==''?$source.' · ':'';
+        if(($result['category']??'')==='house_question')
+            return 'Hausfrage · RoomsCatalog PROD · '.($result['answer']??$result['error']??'Keine Antwort.');
+        if(!empty($result['inactiveMatches'])&&!empty($result['error'])
+            && ($result['category']??'')==='retired')
+            return $prefix.'Passende eigene Regel ist deaktiviert.';
         if(!empty($result['error']))return $prefix.($result['title']??$result['ruleKey']??'Test')
             .' – '.$result['error'];
         if(empty($result['matched']))return $prefix.'Keine aktive eigene Sprachregel passt.';
+        if(in_array($result['category']??'',['navigation','session','clarify','action'],true))
+            return (string)$result['answer'];
         $method=match($result['matchMethod']??''){
             'alias'=>'Alias „'.$result['matchedAlias'].'“',
             'intent'=>'Alexa-Intent',
             'ai_read_only'=>'KI (nur lesend)',
             default=>'Treffer'
         };
-        return $prefix.$result['title'].' · '.$method.' · Nichts ausgeführt.';
+        return $prefix.$result['title'].' · '.$method
+            .(!empty($result['answer'])?' · '.$result['answer']:'').' · Vorschau.';
     }
 }

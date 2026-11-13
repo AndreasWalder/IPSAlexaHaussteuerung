@@ -43,7 +43,11 @@ function iah_energy_belongs_to_source(int $variableId,int $sourceId,string $iden
 
 function iah_energy_sources(int $catalogScriptId): array
 {
-    $catalog=iah_energy_catalog($catalogScriptId);
+    return iah_energy_catalog_sources(iah_energy_catalog($catalogScriptId));
+}
+
+function iah_energy_catalog_sources(array $catalog): array
+{
     $rows=(array)($catalog['dataSources']??[]);
     $sources=[];
     foreach ($rows as $key=>$source) {

@@ -55,6 +55,8 @@ class IPSModule
     private array $attributes = [];
     public array $updates = [];
     public function ReadPropertyInteger(string $name): int { return (int) ($this->properties[$name] ?? 0); }
+    public function ReadPropertyString(string $name): string { return (string) ($this->properties[$name] ?? ''); }
+    public function ReadPropertyBoolean(string $name): bool { return (bool) ($this->properties[$name] ?? false); }
     public function ReadAttributeString(string $name): string { return $this->attributes[$name] ?? ''; }
     public function WriteAttributeString(string $name, string $value): void { $this->attributes[$name] = $value; }
     public function UpdateFormField(string $name, string $field, mixed $value): void

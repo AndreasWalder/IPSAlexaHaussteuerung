@@ -172,6 +172,8 @@ jobs:
         run: php tests/test_voice_rules_literal_reader_v372.php
       - name: Test V3.8 side-effect-free EDIT and PROD voice rule preview
         run: php tests/test_voice_rule_preview_v38.php
+      - name: Test V3.8.1 automatic voice routing and read-only house questions
+        run: php tests/test_alexa_voice_test_v381.php
       - name: Test Symcon IPSList checkbox callbacks and filtered multi-selection
         run: php tests/test_rooms_catalog_ipslist_multiselect.php
       - name: Test RoomsCatalog quick search for IPS object IDs and parent instance IDs
