@@ -8,10 +8,11 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
 
 ## ✨ Features
 
-- **Sprachbefehl testen (V3.8)**
+- **Sprachbefehl testen (V3.8.1)**
   Im RoomsCatalogConfigurator oder unter „Szenen und eigene Alexa-Befehle“
-  der Alexa-Instanz einen Satz gegen EDIT oder PROD prüfen. Die Vorschau
-  zeigt Treffer, Antwort, Bild und geplante Aktion, ohne diese auszuführen.
+  der Alexa-Instanz einen Satz eingeben. Der Test erkennt eigene Regeln,
+  Hausfragen und Navigation automatisch. Hausfragen nutzen produktive
+  Istwerte, Schaltaktionen werden nur angezeigt.
   [Anleitung und Grenzen der Vorschau](docs/Alexa_V38_Sprachbefehl_Testvorschau.md)
 
 - **Einstieg über „Action“**  

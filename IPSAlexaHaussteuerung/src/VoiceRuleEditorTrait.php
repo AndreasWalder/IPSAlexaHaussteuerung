@@ -196,9 +196,8 @@ trait IAHVoiceRuleEditorTrait
                         .'nutzt die vorhandene KI-API-Konfiguration)',
                     'value'=>method_exists($this,'ReadPropertyBoolean')
                         ?$this->ReadPropertyBoolean('VoiceRulesAiReadOnlyEnabled'):false],
-                IAHVoiceRulePreviewForm::panel('IAH_ShowVoiceRuleTestPreview($id, '
-                    .'(string)$VoiceTestText, (string)$VoiceTestSource, '
-                    .'(string)$VoiceTestIntent, (bool)$VoiceTestAi);'),
+                IAHVoiceRulePreviewForm::panel('IAH_ShowAlexaVoiceTest($id, '
+                    .'(string)$VoiceTestText, (string)$VoiceTestSource);'),
                 ['type'=>'Label','name'=>'VoiceRuleEditorNotice',
                     'caption'=>$notice,'visible'=>$notice!==''],
                 ['type'=>'List','name'=>$name,
@@ -1056,9 +1055,155 @@ trait IAHVoiceRuleEditorTrait
             |JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR);
     }
 
+    /** Kept for clients using the original V3.8 rules-only test. */
     public function ShowVoiceRuleTestPreview(string $spoken,string $source,string $intent,bool $useAi): void
     {
         $json=$this->GetVoiceRuleTestPreview($spoken,$source,$intent,$useAi);
+        $this->UpdateFormField('VoiceTestResult','value',$json);
+        $this->UpdateFormField('VoiceTestSummary','caption',
+            IAHVoiceRulePreviewForm::summary(json_decode($json,true,512,JSON_THROW_ON_ERROR)));
+    }
+
+    /** Text-only simulation. Never call the live Action entry, renderers or a device action. */
+    public function GetAlexaVoiceTest(string $spoken,string $source='PROD'): string
+    {
+        $spoken=trim($spoken);
+        $result=['dryRun'=>true,'matched'=>false,'ok'=>false,'source'=>$source];
+        try {
+            if($spoken===''||strlen($spoken)>2000||mb_strlen($spoken,'UTF-8')>500)
+                throw new RuntimeException('Bitte einen Satz mit maximal 500 Zeichen eingeben.');
+            if(!in_array($source,['PROD','EDIT'],true))
+                throw new RuntimeException('Bitte EDIT oder PROD auswählen.');
+            $result['spoken']=$spoken;
+            $normalized=IAHVoiceRuleEngine::normalize($spoken);
+            if($normalized==='')throw new RuntimeException('Bitte einen gesprochenen Satz eingeben.');
+
+            if(in_array($normalized,['ende','fertig','exit'],true)){
+                $result=array_replace($result,['matched'=>true,'ok'=>true,'category'=>'session',
+                    'route'=>'exit','answer'=>'Ok, bis bald!']);
+            }else{
+                // The existing rule tester preserves exact alias priority and
+                // the live allowlist for optional semantic FAQ recognition.
+                if($normalized!=='zurueck' && mb_strlen($spoken,'UTF-8')<=160){
+                    $rule=json_decode($this->GetVoiceRuleTestPreview($spoken,$source,'',true),
+                        true,512,JSON_THROW_ON_ERROR);
+                    if(!empty($rule['matched'])){
+                        $result=array_replace($result,$rule,['category'=>'voice_rule']);
+                        if(!empty($result['ok'])&&($result['kind']??'')==='read'){
+                            $variableId=$result['plannedAction']['variableId'];
+                            try {
+                                $value=function_exists('GetValueFormatted')
+                                    ?GetValueFormatted($variableId):GetValue($variableId);
+                                $result['answer']=str_replace('{value}',(string)$value,$result['answer']);
+                                $result['cardText']=str_replace('{value}',(string)$value,$result['cardText']);
+                            }catch(Throwable $ignored){
+                                $result['ok']=false;
+                                $result['error']='Der hinterlegte Messwert ist nicht lesbar.';
+                            }
+                        }
+                        return self::encodeAlexaVoiceTest($result);
+                    }
+                    if(isset($rule['inactiveMatches']))$result['inactiveMatches']=$rule['inactiveMatches'];
+                    elseif(isset($rule['error']))$result['voiceRulesWarning']=$rule['error'];
+                }
+                $settings=$this->getObjectIDByIdentOrName($this->InstanceID,'iahSettings','Einstellungen');
+                $catalogId=$settings>0?$this->getObjectIDByIdentOrName($settings,'roomsCatalog','RoomsCatalog'):0;
+                $catalog=IAHVoiceRuleLiteralReader::read($this->getScriptContent($catalogId));
+                $result=array_replace($result,$this->previewAlexaVoiceRoute(
+                    $spoken,$catalog,$this->systemConfigurationScriptIds($settings)['prod']));
+            }
+        }catch(Throwable $error){
+            $result['ok']=false;
+            $result['error']=$error instanceof RuntimeException ? $error->getMessage()
+                : 'Die Vorschau konnte nicht ausgewertet werden.';
+        }
+        return self::encodeAlexaVoiceTest($result);
+    }
+
+    private static function encodeAlexaVoiceTest(array $result): string
+    {
+        return json_encode($result,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE
+            |JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR);
+    }
+
+    private function previewAlexaVoiceRoute(string $spoken,?array $catalog,int $prodId): array
+    {
+        require_once __DIR__.'/../resources/helpers/VoiceIntentRouter.php';
+        $system=IAHVoiceRuleLiteralReader::read($this->getScriptContent($prodId))??[];
+        $navCatalog=IAHSystemNavigationMigration::project($catalog??[],(array)($system['navigation']??[]));
+        $decision=iah_vir_classify(['text'=>$spoken,'routes'=>$this->readRendererDomainsProperty($navCatalog)]);
+        $normalized=iah_vir_norm($spoken);
+        $category=$decision['category'];
+        if($category==='navigation'){
+            return ['category'=>'navigation','matched'=>true,'ok'=>true,
+                'route'=>$decision['route'],'reason'=>$decision['reason'],
+                'answer'=>'Alexa würde den Bereich „'.$decision['route'].'“ öffnen.'];
+        }
+        if($normalized==='frage'){
+            return ['category'=>'clarify','matched'=>true,'ok'=>true,
+                'answer'=>'Welche Hausfrage möchtest du stellen?'];
+        }
+        $question=preg_replace('/^\s*frage[\s,:]+/ui','',$spoken)??$spoken;
+        if(IAHVoiceLegacyMigration::isRetiredPhrase($spoken,$catalog??[],
+            $this->ReadPropertyInteger('VarAussenTemp'))){
+            return ['category'=>'retired','matched'=>true,'ok'=>false,
+                'error'=>'Dieser alte Befehl ist deaktiviert. Er benötigt eine aktive eigene Sprachregel.'];
+        }
+        // Explicit controls are never routed through the question tools.
+        // For classic GetHaus, display the inferred operation but do not
+        // claim an exact device binding without Alexa's resolved slots.
+        $normalizer=require __DIR__.'/../resources/helpers/Normalizer.php';
+        $operation=($normalizer['action'])($spoken,'','','','');
+        $classicControl=in_array($operation,
+            ['ein','aus','stellen','fahren','öffnen','schließen','stop','beschatten','lüften','mitte','dimmen'],true);
+        if($category==='action'||($category==='passthrough'&&$classicControl
+            && !str_contains($spoken,'?')&&$question===$spoken
+            && preg_match('/^(?:zeige|nenne|liste|vergleiche|ueberpruefe|status)\b/u',$normalized)!==1
+            && (preg_match('/\b(?:ein|an|aus|auf|zu|stop|stopp)$/D',$normalized)===1
+                ||preg_match('/\b(?:einschalten|ausschalten|anschalten|abschalten|dimmen|oeffnen|'
+                    .'schliessen|fahren|stellen|lueften)\b/u',$normalized)===1))){
+            return ['category'=>'action','matched'=>true,'ok'=>true,'route'=>'GetHaus',
+                'plannedAction'=>['type'=>'classic_control','operation'=>$classicControl?$operation:null],
+                'answer'=>'Schaltbefehl erkannt. Das genaue Ziel hängt von den Alexa-Slots ab. Nichts geschaltet.'];
+        }
+        // As in the live route, additional natural question forms may
+        // bypass the generic router even without a dedicated Alexa intent.
+        $isQuestion=$category==='query'||$question!==$spoken||str_contains($spoken,'?')
+            ||preg_match('/^(?:zeige|nenne|liste|vergleiche|ueberpruefe|frage|status|'
+                .'leuchtet|leuchten|brennt|brennen|laeuft|laufen|wieviele)\b/u',$normalized)===1;
+        if($isQuestion)return $this->previewAlexaHouseQuestion($question,$catalog);
+        return ['category'=>'unresolved','reason'=>$decision['reason'],'matched'=>false,'ok'=>false,
+            'error'=>'Aus dem Satz allein konnte keine eindeutige Regel, Hausfrage oder Navigation ermittelt werden.'];
+    }
+
+    private function previewAlexaHouseQuestion(string $spoken,?array $catalog): array
+    {
+        $result=['category'=>'house_question','matched'=>true,'ok'=>false,'catalogSource'=>'PROD'];
+        if(!method_exists($this,'ReadPropertyBoolean')||!$this->ReadPropertyBoolean('HomeAgentVoiceEnabled'))
+            return $result+['error'=>'Die Hausabfrage ist in der Alexa-Instanz nicht aktiviert.'];
+        if($catalog===null)
+            return $result+['error'=>'RoomsCatalog PROD ist kein lesbares statisches PHP-Array.'];
+        require_once __DIR__.'/../resources/helpers/KIHouseController.php';
+        $local=iah_rc_preview_lights($spoken,$catalog);
+        $query=$local??iah_rc_voice($spoken,[
+            'api_key'=>$this->ReadPropertyString('KIIntentApiKey'),
+            'model'=>$this->ReadPropertyString('KIModelSelection')?:'gpt-6-luna',
+            'archive_control_id'=>$this->ReadPropertyInteger('KIArchiveControlId'),
+            'max_words'=>$this->ReadPropertyInteger('HomeAgentVoiceMaxWords')?:20,
+            'timeout_seconds'=>$this->ReadPropertyInteger('HomeAgentVoiceTimeoutSeconds')?:6,
+            'ki_cost_instance_id'=>$this->InstanceID
+        ],$catalog);
+        $result['matchMethod']=$local!==null?'local_house_query':'ai_house_query';
+        $result['readQueries']=$query['readQueries']??[];
+        $result['ok']=!empty($query['handled'])&&trim((string)($query['answer']??''))!=='';
+        if($result['ok'])$result['answer']=$query['answer'];
+        else $result['error']=$query['error']??'Keine verwertbare Antwort der Hausabfrage.';
+        return $result;
+    }
+
+    public function ShowAlexaVoiceTest(string $spoken,string $source): void
+    {
+        $json=$this->GetAlexaVoiceTest($spoken,$source);
         $this->UpdateFormField('VoiceTestResult','value',$json);
         $this->UpdateFormField('VoiceTestSummary','caption',
             IAHVoiceRulePreviewForm::summary(json_decode($json,true,512,JSON_THROW_ON_ERROR)));

@@ -445,6 +445,7 @@ final class IAHVoiceRuleEngine
         try {
             $rule=self::validateRule($raw);
             $result+=self::presentation($key,$rule);
+            if($rule['intentName']!=='')$result['configuredIntent']=$rule['intentName'];
             $action=match($rule['kind']){
                 'answer'=>['type'=>'answer'],
                 'read'=>['type'=>'read','variableId'=>$rule['readVariableId']],

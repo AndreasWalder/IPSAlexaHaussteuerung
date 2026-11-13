@@ -2642,7 +2642,7 @@ PHP;
         return 'alles neu aktualisiert';
     }
 
-    private function readRendererDomainsProperty(): array
+    private function readRendererDomainsProperty(?array $catalog=null): array
     {
         $raw = $this->ReadPropertyString('RendererDomains');
         $data = json_decode($raw, true);
@@ -2686,7 +2686,9 @@ PHP;
             }
         }
 
-        $dynamicRoutes = $this->discoverRoomsCatalogTabDomains();
+        $dynamicRoutes = $catalog===null
+            ? $this->discoverRoomsCatalogTabDomains()
+            : $this->extractRoomsCatalogTabDomains($catalog['rooms'] ?? $catalog,true);
         foreach ($dynamicRoutes as $route => $entry) {
             $roomDomain = strtolower((string)($entry['roomDomain'] ?? $route));
             if (isset($claimedDomains[$roomDomain])) {
@@ -2754,7 +2756,7 @@ PHP;
         return $this->extractRoomsCatalogTabDomains($rooms);
     }
 
-    private function extractRoomsCatalogTabDomains(array $rooms): array
+    private function extractRoomsCatalogTabDomains(array $rooms,bool $includeSynonyms=false): array
     {
         $routes = [];
     
@@ -2785,6 +2787,12 @@ PHP;
                     'title'      => $title,
                     'logName'    => $title,
                 ];
+                if ($includeSynonyms) foreach ($tabs as $tab) {
+                    if (!is_array($tab)) continue;
+                    foreach ((array)($tab['synonyms'] ?? []) as $synonym) {
+                        if (is_string($synonym)) $routes[$route]['synonyms'][] = $synonym;
+                    }
+                }
             }
         }
     

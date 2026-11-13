@@ -143,18 +143,24 @@ final class IAHVoiceLegacyMigration
     {
         $value=IAHVoiceRuleEngine::normalize($spoken);
         if($value==='')return false;
+        // Exact retired aliases below still require a configured replacement.
+        // Do not let the broad actuator shortcut patterns steal live status,
+        // history or energy questions from the read-only house query.
+        $question=preg_match('/^(?:wer|was|wann|wo|wie|wieviel|'
+            .'welche|welcher|welches|welchen|welchem|ist|sind|hat|haben|gibt|'
+            .'pruefe|kontrolliere|zeige mir|sag mir|sage mir|warum)\b/u',$value)===1;
         // Legacy renderer also accepted room names, percentages and extra
         // words around blinds/robot commands. Those must not slip through
         // to the old renderer when no new exact rule is configured.
         // A single 'Jalousie' remains navigation, not a control command.
-        if(preg_match('/\\b(?:jalousie|jalousien|rollo|rollos|rollladen|raffstore|beschattung)\\b/u',$value)
-            && preg_match('/\\b(?:auf|zu|ab|oeffnen|schliessen|fahren|fahre|stelle|stellen|position|prozent|[0-9]+%?)\\b/u',$value))
+        if(!$question && preg_match('/\\b(?:jalousie|jalousien|rollo|rollos|rollladen|raffstore|beschattung)\\b/u',$value)
+            && preg_match('/\\b(?:auf|zu|ab|oeffne|oeffnen|schliesse|schliessen|fahren|fahre|stelle|stellen|position|prozent|[0-9]+%?)\\b/u',$value))
             return true;
-        if(preg_match('/\\b(?:maehroboter|roborock|staubsaugen|saugen|vox|wrox)\\b/u',$value))
+        if(!$question && preg_match('/\\b(?:maehroboter|roborock|staubsaugen|saugen|vox|wrox)\\b/u',$value))
             return true;
-        if(preg_match('/\\b(?:aussentemperatur)\\b/u',$value)
+        if(!$question && (preg_match('/\\b(?:aussentemperatur)\\b/u',$value)
             || (preg_match('/\\b(?:draussen|aussen)\\b/u',$value)
-                && preg_match('/\\b(?:warm|temperatur|kalt|grad)\\b/u',$value)))
+                && preg_match('/\\b(?:warm|temperatur|kalt|grad)\\b/u',$value))))
             return true;
         foreach(self::drafts($catalog,$outsideTemperatureId) as $draft){
             foreach(IAHVoiceRuleEngine::phrases($draft['aliases']??[]) as $alias)
