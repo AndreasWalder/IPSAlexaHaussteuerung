@@ -2,6 +2,11 @@
 
 declare(strict_types=1);
 
+// IAH_HOUSE_QUESTION_CONTEXT_INSERT
+if (!class_exists('IAHHouseQuestionContext', false)) {
+    require_once dirname(__DIR__, 2) . '/src/HouseQuestionContext.php';
+}
+
 // IAH_DEVICETYPE_REGISTRY_INSERT
 // Im Symcon-Skript durch Modul-Update aus der zentralen Registry eingebettet.
 // Beim direkten PHP-Unit-Test dieselbe zentrale PHP-Datei laden.
@@ -155,7 +160,7 @@ function iah_rc_load_catalog(int $scriptId): array
     return $rooms;
 }
 
-function iah_rc_index_catalog(array $rooms,bool $includeArchiveOnly=false): array
+function iah_rc_index_catalog(array $rooms,bool $includeArchiveOnly=false,bool $includeUnknownWindows=false): array
 {
     if (is_array($rooms['rooms'] ?? null)) $rooms = $rooms['rooms'];
     $devices = [];
@@ -183,7 +188,8 @@ function iah_rc_index_catalog(array $rooms,bool $includeArchiveOnly=false): arra
                     $ai = is_array($dev['ai'] ?? null) ? $dev['ai'] : [];
                     $type = (string)($ai['type'] ?? '');
                     $typed = isset($knownTypes[$type]) && (int)($ai['version'] ?? 0) === 1
-                        && is_array($ai['variables'] ?? null);
+                        && (is_array($ai['variables'] ?? null)
+                            || ($includeUnknownWindows && $type==='window' && !isset($ai['variables'])));
                     // Ein explizites, aber unbekanntes Schema niemals als Legacy interpretieren.
                     if (array_key_exists('type',$ai) && !$typed) continue;
                     $legacy = ($domain === 'licht' && in_array($group,['switches','dimmers','status'],true))
@@ -227,7 +233,7 @@ function iah_rc_index_catalog(array $rooms,bool $includeArchiveOnly=false): arra
                         // Ein Fan mit nur control meldet einen Befehlswert, keinen Istzustand.
                         if ($type === 'fan' && !isset($reads['power']) && isset($mapped['control']))
                             $reads['commandValue'] = $mapped['control'];
-                        if ($reads === [] && !($includeArchiveOnly
+                        if ($reads === [] && !($includeUnknownWindows && $type==='window') && !($includeArchiveOnly
                             && $type==='motion'
                             && (int)($dev['discoverySourceId']??0)>0)) continue;
                         if (($ai['review']['status'] ?? '') === 'confirmed'
@@ -242,6 +248,7 @@ function iah_rc_index_catalog(array $rooms,bool $includeArchiveOnly=false): arra
                         }
                     }
                     if (($readId <= 0 || !IPS_VariableExists($readId))
+                        && !($includeUnknownWindows && $typed && $type==='window')
                         && !($includeArchiveOnly && $typed
                             && $type==='motion' && (int)($dev['discoverySourceId']??0)>0)) continue;
                     $writeId = $typed ? (int)(reset($writeRoles) ?: 0) : match ($group) {
@@ -284,12 +291,18 @@ function iah_rc_find(array $devices, array $filters): array
 {
     $found = [];
     $deviceKey = (string)($filters['deviceKey'] ?? '');
-    if ($deviceKey !== '') return isset($devices[$deviceKey]) ? [$devices[$deviceKey]] : [];
+    if ($deviceKey !== '') $devices=isset($devices[$deviceKey])?[$devices[$deviceKey]]:[];
     foreach ($devices as $dev) {
         $ok = true;
         foreach (['name','room','floor','domain','group','type'] as $field) {
             $wanted = iah_rc_norm((string)($filters[$field] ?? ''));
             if ($wanted === '' || $wanted === 'all' || $wanted === 'alle') continue;
+            if($field==='floor'){
+                if(IAHHouseQuestionContext::floor((string)$dev[$field])!==IAHHouseQuestionContext::floor($wanted)){
+                    $ok=false;break;
+                }
+                continue;
+            }
             $choices = $field === 'name'
                 ? array_merge([$dev['name'],$dev['id']],$dev['synonyms'])
                 : ($field === 'room' ? array_merge([$dev['room'],$dev['roomKey']],$dev['roomAliases'] ?? []) : [$dev[$field]]);
@@ -362,12 +375,17 @@ function iah_rc_state(array $dev, bool $includeLastChange = false): array
                     break;
                 }
             }
-            // Die explizit als 'open' konfigurierte Boolean-Rolle bedeutet offen=true.
-            // Fuer allgemeines 'status' bleibt weiterhin ein stateMapping notwendig.
-            if (in_array($dev['type'],['window','door'],true) && $role==='open' && is_bool($mapped)
-                && !array_key_exists('open',$dev['stateMapping'])
-                && !array_key_exists('closed',$dev['stateMapping']))
-                $mapped=$mapped ? 'offen' : 'geschlossen';
+            if (in_array($dev['type'],['window','door'],true) && in_array($role,['open','status'],true)
+                && !in_array($mapped,['offen','geschlossen'],true)) {
+                $hasMapping=array_key_exists('open',$dev['stateMapping'])
+                    || array_key_exists('closed',$dev['stateMapping']);
+                $label=is_string($mapped)?iah_ai_closure_label($mapped):null;
+                $profileLabel=$hasMapping?null:iah_ai_profile_label($id,$raw);
+                if($profileLabel!==null)$label=iah_ai_closure_label($profileLabel);
+                if($label===null && $profileLabel===null && !$hasMapping && $role==='open' && is_bool($raw))
+                    $label=$raw?'offen':'geschlossen';
+                $mapped=$label;
+            }
             if (is_bool($mapped) && in_array($role,['power','motion','commandValue'],true))
                 $mapped=$mapped ? 'an' : 'aus';
             $properties[$role]=$mapped;
@@ -575,6 +593,7 @@ function iah_rc_chat_payload(string $model,array $messages,array $tools,int $rou
 /** Common light questions use the same read-only feedback for the Echo and the test form. */
 function iah_rc_preview_lights(string $text,array $catalog,?array $scope=null): ?array
 {
+    if(($scope['type']??'')==='multiple')return null;
     $normalized=iah_rc_norm($text);
     if(!preg_match('/^(welche|wie viele|wieviele) (lichter|lampen|leuchten) sind '
         .'(?:(?:gerade|aktuell|momentan|noch) ){0,2}(an|ein|eingeschaltet|aus|ausgeschaltet)$/D',
@@ -582,6 +601,52 @@ function iah_rc_preview_lights(string $text,array $catalog,?array $scope=null): 
     $answer=iah_rc_light_answer($text,iah_rc_scope_devices(iah_rc_index_catalog($catalog),$scope),$match);
     if($scope!==null)$answer['answer']=$scope['name'].' – '.$answer['answer'];
     return $answer;
+}
+
+/** Unambiguous current window questions are answered from contacts, not model guesses. */
+function iah_rc_window_answer(string $text,array $catalog,?array $scope): ?array
+{
+    if(($scope['type']??'')==='multiple')return null;
+    $normalized=iah_rc_norm($text);
+    $contacts='(?:fenster|fensterkontakte)';
+    $status='(?:offen|geoeffnet|geschlossen|zu)';
+    $mode=null;$state='';
+    if(preg_match('/^sind (?:(?:die|alle) )?'.$contacts.' (?:alle )?(?:(?:aktuell|gerade|noch) )?('.$status.')$/D',$normalized,$m)){
+        $mode='yes_no';$state=$m[1];
+    }elseif(preg_match('/^(welche|wie viele|wieviele) '.$contacts.' sind (?:(?:aktuell|gerade|noch) )?('.$status.')$/D',$normalized,$m)){
+        $mode=$m[1]==='welche'?'list':'count';$state=$m[2];
+    }elseif(preg_match('/^(?:(?:wie|was) ist der (?:status|zustand) der '.$contacts
+        .'|'.$contacts.' status|status der '.$contacts.')$/D',$normalized)){
+        $mode='status';
+    }
+    if($mode===null)return null;
+    $query=iah_ai_query_house(iah_rc_scope_devices(iah_rc_index_catalog($catalog,false,true),$scope),[
+        'property'=>'closure','type'=>'window','operation'=>'list','limit'=>50
+    ],$text);
+    $coverage=$query['closureCoverage'];
+    $expected=in_array($state,['offen','geoeffnet'],true)?'offen':'geschlossen';
+    $target=$expected==='offen'?'open':'closed';
+    $opposite=$target==='open'?'closed':'open';
+    if($coverage['devices']===0){
+        $answer='Keine freigegebenen Fensterkontakte im RoomsCatalog gefunden.';
+    }elseif($mode==='yes_no'){
+        if($coverage[$opposite]>0)$answer='Nein. ';
+        elseif($coverage['unknown']>0)$answer='Nicht sicher feststellbar. ';
+        else $answer='Ja, alle freigegebenen Fensterkontakte melden „'.$expected.'“. ';
+        $answer.=$coverage['open'].' offen, '.$coverage['closed'].' geschlossen, '.$coverage['unknown'].' unbekannt.';
+    }else{
+        $answer=$coverage['open'].' offen, '.$coverage['closed'].' geschlossen, '.$coverage['unknown'].' unbekannt.';
+        if($mode==='list'&&$coverage[$target]>0){
+            $names=[];
+            foreach($query['rows'] as $row)if(($row['value']??null)===$expected&&count($names)<5)
+                $names[]=$row['name'];
+            if($names!==[])$answer.=' '.$expected.' melden: '.implode(', ',$names)
+                .($coverage[$target]>count($names)?' und '.($coverage[$target]-count($names)).' weitere.':'.');
+        }
+    }
+    if($scope!==null)$answer=$scope['name'].' – '.$answer;
+    return ['handled'=>true,'answer'=>$answer,'contextEligible'=>true,
+        'readQueries'=>[['tool'=>'query_house','result'=>$query]]];
 }
 
 function iah_rc_scope_devices(array $devices,?array $scope): array
@@ -664,14 +729,21 @@ function iah_rc_voice(
     $wantsArchive=$archiveId>0 && (bool)preg_match(
         '/\b(wann|zuletzt|letzte[rsn]?|wie oft|wie haeufig|wie häufig|verlauf|historie|ereignisse|gestern|pro tag|in den letzten|vorletzte)\b/ui',$text);
     $scope=is_array($cfg['question_scope']??null)?$cfg['question_scope']:null;
-    $maxWords=max(8,min(45,(int)($cfg['max_words']??20)));$allowWrites=!$preview&&$scope===null&&(bool)($cfg['allow_writes']??false);
+    $maxWords=max(8,min(45,(int)($cfg['max_words']??20)));
     $lastReadResult=null;
     try{
         $catalog=$previewCatalog??iah_rc_load_catalog($catalogId);
-        $local=iah_rc_preview_lights($text,$catalog,$scope);
+        if($scope===null && IAHHouseQuestionContext::isNewQuestion($text))
+            $scope=IAHHouseQuestionContext::initialScope($text,$catalog);
+        if(($scope['type']??'')==='unresolved')
+            return $costFinish(['handled'=>true,'answer'=>'Diesen Raum oder diese Etage kann ich im RoomsCatalog nicht eindeutig zuordnen.']);
+        $allowWrites=!$preview&&$scope===null&&(bool)($cfg['allow_writes']??false);
+        $localText=$scope===null?$text:IAHHouseQuestionContext::withoutLocation($text,$catalog);
+        $local=iah_rc_preview_lights($localText,$catalog,$scope)??iah_rc_window_answer($localText,$catalog,$scope);
         if($local!==null){
             $readDetails=$local['readQueries'];
             unset($local['readQueries']);
+            $local['localHouseQuery']=true;
             return $costFinish($local);
         }
         if($key==='')return $costFinish(['handled'=>false,'error'=>'KI-Konfiguration unvollständig']);
@@ -838,7 +910,9 @@ function iah_rc_voice(
             .'operation=max, group_by=room, indoor_only=true; beruecksichtige alle verfuegbaren Raeume, '
             .'nur IST-Temperaturen und bei mehreren Sensoren den Raum-Mittelwert. '
             .'Ein/Aus-Status kann property=activity mit condition=active/inactive verwenden. '
-            .'Bei Fenstern wird eine explizit zugeordnete Offen-Rueckmeldung benoetigt. '
+            .'Bei Fenstern und Tueren fuer Offen/Geschlossen property=closure nutzen. '
+            .'closureCoverage trennt offene, geschlossene und unbekannte Rueckmeldungen. '
+            .'Bei unbekanntem Status niemals behaupten, alle seien offen oder geschlossen. '
             .'Bei Jalousien duerfen Offen-/Geschlossen-Aussagen nur aus bestaetigtem Status oder Endlagen-Mapping entstehen; niemals aus Position>0. '
             .'Bei fehlenden Istwerten die fehlende Verknuepfung nennen statt unbegruendete Abfragen zu wiederholen. '
             .'Pruefe Resultate auf ok, matchedReadings und Warnungen. Fehlende Werte sind UNBEKANNT, '
@@ -899,14 +973,18 @@ function iah_rc_voice(
                 $args=json_decode((string)($call['function']['arguments']??'{}'),true);
                 if(!is_array($args)||!in_array($name,array_column(array_column($tools,'function'),'name'),true))
                     throw new RuntimeException('Ungültiger Werkzeugaufruf');
-                if($scope!==null)unset($args['room'],$args['rooms'],$args['floor']);
+                $toolText=$text;
+                if($scope!==null&&($scope['type']??'')!=='multiple'){
+                    unset($args['room'],$args['rooms'],$args['floor']);
+                    $toolText=$localText;
+                }
                 $result=$name==='query_house'
                     ? iah_ai_query_house($devices,$args,$text)
                     : ($name==='query_archive'
                         ? iah_archive_query($devices,$args,$text,$archiveId)
                         : ($name==='query_energy'
                             ? iah_energy_query($energySources,$args,$archiveId)
-                            : iah_rc_tool($devices,$name,$args,$allowWrites,$text)));
+                            : iah_rc_tool($devices,$name,$args,$allowWrites,$toolText)));
                 if($preview)$readDetails[]=['tool'=>$name,'result'=>$result];
                 if(in_array($name,['set_device','set_multiple'],true))$wrote=true;
                 elseif(in_array($name,['query_house','get_states','query_archive'],true)

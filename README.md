@@ -8,12 +8,14 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
 
 ## ✨ Features
 
-- **Sprachbefehl testen (V3.8.2)**
+- **Sprachbefehl testen (V3.8.3)**
   Im RoomsCatalogConfigurator oder unter „Szenen und eigene Alexa-Befehle“
   der Alexa-Instanz einen Satz eingeben. Der Test erkennt eigene Regeln,
   Hausfragen und Navigation automatisch. Hausfragen nutzen produktive
   Istwerte, Schaltaktionen werden nur angezeigt. Ortsbezogene Folgefragen
   wie „Und im Obergeschoss?“ funktionieren im Test und in der Alexa-Sitzung.
+  Etagen wie EG und Erdgeschoss werden bei Erst- und Folgefragen gleich
+  aufgelöst. Fensterfragen unterscheiden offen, geschlossen und unbekannt.
   [Anleitung und Grenzen der Vorschau](docs/Alexa_V38_Sprachbefehl_Testvorschau.md)
 
 - **Einstieg über „Action“**  

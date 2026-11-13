@@ -69,6 +69,15 @@ function iah_ai_binary_feedback(mixed $value, bool $numericStatus = false): ?str
  */
 function iah_ai_profile_feedback(int $variableId, mixed $value): ?string
 {
+    return match(iah_ai_profile_label($variableId,$value)) {
+        'an','ein','eingeschaltet','aktiv','on','true','licht an','licht ein' => 'an',
+        'aus','ausgeschaltet','inaktiv','off','false','licht aus' => 'aus',
+        default=>null
+    };
+}
+
+function iah_ai_profile_label(int $variableId,mixed $value): ?string
+{
     if ($variableId<=0 || !IPS_VariableExists($variableId)
         || !function_exists('IPS_GetVariableProfile')) return null;
     try {
@@ -83,36 +92,44 @@ function iah_ai_profile_feedback(int $variableId, mixed $value): ?string
         }
         $profile=$profiles[$profileName];
         if (!is_array($profile)) return null;
+        $labels=[];
         foreach ((array)($profile['Associations']??[]) as $association) {
             if (!is_array($association) || !array_key_exists('Value',$association)) continue;
             $code=$association['Value'];
             $equal=(get_debug_type($code)===get_debug_type($value) && $code===$value)
                 || (is_numeric($code) && is_numeric($value)
                     && !is_bool($code) && !is_bool($value)
-                    && (float)$code===(float)$value);
+                    && (float)$code===(float)$value)
+                || (is_bool($value) && is_numeric($code) && (float)$code===(float)$value);
             if (!$equal) continue;
-            // Profiltexte ohne eindeutige Ein/Aus-Bedeutung werden ignoriert.
-            $label=iah_rc_norm((string)($association['Name']??''));
-            return match($label) {
-                'an','ein','eingeschaltet','aktiv','on','true','licht an','licht ein' => 'an',
-                'aus','ausgeschaltet','inaktiv','off','false','licht aus' => 'aus',
-                default=>null
-            };
+            $labels[iah_rc_norm((string)($association['Name']??''))]=true;
         }
+        if(count($labels)===1)return (string)array_key_first($labels);
     } catch(Throwable $ignored) {}
     return null;
 }
 
 /** Nur explizite Endlagen-/Status-Rueckmeldungen koennen offen/zu bestaetigen. */
+function iah_ai_closure_label(string $label): ?string
+{
+    return match(iah_rc_norm($label)){
+        'offen','geoeffnet','open','opened','fenster offen','fenster geoeffnet'=>'offen',
+        'geschlossen','zu','closed','fenster geschlossen','fenster zu'=>'geschlossen',
+        default=>null
+    };
+}
+
 function iah_ai_closure_feedback(array $state): ?string
 {
     $props=(array)($state['properties']??[]);
+    $states=[];
     foreach (['open','endPositionStatus','status'] as $role) {
         $value=$props[$role]??null;
-        if (in_array($value,['offen','geschlossen'],true)) return $value;
-        if ($role==='open' && is_bool($value)) return $value ? 'offen' : 'geschlossen';
+        $label=is_string($value)?iah_ai_closure_label($value)
+            :($role==='open'&&is_bool($value)?($value?'offen':'geschlossen'):null);
+        if($label!==null)$states[$label]=true;
     }
-    return null;
+    return count($states)===1?(string)array_key_first($states):null;
 }
 
 /** Bei activity nur Geraete mit einer echten Status- oder Helligkeitsrueckmeldung. */
@@ -130,7 +147,9 @@ function iah_ai_property_value(array $state, string $property, array $dev = []):
 {
     $props = (array)($state['properties'] ?? []);
     if ($property === 'state') return $state['state'] ?? null;
-    if ($property === 'closure') return iah_ai_closure_feedback($state);
+    if ($property === 'closure'
+        || ($property==='open' && in_array($dev['type']??$state['type']??'',['window','door'],true)))
+        return iah_ai_closure_feedback($state);
     if ($property === 'activity') {
         // Bei Schaltern und Leuchten kann ein expliziter Iststatus bool,
         // 0/1, oder ein Profiltext sein. Beleuchtungsstaerke 0..100
@@ -251,7 +270,9 @@ function iah_ai_query_house(array $devices, array $args, string $spoken = ''): a
     $limit=max(1,min(50,(int)($args['limit']??15)));
     $indoorOnly=($args['indoor_only']??false)===true;
     $found=iah_rc_find($devices,$filters);
-    $validDevices=0;$measurements=0;$perGroup=[];$dedup=[];
+    $matchedDevices=0;$validDevices=0;$measurements=0;$perGroup=[];$dedup=[];
+    $closureQuery=$property==='closure'||$property==='open';
+    $closure=['devices'=>0,'open'=>0,'closed'=>0,'unknown'=>0,'unknownDevices'=>[]];
     // Diagnose nur Aggregatzahlen, keine geraetebezogenen Rohdaten/IDs.
     // Die KI darf den Unterschied zwischen "alle aus" und
     // "kein verwertbarer Status" nicht mehr verwechseln.
@@ -266,8 +287,21 @@ function iah_ai_query_house(array $devices, array $args, string $spoken = ''): a
         if ($indoorOnly && (($dev['type']??'')==='weather'
             || preg_match('/\\b(aussen|aussenbereich|garten|terrasse|balkon|outdoor|draussen)\\b/u',
                 iah_rc_norm((string)($dev['room']??'').' '.($dev['roomKey']??''))))) continue;
+        $matchedDevices++;
         $state=iah_rc_state($dev,$includeLastChange);
         $value=iah_ai_property_value($state,$property,$dev);
+        if($closureQuery){
+            $closure['devices']++;
+            if($value==='offen')$closure['open']++;
+            elseif($value==='geschlossen')$closure['closed']++;
+            else{
+                $closure['unknown']++;
+                if(count($closure['unknownDevices'])<50)
+                    $closure['unknownDevices'][]=['deviceKey'=>$dev['id'],'name'=>$dev['name'],'room'=>$dev['room'],
+                        'feedbackRoles'=>array_keys($dev['reads']??[]),
+                        'reason'=>empty($state['properties'])?'missing_feedback':'unrecognized_or_conflicting_feedback'];
+            }
+        }
         if ($property==='activity') {
             $coverage['devices']++;
             if ($value!==null) {
@@ -374,7 +408,7 @@ function iah_ai_query_house(array $devices, array $args, string $spoken = ''): a
     }
     $result=['ok'=>true,'operation'=>$operation,'property'=>$property,
         'groupBy'=>$groupBy,'filtersUsed'=>$filtersUsed,
-        'matchedDevices'=>count($found),'withProperty'=>$validDevices,
+        'matchedDevices'=>$matchedDevices,'withProperty'=>$validDevices,
         'matchedReadings'=>$measurements,'groups'=>count($rows),
         'totalCount'=>$totalCount,'truncated'=>$truncated,
         'roomSensorAggregation'=>$groupBy==='room' ? 'mean_of_distinct_measurements' : 'none',
@@ -393,6 +427,7 @@ function iah_ai_query_house(array $devices, array $args, string $spoken = ''): a
                 $coverage['unknown'].' Geraete ohne interpretierbaren Status. '.
                 'Bei Zahlencodes Status-Variablenprofil oder ai.stateMapping on/off pruefen.';
     }
+    if($closureQuery)$result['closureCoverage']=$closure;
     if ($validDevices===0 && !isset($result['warning']))
         $result['warning']='Keine gueltigen Istwerte fuer diese Eigenschaft gefunden. Nicht als Null interpretieren.';
     elseif ($groupBy!=='none' && $truncated) $result['warning']='Ergebnisliste gekuerzt; Aggregat wurde aus allen Treffern berechnet.';
