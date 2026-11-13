@@ -49,7 +49,17 @@ foreach ($form['elements'] as $element) {
         $panel = $element; break;
     }
 }
-assertEditor(is_array($panel) && ($panel['expanded'] ?? false) === true, 'Editor must start expanded');
+assertEditor(is_array($panel) && ($panel['expanded'] ?? null) === false, 'Editor must start collapsed');
+$assertCollapsed = function (array $items) use (&$assertCollapsed): void {
+    foreach ($items as $item) {
+        if (($item['type'] ?? '') === 'ExpansionPanel') {
+            assertEditor(($item['expanded'] ?? null) === false,
+                'Initial panel must be collapsed: ' . ($item['caption'] ?? '?'));
+        }
+        if (isset($item['items'])) $assertCollapsed($item['items']);
+    }
+};
+$assertCollapsed($form['elements']);
 $list = null;
 foreach ($panel['items'] as $item) {
     if (($item['name'] ?? '') === 'Entries') { $list = $item; break; }

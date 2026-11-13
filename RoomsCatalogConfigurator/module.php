@@ -10,6 +10,7 @@ require_once __DIR__ . '/libs/GuidedDiscovery.php';
 require_once __DIR__ . '/libs/ModuleDataSources.php';
 require_once __DIR__ . '/libs/DataSourceEditor.php';
 require_once __DIR__ . '/libs/DataSourceEditorTrait.php';
+require_once __DIR__ . '/../IPSAlexaHaussteuerung/src/VoiceRulePreviewForm.php';
 
 /**
  * ============================================================
@@ -83,6 +84,7 @@ require_once __DIR__ . '/libs/DataSourceEditorTrait.php';
 
 class RoomsCatalogConfigurator extends IPSModule
 {
+    private const ALEXA_MODULE_ID = '{F528D4D0-5729-4315-AE88-9BBABDBD0392}';
     use RCCDataSourceEditorTrait;
     // V3.4.4: Typen, editierbare Eigenschaften und Rollen nur noch zentral
     // in libs/DeviceTypeRegistry.php pflegen, nicht in diesem Formular.
@@ -153,9 +155,6 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('SinglePositionProdNotice', 'Noch keine einzelne Positionsaenderung geprueft.');
         $this->RegisterAttributeString('CatalogCheckDebugOutput', '');
         $this->RegisterAttributeString('CatalogCheckDebugSummary', 'Noch keine RoomsCatalog-Pruefung ausgefuehrt.');
-        $this->RegisterAttributeString('KnxStatusRepairPreview', '{}');
-        $this->RegisterAttributeString('KnxStatusRepairSummary', 'Noch keine KNX-Statuskorrektur geprueft.');
-        $this->RegisterAttributeString('KnxStatusRepairPreviewText', '');
     }
 
     public function ApplyChanges()
@@ -203,9 +202,6 @@ class RoomsCatalogConfigurator extends IPSModule
             'AutoRepairNotice'=>'Noch kein Diagnoseexport erstellt.',
             'CatalogCheckDebugOutput'=>'',
             'CatalogCheckDebugSummary'=>'Noch keine RoomsCatalog-Pruefung ausgefuehrt.',
-            'KnxStatusRepairPreview'=>'{}',
-            'KnxStatusRepairPreviewText'=>'',
-            'KnxStatusRepairSummary'=>'Noch keine KNX-Statuskorrektur geprueft.',
             'PartialProdPublishPreview'=>'{}',
             'PartialProdPublishNotice'=>'Noch keine bereichsweise PROD-Vorschau ausgefuehrt.',
             'PartialProdPublishRows'=>'[]',
@@ -247,7 +243,6 @@ class RoomsCatalogConfigurator extends IPSModule
             'TechnicalDeviceActionMessage'=>'',
             'AutoRepairNotice'=>'Noch kein Diagnoseexport erstellt.',
             'CatalogCheckDebugSummary'=>'Noch keine RoomsCatalog-Pruefung ausgefuehrt.',
-            'KnxStatusRepairSummary'=>'Noch keine KNX-Statuskorrektur geprueft.',
             'PartialProdPublishNotice'=>'Noch keine bereichsweise PROD-Vorschau ausgefuehrt.',
             'SinglePositionProdNotice'=>'Noch keine einzelne Positionsaenderung geprueft.',
             'DiscoverySummary'=>'Noch keine Geraeteinventur gestartet.',
@@ -265,7 +260,6 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->UpdateFormField('TechnicalDevicesPhysicallyChecked','value',false);
         $this->UpdateFormField('FilterAI','value','all');
         $this->UpdateFormField('CatalogCheckDebugOutput','value','');
-        $this->UpdateFormField('KnxStatusRepairPreviewText','value','');
         $this->UpdateFormField('PartialProdDomain','value','');
         $this->UpdateFormField('SinglePositionKey','value','');
         foreach ([
@@ -4037,225 +4031,6 @@ class RoomsCatalogConfigurator extends IPSModule
     }
 
     /**
-     * Safe semantic source: use ONLY a configured status variable with
-     * ~ShutterStatus.KNX and unambiguous numeric profile associations.
-     * Commands (0/100) and position feedback are not used as status enums.
-     */
-    private function knxShutterStatusValues(int $statusId): ?array
-    {
-        if ($statusId<=0 || !function_exists('IPS_VariableExists')
-            || !function_exists('IPS_GetVariable') || !function_exists('IPS_GetVariableProfile')
-            || !IPS_VariableExists($statusId)) return null;
-        $v=IPS_GetVariable($statusId);
-        if (!is_array($v) || (int)($v['VariableType']??-1)!==1) return null;
-        $profile=(string)(($v['VariableCustomProfile']??'') ?: ($v['VariableProfile']??''));
-        if (mb_strtolower($profile,'UTF-8')!=='~shutterstatus.knx') return null;
-        try {
-            $meta=IPS_GetVariableProfile($profile);
-        } catch (\Throwable $ignored) {
-            return null;
-        }
-        $values=[];
-        foreach ((array)($meta['Associations']??[]) as $assoc) {
-            if (!is_array($assoc) || !isset($assoc['Value'])) continue;
-            $label=mb_strtolower(trim((string)($assoc['Name']??'')),'UTF-8');
-            $label=str_replace(['ä','ö','ü','ß'],['ae','oe','ue','ss'],$label);
-            $kind=match ($label) {
-                'offen','geoeffnet','open'=>'open',
-                'geschlossen','closed'=>'closed',
-                default=>null
-            };
-            if ($kind===null) continue;
-            $numeric=$assoc['Value'];
-            $isExactInt=is_int($numeric)
-                || (is_float($numeric) && is_finite($numeric) && floor($numeric)===$numeric)
-                || (is_string($numeric) && preg_match('/^-?\d+$/D',$numeric)===1);
-            if (!$isExactInt) return null;
-            $value=(int)$numeric;
-            if (isset($values[$kind]) && $values[$kind]!==$value) return null;
-            $values[$kind]=$value;
-        }
-        if (!isset($values['open'],$values['closed'])
-            || $values['open']===$values['closed']) return null;
-        return $values;
-    }
-
-    /**
-     * Conservative candidates: ONLY legacy 0/100 meanings on explicitly
-     * assigned KNX status enums. Different custom mappings are never overwritten.
-     */
-    private function knxShutterStatusRepairPlan(array $catalog): array
-    {
-        $rooms=$this->extractRoomsFromCatalog($catalog);
-        $plan=[];
-        foreach ($rooms as $roomKey=>$room) {
-            foreach ((array)($room['domains']['jalousie']??[]) as $key=>$leaf) {
-                if (!is_array($leaf)) continue;
-                $ai=$leaf['ai']??[];
-                if (!is_array($ai) || ($ai['type']??'')!=='blind'
-                    || ($ai['review']['status']??'')==='confirmed') continue;
-                $statusId=(int)($ai['variables']['status']??0);
-                $actionId=(int)($ai['variables']['action']??0);
-                $positionId=(int)($ai['variables']['position']??0);
-                if ($statusId<=0 || $statusId===$actionId || $statusId===$positionId) continue;
-                $known=$this->knxShutterStatusValues($statusId);
-                if ($known===null) continue;
-                $old=(array)($ai['stateMapping']??[]);
-                // 0/100 are the old command/position endpoint convention.
-                // Do not silently replace an explicitly custom state enum.
-                if (!in_array($old['open']??null,[0,'0'],true)
-                    || !in_array($old['closed']??null,[100,'100'],true)
-                    || ($known['open']===0 && $known['closed']===100)) continue;
-                $plan[]=[
-                    'roomKey'=>(string)$roomKey,'key'=>(string)$key,
-                    'device'=>(string)($leaf['title']??$key),
-                    'statusId'=>$statusId,
-                    'old'=>['open'=>0,'closed'=>100],
-                    'new'=>['open'=>$known['open'],'closed'=>$known['closed']]
-                ];
-            }
-        }
-        return $plan;
-    }
-
-    private function knxStatusRepairSources(): array
-    {
-        $editId=$this->ReadPropertyInteger('RoomsCatalogEditScriptID');
-        $prodId=$this->ReadPropertyInteger('RoomsCatalogScriptID');
-        if ($editId<=0 || $prodId<=0 || $editId===$prodId
-            || !IPS_ScriptExists($editId) || !IPS_ScriptExists($prodId)) {
-            throw new \RuntimeException('EDIT/PROD muessen zwei verschiedene gueltige Skripte sein.');
-        }
-        $editSource=(string)IPS_GetScriptContent($editId);
-        $prodSource=(string)IPS_GetScriptContent($prodId);
-        if (!RCCDeviceTechnicalAudit::isLiteralArraySource($editSource)) {
-            throw new \RuntimeException('EDIT ist kein statisches PHP-Array.');
-        }
-        $catalog=$this->loadRoomsCatalog($editId,'EDIT');
-        if ($this->extractRoomsFromCatalog($catalog)===[]) {
-            throw new \RuntimeException('EDIT-Katalog leer oder unlesbar.');
-        }
-        return compact('editId','prodId','editSource','prodSource','catalog');
-    }
-
-    /** No write – identify exact candidate devices and show before/after. */
-    public function PreviewKnxStatusRepair(): void
-    {
-        try {
-            $src=$this->knxStatusRepairSources();
-            $plan=$this->knxShutterStatusRepairPlan($src['catalog']);
-            $data=[
-                'time'=>time(),
-                'editHash'=>hash('sha256',$src['editSource']),
-                'prodHash'=>hash('sha256',$src['prodSource']),
-                'plan'=>$plan
-            ];
-            $text=json_encode($plan,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE
-                |JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR);
-            $msg=count($plan).' eindeutige KNX-Statuszuordnungen zur EDIT-Korrektur gefunden. '
-                .'Nur open=0 / closed=100 wird auf die Profilwerte umgestellt. '
-                .'Keine Fahraktionen, KI-Freigaben, Bestaetigungen oder PROD-Aenderung. '
-                .'Bitte Vorschau kontrollieren und dann ausdruecklich uebernehmen.';
-            $this->WriteAttributeString('KnxStatusRepairPreview',json_encode($data,JSON_THROW_ON_ERROR));
-            $this->WriteAttributeString('KnxStatusRepairPreviewText',$text);
-            $this->WriteAttributeString('KnxStatusRepairSummary',$msg);
-            $this->UpdateFormField('KnxStatusRepairSummary','caption',$msg);
-            $this->UpdateFormField('KnxStatusRepairPreviewText','value',$text);
-            echo $msg;
-        } catch (\Throwable $error) {
-            $this->WriteAttributeString('KnxStatusRepairPreview','{}');
-            echo 'KNX-STATUS-VORSCHAU FEHLGESCHLAGEN: '.$error->getMessage();
-        }
-    }
-
-    /**
-     * Explicit operator action. EDIT only, verified backup, source-hash
-     * and freshly rebuilt IPS metadata guard, readback and rollback.
-     */
-    public function ApplyKnxStatusRepair(): void
-    {
-        try {
-            $preview=json_decode($this->ReadAttributeString('KnxStatusRepairPreview'),true);
-            if (!is_array($preview) || !isset($preview['time'])
-                || time()-(int)$preview['time']>900) {
-                throw new \RuntimeException('Zuerst aktuelle Vorschau ausfuehren (15 Minuten gueltig).');
-            }
-            $src=$this->knxStatusRepairSources();
-            if (hash('sha256',$src['editSource'])!==($preview['editHash']??'')
-                || hash('sha256',$src['prodSource'])!==($preview['prodHash']??'')) {
-                throw new \RuntimeException('EDIT/PROD nach Vorschau veraendert. Bitte Vorschau wiederholen.');
-            }
-            $plan=$this->knxShutterStatusRepairPlan($src['catalog']);
-            if ($plan===[] || $plan!==($preview['plan']??null)) {
-                throw new \RuntimeException('Keine unveraenderten eindeutigen Vorschlaege; Vorschau wiederholen.');
-            }
-            $next=$src['catalog'];
-            if (isset($next['rooms']) && is_array($next['rooms'])) {
-                $rooms=&$next['rooms'];
-            } else {
-                $rooms=&$next;
-            }
-            foreach ($plan as $item) {
-                $leaf=&$rooms[$item['roomKey']]['domains']['jalousie'][$item['key']];
-                if (!is_array($leaf) || !is_array($leaf['ai']??null)
-                    || (int)($leaf['ai']['variables']['status']??0)!==$item['statusId']
-                    || !in_array($leaf['ai']['stateMapping']['open']??null,[0,'0'],true)
-                    || !in_array($leaf['ai']['stateMapping']['closed']??null,[100,'100'],true)) {
-                    throw new \RuntimeException('Unerwartete Geraeteaenderung, EDIT bleibt unveraendert.');
-                }
-                $leaf['ai']['stateMapping']['open']=$item['new']['open'];
-                $leaf['ai']['stateMapping']['closed']=$item['new']['closed'];
-                unset($leaf);
-            }
-            unset($rooms);
-            $php="<?php\nreturn ".var_export($next,true).";\n";
-            if (IPS_GetScriptContent($src['editId'])!==$src['editSource']
-                || IPS_GetScriptContent($src['prodId'])!==$src['prodSource']) {
-                throw new \RuntimeException('Katalog vor dem Backup geaendert.');
-            }
-            $backup=IPS_CreateScript(0);
-            if (!is_int($backup) || $backup<=0) {
-                throw new \RuntimeException('EDIT-Backup konnte nicht erzeugt werden.');
-            }
-            IPS_SetParent($backup,IPS_GetParent($src['editId']));
-            IPS_SetName($backup,'RoomsCatalogEdit_Backup_KNX_Status_'.date('Ymd_His').'_'.$backup);
-            IPS_SetScriptContent($backup,$src['editSource']);
-            if (IPS_GetScriptContent($backup)!==$src['editSource']) {
-                throw new \RuntimeException('EDIT-Backup-Verifikation fehlgeschlagen. Keine Aenderung.');
-            }
-            if (IPS_GetScriptContent($src['editId'])!==$src['editSource']
-                || IPS_GetScriptContent($src['prodId'])!==$src['prodSource']) {
-                throw new \RuntimeException('Katalog nach Backup geaendert. Keine Aenderung.');
-            }
-            try {
-                if (IPS_SetScriptContent($src['editId'],$php)===false
-                    || IPS_GetScriptContent($src['editId'])!==$php) {
-                    throw new \RuntimeException('EDIT-Schreibverifikation fehlgeschlagen.');
-                }
-            } catch (\Throwable $writeError) {
-                $restored=false;
-                try {
-                    IPS_SetScriptContent($src['editId'],$src['editSource']);
-                    $restored=IPS_GetScriptContent($src['editId'])===$src['editSource'];
-                } catch (\Throwable $ignored) { }
-                throw new \RuntimeException('EDIT-Schreibfehler: '.$writeError->getMessage()
-                    .($restored ? ' Ursprung wiederhergestellt.' : ' Backup #'.$backup.' manuell pruefen.'));
-            }
-            $this->WriteAttributeString('KnxStatusRepairPreview','{}');
-            $msg='ERFOLG: '.count($plan).' KNX-Statuszuordnungen ausschliesslich in EDIT '
-                .'an Profilwerte angepasst. EDIT-Backup #'.$backup.'. PROD UNVERAENDERT. '
-                .'Jetzt ROOMSCATALOG UEBERPRUEFEN und danach bewusst EDIT NACH PROD.';
-            $this->WriteAttributeString('KnxStatusRepairSummary',$msg);
-            $this->UpdateFormField('KnxStatusRepairSummary','caption',$msg);
-            $this->reloadAllFromCatalog();
-            $this->RefreshVisibleLists();
-            echo $msg;
-        } catch (\Throwable $error) {
-            echo 'KNX-STATUS-UEBERNAHME ABGEBROCHEN: '.$error->getMessage();
-        }
-    }
-
-    /**
      * Speichert den Edit-Katalog 1:1 nach PROD.
      */
     /**
@@ -4331,7 +4106,6 @@ class RoomsCatalogConfigurator extends IPSModule
             $this->WriteAttributeString('PartialProdPublishPreview','{}');
             $this->WriteAttributeString('SinglePositionProdPreview','{}');
             $this->WriteAttributeString('AutoRepairPreview','{}');
-            $this->WriteAttributeString('KnxStatusRepairPreview','{}');
             $this->logDebug('SaveEditToProd: vollstaendiger EDIT-Skriptinhalt 1:1 nach PROD, Backup #'.$backup);
             echo 'ERFOLG: Gesamter RoomsCatalog EDIT 1:1 nach PROD kopiert. '
                 .'Alle Raeume, Geraete, Variablen, KI-Freigaben und auch unvollstaendige '
@@ -5499,6 +5273,46 @@ class RoomsCatalogConfigurator extends IPSModule
     // Konfigurationsformular
     // =====================================================================
 
+    private function voiceTestInstanceIds(): array
+    {
+        return function_exists('IPS_GetInstanceListByModuleID')
+            ?array_map('intval',IPS_GetInstanceListByModuleID(self::ALEXA_MODULE_ID)):[];
+    }
+
+    private function buildVoiceTestPanel(): array
+    {
+        $ids=$this->voiceTestInstanceIds();
+        $options=[['caption'=>'– Alexa-Instanz auswählen –','value'=>0]];
+        foreach($ids as $instanceId){
+            $name=function_exists('IPS_GetName')?(string)IPS_GetName($instanceId):'Alexa';
+            $options[]=['caption'=>$name.' (#'.$instanceId.')','value'=>$instanceId];
+        }
+        $default=$this->ReadPropertyInteger('DiscoveryAlexaInstanceId');
+        if(!in_array($default,$ids,true))$default=count($ids)===1?$ids[0]:0;
+        return IAHVoiceRulePreviewForm::panel('RCC_TestAlexaVoiceRule($id, '
+            .'(int)$VoiceTestInstance, (string)$VoiceTestText, (string)$VoiceTestSource, '
+            .'(string)$VoiceTestIntent, (bool)$VoiceTestAi);',$options,$default);
+    }
+
+    public function TestAlexaVoiceRule(
+        int $instanceId,string $spoken,string $source,string $intent,bool $useAi
+    ): void {
+        try {
+            if(!in_array($instanceId,$this->voiceTestInstanceIds(),true))
+                throw new RuntimeException('Bitte eine IPSAlexaHaussteuerung-Instanz auswählen.');
+            if(!function_exists('IAH_GetVoiceRuleTestPreview'))
+                throw new RuntimeException('Bitte das Alexa-Modul auf denselben Stand aktualisieren.');
+            $json=IAH_GetVoiceRuleTestPreview($instanceId,$spoken,$source,$intent,$useAi);
+            $result=json_decode($json,true,512,JSON_THROW_ON_ERROR);
+        }catch(Throwable $error){
+            $result=['dryRun'=>true,'matched'=>false,'ok'=>false,'error'=>$error->getMessage()];
+            $json=json_encode($result,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE
+                |JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR);
+        }
+        $this->UpdateFormField('VoiceTestResult','value',$json);
+        $this->UpdateFormField('VoiceTestSummary','caption',IAHVoiceRulePreviewForm::summary($result));
+    }
+
     public function GetConfigurationForm()
     {
         $this->ensureRuntimeCatalogCurrent();
@@ -5579,7 +5393,6 @@ class RoomsCatalogConfigurator extends IPSModule
         }
 
         $columnsEdit[] = ['caption'=>'Aenderung','name'=>'diffKeys','width'=>'130px','save'=>false,'quickFilter'=>true];
-        $diffExpanded = count($visibleDiff) > 0;
         $aiReadable = count(array_filter($entriesEdit, static fn($r): bool => !empty($r['kiEnabled'])));
         $aiWritable = count(array_filter($entriesEdit, static fn($r): bool => !empty($r['kiEnabled']) && empty($r['kiReadOnly'])));
 
@@ -5607,6 +5420,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 [
                     'type'    => 'ExpansionPanel',
                     'caption' => 'RoomsCatalog Scripts',
+                    'expanded'=>false,
                     'items'   => [
                         [
                             'type'    => 'SelectScript',
@@ -5625,7 +5439,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 [
                     'type'=>'ExpansionPanel',
                     'caption'=>'Katalogstatus und KI-Berechtigungen',
-                    'expanded'=>true,
+                    'expanded'=>false,
                     'items'=>[
                         ['type'=>'Label','name'=>'CatalogDeviceStats','caption'=>$migrationSummary],
                         ['type'=>'Label','caption'=>
@@ -5636,7 +5450,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 [
                     'type'=>'ExpansionPanel',
                     'caption'=>'Technische Geraetepruefung',
-                    'expanded'=>true,
+                    'expanded'=>false,
                     'items'=>[
                         ['type'=>'Label','caption'=>
                             'V3.3.9: Alle Geraetetypen aus echten IPS-Instanz-/Variablenmetadaten pruefen. '
@@ -5747,7 +5561,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 [
                     'type' => 'ExpansionPanel',
                     'caption' => 'Raeume & Etagen',
-                    'expanded' => true,
+                    'expanded' => false,
                     'items' => [
                         ['type' => 'Label', 'caption' => 'Jeden Raum nur einmal bearbeiten. Raum-Key bleibt unveraendert, damit bestehende Geraetezuordnungen erhalten bleiben.'],
                         [
@@ -5791,7 +5605,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 [
                     'type'    => 'ExpansionPanel',
                     'caption' => 'Geraete bearbeiten (RoomsCatalog EDIT)',
-                    'expanded' => true,
+                    'expanded' => false,
                     'items'   => [
                         [
                             'type'  => 'RowLayout',
@@ -5958,7 +5772,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 [
                     'type' => 'ExpansionPanel',
                     'caption' => 'Variablenzuordnungen pruefen',
-                    'expanded' => true,
+                    'expanded' => false,
                     'items' => [
                         ['type'=>'Label','caption'=>'Genau ein Geraet oben markieren. Die Analyse durchsucht nur seine bekannte Instanz/Kategorie. Bestehende IDs und KI-Freigaben werden nie ueberschrieben.'],
                         ['type'=>'RowLayout','items'=>[
@@ -5988,7 +5802,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 [
                     'type' => 'ExpansionPanel',
                     'caption' => 'IP-Symcon-Geraeteinventur',
-                    'expanded' => true,
+                    'expanded' => false,
                     'items' => [
                         ['type'=>'Label','caption'=>'1. Knotenpunkt im IP-Symcon-Objektbaum auswaehlen (z.B. KNX > Sicherheit > Bewegung). '
                             .'Nur dieser Teilbaum wird gelesen. Instanzen und einzelne direkte Sensorvariablen werden erkannt.'],
@@ -6116,7 +5930,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 [
                     'type'     => 'ExpansionPanel',
                     'caption'  => 'Vorschau: Unterschiede EDIT zu PROD',
-                    'expanded' => $diffExpanded || $roomDiffRows !== [],
+                    'expanded' => false,
                     'items'    => [
                         [
                             'type' => 'List', 'name' => 'RoomsDiff',
@@ -6172,7 +5986,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 [
                     'type'=>'ExpansionPanel',
                     'caption'=>'BEREICHSWEISE PROD-UEBERNAHME – NUR GUELTIGE GERAETE',
-                    'expanded'=>true,
+                    'expanded'=>false,
                     'items'=>[
                         ['type'=>'Label','caption'=>
                             'Unabhaengig von anderen Bereichen: Nur neue/geaenderte und technisch plausible '
@@ -6208,7 +6022,7 @@ class RoomsCatalogConfigurator extends IPSModule
                         ],
                         ['type'=>'ExpansionPanel',
                             'caption'=>'NUR EINE JALOUSIE-POSITIONS-ID NACH PROD (OHNE GESAMTPRUEFUNG)',
-                            'expanded'=>true,
+                            'expanded'=>false,
                             'items'=>[
                                 ['type'=>'Label','caption'=>
                                     'Hier wird nur die geaenderte Positions-ID des ausgewaehlten Geraets '
@@ -6256,8 +6070,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 'IP-Symcon-Geraeteinventur'
             ],true)) {
                 if ($insertAt === null) $insertAt = count($remaining);
-                // Gefuehrter Baumsuch-Import bleibt dauerhaft sichtbar.
-                $element['expanded'] = $caption === 'IP-Symcon-Geraeteinventur';
+                // Gefuehrter Baumsuch-Import bleibt aufklappbar.
                 $assistants[] = $element;
                 continue;
             }
@@ -6289,11 +6102,11 @@ class RoomsCatalogConfigurator extends IPSModule
         foreach ($form['elements'] as $index=>$element) {
             $caption=(string)($element['caption']??'');
             if ($index<=2 || in_array($caption,$everyday,true)) {
-                if (in_array($caption,$everyday,true)) $element['expanded']=true;
                 $main[]=$element;
             }
         }
 
+        $main[]=$this->buildVoiceTestPanel();
         $huaweiId=$this->ReadPropertyInteger('HuaweiDataSourceInstanceId');
         $huaweiKey='huawei_'.$huaweiId;
         $huaweiEdit=$editCatalog['dataSources'][$huaweiKey]??null;
@@ -6301,7 +6114,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $main[]=[
             'type'=>'ExpansionPanel',
             'caption'=>'ENERGIE-DATENQUELLEN – HuaweiPV automatisch importieren',
-            'expanded'=>true,
+            'expanded'=>false,
             'items'=>[
                 ['type'=>'Label','caption'=>'Eine HuaweiPV-Quellinstanz auswaehlen: rekursiver '
                     .'Scan aller Huawei-Variablen unter PV, Akku, Smartmeter, Bilanz und Diagnose. '
@@ -6372,7 +6185,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $main[]=[
             'type'=>'ExpansionPanel',
             'caption'=>'Aenderungen in EDIT vor PROD ('.count($pending).' Geraete)',
-            'expanded'=>true,
+            'expanded'=>false,
             'items'=>[
                 ['type'=>'Label','name'=>'PendingChangesSummary',
                     'caption'=>count($pending).' Geraeteaenderungen vor PROD. '
@@ -6430,27 +6243,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 ['type'=>'ValidationTextBox','name'=>'CatalogCheckDebugOutput',
                     'caption'=>'Debug-Ausgabe (alles markieren und hier einfuegen)',
                     'multiline'=>true,'width'=>'100%',
-                    'value'=>$this->ReadAttributeString('CatalogCheckDebugOutput')],
-                ['type'=>'ExpansionPanel','caption'=>'KNX-Jalousie-Statuswerte sicher in EDIT korrigieren',
-                    'expanded'=>false,'items'=>[
-                        ['type'=>'Label','caption'=>'Nur eindeutig abweichende Status-Zuordnungen mit '
-                            .'Profil ~ShutterStatus.KNX und bisherigen Werten 0/100. '
-                            .'Erst Vorschau; anschliessend manuelle Uebernahme mit EDIT-Backup. '
-                            .'Fahrbefehle, KI-Freigaben, andere Geraete und PROD bleiben unveraendert.'],
-                        ['type'=>'Button','caption'=>'1 – STATUS-KORREKTUR VORSCHAU',
-                            'onClick'=>'RCC_PreviewKnxStatusRepair($id);'],
-                        ['type'=>'Label','name'=>'KnxStatusRepairSummary',
-                            'caption'=>$this->ReadAttributeString('KnxStatusRepairSummary')],
-                        ['type'=>'ValidationTextBox','name'=>'KnxStatusRepairPreviewText',
-                            'caption'=>'Korrekturvorschau (alt / neu)',
-                            'multiline'=>true,'width'=>'100%',
-                            'value'=>$this->ReadAttributeString('KnxStatusRepairPreviewText')],
-                        ['type'=>'Button','caption'=>'2 – GEPRUEFTE STATUSWERTE NACH EDIT',
-                            'confirm'=>'Die in der letzten Vorschau ausgewiesenen KNX-Statuswerte '
-                                .'nach EDIT schreiben? Es wird zuerst ein verifiziertes EDIT-Backup '
-                                .'erstellt. PROD bleibt unveraendert.',
-                            'onClick'=>'RCC_ApplyKnxStatusRepair($id);']
-                    ]]
+                    'value'=>$this->ReadAttributeString('CatalogCheckDebugOutput')]
             ]
         ];
         $main[]=[
@@ -8192,7 +7985,7 @@ class RoomsCatalogConfigurator extends IPSModule
         return [
             'type'=>'ExpansionPanel','name'=>'MarkedEditorPanel',
             'caption'=>'Markierte Geraete nacheinander bearbeiten',
-            'expanded'=>true,'visible'=>$active,'items'=>[
+            'expanded'=>false,'visible'=>$active,'items'=>[
                 ['type'=>'Label','name'=>'MarkedEditorProgress','caption'=>$active
                     ? sprintf('Eintrag %d/%d – %s', $index+1,$total,$this->markedEditorName($row))
                     :'Noch kein Durchlauf gestartet.'],
@@ -8232,7 +8025,7 @@ class RoomsCatalogConfigurator extends IPSModule
                         'caption'=>'Entity-ID (optional)','value'=>(string)($row['entityId']??'')]
                 ]],
                 ['type'=>'ExpansionPanel','caption'=>'Zugehoerige Variablen / aktuelle IPS-Werte',
-                    'expanded'=>true,'items'=>$roles],
+                    'expanded'=>false,'items'=>$roles],
                 ['type'=>'RowLayout','items'=>$states],
                 ['type'=>'RowLayout','items'=>[
                     ['type'=>'CheckBox','name'=>'MarkedEditKI','caption'=>'Mit KI',

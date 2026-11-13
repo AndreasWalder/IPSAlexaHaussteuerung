@@ -1,5 +1,10 @@
 # RoomsCatalogConfigurator V3.3.26 – KNX-Statuswerte gezielt korrigieren
 
+> Historischer Stand. Ab V3.8 ist der einmalige Korrekturassistent aus dem
+> Konfigurator entfernt. Die normale Profilprüfung bleibt aktiv. Falls noch
+> ein Konflikt gemeldet wird, die Offen-/Geschlossen-Werte am betroffenen
+> Gerät in EDIT prüfen und bei Bedarf manuell korrigieren.
+
 ## Basis: echte IP-Symcon-Diagnose, 04.11.2026
 
 Der vollständige vom Nutzer kopierte Bericht enthält 167 Geräte, davon 140 technisch plausibel, 27 offen und 0 ungültig. 0 EDIT/PROD-Unterschiede. Die offenen Befunde gruppieren sich auf:

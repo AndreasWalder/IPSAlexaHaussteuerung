@@ -52,6 +52,7 @@ jobs:
           php -l IPSAlexaHaussteuerung/src/VoiceRuleEngine.php
           php -l IPSAlexaHaussteuerung/src/VoiceRuleLiteralReader.php
           php -l IPSAlexaHaussteuerung/src/VoiceRuleAiMatcher.php
+          php -l IPSAlexaHaussteuerung/src/VoiceRulePreviewForm.php
           php -l IPSAlexaHaussteuerung/src/VoiceLegacyMigration.php
           php -l IPSAlexaHaussteuerung/src/VoiceRuleEditorTrait.php
           php -l IPSAlexaHaussteuerung/src/SystemNavigationMigration.php
@@ -169,6 +170,8 @@ jobs:
         run: php tests/test_voice_rules_prod_refresh_ai_v372.php
       - name: Test V3.7.2 PROD literal source read when PHP include returns stale rules
         run: php tests/test_voice_rules_literal_reader_v372.php
+      - name: Test V3.8 side-effect-free EDIT and PROD voice rule preview
+        run: php tests/test_voice_rule_preview_v38.php
       - name: Test Symcon IPSList checkbox callbacks and filtered multi-selection
         run: php tests/test_rooms_catalog_ipslist_multiselect.php
       - name: Test RoomsCatalog quick search for IPS object IDs and parent instance IDs

@@ -34,6 +34,9 @@ final class IAHVoiceRuleLiteralReader
                 }
             }
             $i=0;
+            if(($tokens[0]['type']??null)===T_DECLARE
+                && array_column(array_slice($tokens,1,6),'text')===['(','strict_types','=','1',')',';'])
+                $i=7;
             if(($tokens[$i]['type']??null)!==T_RETURN)return null;
             $i++;
             $result=self::value($tokens,$i,0);

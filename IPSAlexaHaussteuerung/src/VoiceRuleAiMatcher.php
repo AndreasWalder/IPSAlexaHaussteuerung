@@ -69,6 +69,19 @@ final class IAHVoiceRuleAiMatcher
         }catch(Throwable $ignored){return null;}
     }
 
+    public static function match(array $configuration,string $spoken,callable $model): ?array
+    {
+        $key=self::choose($configuration,$spoken,$model);
+        if($key===null)return null;
+        $rule=IAHVoiceRuleEngine::rules($configuration)[$key];
+        $alias=IAHVoiceRuleEngine::phrases($rule['aliases'])[0]??'';
+        // An alias may be ambiguous in EDIT. Never map it to a different rule.
+        $match=$alias!==''?IAHVoiceRuleEngine::matching($configuration,$alias):null;
+        if(($match['key']??null)!==$key)return null;
+        $match['method']='ai_read_only';
+        return $match;
+    }
+
     public static function openAiCandidate(
         array $allowed,string $spoken,string $apiKey,string $model,
         ?callable $onResponse=null
