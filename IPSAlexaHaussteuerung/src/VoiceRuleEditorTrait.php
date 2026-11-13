@@ -154,7 +154,7 @@ trait IAHVoiceRuleEditorTrait
         $notice=$this->ReadAttributeString('VoiceRuleEditorNotice');
         return [
             'type'=>'ExpansionPanel','caption'=>'V3.7.1 – Szenen und eigene Alexa-Befehle',
-            'expanded'=>true,'items'=>[
+            'expanded'=>false,'items'=>[
                 ['type'=>'Label','caption'=>'Alle Sprachbefehle, Alternativnamen, '
                     .'Fragen/Antworten, Bildkarten und Szenen werden zentral '
                     .'in SystemConfigurationEdit gespeichert. Erst nach '
@@ -196,6 +196,9 @@ trait IAHVoiceRuleEditorTrait
                         .'nutzt die vorhandene KI-API-Konfiguration)',
                     'value'=>method_exists($this,'ReadPropertyBoolean')
                         ?$this->ReadPropertyBoolean('VoiceRulesAiReadOnlyEnabled'):false],
+                IAHVoiceRulePreviewForm::panel('IAH_ShowVoiceRuleTestPreview($id, '
+                    .'(string)$VoiceTestText, (string)$VoiceTestSource, '
+                    .'(string)$VoiceTestIntent, (bool)$VoiceTestAi);'),
                 ['type'=>'Label','name'=>'VoiceRuleEditorNotice',
                     'caption'=>$notice,'visible'=>$notice!==''],
                 ['type'=>'List','name'=>$name,
@@ -942,6 +945,125 @@ trait IAHVoiceRuleEditorTrait
         }catch(Throwable $e){$this->voiceRuleNotice('Nicht veröffentlicht: '.$e->getMessage());}
     }
 
+    private function voiceRuleForbiddenScripts(array $ids,int $catalogId): array
+    {
+        $forbidden=array_map('intval',array_values($ids));
+        $forbidden[]=$catalogId;
+        foreach(['iahHelper','iahRenderers'] as $ident){
+            $parent=(int)@IPS_GetObjectIDByIdent($ident,$this->InstanceID);
+            if($parent<=0)continue;
+            foreach(IPS_GetChildrenIDs($parent) as $childId)
+                if(IPS_ScriptExists((int)$childId))$forbidden[]=(int)$childId;
+        }
+        return array_values(array_unique($forbidden));
+    }
+
+    private function matchVoiceRuleWithAi(array $configuration,string $spoken): ?array
+    {
+        if(!method_exists($this,'ReadPropertyBoolean')
+            || !$this->ReadPropertyBoolean('VoiceRulesAiReadOnlyEnabled')
+            || !$this->ReadPropertyBoolean('KIIntentEnabled'))return null;
+        $key=$this->ReadPropertyString('KIIntentApiKey');
+        $model=$this->ReadPropertyString('KIModelSelection');
+        if($key==='')return null;
+        $onAiResponse=function(array $apiResponse) use($model):void {
+            if(!method_exists($this,'RecordKICostEvent'))return;
+            try{
+                $qid='voicerule-'.bin2hex(random_bytes(8));
+                $events=[
+                    ['type'=>'start','model'=>$model],
+                    ['type'=>'api','callId'=>'voice-ai-0','response'=>[
+                        'model'=>(string)($apiResponse['model']??$model),
+                        'usage'=>$apiResponse['usage']??null
+                    ]],
+                    ['type'=>'finish','success'=>true]
+                ];
+                foreach($events as $item)
+                    $this->RecordKICostEvent(json_encode(array_merge(
+                        ['backend'=>'IntentParser','questionId'=>$qid],$item
+                    ),JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE));
+            }catch(Throwable $ignored){}
+        };
+        return IAHVoiceRuleAiMatcher::match($configuration,$spoken,
+            static fn(array $allowed,string $text):?array =>
+                IAHVoiceRuleAiMatcher::openAiCandidate($allowed,$text,$key,$model,$onAiResponse));
+    }
+
+    /** Text/intent dry run. Never include configuration PHP or call the live resolver. */
+    public function GetVoiceRuleTestPreview(
+        string $spoken,string $source='PROD',string $intent='',bool $useAi=false
+    ): string {
+        $result=['dryRun'=>true,'matched'=>false,'ok'=>false];
+        try {
+            if(!in_array($source,['EDIT','PROD'],true))
+                throw new RuntimeException('Bitte EDIT oder PROD auswählen.');
+            $result['source']=$source;
+            $spoken=trim($spoken);
+            $intent=trim($intent);
+            if(strlen($spoken)>640||mb_strlen($spoken,'UTF-8')>160||strlen($intent)>62)
+                throw new RuntimeException('Satz oder Alexa-Intent ist zu lang.');
+            if($spoken===''&&$intent==='')
+                throw new RuntimeException('Bitte einen Satz oder Alexa-Intent eingeben.');
+            if($intent!==''&&!preg_match('/^[A-Za-z][A-Za-z0-9_]{0,61}$/D',$intent))
+                throw new RuntimeException('Alexa-Intent enthält ungültige Zeichen.');
+            $result['spoken']=$spoken;
+            $result['intent']=$intent;
+            $result['normalized']=IAHVoiceRuleEngine::normalize($spoken);
+            $settings=$this->getObjectIDByIdentOrName($this->InstanceID,'iahSettings','Einstellungen');
+            $ids=$this->systemConfigurationScriptIds($settings);
+            $scriptId=$ids[strtolower($source)];
+            $result['scriptId']=$scriptId;
+            $configuration=IAHVoiceRuleLiteralReader::read($this->getScriptContent($scriptId));
+            if($configuration===null)
+                throw new RuntimeException($source.' ist kein lesbares statisches PHP-Array. '
+                    .'Dynamische Konfigurationsskripte werden im Test nicht ausgeführt.');
+            $rules=IAHVoiceRuleEngine::rules($configuration);
+            $result['ruleCount']=count($rules);
+            $result['activeRuleCount']=count(array_filter($rules,
+                static fn($rule):bool=>is_array($rule)&&!empty($rule['enabled'])));
+            if(isset($configuration['voiceRules'])
+                && (int)($configuration['voiceRules']['schemaVersion']??0)!==IAHVoiceRuleEngine::VERSION)
+                throw new RuntimeException('Unbekanntes Datenmodell der Sprachregeln.');
+
+            $match=IAHVoiceRuleEngine::matching($configuration,$spoken,$intent);
+            if($match===null && $useAi)$match=$this->matchVoiceRuleWithAi($configuration,$spoken);
+            if($match!==null){
+                $catalogId=$settings>0
+                    ?$this->getObjectIDByIdentOrName($settings,'roomsCatalog','RoomsCatalog'):0;
+                $catalog=($match['rule']['kind']??'')==='scene'
+                    ?IAHVoiceRuleLiteralReader::read($this->getScriptContent($catalogId)):null;
+                $result=array_replace($result,IAHVoiceRuleEngine::preview($match,$catalog,
+                    $this->voiceRuleForbiddenScripts($ids,$catalogId)));
+            }else{
+                $inactive=[];
+                foreach($rules as $key=>$rule){
+                    if(!is_array($rule)||!empty($rule['enabled']))continue;
+                    $enabled=$rule;
+                    $enabled['enabled']=true;
+                    if(IAHVoiceRuleEngine::matching(['voiceRules'=>[
+                        'schemaVersion'=>IAHVoiceRuleEngine::VERSION,'items'=>[$key=>$enabled]
+                    ]],$spoken,$intent)!==null)$inactive[]=$key;
+                }
+                if($inactive!==[]){
+                    $result['inactiveMatches']=$inactive;
+                    $result['error']='Passende Regel ist in '.$source.' deaktiviert.';
+                }
+            }
+        }catch(Throwable $error){
+            $result['error']=$error->getMessage();
+        }
+        return json_encode($result,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE
+            |JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR);
+    }
+
+    public function ShowVoiceRuleTestPreview(string $spoken,string $source,string $intent,bool $useAi): void
+    {
+        $json=$this->GetVoiceRuleTestPreview($spoken,$source,$intent,$useAi);
+        $this->UpdateFormField('VoiceTestResult','value',$json);
+        $this->UpdateFormField('VoiceTestSummary','caption',
+            IAHVoiceRulePreviewForm::summary(json_decode($json,true,512,JSON_THROW_ON_ERROR)));
+    }
+
     /**
      * Called only from the real Alexa action script after exact text capture.
      * The SDK voice handler provides spoken text but NEVER a scriptId or
@@ -959,15 +1081,7 @@ trait IAHVoiceRuleEditorTrait
             $ctx=$this->voiceRuleContext();
             $rules=(array)($ctx['prod']??[]);
             $catalog=(array)($ctx['catalog']??[]);
-            $forbidden=array_map('intval',array_values((array)($ctx['ids']??[])));
-            $forbidden[]=(int)($ctx['catalogId']??0);
-            $helper=@IPS_GetObjectIDByIdent('iahHelper',$this->InstanceID);
-            $renderer=@IPS_GetObjectIDByIdent('iahRenderers',$this->InstanceID);
-            foreach([$helper,$renderer] as $parentId){
-                if((int)$parentId<=0)continue;
-                foreach((array)IPS_GetChildrenIDs((int)$parentId) as $childId)
-                    if(IPS_ScriptExists((int)$childId))$forbidden[]=(int)$childId;
-            }
+            $forbidden=$this->voiceRuleForbiddenScripts($ctx['ids'],(int)$ctx['catalogId']);
             $prodRules=IAHVoiceRuleEngine::rules($rules);
             $meta=[
                 'prodScriptId'=>(int)($ctx['prodId']??0),
@@ -982,53 +1096,17 @@ trait IAHVoiceRuleEditorTrait
             // Only if the caller has exhausted all exact candidates may
             // optional KI classify a *question* into an enabled read-only rule.
             // No scripts/scenes/variables are included in the model allowlist.
-            $aiEnabled=method_exists($this,'ReadPropertyBoolean')
-                && $this->ReadPropertyBoolean('VoiceRulesAiReadOnlyEnabled');
-            if(empty($result['matched']) && !empty($event['aiFallback'])
-                && $aiEnabled && $prodRules!==[]
-                && $this->ReadPropertyBoolean('KIIntentEnabled')){
-                $key=(string)$this->ReadPropertyString('KIIntentApiKey');
-                $model=(string)$this->ReadPropertyString('KIModelSelection');
-                if($key!==''){
-                    $onAiResponse=function(array $apiResponse) use($model):void {
-                        if(!method_exists($this,'RecordKICostEvent'))return;
-                        try{
-                            // Existing KI EUR statistics accept IntentParser.
-                            $qid='voicerule-'.bin2hex(random_bytes(8));
-                            $events=[
-                                ['type'=>'start','model'=>$model],
-                                ['type'=>'api','callId'=>'voice-ai-0',
-                                    'response'=>[
-                                        'model'=>(string)($apiResponse['model']??$model),
-                                        'usage'=>$apiResponse['usage']??null
-                                    ]],
-                                ['type'=>'finish','success'=>true]
-                            ];
-                            foreach($events as $item)
-                                $this->RecordKICostEvent(json_encode(array_merge(
-                                    ['backend'=>'IntentParser','questionId'=>$qid],$item
-                                ),JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE));
-                        }catch(Throwable $ignored){}
-                    };
-                    $selected=IAHVoiceRuleAiMatcher::choose($rules,$event['text'],
-                        static fn(array $allowed,string $spoken):?array =>
-                            IAHVoiceRuleAiMatcher::openAiCandidate(
-                                $allowed,$spoken,$key,$model,$onAiResponse));
-                    if($selected!==null && isset($prodRules[$selected])){
-                        $alias=IAHVoiceRuleEngine::phrases(
-                            $prodRules[$selected]['aliases']??[])[0]??'';
-                        if($alias!==''){
-                            $checked=IAHVoiceRuleEngine::run($rules,$catalog,$alias,[
-                                'intent'=>'',
-                                'forbiddenScriptIds'=>array_values(array_unique($forbidden))
-                            ]);
-                            if(!empty($checked['matched']) && !empty($checked['ok'])
-                                && ($checked['ruleKey']??'')===$selected
-                                && in_array($checked['kind']??'',['answer','read'],true)){
-                                $checked['matchMethod']='ai_read_only';
-                                $result=$checked;
-                            }
-                        }
+            if(empty($result['matched']) && !empty($event['aiFallback']) && $prodRules!==[]){
+                $aiMatch=$this->matchVoiceRuleWithAi($rules,$event['text']);
+                if($aiMatch!==null){
+                    $checked=IAHVoiceRuleEngine::run($rules,$catalog,$aiMatch['alias'],[
+                        'intent'=>'','forbiddenScriptIds'=>$forbidden
+                    ]);
+                    if(!empty($checked['matched']) && !empty($checked['ok'])
+                        && ($checked['ruleKey']??'')===$aiMatch['key']
+                        && in_array($checked['kind']??'',['answer','read'],true)){
+                        $checked['matchMethod']='ai_read_only';
+                        $result=$checked;
                     }
                 }
             }

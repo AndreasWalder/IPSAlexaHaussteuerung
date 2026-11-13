@@ -12,6 +12,7 @@ require_once __DIR__ . '/src/SystemNavigationEditor.php';
 require_once __DIR__ . '/src/VoiceRuleEngine.php';
 require_once __DIR__ . '/src/VoiceRuleLiteralReader.php';
 require_once __DIR__ . '/src/VoiceRuleAiMatcher.php';
+require_once __DIR__ . '/src/VoiceRulePreviewForm.php';
 require_once __DIR__ . '/src/VoiceLegacyMigration.php';
 require_once __DIR__ . '/src/VoiceRuleEditorTrait.php';
 require_once __DIR__ . '/src/SystemNavigationMigration.php';
@@ -542,7 +543,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         return [
             'type' => 'ExpansionPanel',
             'caption' => 'Navigation & Tabs',
-            'expanded' => true,
+            'expanded' => false,
             'items' => [
                 ['type'=>'Label','caption'=>'Navigation zentral verwalten: '
                     .'SystemConfigurationEdit bearbeiten, mit Vorschau und '

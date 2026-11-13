@@ -294,7 +294,7 @@ final class IAHVoiceRuleEngine
                 foreach(self::phrases($rule['aliases']??[]) as $phrase){
                     if(self::normalize($phrase)!==$n)continue;
                     if($matched!==null)return ['status'=>'ambiguous'];
-                    $matched=['key'=>$key,'rule'=>$rule];
+                    $matched=['key'=>$key,'rule'=>$rule,'method'=>'alias','alias'=>$phrase];
                 }
             }
         }
@@ -306,7 +306,7 @@ final class IAHVoiceRuleEngine
                 if(is_array($rule)&&!empty($rule['enabled'])
                     && (string)($rule['intentName']??'')!==''
                     && strcasecmp((string)$rule['intentName'],$intentName)===0)
-                    return ['key'=>$key,'rule'=>$rule];
+                    return ['key'=>$key,'rule'=>$rule,'method'=>'intent'];
         return null;
     }
 
@@ -410,6 +410,73 @@ final class IAHVoiceRuleEngine
         return $plan;
     }
 
+    private static function presentation(string $key,array $rule): array
+    {
+        $answer=$rule['answer']!==''?$rule['answer']:
+            ($rule['kind']==='answer'?'':'Die Aktion wurde gestartet.');
+        return ['matched'=>true,'ruleKey'=>$key,'title'=>$rule['title'],
+            'kind'=>$rule['kind'],'imageUrl'=>$rule['imageUrl'],'imageFile'=>$rule['imageFile'],
+            'cardTitle'=>$rule['cardTitle']!==''?$rule['cardTitle']:$rule['title'],
+            'cardText'=>$rule['cardText']!==''?$rule['cardText']:$answer,
+            'answer'=>$answer];
+    }
+
+    private static function scriptStartError(array $rule,array $forbidden): ?string
+    {
+        $id=$rule['scriptId'];
+        if($id<=0||!function_exists('IPS_ScriptExists')||!IPS_ScriptExists($id)
+            || (!function_exists('IPS_RunScript')&&!function_exists('IPS_RunScriptEx')))
+            return 'Das ausgewaehlte Skript ist nicht verfuegbar.';
+        if(in_array($id,$forbidden,true))
+            return 'Systemskripte duerfen nicht als Szene gestartet werden.';
+        return null;
+    }
+
+    /** Describes a matched rule, with no route into live execution. */
+    public static function preview(array $match,?array $catalog,array $forbidden=[]): array
+    {
+        if(isset($match['status']))return ['matched'=>true,'ok'=>false,'matchMethod'=>'ambiguous',
+            'error'=>'Der Befehl ist mehrdeutig. Bitte die Sprachregeln prüfen.'];
+        $key=(string)$match['key'];
+        $raw=$match['rule'];
+        $result=['matched'=>true,'ruleKey'=>$key,'matchMethod'=>$match['method'],
+            'matchedAlias'=>$match['alias']??null,'title'=>(string)($raw['title']??$key),
+            'kind'=>(string)($raw['kind']??'')];
+        try {
+            $rule=self::validateRule($raw);
+            $result+=self::presentation($key,$rule);
+            $action=match($rule['kind']){
+                'answer'=>['type'=>'answer'],
+                'read'=>['type'=>'read','variableId'=>$rule['readVariableId']],
+                'variable'=>['type'=>'variable','variableId'=>$rule['variableId'],
+                    'value'=>self::validateVariableAction($rule['variableId'],$rule['variableValue'])],
+                'script'=>['type'=>'script','scriptId'=>$rule['scriptId'],
+                    'parameterNames'=>array_keys($rule['scriptParams'])],
+                'scene'=>['type'=>'scene','steps'=>$rule['steps']]
+            };
+            $result['plannedAction']=$action;
+            if(!$rule['confirmed']&&!in_array($rule['kind'],['answer','read'],true))
+                throw new RuntimeException('Dieser Sprachbefehl ist noch nicht freigegeben.');
+            if($rule['kind']==='script'){
+                $error=self::scriptStartError($rule,$forbidden);
+                if($error!==null)throw new RuntimeException($error);
+                if($rule['scriptParams']!==[]&&!function_exists('IPS_RunScriptEx'))
+                    throw new RuntimeException('IPS_RunScriptEx nicht verfügbar.');
+            }
+            if($rule['kind']==='scene'){
+                if($catalog===null)
+                    throw new RuntimeException('RoomsCatalog PROD ist kein lesbares statisches Array. '
+                        .'Die vorgesehenen Geräteschritte sind sichtbar, aber nicht geprüft.');
+                $result['plannedAction']['steps']=self::planScene($rule,$catalog);
+            }
+            // For read rules, keep {value} in the answer template. The preview
+            // only checks the variable exists, it does not read a live value.
+            return $result+['ok'=>true];
+        }catch(Throwable $error){
+            return $result+['ok'=>false,'error'=>$error->getMessage()];
+        }
+    }
+
     public static function run(array $configuration,array $catalog,string $text,array $context=[]): array
     {
         $match=self::matching($configuration,$text,(string)($context['intent']??''));
@@ -418,13 +485,9 @@ final class IAHVoiceRuleEngine
             'answer'=>'Der Befehl ist mehrdeutig. Bitte die Sprachregeln pruefen.'];
         $rule=self::validateRule((array)$match['rule']);
         $key=(string)$match['key'];
-        $answer=$rule['answer']!==''?$rule['answer']:
-            ($rule['kind']==='answer'?'':'Die Aktion wurde gestartet.');
-        $base=['matched'=>true,'ruleKey'=>$key,
-            'title'=>$rule['title'],'kind'=>$rule['kind'],
-            'imageUrl'=>$rule['imageUrl'],'imageFile'=>$rule['imageFile'],
-            'cardTitle'=>$rule['cardTitle']!==''?$rule['cardTitle']:$rule['title'],
-            'cardText'=>$rule['cardText']!==''?$rule['cardText']:$answer];
+        $base=self::presentation($key,$rule);
+        $answer=$base['answer'];
+        unset($base['answer']);
         if($rule['kind']==='answer')return $base+['ok'=>true,'answer'=>$answer];
         if($rule['kind']==='read'){
             $id=$rule['readVariableId'];
@@ -454,13 +517,8 @@ final class IAHVoiceRuleEngine
         }
         if($rule['kind']==='script'){
             $id=$rule['scriptId'];
-            if($id<=0||!function_exists('IPS_ScriptExists')||!IPS_ScriptExists($id)
-                || (!function_exists('IPS_RunScript')
-                    && !function_exists('IPS_RunScriptEx')))
-                return $base+['ok'=>false,'answer'=>'Das ausgewaehlte Skript ist nicht verfuegbar.'];
-            $forbidden=(array)($context['forbiddenScriptIds']??[]);
-            if(in_array($id,$forbidden,true))
-                return $base+['ok'=>false,'answer'=>'Systemskripte duerfen nicht als Szene gestartet werden.'];
+            $error=self::scriptStartError($rule,(array)($context['forbiddenScriptIds']??[]));
+            if($error!==null)return $base+['ok'=>false,'answer'=>$error];
             try{
                 // IPS_RunScriptEx forwards configured literals to $_IPS.
                 // Runtime speech/input never reaches the script as a parameter.

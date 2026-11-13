@@ -114,7 +114,7 @@ $findRoomsDiff31 = function(array $nodes)use(&$findRoomsDiff31,&$roomDiffList):v
     }
 };
 $findRoomsDiff31($form['elements']);
-ok31(($panel['expanded'] ?? false) === true, 'Rooms panel must start expanded');
+ok31(($panel['expanded'] ?? null) === false, 'Rooms panel must start collapsed');
 ok31(is_array($roomsList) && count($roomsList['values']) === 2, 'Rooms list should exclude global and include empty rooms');
 ok31($roomDiffList===null, 'Obsolete room diff UI must be removed from simple configurator');
 ok31(str_contains($roomsList['onEdit'], '$Rooms["roomKey"]'), 'Callback not reading IPSList row fields');
