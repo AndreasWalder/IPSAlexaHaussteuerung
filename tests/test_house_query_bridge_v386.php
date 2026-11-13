@@ -62,7 +62,7 @@ ck38($failed===['handled'=>false,'error'=>'house_query_internal_error'],
 
 $action=file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/resources/action_entry.php');
 ck38(str_contains($action,"CreatePlainText('Nicht verstanden.')->SetRepromptPlainText('')")
-    && str_contains($action,"\$kiAlexaKeepOpen('Dazu habe ich gerade keine Antwort.', 'Fehler')")
+    && str_contains($action,"\$kiAlexaKeepOpen('Bitte anders formulieren.', 'Fehler')")
     && !str_contains($action,'Konnte kein Gerät verstehen') && !str_contains($action,'ist gerade nicht erreichbar'),
     'Alexa speaks short plain answers and does not repeat an extra reprompt');
 $oldAction=str_replace("        return AskResponse::CreatePlainText('Nicht verstanden.')->SetRepromptPlainText('');\n"

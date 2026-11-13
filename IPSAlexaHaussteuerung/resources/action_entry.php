@@ -2761,7 +2761,7 @@ function Execute($request = null)
                         'model'=>(string)($propsEarly['KIModelSelection']??'gpt-6-luna')]);
                     if ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {
                         // Erkannte Fragen duerfen beim KI-Fehler keine Kachel ausloesen.
-                        return $kiAlexaKeepOpen('Dazu habe ich gerade keine Antwort.', 'Fehler');
+                        return $kiAlexaKeepOpen('Bitte anders formulieren.', 'Fehler');
                     }
                 }
             } elseif ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {
@@ -2774,7 +2774,7 @@ function Execute($request = null)
         } elseif ($iahVoiceCategory === 'query') {
             // Statt still auf main_launch zurueckzufallen den Grund nennen.
             $log('warn', 'KIVoice.query_blocked', ['reason'=>(string)$iahKiGate['reason']]);
-            return $kiAlexaKeepOpen('Dazu habe ich gerade keine Antwort.');
+            return $kiAlexaKeepOpen('Bitte anders formulieren.');
         }
         // Alexa/GetHaus kann einen IntentRequest mit komplett leeren Slots
         // liefern. Alexa hat dann keinen Wortlaut uebermittelt: weder die

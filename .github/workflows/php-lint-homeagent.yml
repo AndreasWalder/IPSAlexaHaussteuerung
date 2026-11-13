@@ -186,6 +186,8 @@ jobs:
         run: php tests/test_alexa_question_slot_isolation_v385.php
       - name: Test V3.8.6 local room temperature and robust house question JSON
         run: php tests/test_house_query_bridge_v386.php
+      - name: Test V3.8.7 bounded retry for Alexa house questions
+        run: php tests/test_house_question_retry_v387.php
       - name: Test Symcon IPSList checkbox callbacks and filtered multi-selection
         run: php tests/test_rooms_catalog_ipslist_multiselect.php
       - name: Test RoomsCatalog quick search for IPS object IDs and parent instance IDs
