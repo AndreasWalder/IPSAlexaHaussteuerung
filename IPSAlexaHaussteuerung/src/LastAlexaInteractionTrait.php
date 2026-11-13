@@ -125,6 +125,7 @@ trait IAHLastAlexaInteractionTrait
         if (!is_string($current) || $current === '' || !is_string($template)) return;
         $hooks = [
             'LEGACY' => ['        $writeRuntimeString = static function ($varId, string $value): void {', true],
+            'CURRENT_SLOTS' => ['        // Helfer-Skripte', false],
             'RENDER' => ["            \$speech     = (string)(\$data['speech'] ?? '');", true],
             'RENDER_KI' => ["                            \$speechKi     = (string)(\$dataKi['speech'] ?? '');", true],
             'RENDER_ERROR' => ["                return TellResponse::CreatePlainText('Fehler beim Rendern.');", false],
@@ -150,7 +151,7 @@ PHP, false],
                     $next = preg_replace_callback($pattern, static fn(): string => $blocks[0][0], $next, 1);
                 } elseif (substr_count($next, $anchor) === 1) {
                     $next = str_replace($anchor, $after ? $anchor . "\n" . $blocks[0][0] : $blocks[0][0] . "\n" . $anchor, $next);
-                } elseif ($key === 'LEGACY' || $key === 'SAVE') {
+                } elseif (in_array($key, ['LEGACY', 'CURRENT_SLOTS', 'SAVE'], true)) {
                     throw new RuntimeException('Action-Anker fehlt: ' . $key);
                 }
             }

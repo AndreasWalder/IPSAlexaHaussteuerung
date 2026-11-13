@@ -20,6 +20,9 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
   dynamisch. Eigene Antworttexte bleiben unverändert, außer wenn sie
   den Platzhalter verwenden. Ein unbekanntes Echo bekommt keinen
   Namen eines anderen Geräts. Die Textvorschau zeigt stattdessen einen Platzhalter.
+  Seit V3.8.5 werden Hausfragen nur aus der aktuellen Anfrage ausgewertet.
+  Die Echo-Identitätsregel wird nur über einen passenden Alias oder
+  ihren ausdrücklich konfigurierten eigenen Intent ausgelöst.
 
 - **Sprachbefehl testen (V3.8.3)**
   Im RoomsCatalogConfigurator oder unter „Szenen und eigene Alexa-Befehle“
