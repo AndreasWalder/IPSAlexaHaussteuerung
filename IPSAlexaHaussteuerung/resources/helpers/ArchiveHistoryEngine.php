@@ -127,20 +127,30 @@ function iah_archive_matches_active(mixed $value,array $dev,string $property): b
 /** Find the latest logged ON feedback across all eligible lights, not just the first 30. */
 function iah_archive_latest_light_on(array $devices,int $archiveId,float $deadline): array
 {
-    $summary=['ok'=>true,'operation'=>'last_light_on','mostRecent'=>null,
+    return iah_archive_latest_activation($devices,$archiveId,$deadline,'power');
+}
+
+/** Find the latest recorded activation independently of model filters or catalog order. */
+function iah_archive_latest_activation(array $devices,int $archiveId,float $deadline,string $property): array
+{
+    $motion=$property==='motion';
+    $summary=['ok'=>true,'operation'=>$motion?'last_motion':'last_light_on','property'=>$property,'mostRecent'=>null,
         'matchedDevices'=>0,'archivedDevices'=>0,'queriedVariables'=>0,'partial'=>false];
     if (!iah_archive_valid($archiveId))
         return array_replace($summary,['ok'=>false,'error'=>'archive_not_configured']);
     $inventory=iah_archive_inventory($archiveId);
     $candidates=[];
     foreach ($devices as $device) {
-        if (($device['domain']??'')!=='licht'
-            || !in_array($device['type']??'',['light','dimmer','switch','switches','dimmers'],true)) continue;
+        $type=$device['type']??'';
+        if ($motion ? $type!=='motion' : (($device['domain']??'')!=='licht'
+            || !in_array($type,['light','dimmer','switch','switches','dimmers'],true))) continue;
         $summary['matchedDevices']++;
         $reads=(array)($device['reads']??[]);
         if (empty($device['typed']) && ($device['group']??'')==='switches')
             $reads['power']=(int)($device['read']??0);
-        foreach (['power','status'] as $role) {
+        if ($motion && (int)($reads['motion']??0)<=0)
+            $reads['motion']=iah_archive_discover_source((int)($device['archiveSourceId']??0),'motion',$inventory);
+        foreach ($motion?['motion']:['power','status'] as $role) {
             $id=(int)($reads[$role]??0);
             if ($id<=0 || !isset($inventory[$id])) continue;
             // A dimming value is not itself an ON/OFF transition.
@@ -149,14 +159,18 @@ function iah_archive_latest_light_on(array $devices,int $archiveId,float $deadli
                 if ($type!==0) continue;
             }
             $summary['archivedDevices']++;
-            $candidates[$id]??=['device'=>$device,'upper'=>(int)($inventory[$id]['LastTime']??0)];
+            if (!isset($candidates[$id]) || strcmp((string)$device['id'],(string)$candidates[$id]['device']['id'])<0)
+                $candidates[$id]=['device'=>$device,'upper'=>(int)($inventory[$id]['LastTime']??0)];
             break;
         }
     }
     // Unknown upper bounds first. Once the next archived value is older
     // than the winner, no later candidate can overtake it.
     uasort($candidates,static fn(array $a,array $b):int=>
-        ($b['upper']?:PHP_INT_MAX)<=>($a['upper']?:PHP_INT_MAX));
+        (($b['upper']?:PHP_INT_MAX)<=>($a['upper']?:PHP_INT_MAX))
+        ?: strcmp((string)$a['device']['id'],(string)$b['device']['id']));
+    $winnerKey=null;
+    $queryEnd=time();
     foreach ($candidates as $id=>$candidate) {
         $winner=(int)($summary['mostRecent']['timestamp']??0);
         if ($winner>0 && $candidate['upper']>0 && $candidate['upper']<$winner) break;
@@ -164,7 +178,7 @@ function iah_archive_latest_light_on(array $devices,int $archiveId,float $deadli
         $device=$candidate['device'];
         $summary['queriedVariables']++;
         try {
-            $end=time();
+            $end=$queryEnd;
             for ($page=0;$page<4;$page++) {
                 if (microtime(true)>=$deadline) {$summary['partial']=true;break;}
                 $values=AC_GetLoggedValues($archiveId,$id,$winner,$end,100);
@@ -175,17 +189,23 @@ function iah_archive_latest_light_on(array $devices,int $archiveId,float $deadli
                     if ($at<=0 || $at<$winner) continue;
                     $value=$row['Value']??null;
                     $mapping=(array)($device['stateMapping']??[]);
-                    if (array_key_exists('on',$mapping)) {
-                        $expected=$mapping['on'];
+                    $onKey=$motion&&array_key_exists('motion',$mapping)?'motion':'on';
+                    if (array_key_exists($onKey,$mapping)) {
+                        $expected=$mapping[$onKey];
                         $on=$expected===$value || (is_numeric($expected) && is_numeric($value)
                             && (float)$expected===(float)$value);
                     } else {
                         $profile=iah_ai_profile_label($id,$value);
-                        $on=($profile!==null?iah_ai_binary_feedback($profile)
+                        $normalized=iah_rc_norm((string)($profile??(is_string($value)?$value:'')));
+                        $activeMotion=$motion && in_array($normalized,
+                            ['bewegung','bewegung erkannt','praesenz','anwesend','motion','detected'],true);
+                        $on=$activeMotion || ($profile!==null?iah_ai_binary_feedback($profile)
                             :iah_ai_binary_feedback($value,true))==='an';
                     }
                     if (!$on) continue;
-                    if ($at>$winner || $summary['mostRecent']===null) {
+                    $deviceKey=(string)$device['id'];
+                    if ($at>$winner || $winnerKey===null || ($at===$winner && strcmp($deviceKey,$winnerKey)<0)) {
+                        $winnerKey=$deviceKey;
                         $summary['mostRecent']=['name'=>$device['name'],'room'=>$device['room'],
                             'timestamp'=>$at,'at'=>date('c',$at)];
                     }
@@ -194,8 +214,11 @@ function iah_archive_latest_light_on(array $devices,int $archiveId,float $deadli
                 if (count($values)<100) break;
                 $last=end($values);
                 $earliest=(int)($last['TimeStamp']??0);
-                if ($earliest<=max(1,$winner) || $earliest>=$end) break;
-                if ($page===3) $summary['partial']=true;
+                if ($earliest<=$winner && $winner>0) break;
+                if ($earliest<=0 || $earliest>=$end || $page===3) {
+                    $summary['partial']=true;
+                    break;
+                }
                 $end=$earliest-1;
             }
         } catch (Throwable $error) {$summary['partial']=true;}

@@ -196,6 +196,8 @@ jobs:
         run: php tests/test_alexa_latest_light_v389.php
       - name: Test V3.8.10 Alexa archive clarification and room reply
         run: php tests/test_alexa_archive_location_reply_v3810.php
+      - name: Test V3.8.11 deterministic Alexa light and motion archive events
+        run: php tests/test_alexa_archive_events_v3811.php
       - name: Test Symcon IPSList checkbox callbacks and filtered multi-selection
         run: php tests/test_rooms_catalog_ipslist_multiselect.php
       - name: Test RoomsCatalog quick search for IPS object IDs and parent instance IDs
