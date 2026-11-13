@@ -23,6 +23,11 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
   Seit V3.8.5 werden Hausfragen nur aus der aktuellen Anfrage ausgewertet.
   Die Echo-Identitätsregel wird nur über einen passenden Alias oder
   ihren ausdrücklich konfigurierten eigenen Intent ausgelöst.
+  Seit V3.8.6 beantwortet der Skill einfache Fragen zur aktuellen Temperatur
+  in einem eindeutigen Raum aus den freigegebenen Istwerten, ohne KI-Aufruf.
+  Wenn mehrere Messwerte vorliegen, wird ihr Mittelwert genannt.
+  Skriptausgaben können die JSON-Antwort nicht mehr verfälschen.
+  Technische Fehler stehen im Log. Alexa verwendet kurze, neutrale Antworten.
 
 - **Sprachbefehl testen (V3.8.3)**
   Im RoomsCatalogConfigurator oder unter „Szenen und eigene Alexa-Befehle“

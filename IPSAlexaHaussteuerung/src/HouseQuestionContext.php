@@ -31,6 +31,15 @@ final class IAHHouseQuestionContext
             .'leuchtet|leuchten|laeuft|laufen)\b/',self::normalize($text))===1;
     }
 
+    /** Older GetHaus joins the question and the Room slot without a preposition. */
+    public static function simpleTemperatureQuestion(string $text): ?array
+    {
+        if (!preg_match('/^((?:wie (?:warm|kalt) ist es|(?:wie (?:hoch )?ist|was ist) die (?:raum)?temperatur'
+            .'|(?:raum)?temperatur)(?: (?:gerade|aktuell|momentan))?)(?: (.+))?$/D',
+            self::normalize($text), $match)) return null;
+        return ['question'=>$match[1], 'room'=>$match[2]??''];
+    }
+
     public static function floor(string $label): string
     {
         $name=self::normalize($label);
@@ -106,7 +115,12 @@ final class IAHHouseQuestionContext
         if(!self::isNewQuestion($question)&&!str_ends_with(rtrim($question),'?'))return null;
         $locations=self::locations($catalog);
         $labels=self::locationLabels($locations);
-        if(!preg_match_all(self::locationPattern($labels,true),$question,$matches,PREG_SET_ORDER))return null;
+        if(!preg_match_all(self::locationPattern($labels,true),$question,$matches,PREG_SET_ORDER)){
+            $simple=self::simpleTemperatureQuestion($question);
+            if(($simple['room']??'')==='')return null;
+            $scope=self::scope($simple['room'],$catalog);
+            return ($scope['type']??'')==='room'?$scope:null;
+        }
         if(!preg_match(self::locationPattern($labels),$question))return null;
         $scopes=[];
         foreach($matches as $match){
@@ -163,6 +177,11 @@ final class IAHHouseQuestionContext
     {
         $result=preg_replace(self::locationPattern(self::locationLabels(self::locations($catalog))),
             ' ',$question)??$question;
+        if($result===$question){
+            $simple=self::simpleTemperatureQuestion($question);
+            if(($simple['room']??'')!=='' && (self::scope($simple['room'],$catalog)['type']??'')==='room')
+                return $simple['question'];
+        }
         return trim(preg_replace('/\s+/u',' ',$result)??$result);
     }
 }

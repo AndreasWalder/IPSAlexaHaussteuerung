@@ -275,6 +275,8 @@ function iah_rc_index_catalog(array $rooms,bool $includeArchiveOnly=false,bool $
                         'archiveOnly' => $reads===[],
                         'stateMapping' => $typed && is_array($ai['stateMapping'] ?? null) ? $ai['stateMapping'] : [],
                         'setpoint' => (int)($dev['eingestellt'] ?? $dev['soll'] ?? 0),
+                        'legacyTemperatureRead' => !$typed && $group==='heizung'
+                            && $readId===(int)($dev['ist']??0),
                         'min' => is_numeric($dev['min'] ?? null) ? (float)$dev['min'] : null,
                         'max' => is_numeric($dev['max'] ?? null) ? (float)$dev['max'] : null
                     ];
@@ -573,9 +575,14 @@ function iah_rc_http(array $payload,string $apiKey,float $deadline): array
             CURLOPT_CONNECTTIMEOUT_MS=>min(1000,$timeout),CURLOPT_TIMEOUT_MS=>$timeout,
             CURLOPT_FOLLOWLOCATION=>false]);
         $data=curl_exec($ch);$code=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE);
-        if(!is_string($data)||$code!==200)throw new RuntimeException('OpenAI-HTTP-Fehler, Status '.$code);
+        if (!is_string($data)) {
+            $errno=curl_errno($ch);
+            throw new RuntimeException($errno===CURLE_OPERATION_TIMEDOUT
+                ? 'API-Zeitlimit erreicht' : 'API-Transportfehler (cURL '.$errno.')');
+        }
+        if ($code!==200) throw new RuntimeException('OpenAI-HTTP-Fehler, Status '.$code);
         return json_decode($data,true,512,JSON_THROW_ON_ERROR);
-    } finally {curl_close($ch);}
+    } finally {unset($ch);} // CurlHandle is released on PHP 8; no deprecated curl_close call.
 }
 /** Für beide KI-Modelle mit einem Unit-Test überprüfbare API-Parameter. */
 function iah_rc_chat_payload(string $model,array $messages,array $tools,int $round,
@@ -601,6 +608,28 @@ function iah_rc_preview_lights(string $text,array $catalog,?array $scope=null): 
     $answer=iah_rc_light_answer($text,iah_rc_scope_devices(iah_rc_index_catalog($catalog),$scope),$match);
     if($scope!==null)$answer['answer']=$scope['name'].' – '.$answer['answer'];
     return $answer;
+}
+
+/** Read simple scoped room-temperature questions without an external API. */
+function iah_rc_room_temperature(string $text,array $catalog,?array $scope): ?array
+{
+    if (($scope['type']??'')!=='room'
+        || (IAHHouseQuestionContext::simpleTemperatureQuestion($text)['room']??null)!=='') return null;
+    $devices=iah_rc_scope_devices(iah_rc_index_catalog($catalog),$scope);
+    $devices=array_filter($devices,static fn(array $dev):bool=>
+        isset($dev['reads']['temperature']) || !empty($dev['legacyTemperatureRead']));
+    $query=iah_ai_query_house($devices,[
+        'property'=>'temperature','operation'=>'avg','group_by'=>'room','indoor_only'=>true,
+    ]);
+    $row=$query['rows'][0]??null;
+    $answer=$scope['name'].' – Kein Temperaturwert verfügbar.';
+    if (isset($row['value']) && is_numeric($row['value']) && is_finite((float)$row['value'])) {
+        $value=rtrim(rtrim(number_format((float)$row['value'],1,',',''),'0'),',');
+        $answer=$scope['name'].' – '.$value.' Grad.';
+        if ((int)$row['count']>1) $answer=$scope['name'].' – Im Durchschnitt '.$value.' Grad.';
+    }
+    return ['handled'=>true,'answer'=>$answer,'contextEligible'=>isset($row['value']),
+        'readQueries'=>[['tool'=>'query_house','result'=>$query]]];
 }
 
 /** Unambiguous current window questions are answered from contacts, not model guesses. */
@@ -739,7 +768,9 @@ function iah_rc_voice(
             return $costFinish(['handled'=>true,'answer'=>'Diesen Raum oder diese Etage kann ich im RoomsCatalog nicht eindeutig zuordnen.']);
         $allowWrites=!$preview&&$scope===null&&(bool)($cfg['allow_writes']??false);
         $localText=$scope===null?$text:IAHHouseQuestionContext::withoutLocation($text,$catalog);
-        $local=iah_rc_preview_lights($localText,$catalog,$scope)??iah_rc_window_answer($localText,$catalog,$scope);
+        $local=iah_rc_preview_lights($localText,$catalog,$scope)
+            ??iah_rc_window_answer($localText,$catalog,$scope)
+            ??iah_rc_room_temperature($localText,$catalog,$scope);
         if($local!==null){
             $readDetails=$local['readQueries'];
             unset($local['readQueries']);
@@ -1020,8 +1051,29 @@ function iah_rc_voice(
     }
     return $costFinish(['handled'=>false,'error'=>'Keine Antwort']);
 }
+/** Keep PHP notices and legacy script output out of the IPS_RunScriptWaitEx JSON protocol. */
+function iah_rc_bridge_reply(callable $run): string
+{
+    ob_start();
+    try {
+        $result=$run();
+        $reply=json_encode($result,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR);
+    } catch (Throwable $error) {
+        iah_rc_log('bridge.exception',['type'=>get_class($error),'line'=>$error->getLine()]);
+        $reply='{"handled":false,"error":"house_query_internal_error"}';
+    } finally {
+        $noise=ob_get_clean();
+        if (is_string($noise) && trim($noise)!=='') {
+            $kind=preg_match('/\b(?:deprecat(?:ed|ion)|veraltet)\b/i',$noise) ? 'deprecation'
+                :(preg_match('/\b(?:warning|notice|warnung)\b/i',$noise) ? 'php_warning' : 'unexpected_output');
+            iah_rc_log('bridge.output_discarded',['kind'=>$kind,'length'=>strlen($noise)]);
+        }
+    }
+    return $reply;
+}
 if(isset($_IPS)&&is_array($_IPS)&&array_key_exists('kiCatalogText',$_IPS)){
-    $cfg=json_decode((string)($_IPS['kiCatalogConfigJson']??'{}'),true);
-    $result=iah_rc_voice((string)$_IPS['kiCatalogText'],is_array($cfg)?$cfg:[]);
-    echo json_encode($result,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
+    echo iah_rc_bridge_reply(static function () use ($_IPS): array {
+        $cfg=json_decode((string)($_IPS['kiCatalogConfigJson']??'{}'),true);
+        return iah_rc_voice((string)$_IPS['kiCatalogText'],is_array($cfg)?$cfg:[]);
+    });
 }
