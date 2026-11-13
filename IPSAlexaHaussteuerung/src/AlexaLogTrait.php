@@ -50,7 +50,7 @@ trait AlexaLogTrait
                 $this->SetAlexaLogValue($category,'iahAlexaLogUpdated',$now->format('d.m.Y H:i:s'));
             }
             $this->SetAlexaLogValue($category,'iahAlexaLogStatus',
-                'Aktiv – IP-Symcon Systemlog (max. 500 Alexa-Zeilen, vertrauliche Muster maskiert)');
+                'Aktiv – letzte 500 relevante Alexa-Zeilen inkl. IAH.Request, vertrauliche Muster maskiert');
             return true;
         } catch (\Throwable $error) {
             $this->SetAlexaLogValue($category,'iahAlexaLogStatus',

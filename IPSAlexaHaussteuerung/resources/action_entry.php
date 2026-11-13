@@ -2248,6 +2248,8 @@ function Execute($request = null)
                 'deviceId' => $iahVoiceDeviceId,
                 'spoken' => $iahVoiceSpoken,
                 'intent' => (string)$intentName,
+                'frageslot' => $iahQuestionSlot ?? '',
+                'slotPresent' => $iahDedicatedSearchIntent ? ($iahQuestionSlot !== '') : !empty($iahRequestSlots),
                 'route' => $iahVoiceIsAplEvent ? 'Bildschirm' : 'Sprachbefehl',
                 'status' => 'Empfangen',
                 'slots' => []
@@ -2317,6 +2319,11 @@ function Execute($request = null)
         }
         $iahRuleCandidates=array_values($iahRuleCandidates);
         $iahVoiceRulesBridgeAvailable=$instanceId>0 && function_exists('IAH_ResolveVoiceRule');
+        if (isset($iahLastInteraction)) {
+            $iahLastInteraction['candidateCount'] = count($iahRuleCandidates);
+            $iahLastInteraction['bridgeAvailable'] = $iahVoiceRulesBridgeAvailable;
+            $iahLastInteraction['candidates'] = $iahRuleCandidates;
+        }
         $log('info','VoiceRules.bridge_probe',[
             'intent'=>(string)$intentName,
             'candidateCount'=>count($iahRuleCandidates),
@@ -2330,6 +2337,7 @@ function Execute($request = null)
         // Jalousie renderer or OpenAI: only exact, approved PROD phrases.
         // No APL button events, launches, back/exit or arbitrary script IDs.
         if (!$iahPendingHouseLocation && !$iahVoiceIsAplEvent && empty($APL['args'])
+            && strcasecmp((string)$intentName, 'HausUndIntent') !== 0
             && !$IS_LAUNCH && !$IS_BACK && !$wantsExit
             && ($iahRuleCandidates!==[] || (!$iahDedicatedSearchIntent && preg_match(
                 '/^[A-Za-z][A-Za-z0-9_]{2,55}Intent$/D',(string)$intentName)===1))
@@ -2379,6 +2387,13 @@ function Execute($request = null)
                             'candidateIndex'=>count($iahCandidateList)+1
                         ],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)
                     ),true);
+                }
+                if (isset($iahLastInteraction) && is_array($iahRuleResult)) {
+                    foreach (['prodScriptId','prodRuleCount','prodSourceSha256','matchMethod','executed'] as $field)
+                        if (isset($iahRuleResult[$field])) $iahLastInteraction[$field]=$iahRuleResult[$field];
+                    $iahLastInteraction['reason']=!empty($iahRuleResult['resolverFailed'])
+                        ? 'rule_resolver_error' : (!empty($iahRuleResult['matched']) ? 'rule_matched' : 'no_exact_prod_rule');
+                    if (isset($iahRuleResult['kind'])) $iahLastInteraction['ruleKind']=$iahRuleResult['kind'];
                 }
                 if(is_array($iahRuleResult) && !empty($iahRuleResult['matched'])) {
                     if ($iahHouseSessionId !== '' && in_array($iahRuleResult['kind'] ?? '', ['answer','read'], true)
@@ -2433,7 +2448,7 @@ function Execute($request = null)
                 }
                 $log('info','VoiceRules.no_match',[
                     'intent'=>(string)$intentName,
-                    'candidates'=>$iahRuleCandidates,
+                    'candidateCount'=>count($iahRuleCandidates),
                     'reason'=>'no_enabled_exact_prod_rule_or_intent'
                 ]);
             }catch(Throwable $ignored) {
@@ -2575,6 +2590,11 @@ function Execute($request = null)
             $iahLegacyNavKey = '';
             $iahVoiceDecision = ['category'=>'query','route'=>'','reason'=>'pending_house_location',
                 'contextDomain'=>''];
+        } elseif (!$iahVoiceIsAplEvent && empty($APL['args'])
+            && strcasecmp((string)$intentName, 'HausUndIntent') === 0
+            && ($iahVoiceDecision['category'] ?? '') !== 'query') {
+            $iahVoiceDecision = ['category'=>'query','route'=>'','reason'=>'possible_location_followup',
+                'contextDomain'=>''];
         } elseif ($iahLegacyNavKey !== '') {
             $iahVoiceDecision = [
                 'category'=>'navigation','route'=>$iahLegacyNavKey,
@@ -2616,6 +2636,10 @@ function Execute($request = null)
                 $iahVoiceDecision=['category'=>'clarify','route'=>'','reason'=>'router_unavailable_clarify'];
             }
             $log('warn','VoiceRouter.fallback',['category'=>(string)($iahVoiceDecision['category']??'legacy')]);
+        }
+        if (isset($iahLastInteraction)) {
+            $iahLastInteraction['router']=$iahVoiceDecision['category'] ?? 'unavailable';
+            $iahLastInteraction['reason']=$iahVoiceDecision['reason'] ?? 'router_unavailable';
         }
         // Navigation wird NACH dem KI-Hook an den vorhandenen ROUTE_ALL-Renderer übergeben.
         $iahVoiceIsNavigation = ($iahVoiceDecision['category']??'') === 'navigation';
@@ -2699,9 +2723,11 @@ function Execute($request = null)
             $homeAgentSpokenQuestion = $homeAgentDedicatedIntent
                 ? $iahVoiceSpoken
                 : trim((string) ($rawUserText !== '' ? $rawUserText : $rawSlotsToText($rawSlotValues)));
-            $iahPossibleFollowup = $iahPendingHouseLocation
+            $iahDedicatedFollowup = strcasecmp((string)$intentName, 'HausUndIntent') === 0;
+            $iahPossibleFollowup = $iahDedicatedFollowup || $iahPendingHouseLocation
                 || ($iahVoiceDecision['reason'] ?? '') === 'possible_location_followup';
             if ($iahPossibleFollowup) $homeAgentSpokenQuestion = $iahVoiceSpoken;
+            if (isset($iahLastInteraction)) $iahLastInteraction['contextFollowup']=$iahPossibleFollowup;
             if ($homeAgentDedicatedIntent && ($homeAgentSpokenQuestion === '' || $homeAgentSpokenQuestion === '?')) {
                 $homeAgentSpokenQuestion = trim((string) $rawUserText);
             }
@@ -2726,11 +2752,13 @@ function Execute($request = null)
                 ]);
                 $log('debug', 'KIVoice.recognized_text', ['chars' => mb_strlen($homeAgentSpokenQuestion, 'UTF-8')]);
                 if (!$homeAgentEnabled) {
+                    if (isset($iahLastInteraction)) $iahLastInteraction['detail']='house_queries_disabled';
                     $log('warn', 'KIVoice.disabled');
                     if ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {
                         return $kiAlexaKeepOpen('Hausfragen sind deaktiviert.');
                     }
-                } elseif ($homeAgentSpokenQuestion === '' || $homeAgentSpokenQuestion === '?') {
+                } elseif (!$iahDedicatedFollowup && ($homeAgentSpokenQuestion === '' || $homeAgentSpokenQuestion === '?')) {
+                    if (isset($iahLastInteraction)) $iahLastInteraction['detail']='missing_text';
                     $log('warn', 'KIVoice.missing_text', ['intent' => $intentName]);
                     if ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {
                         return $kiAlexaKeepOpen('Ich habe keine Frage verstanden. Bitte versuche es erneut.');
@@ -2745,6 +2773,8 @@ function Execute($request = null)
                         || !$homeAgentAllowCommands
                         || strcasecmp((string)$intentName, 'HausUndIntent') === 0;
                     $iahUseModuleQuery = $iahReadOnlyQuery && function_exists('IAH_QueryAlexaHouseReadOnly');
+                    if (isset($iahLastInteraction))
+                        $iahLastInteraction['backend']=$iahUseModuleQuery ? 'module_read_only' : 'KIHouseController';
                     $log('info', 'KIVoice.backend.selected', [
                         'mode'=>'RoomsCatalog','helper'=>$iahUseModuleQuery
                             ? 'module_read_only' : 'kiHouseControllerScript'
@@ -2757,11 +2787,29 @@ function Execute($request = null)
                             if (function_exists('IAH_PrepareAlexaHouseQuestion')) {
                                 $housePlan = json_decode(IAH_PrepareAlexaHouseQuestion(
                                     $instanceId, $iahHouseSessionId, $iahVoiceDeviceId, $homeAgentSpokenQuestion,
-                                    (int)($S['ROOMS_CATALOG'] ?? 0)
+                                    (int)($S['ROOMS_CATALOG'] ?? 0), $iahDedicatedFollowup
                                 ), true, 512, JSON_THROW_ON_ERROR);
                             }
+                            if (!is_array($housePlan)) $housePlan=[];
                             if (isset($housePlan['answer'])) {
-                                return $kiAlexaKeepOpen((string)$housePlan['answer']);
+                                if (isset($iahLastInteraction)) {
+                                    $iahLastInteraction['answerSource'] = $housePlan['answerSource'] ?? 'local';
+                                    $iahLastInteraction['detail'] = $housePlan['reason'] ?? 'local_question_plan';
+                                }
+                                return $kiAlexaKeepOpen((string)$housePlan['answer'],
+                                    !empty($housePlan['reason']) ? 'Rückfrage' : 'Hinweis');
+                            }
+                            if ($iahPossibleFollowup && !isset($housePlan['question'])) {
+                                if (isset($iahLastInteraction)) {
+                                    $iahLastInteraction['answerSource'] = 'local';
+                                    $iahLastInteraction['detail'] = 'followup_planner_unavailable';
+                                }
+                                return $kiAlexaKeepOpen('Welchen Raum oder welche Etage meinst du?', 'Rückfrage');
+                            }
+                            if (isset($iahLastInteraction) && is_array($housePlan['scope'] ?? null)) {
+                                $iahLastInteraction['scopeType']=$housePlan['scope']['type'] ?? '';
+                                $iahLastInteraction['scopeName']=$housePlan['scope']['name'] ?? '';
+                                $iahLastInteraction['roomsInScope']=count((array)($housePlan['scope']['rooms'] ?? []));
                             }
                             $houseQuestion = (string)($housePlan['question'] ?? $homeAgentSpokenQuestion);
                             if ($iahUseModuleQuery) {
@@ -2843,17 +2891,21 @@ function Execute($request = null)
                                 return $kiAlexaKeepOpen($homeAgentAnswer,
                                     $iahAwaitingLocation ? 'Rückfrage' : 'Beantwortet');
                             }
+                            if (isset($iahLastInteraction))
+                                $iahLastInteraction['detail']=is_array($homeAgentData) ? 'backend_unhandled' : 'invalid_backend_reply';
                             $log('warn', 'KIVoice.fallback', [
                                 'durationSeconds' => $homeAgentElapsed,
                                 'reason' => (string) ($homeAgentData['error'] ?? 'Keine verwertbare Antwort')
                             ]);
                         } catch (Throwable $homeAgentError) {
+                            if (isset($iahLastInteraction)) $iahLastInteraction['detail']='backend_exception:'.get_class($homeAgentError);
                             $log('warn', 'KIVoice.exception', [
                                 'durationSeconds' => round(microtime(true) - $homeAgentStarted, 3),
                                 'error' => $homeAgentError->getMessage()
                             ]);
                         }
                     } else {
+                        if (isset($iahLastInteraction)) $iahLastInteraction['detail']='backend_missing';
                         $log('warn', 'KIVoice.bridge.missing', ['scriptId' => $homeAgentBridge]);
                     }
                     $iahVoiceRouter(['op'=>'outcome','deviceId'=>$iahVoiceDeviceId,
@@ -3815,6 +3867,14 @@ function Execute($request = null)
                 $iahSkillVar = (int)($V['SKILL_ACTIVE'] ?? 0);
                 if ($iahSkillVar > 0 && GetValueBoolean($iahSkillVar)) SetValueBoolean($iahSkillVar, false);
             } catch (Throwable $ignored) {}
+        }
+        if (!isset($iahLastInteraction) && in_array($iahRuntimeRequestType ?? '', ['LaunchRequest','SessionEndedRequest'], true)) {
+            $iahLastInteraction = ['requestType'=>$iahRuntimeRequestType, 'deviceId'=>$iahVoiceDeviceId ?? '',
+                'intent'=>$intentName ?? '', 'route'=>'Skill-Sitzung', 'status'=>'Empfangen', 'logOnly'=>true];
+        }
+        if (!isset($iahLastInteraction) && !empty($wantsExit)) {
+            $iahLastInteraction = ['requestType'=>$iahRuntimeRequestType ?? '', 'intent'=>$intentName ?? '',
+                'route'=>'Skill beenden', 'status'=>'Verarbeitet', 'logOnly'=>true];
         }
         if (isset($iahLastInteraction, $iahRuntimeStarted)) {
             $iahLastInteraction['durationMs'] = (int)round((hrtime(true) - $iahRuntimeStarted) / 1000000);

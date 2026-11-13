@@ -490,7 +490,7 @@ final class IAHVoiceRuleEngine
             'answer'=>'Der Befehl ist mehrdeutig. Bitte die Sprachregeln pruefen.'];
         $rule=self::validateRule((array)$match['rule']);
         $key=(string)$match['key'];
-        $base=self::presentation($key,$rule);
+        $base=self::presentation($key,$rule)+['matchMethod'=>$match['method']];
         $answer=$base['answer'];
         unset($base['answer']);
         if($rule['kind']==='answer')return $base+['ok'=>true,'answer'=>$answer];

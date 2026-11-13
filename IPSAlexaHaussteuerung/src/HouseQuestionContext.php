@@ -13,6 +13,15 @@ final class IAHHouseQuestionContext
 
     private const LOCATION_PREFIX='(?:im|in der|in dem|in den|in|auf der|auf dem|auf|am|beim)';
 
+    public const LOCATION_CLARIFICATION = 'Welchen Raum oder welche Etage meinst du?';
+
+    public static function isLocationFollowUp(string $text, bool $dedicatedIntent = false): bool
+    {
+        if (self::isNewQuestion($text)) return false;
+        return $dedicatedIntent || self::followUp($text) !== null
+            || preg_match('/^und(?: |$)/D', self::normalize($text)) === 1;
+    }
+
     public static function followUp(string $text): ?string
     {
         $text=self::normalize($text);

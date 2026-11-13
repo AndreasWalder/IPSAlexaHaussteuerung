@@ -66,37 +66,68 @@ trait IAHLastAlexaInteractionTrait
     {
         if(strlen($payload)>32000)return;
         $entry=json_decode($payload,true);
-        if(!is_array($entry)||!in_array($entry['requestType']??'',['IntentRequest','Alexa.Presentation.APL.UserEvent'],true))
-            return;
+        if (!is_array($entry) || !in_array($entry['requestType']??'', [
+            'IntentRequest','Alexa.Presentation.APL.UserEvent','LaunchRequest','SessionEndedRequest'
+        ], true)) return;
+        $transcript=$this->ReadPropertyBoolean('VoiceRouterStoreTranscript');
+        $snapshot=['at'=>date(DATE_ATOM),'requestType'=>$entry['requestType']];
+        $name=$this->alexaNameForDevice(is_string($entry['deviceId']??null)?$entry['deviceId']:'');
+        $snapshot['alexa']=self::lastAlexaText($name,100);
+        foreach (['action','device','room','szene','object','number','prozent','alles'] as $slot)
+            $snapshot['slots'][$slot]=$transcript?self::lastAlexaText($entry['slots'][$slot]??'',300):'';
+        foreach(self::LAST_ALEXA_FIELDS as $key=>[$ident,$label]){
+            if($key!=='at')$snapshot[$key]=(!$transcript&&in_array($key,['spoken','answer'],true))
+                ?'':self::lastAlexaText($entry[$key]??'',800);
+        }
+        if (isset($entry['answerSource'])) $snapshot['answerSource'] = self::lastAlexaText($entry['answerSource'], 80);
+        if (is_int($entry['durationMs'] ?? null)) $snapshot['durationMs'] = max(0, $entry['durationMs']);
+        $this->logAlexaRequestSummary($entry,$snapshot,$transcript);
+        if (!in_array($entry['requestType'], ['IntentRequest','Alexa.Presentation.APL.UserEvent'], true)
+            || !empty($entry['logOnly'])) return;
         $diag=$this->getObjectIDByIdentOrName($this->InstanceID,'iahDiag','Diagnose');
         if($diag<=0)return;
         $lock='IAH.LastAlexaInteraction.'.$this->InstanceID;
         $useLock=function_exists('IPS_SemaphoreEnter');
         if($useLock&&!IPS_SemaphoreEnter($lock,300))return;
         try{
-            $snapshot=['at'=>date(DATE_ATOM),'requestType'=>$entry['requestType']];
-            $name=$this->alexaNameForDevice(is_string($entry['deviceId']??null)?$entry['deviceId']:'');
-            $snapshot['alexa']=self::lastAlexaText($name,100);
             $save=fn(string $ident,string $value) => $this->writeAlexaDiagnosticString($diag,$ident,$value);
-            // Do not associate an unregistered Echo with the last known one.
             $save('alexa',$snapshot['alexa']);
-            $transcript=$this->ReadPropertyBoolean('VoiceRouterStoreTranscript');
-            foreach(['action','device','room','szene','object','number','prozent','alles'] as $slot){
-                $snapshot['slots'][$slot]=$transcript?self::lastAlexaText($entry['slots'][$slot]??'',300):'';
-                $save($slot,$snapshot['slots'][$slot]);
-            }
-            foreach(self::LAST_ALEXA_FIELDS as $key=>[$ident,$label]){
-                if($key!=='at')$snapshot[$key]=(!$transcript&&in_array($key,['spoken','answer'],true))
-                    ?'':self::lastAlexaText($entry[$key]??'',800);
-                $save($ident,$snapshot[$key]);
-            }
-            if (isset($entry['answerSource'])) $snapshot['answerSource'] = self::lastAlexaText($entry['answerSource'], 80);
-            if (is_int($entry['durationMs'] ?? null)) $snapshot['durationMs'] = max(0, $entry['durationMs']);
+            foreach ($snapshot['slots'] as $slot=>$value) $save($slot,$value);
+            foreach (self::LAST_ALEXA_FIELDS as $key=>[$ident,$label]) $save($ident,$snapshot[$key]);
             $save('iahLastAlexaInteraction',json_encode($snapshot,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE
                 |JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR));
         }finally{
             if($useLock)IPS_SemaphoreLeave($lock);
         }
+    }
+
+    /** One complete, copyable record even with normal Info logging. */
+    private function logAlexaRequestSummary(array $entry,array $snapshot,bool $transcript): void
+    {
+        $summary = ['instance'=>$this->InstanceID,'transcript'=>$transcript]+$snapshot;
+        $summary['slots'] = array_map(static fn(string $value): string => mb_substr($value,0,100,'UTF-8'),
+            array_filter($summary['slots'], static fn(string $value): bool => $value!==''));
+        foreach (['spoken'=>240,'answer'=>350,'intent'=>64,'ruleKey'=>90,'route'=>70,'status'=>40] as $key=>$limit)
+            $summary[$key]=mb_substr($summary[$key],0,$limit,'UTF-8');
+        foreach (['router'=>70,'reason'=>70,'detail'=>140,'backend'=>45,'ruleKind'=>30,'matchMethod'=>40,
+            'scopeType'=>32,'scopeName'=>70] as $key=>$limit) {
+            if (isset($entry[$key]) && ($key!=='scopeName' || $transcript))
+                $summary[$key]=self::lastAlexaText($entry[$key],$limit);
+        }
+        foreach (['candidateCount','executed','prodScriptId','prodRuleCount','roomsInScope'] as $key)
+            if (is_int($entry[$key]??null)) $summary[$key]=max(0,$entry[$key]);
+        foreach (['slotPresent','bridgeAvailable','contextFollowup'] as $key)
+            if (is_bool($entry[$key]??null)) $summary[$key]=$entry[$key];
+        if (is_string($entry['prodSourceSha256']??null) && preg_match('/^[a-f0-9]{64}$/D',$entry['prodSourceSha256']))
+            $summary['prodRevision']=substr($entry['prodSourceSha256'],0,12);
+        if ($transcript) {
+            $summary['frageslot']=self::lastAlexaText($entry['frageslot']??'',160);
+            $summary['tested']=array_values(array_unique(array_filter(array_map(
+                static fn($value): string => self::lastAlexaText($value,70), array_slice((array)($entry['candidates']??[]),0,3)))));
+        }
+        $summary=array_filter($summary,static fn($value):bool=>$value!==''&&$value!==[]);
+        IPS_LogMessage('Alexa','IAH.Request '.json_encode($summary,
+            JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR));
     }
 
     /**
@@ -137,6 +168,10 @@ trait IAHLastAlexaInteractionTrait
             }
             $this->writeAlexaDiagnosticString($diag, 'iahLastVariableAction', json_encode(
                 $snapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+            $logSnapshot=['instance'=>$this->InstanceID]+$snapshot;
+            if (!$this->ReadPropertyBoolean('VoiceRouterStoreTranscript')) unset($logSnapshot['value']);
+            IPS_LogMessage('Alexa','IAH.VariableAction '.json_encode($logSnapshot,
+                JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
         } finally {
             if ($useLock) IPS_SemaphoreLeave($lock);
         }

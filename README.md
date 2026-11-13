@@ -53,6 +53,16 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
   Die KI darf das geprüfte Ergebnis formulieren, aber nicht die Auswahl
   der Sensoren oder den Zeitpunkt ändern.
 
+- **Kompaktes Alexa-Protokoll und Ortsrückfrage (V3.8.15)**
+  Die bestehende Variable **Alexa-Meldungen (letzte 500)** enthält jetzt
+  kompakte `IAH.Request`-Zeilen mit Intent, erkanntem Wortlaut (bei aktiver
+  Transkriptoption), Regel und PROD-Stand, Antwort, Ergebnis und Dauer.
+  Mehrfach ausgegebene Slot-Strukturen und große Renderer-Daten werden
+  im kopierbaren Export ausgelassen. Die Variable behält ihre Objekt-ID.
+  Bei einem unklaren Ortswechsel wie „Und inge?“ fragt der Skill lokal
+  „Welchen Raum oder welche Etage meinst du?“. Die ursprüngliche Frage
+  bleibt für die Antwort in derselben Alexa-Sitzung erhalten.
+
 - **Alexa-Intents synchronisieren (V3.8.14)**
   In der IPSAlexaHaussteuerung-Instanz den Abschnitt **Alexa-Intents synchronisieren**
   öffnen, die vorhandene GetHaus-Instanz wählen und das vollständige

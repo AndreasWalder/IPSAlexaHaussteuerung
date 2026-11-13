@@ -228,6 +228,8 @@ jobs:
         run: php tests/test_voice_route_priority.php
       - name: Test copyable Alexa 500-message buffer and EUR conversion
         run: php tests/test_alexa_log_buffer_eur.php
+      - name: Test copyable Alexa request diagnostics and transcript privacy
+        run: php tests/test_alexa_request_diagnostics_v3815.php
       - name: Test Web API for Games Kamera/Energie HTTPS and iframe diagnostics
         run: php tests/test_external_html_diagnostics.php
       - name: Test Alexa Kachelvisualisierung voice command and separate diagnostic route
