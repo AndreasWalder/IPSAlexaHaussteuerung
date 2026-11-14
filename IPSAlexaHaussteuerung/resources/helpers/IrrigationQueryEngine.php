@@ -49,6 +49,7 @@ final class IAHIrrigationQuery
      * by itself. Analog deadband holds the known previous state. */
     public static function edges(array $rows,array $signal,int $start,int $end): array
     {
+        if (($signal['mode']??'')==='temperatureRise')return self::temperatureRises($rows,$signal,$start,$end);
         $states=[];$previous=null;$last=null;$count=0;
         usort($rows,static fn(array $a,array $b):int=>(int)($a['TimeStamp']??0)<=>(int)($b['TimeStamp']??0));
         foreach ($rows as $r) {
@@ -68,6 +69,47 @@ final class IAHIrrigationQuery
             $previous=$state;
         }
         return ['count'=>$count,'last'=>$last,'samples'=>count($states),'baselineKnown'=>self::hasBaseline($states,$start)];
+    }
+
+    private static function temperatureRises(array $rows,array $signal,int $start,int $end): array
+    {
+        $rise=(float)($signal['rise']??0);$window=(int)($signal['seconds']??0);
+        $samples=[];
+        foreach ($rows as $row) {
+            $ts=(int)($row['TimeStamp']??0);$value=$row['Value']??null;
+            if ($ts<=0 || $ts>$end || $ts<$start-$window || !is_numeric($value) || !is_finite((float)$value))continue;
+            $value=(float)$value;
+            $samples[$ts]=array_key_exists($ts,$samples) && $samples[$ts]!==$value?null:$value;
+        }
+        ksort($samples,SORT_NUMERIC);
+        $count=0;$last=null;$previous=null;$peak=null;$minima=[];$head=0;$baseline=false;
+        foreach ($samples as $ts=>$value) {
+            if ($value===null || ($previous!==null && $ts-$previous>$window)) {
+                $peak=null;$minima=[];$head=0;
+            }
+            $previous=$ts;
+            if ($value===null || $rise<=0 || $window<=0)continue;
+            $baseline=$baseline || $ts<$start;
+            if ($peak!==null) {
+                if ($value>$peak-$rise/2) {
+                    $peak=max($peak,$value);
+                    continue;
+                }
+                $peak=null;
+            }
+            while (isset($minima[$head]) && $minima[$head][0]<$ts-$window)$head++;
+            if (isset($minima[$head]) && $value-$minima[$head][1]+1e-9>=$rise) {
+                if ($ts>=$start) {
+                    $count++;$last=$ts;
+                }
+                $peak=$value;$minima=[];$head=0;
+                continue;
+            }
+            while (count($minima)>$head && $minima[array_key_last($minima)][1]>=$value)array_pop($minima);
+            $minima[]=[$ts,$value];
+        }
+        return ['count'=>$count,'last'=>$last,'samples'=>count(array_filter($samples,static fn($value)=>$value!==null)),
+            'baselineKnown'=>$baseline];
     }
 
     private static function hasBaseline(array $states,int $start): bool
@@ -103,10 +145,12 @@ final class IAHIrrigationQuery
         $base=['count'=>0,'last'=>null,'samples'=>0,'baselineKnown'=>false,'reason'=>''];
         if (!isset($inventory[$id])||!function_exists('AC_GetLoggedValues'))
             return array_replace($base,['reason'=>'not_archived']);
-        $size=400;$rows=[];$cursor=$end;$complete=false;$foundLatest=false;$ambiguousBoundary=false;
+        $thermal=($signal['mode']??'')==='temperatureRise';
+        $size=$thermal?1000:400;$rows=[];$cursor=$end;$complete=false;$foundLatest=false;$ambiguousBoundary=false;
+        $readStart=$thermal?max(1,$start-(int)$signal['seconds']):$start;
         try {
             for ($page=0;$page<12 && microtime(true)<$deadline && $cursor>=max(1,$start);$page++) {
-                $batch=AC_GetLoggedValues($archive,$id,$start,$cursor,$size);
+                $batch=AC_GetLoggedValues($archive,$id,$readStart,$cursor,$size);
                 if (!is_array($batch))throw new RuntimeException('read');
                 $rows=array_merge($rows,$batch);
                 if ($latest && count($batch)>0) {
@@ -122,7 +166,7 @@ final class IAHIrrigationQuery
                 if ($earliest<=0||$earliest>=$cursor){$ambiguousBoundary=true;break;}
                 $cursor=$earliest;
             }
-            if ($complete && !$latest && $start>1 && microtime(true)<$deadline) {
+            if ($complete && !$thermal && !$latest && $start>1 && microtime(true)<$deadline) {
                 $before=AC_GetLoggedValues($archive,$id,0,$start-1,200);
                 if (is_array($before) && $before!==[]) {
                     $rows=array_merge($rows,$before);
@@ -358,7 +402,8 @@ final class IAHIrrigationQuery
         $zone=$zones[0]??null;
         $isHeater=(bool)preg_match('/rohr\s*(begleit\s*)?heiz|heizband|frostschutzheiz/',$q);
         $isPump=(bool)preg_match('/pumpe/',$q);
-        $heaterHistory=$isHeater && preg_match('/wie oft|wie haeufig|einschaltungen|anstieg/',$q);
+        $thermalRequested=$isHeater && preg_match('/temperatur|anstieg|sprung/',$q);
+        $heaterHistory=$isHeater && ($thermalRequested || preg_match('/wie oft|wie haeufig|einschaltungen|angesprungen|hat .*eingeschaltet|wann .*eingeschaltet/',$q));
         $pumpHistory=$isPump && preg_match('/\bzu\s*letzt\b|letzte einschaltung|\bwann\b.*eingeschaltet/',$q);
         $inventory=[];
         if ($heaterHistory || $pumpHistory) {
@@ -377,7 +422,7 @@ final class IAHIrrigationQuery
                     if (($point['type']??-1)===0)$set[$id]=['mode'=>'binary'];
                 }
             }
-            foreach ($set as $id=>$signal) {
+            foreach ($thermalRequested?[]:$set as $id=>$signal) {
                 if (count($log)>=8 || microtime(true)>=$deadline){$errors[]='weitere Signale nicht geprüft';break;}
                 $p=$s['points'][(int)$id]??null;
                 if (!is_array($p)||empty($p['enabled'])||!in_array($p['role']??'',['heaterStatus','heaterSignal'],true)
@@ -391,6 +436,24 @@ final class IAHIrrigationQuery
                         .$n.' '.($n===1?'Einschaltung':'Einschaltungen');
                 } elseif ($a['samples']>0) $errors[]='Kein vollständiger Nachweis für '.self::clean($p['label']);
                 else $errors[]=self::clean($p['label']).' ohne Archivdaten';
+            }
+            if ($rows===[]) {
+                $thermal=(array)($s['historySignals']['heaterTemperature']??[]);
+                $id=(int)($thermal['id']??0);$p=$s['points'][$id]??[];
+                if (($p['role']??'')==='stationTemperature' && !empty($p['enabled']) && ($p['unit']??'')==='°C'
+                    && self::value($p)!==null) {
+                    $a=self::archive($archive,$id,['mode'=>'temperatureRise']+$thermal,$start,$end,$deadline,false,$inventory);
+                    $n=$a['count'];
+                    $answer=$n>0
+                        ?($a['reason']!==''?'Mindestens ':'').$n.($n===1?' schneller Temperaturanstieg':' schnelle Temperaturanstiege')
+                            .' bei '.self::clean($p['label']).' '.$label
+                            .($n===1?'. Das ist ein Hinweis auf Heizbetrieb.':'. Das sind Hinweise auf Heizbetrieb.')
+                        :($a['samples']<2?'Für die Temperaturauswertung fehlen ausreichend Archivwerte.':
+                            'In den ausgewerteten Temperaturwerten wurde kein schneller Anstieg erkannt.');
+                    return ['answer'=>$answer,'diagnostics'=>$diag+['operation'=>'heater_temperature_rises','id'=>$id,'archive'=>$a]];
+                }
+                if ($thermalRequested)return ['answer'=>'Für die Rohrbegleitheizung ist keine Stationstemperatur zur Verlaufsauswertung zugeordnet.',
+                    'diagnostics'=>$diag+['operation'=>'heater_temperature_rises','reason'=>'no_sensor']];
             }
             $answer=$rows===[]?($errors===[]?'Für die Rohrbegleitheizung ist kein eindeutiges Archivsignal zugeordnet.':implode('. ',$errors).'.')
                 :implode('. ',array_merge($rows,$errors)).' '.$label.'.';
