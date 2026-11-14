@@ -102,6 +102,8 @@ final class RCCSystemTreeDiscovery
         }
         if ($type===0 && preg_match('/winter\s*(betrieb|modus)|sommer\s*winter|frost\s*(betrieb|modus)/',$s))
             return ['winter','winterMode',0];
+        if (in_array($type,[1,2],true) && $unit==='°C' && preg_match('/aussen\s*(?:temperatur|sensor)|outdoor\s*temperature/',$s))
+            return ['climate','outdoorTemperature',0];
         if ($unit==='°C' || preg_match('/temperatur|temperature/',$s)) {
             if (in_array($type,[1,2],true)&&!preg_match('/soll|grenz|schwell|minimal|maximal/',$s))
                 return ['winter','stationTemperature',0];
@@ -124,7 +126,10 @@ final class RCCSystemTreeDiscovery
             }
             if (preg_match('/\b(?:status|rueckmeldung)\b/',$context))return ['zones','zoneStatus',$zone];
         }
-        if (preg_match('/bodenfeucht|soil\s*moisture/',$context))return ['climate','soilMoisture',0];
+        if (preg_match('/\b(?:batterie|battery)\b/',$s) && preg_match('/bodenfeucht|soil\s*moisture|regensensor/',$context))
+            return ['climate','sensorBattery',0];
+        if (preg_match('/regen\s*sensor|rain\s*sensor/',$s))return ['climate','rainSensor',0];
+        if (preg_match('/bodenfeucht|soil\s*moisture/',$context))return ['climate','soilMoisture',$zone];
         if (preg_match('/regen|luftfeucht|uv\s*index/',$s))return ['climate','weather',0];
         if ($unit==='W')return ['climate','power',0];
         return ['unknown','unknown',0];
@@ -175,7 +180,7 @@ final class RCCSystemTreeDiscovery
         if (!in_array((int)$obj['ObjectType'],[0,1],true))throw new RuntimeException('Bitte eine Kategorie oder Instanz auswählen.');
         $rootName=self::label((string)$obj['ObjectName']);
         $queue=[[$root,0,'','',true,'root',0]];
-        $points=[];$seen=[];$controllers=[];$scripts=[];$events=[];$actuators=[];$notes=[];$visited=0;
+        $points=[];$seen=[];$controllers=[];$scripts=[];$events=[];$actuators=[];$zoneNames=[];$notes=[];$visited=0;
         for ($head=0;isset($queue[$head]) && $visited<900;$head++) {
             [$id,$depth,$path,$alias,$expand,$evidence,$hops]=$queue[$head];
             if ($id<=0 || !IPS_ObjectExists($id))continue;
@@ -206,6 +211,10 @@ final class RCCSystemTreeDiscovery
                     if (function_exists('IPS_GetConfiguration')) {
                         $conf=json_decode((string)IPS_GetConfiguration($id),true);
                         foreach (is_array($conf)?$conf:[] as $prop=>$target) {
+                            if (is_string($target) && preg_match('/^ZoneName(10|[1-9])$/D',$prop,$zoneMatch)) {
+                                $zoneNames[$id][(int)$zoneMatch[1]]=self::label($target);
+                                continue;
+                            }
                             if (!is_int($target)||$target<=0||!preg_match('/^(PumpeAktorID|AktorID([1-9][0-9]?))$/D',$prop,$m))continue;
                             if (!IPS_ObjectExists($target))continue;
                             $actuators[$id][$prop]=$target;
@@ -318,6 +327,10 @@ final class RCCSystemTreeDiscovery
                 unset($point);
             }
         }
+        if (count($controllers)===1) {
+            $zoneNames=($zoneNames[array_key_first($controllers)]??[])+[11=>'Nebenstelle'];
+            ksort($zoneNames,SORT_NUMERIC);
+        } else $zoneNames=[];
         if (count($scripts)>=30)$notes[]='Maximal 30 Skripte geprüft.';
         if (isset($queue[$head]))$notes[]='Scanlimit erreicht. Weitere Objekte fehlen.';
         ksort($points,SORT_NUMERIC);ksort($controllers,SORT_NUMERIC);ksort($scripts,SORT_NUMERIC);ksort($events,SORT_NUMERIC);
@@ -331,7 +344,8 @@ final class RCCSystemTreeDiscovery
         if ($points===[])throw new RuntimeException('Keine Variablen unter dieser Wurzel gefunden.');
         return ['version'=>1,'provider'=>'ObjectTreeIrrigation','sourceRootId'=>$root,'title'=>$rootName,
             'domain'=>'bewaesserung','kiEnabled'=>true,'points'=>$points,'controllers'=>array_keys($controllers),
-            'scripts'=>$scripts,'events'=>$events,'actuators'=>$actuators,'notes'=>array_values(array_unique($notes)),'historySignals'=>[],
+            'scripts'=>$scripts,'events'=>$events,'actuators'=>$actuators,'zoneNames'=>$zoneNames,
+            'notes'=>array_values(array_unique($notes)),'historySignals'=>[],
             'voiceActions'=>[],'winterFromMonth'=>11,'winterUntilMonth'=>3];
     }
 }

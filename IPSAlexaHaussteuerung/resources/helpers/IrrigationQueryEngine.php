@@ -162,7 +162,8 @@ final class IAHIrrigationQuery
         foreach (self::points($system,$role,$zone) as $p) {
             $v=self::value($p);
             if (is_int($v)||is_float($v))$entries[]=self::clean($p['label']).' '.self::number($v)
-                .match($role){'stationTemperature'=>' Grad','soilMoisture'=>' Prozent',default=>' '.($p['unit']??'')};
+                .match($role){'stationTemperature','outdoorTemperature'=>' Grad',
+                    'soilMoisture','rainSensor','sensorBattery'=>' Prozent',default=>' '.($p['unit']??'')};
         }
         return $entries;
     }
@@ -298,11 +299,11 @@ final class IAHIrrigationQuery
         $q=self::norm($text);
         if ($q===''||preg_match('/^(?:oeffne|starte|stoppe|schalte|aktiviere|deaktiviere|bewaessere)\b/',$q)
             || in_array($q,['bewaesserung','gartenbewaesserung'],true)||self::systems($catalog)===[])return false;
-        $topic=preg_match('/bewae?sserung|garten\s*pumpe|pumpenschacht|rohr\s*(begleit\s*)?heiz|heizband|bodenfeucht|frostschutz/',$q);
+        $topic=preg_match('/bewae?sserung|garten\s*pumpe|pumpenschacht|rohr\s*(begleit\s*)?heiz|heizband|bodenfeucht|frostschutz|\bregensensor\b/',$q);
         $stations=preg_match('/(?:kalt|warm|temperatur).*station|station.*(?:kalt|warm|temperatur)/',$q);
         $pump=preg_match('/\bpumpe\b/',$q)&&preg_match('/\b(?:zuletzt|wann|laeuft|status|ein|aus)\b/',$q);
         $zone=preg_match('/\bkreis \d+\b/',$q)&&!preg_match('/heizkreis|heizung|stromkreis/',$q);
-        $context=$domain==='bewaesserung' && preg_match('/(?:\b(?:kreis|kreise|ventil|ventile|restlaufzeit)\b|\b(?:noch )?alles aus\b|^wie geht es\b|wie feucht|trocken)/',$q);
+        $context=$domain==='bewaesserung' && preg_match('/(?:\b(?:kreis|kreise|ventil|ventile|restlaufzeit|aussentemperatur|batterie[n]?|akkustand)\b|\b(?:noch )?alles aus\b|^wie geht es\b|wie feucht|trocken|temperatur draussen)/',$q);
         $soil=preg_match('/\b(?:wie feucht|boden am trockensten|welch\w* (?:beet|bereich|kreis).*trocken)\b/',$q);
         $knownStation=false;
         if (preg_match('/\b(?:kalt|warm|temperatur)\b/',$q)) {
@@ -335,6 +336,23 @@ final class IAHIrrigationQuery
         $s=reset($systems);$now=$now??new DateTimeImmutable();
         $mode=self::mode($s,$now)+['until'=>(int)($s['winterUntilMonth']??3)];
         $diag=['root'=>(int)$s['sourceRootId'],'winter'=>$mode['winter'],'modeSource'=>$mode['source'],'points'=>count((array)$s['points'])];
+        $weatherRole=match (true) {
+            preg_match('/\b(?:batterie[n]?|akkustand)\b/',$q)===1=>'sensorBattery',
+            preg_match('/\bregensensor\b/',$q)===1=>'rainSensor',
+            preg_match('/\baussen\s*temperatur\b|\btemperatur draussen\b/',$q)===1=>'outdoorTemperature',
+            default=>null,
+        };
+        if ($weatherRole!==null) {
+            $points=self::points($s,$weatherRole);
+            $specific=array_filter($points,static function (array $p) use ($q): bool {
+                $name=preg_replace('/^batterie\s+/','',self::norm($p['label']))??'';
+                return $name!=='' && str_contains(' '.$q.' ',' '.$name.' ');
+            });
+            if ($specific!==[])$points=$specific;
+            $entries=self::entries(['points'=>$points],$weatherRole);
+            return ['answer'=>$entries===[]?'Kein passender Messwert zugeordnet.':implode('. ',$entries).'.',
+                'diagnostics'=>$diag+['operation'=>$weatherRole,'count'=>count($entries)]];
+        }
         $zones=self::zoneMatches($s,$q);
         if (count($zones)>1)return ['answer'=>'Welchen Bewässerungskreis meinst du?','diagnostics'=>$diag+['reason'=>'multiple_zones']];
         $zone=$zones[0]??null;

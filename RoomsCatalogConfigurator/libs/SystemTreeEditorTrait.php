@@ -219,8 +219,8 @@ trait RCCSystemTreeEditorTrait
     {
         $numeric=in_array($p['type'],[1,2],true);
         return match($role) {
-            'stationTemperature'=>$numeric&&$p['unit']==='°C',
-            'soilMoisture'=>$numeric&&$p['unit']==='%',
+            'stationTemperature','outdoorTemperature'=>$numeric&&$p['unit']==='°C',
+            'soilMoisture','sensorBattery','rainSensor'=>$numeric&&$p['unit']==='%',
             'heaterSignal'=>$numeric&&in_array($p['unit'],['','W','kW','A','mA'],true),
             'heaterStatus','winterMode','pumpStatus','zoneStatus'=>$p['type']===0,
             'nextStart'=>$p['type']===1,
@@ -240,6 +240,7 @@ trait RCCSystemTreeEditorTrait
             $key='irrigation_'.$root;$old=$catalog['dataSources'][$key]??null;
             if ($old!==null && (!is_array($old)||($old['provider']??'')!=='ObjectTreeIrrigation'||($old['sourceRootId']??0)!==$root))
                 throw new RuntimeException('Ein anderer Eintrag belegt den Anlagenschlüssel.');
+            $source['excludedPoints']=(array)($old['excludedPoints']??[]);
             if ($withAI)foreach ($snap['suggestions'] as $pid=>$s) {
                 $p=&$source['points'][$pid];
                 $p['role']=$s['role'];$p['zone']=$s['zone'];$p['suggestedByAI']=true;
@@ -259,7 +260,7 @@ trait RCCSystemTreeEditorTrait
                     continue;
                 }
                 if (!is_array($next)||!self::systemTreeSamePoint($p,$next))continue;
-                if (!empty($p['manualEdit'])) {
+                if (!empty($p['manualEdit']) && (($p['role']??'unknown')!=='unknown' || $next['role']==='unknown')) {
                     foreach (['role','zone','group','enabled','manualEdit','manualUnit'] as $field) {
                         if (isset($p[$field]))$source['points'][$pid][$field]=$p[$field];
                     }
@@ -278,6 +279,7 @@ trait RCCSystemTreeEditorTrait
             $pid=(int)($old['historySignals']['pumpId']??0);
             if ($pid>0&&isset($source['points'][$pid])&&self::systemTreeSamePoint($old['points'][$pid]??[],$source['points'][$pid]))
                 $source['historySignals']['pumpId']=$pid;
+            foreach ($source['excludedPoints'] as $pid=>$label)self::removeSystemTreePoint($source,(int)$pid);
             $catalog['dataSources'][$key]=$source;
             $backup=$this->saveSystemTreeEdit($id,$original,$catalog);
             $this->WriteAttributeString('SystemTreePreview','{}');
@@ -347,14 +349,15 @@ trait RCCSystemTreeEditorTrait
             if (($source['provider']??'')!=='ObjectTreeIrrigation')throw new RuntimeException('Anlage fehlt in EDIT.');
             if (isset($source['points'][$pid]))throw new RuntimeException('Die Variable ist bereits in der Liste der Anlage enthalten.');
             $p=RCCSystemTreeDiscovery::supplementalPoint($pid,$label);
-            if ($role==='stationTemperature' && $p['unit']==='')$p['unit']='°C';
-            if ($role==='soilMoisture' && $p['unit']==='')$p['unit']='%';
+            if (in_array($role,['stationTemperature','outdoorTemperature'],true) && $p['unit']==='')$p['unit']='°C';
+            if (in_array($role,['soilMoisture','rainSensor','sensorBattery'],true) && $p['unit']==='')$p['unit']='%';
             if ($role!=='unknown' && (!isset(self::SYSTEM_TREE_SUPPLEMENTAL_ROLES[$role]) || !self::systemTreeRoleMatches($p,$role)))
                 throw new RuntimeException('Rolle, Datentyp oder Maßeinheit passen nicht zusammen.');
             $p['role']=$role;
             $p['group']=self::SYSTEM_TREE_SUPPLEMENTAL_ROLES[$role]??'unknown';
             $p['enabled']=$role!=='unknown';
             $source['points'][$pid]=$p;
+            unset($source['excludedPoints'][$pid]);
             $this->saveSystemTreeEdit($id,$old,$catalog);
             echo 'Variable in EDIT ergänzt. Bitte das Zahnrad erneut öffnen.';
         } catch (Throwable $e) {echo $e->getMessage();}
@@ -365,19 +368,117 @@ trait RCCSystemTreeEditorTrait
         try {
             [$id,$old,$catalog]=$this->systemTreeEditContext();
             $source=&$catalog['dataSources'][$key];
-            if (($source['provider']??'')!=='ObjectTreeIrrigation' || empty($source['points'][$pid]['manualSource']))
-                throw new RuntimeException('Nur manuell hinzugefügte Variablen können hier entfernt werden.');
-            unset($source['points'][$pid],$source['historySignals']['heater'][$pid]);
-            if ((int)($source['historySignals']['pumpId']??0)===$pid)unset($source['historySignals']['pumpId']);
+            if (($source['provider']??'')!=='ObjectTreeIrrigation' || !isset($source['points'][$pid]))
+                throw new RuntimeException('Bitte einen Datenpunkt der Anlage auswählen.');
+            $source['excludedPoints'][$pid]=$source['points'][$pid]['label'];
+            self::removeSystemTreePoint($source,$pid);
             $this->saveSystemTreeEdit($id,$old,$catalog);
             echo 'Variable aus EDIT entfernt. Bitte das Zahnrad erneut öffnen.';
+        } catch (Throwable $e) {echo $e->getMessage();}
+    }
+
+    private static function removeSystemTreePoint(array &$source,int $pid): void
+    {
+        unset($source['points'][$pid],$source['historySignals']['heater'][$pid]);
+        if ((int)($source['historySignals']['pumpId']??0)===$pid)unset($source['historySignals']['pumpId']);
+        $source['voiceActions']=array_values(array_diff((array)($source['voiceActions']??[]),[$pid]));
+    }
+
+    public function RestoreSystemTreeVariable(string $key,int $pid): void
+    {
+        try {
+            [$id,$old,$catalog]=$this->systemTreeEditContext();
+            $source=&$catalog['dataSources'][$key];
+            if (($source['provider']??'')!=='ObjectTreeIrrigation' || !isset($source['excludedPoints'][$pid]))
+                throw new RuntimeException('Bitte einen ausgeschlossenen Datenpunkt auswählen.');
+            unset($source['excludedPoints'][$pid]);
+            $this->saveSystemTreeEdit($id,$old,$catalog);
+            echo 'Ausschluss aufgehoben. Die Anlage neu scannen oder die externe Variable erneut ergänzen.';
+        } catch (Throwable $e) {echo $e->getMessage();}
+    }
+
+    /** Installation-specific assignment, offered only on the matching controller. */
+    private const GARDEN_52811_SENSORS=[
+        15690=>['stationTemperature','Pumpenschacht oben',0,'pumpenschacht oben'],
+        42306=>['stationTemperature','Pumpenschacht unten',0,'pumpenschacht unten'],
+        10516=>['stationTemperature','Verteilerkasten',0,'verteilerkasten'],
+        44047=>['outdoorTemperature','Außentemperatur',0,'aussensensor'],
+        44566=>['soilMoisture','Beet und Tröge',10,'beet und troege'],
+        21340=>['soilMoisture','Eckbeet Ost',2,'eckbeet ost'],
+        25030=>['soilMoisture','Hecke Ost',4,'hecke ost'],
+        47490=>['soilMoisture','Hecke Süd',0,'hecke sued'],
+        47887=>['soilMoisture','Rasen SüdWest Mitte',9,'rasen suedwest mitte'],
+        10737=>['soilMoisture','Rasen Ost',1,'rasen ost'],
+        49076=>['soilMoisture','Beet unten Ersatz',0,'beet unten ersatz'],
+        38644=>['soilMoisture','Bodenfeuchte Kanal 5',0,'bodenfeuchte 5',false],
+        31242=>['soilMoisture','Bodenfeuchte Kanal 6',0,'bodenfeuchte 6',false],
+        12898=>['rainSensor','Regensensor extern',0,'regensensor extern'],
+        56721=>['sensorBattery','Batterie Beet und Tröge',10,'beet und troege'],
+        47807=>['sensorBattery','Batterie Eckbeet Ost',2,'eckbeet ost'],
+        40021=>['sensorBattery','Batterie Hecke Ost',4,'hecke ost'],
+        16564=>['sensorBattery','Batterie Hecke Süd',0,'hecke sued'],
+        36149=>['sensorBattery','Batterie Kanal 6',0,'bodenfeuchtesensor 6',false],
+        38027=>['sensorBattery','Batterie Rasen SüdMitte',0,'rasen suedmitte'],
+        21053=>['sensorBattery','Batterie Rasen Ost',1,'rasen ost'],
+        50066=>['sensorBattery','Batterie Beet unten Ersatz',0,'beet unten ersatz'],
+        25140=>['sensorBattery','Batterie Regensensor',0,'regensensor extern'],
+    ];
+
+    public function ApplyGarden52811Sensors(string $key): void
+    {
+        try {
+            [$id,$old,$catalog]=$this->systemTreeEditContext();
+            $source=&$catalog['dataSources'][$key];
+            if (($source['provider']??'')!=='ObjectTreeIrrigation' || !in_array(52811,(array)($source['controllers']??[]),true)
+                || !IPS_InstanceExists(52811)
+                || strtoupper((string)(IPS_GetInstance(52811)['ModuleInfo']['ModuleID']??''))!==RCCSystemTreeDiscovery::CONTROLLER)
+                throw new RuntimeException('Die Sensorzuordnung gehört zur Bewässerungsinstanz #52811.');
+            $configuration=json_decode((string)IPS_GetConfiguration(52811),true);
+            $zoneNames=[1=>'rasen ost',2=>'eckbeet ost',4=>'hecke ost',9=>'rasen suedwest mitte',10=>'beet und troege'];
+            $missing=[];$count=0;
+            foreach (self::GARDEN_52811_SENSORS as $pid=>$entry) {
+                [$role,$label,$zone,$expected]=$entry;
+                if (isset($source['excludedPoints'][$pid]))continue;
+                if (!IPS_VariableExists($pid) || !str_contains(RCCSystemTreeDiscovery::norm((string)IPS_GetObject($pid)['ObjectName']),$expected)) {
+                    $missing[]=$pid;
+                    continue;
+                }
+                if (!in_array((int)IPS_GetVariable($pid)['VariableType'],[1,2],true)) {
+                    $missing[]=$pid;
+                    continue;
+                }
+                $p=RCCSystemTreeDiscovery::supplementalPoint($pid,$label);
+                if ($p['unit']==='')$p['unit']=in_array($role,['stationTemperature','outdoorTemperature'],true)?'°C':'%';
+                if (!self::systemTreeRoleMatches($p,$role)) {
+                    $missing[]=$pid;
+                    continue;
+                }
+                if ($zone>0 && !str_contains(RCCSystemTreeDiscovery::norm((string)($configuration['ZoneName'.$zone]??'')),$zoneNames[$zone]))
+                    $zone=0;
+                $source['points'][$pid]=array_replace($p,['role'=>$role,'zone'=>$zone,
+                    'group'=>self::SYSTEM_TREE_SUPPLEMENTAL_ROLES[$role],'enabled'=>$entry[4]??true]);
+                $count++;
+            }
+            if ($count>0) {
+                foreach ([56338=>25030,42523=>47490,47297=>40021,49553=>16564] as $link=>$target) {
+                    if (isset($source['points'][$target],$source['points'][$link]) && IPS_ObjectExists($link)
+                        && (int)IPS_GetObject($link)['ObjectType']===5 && (int)IPS_GetLink($link)['TargetID']===$target) {
+                        $source['excludedPoints'][$link]=$source['points'][$link]['label'];
+                        self::removeSystemTreePoint($source,$link);
+                    }
+                }
+                $this->saveSystemTreeEdit($id,$old,$catalog);
+            }
+            echo $count.' Sensorzuordnungen in EDIT übernommen. Bitte das Zahnrad erneut öffnen.'
+                .($missing===[]?'':' Bitte Objekt-ID, Name und Einheit prüfen: #'.implode(', #',$missing).'.');
         } catch (Throwable $e) {echo $e->getMessage();}
     }
 
     private const SYSTEM_TREE_SUPPLEMENTAL_ROLES=[
         'unknown'=>'unknown','stationTemperature'=>'winter','soilMoisture'=>'climate',
         'heaterStatus'=>'winter','heaterSignal'=>'winter','winterMode'=>'winter',
-        'pumpStatus'=>'pump','nextStart'=>'schedule',
+        'pumpStatus'=>'pump','nextStart'=>'schedule','outdoorTemperature'=>'climate',
+        'rainSensor'=>'climate','sensorBattery'=>'climate',
     ];
 
     public function SaveSystemTreePoint(string $key,int $pid,string $json): void
@@ -397,10 +498,9 @@ trait RCCSystemTreeEditorTrait
                 $p['unit']=$role==='stationTemperature'?'°C':'%';
                 $p['manualUnit']=$p['unit'];
             }
-            if ($role!==$p['role'] && (!in_array($p['role'],['unknown','heaterStatus','heaterSignal','heaterOther',
-                'stationTemperature','soilMoisture','winterMode','pumpStatus','zoneStatus','nextStart'],true)
+            if ($role!==$p['role'] && (!in_array($p['role'],[...array_keys(self::SYSTEM_TREE_SUPPLEMENTAL_ROLES),'heaterOther','zoneStatus'],true)
                 || !self::systemTreeRoleMatches($p,$role)))throw new RuntimeException('Diese Rolle passt nicht zum Datenpunkttyp.');
-            if ($zone<0||$zone>99||($zone!==$p['zone']&&!in_array($role,['soilMoisture','zoneStatus','nextStart'],true))
+            if ($zone<0||$zone>99||($zone!==$p['zone']&&!in_array($role,['soilMoisture','sensorBattery','zoneStatus','nextStart'],true))
                 || ($role==='zoneStatus'&&$zone<1))throw new RuntimeException('Kreiszuordnung ungültig.');
             if ($options['enabled'] && ($role==='unknown'||($p['type']===3 && !in_array($role,['pumpInfo','zoneInfo'],true))))
                 throw new RuntimeException('Für Lesezugriff zuerst einen unterstützten Datentyp und eine Rolle auswählen.');
@@ -425,7 +525,8 @@ trait RCCSystemTreeEditorTrait
             $p['role']=$role;$p['zone']=$zone;$p['enabled']=$options['enabled'];$p['manualEdit']=true;
             $p['group']=match($role){
                 'stationTemperature','winterMode','heaterStatus','heaterSignal'=>'winter',
-                'soilMoisture'=>'climate','pumpStatus'=>'pump','zoneStatus'=>'zones','nextStart'=>'schedule',default=>$p['group']};
+                'soilMoisture','outdoorTemperature','rainSensor','sensorBattery'=>'climate',
+                'pumpStatus'=>'pump','zoneStatus'=>'zones','nextStart'=>'schedule',default=>$p['group']};
             $this->saveSystemTreeEdit($id,$old,$catalog);
             echo 'Datenpunkt in EDIT gespeichert. Bei geöffneter Liste die Anlage erneut öffnen.';
         } catch (Throwable $e) {echo $e->getMessage();}
@@ -455,8 +556,10 @@ trait RCCSystemTreeEditorTrait
             foreach ($s['points'] as $p) {
                 $zone=(int)$p['zone'];
                 if ($p['group']!=='zones' || $zone<1)continue;
-                $zoneNames[$zone]??='Kreis '.$zone;
-                if ($p['role']==='zoneStatus' && preg_match('/\bKreis\s+'.$zone.'\s+(.+?)(?:\s*\([^)]*\))?$/iu',$p['label'],$match))
+                $configured=trim((string)($s['zoneNames'][$zone]??''));
+                $zoneNames[$zone]??=$configured===''?'Kreis '.$zone:
+                    (preg_match('/^Kreis\s+'. $zone .'\b/iu',$configured)?$configured:'Kreis '.$zone.' · '.$configured);
+                if ($configured==='' && $p['role']==='zoneStatus' && preg_match('/\bKreis\s+'.$zone.'\s+(.+?)(?:\s*\([^)]*\))?$/iu',$p['label'],$match))
                     $zoneNames[$zone]='Kreis '.$zone.' · '.$match[1];
                 if ($zone===11 && stripos($p['label'],'Nebenstelle')!==false)$zoneNames[$zone]='Kreis 11 · Nebenstelle';
             }
@@ -494,7 +597,7 @@ trait RCCSystemTreeEditorTrait
                 $name='SystemPoint_'.$group;
                 $v='$'.$name;
                 $roles=array_values(array_unique(array_merge(array_column($rows,'role'),
-                    ['unknown','stationTemperature','soilMoisture','heaterStatus','heaterSignal','winterMode','pumpStatus','zoneStatus','nextStart'])));
+                    [...array_keys(self::SYSTEM_TREE_SUPPLEMENTAL_ROLES),'zoneStatus'])));
                 $items[]=['type'=>'ExpansionPanel','caption'=>$title.' ('.count($rows).')','expanded'=>$group==='pump','items'=>[
                     ['type'=>'List','name'=>$name,'caption'=>$title,'rowCount'=>min(12,max(3,count($rows))),
                         'loadValuesFromConfiguration'=>false,'add'=>false,'delete'=>false,'values'=>$rows,
@@ -535,17 +638,32 @@ trait RCCSystemTreeEditorTrait
                 ['type'=>'Button','caption'=>'Variable nach EDIT ergänzen','onClick'=>
                     'RCC_AddSystemTreeVariable($id, '.$qkey.', (int)$SystemAdditionalVariable, (string)$SystemAdditionalRole, (string)$SystemAdditionalLabel);'],
             ];
-            $manualOptions=[['caption'=>'Bitte auswählen','value'=>0]];
-            foreach ($s['points'] as $p) {
-                if (!empty($p['manualSource']))$manualOptions[]=['caption'=>$p['label'].' #'.$p['id'],'value'=>$p['id']];
-            }
-            if (count($manualOptions)>1) {
-                $addItems[]=['type'=>'Select','name'=>'SystemRemoveVariable','caption'=>'Manuell hinzugefügte Variable',
-                    'value'=>0,'options'=>$manualOptions];
-                $addItems[]=['type'=>'Button','caption'=>'Zuordnung aus EDIT entfernen','onClick'=>
-                    'RCC_RemoveSystemTreeVariable($id, '.$qkey.', (int)$SystemRemoveVariable);'];
-            }
             $items[]=['type'=>'ExpansionPanel','caption'=>'Variable ergänzen','expanded'=>false,'items'=>$addItems];
+            if (in_array(52811,(array)($s['controllers']??[]),true)) {
+                $items[]=['type'=>'Button','caption'=>'Sensorzuordnung für Anlage #52811 übernehmen','onClick'=>
+                    'RCC_ApplyGarden52811Sensors($id, '.$qkey.');'];
+            }
+            $pointOptions=[['caption'=>'Bitte auswählen','value'=>0]];
+            foreach ($s['points'] as $p) {
+                $pointOptions[]=['caption'=>$p['label'].' #'.$p['id'],'value'=>$p['id']];
+            }
+            $removeItems=[
+                ['type'=>'Label','caption'=>'Ausschlüsse gelten auch beim nächsten Scan. Die IP-Symcon-Variable und ihr Archiv bleiben bestehen.'],
+                ['type'=>'Select','name'=>'SystemRemoveVariable','caption'=>'Datenpunkt aus der Anlage','value'=>0,'options'=>$pointOptions],
+                ['type'=>'Button','caption'=>'Datenpunkt aus EDIT entfernen','onClick'=>
+                    'RCC_RemoveSystemTreeVariable($id, '.$qkey.', (int)$SystemRemoveVariable);'],
+            ];
+            $excludedOptions=[['caption'=>'Bitte auswählen','value'=>0]];
+            foreach ((array)($s['excludedPoints']??[]) as $pid=>$label) {
+                $excludedOptions[]=['caption'=>$label.' #'.$pid,'value'=>(int)$pid];
+            }
+            if (count($excludedOptions)>1) {
+                $removeItems[]=['type'=>'Select','name'=>'SystemRestoreVariable','caption'=>'Ausgeschlossener Datenpunkt',
+                    'value'=>0,'options'=>$excludedOptions];
+                $removeItems[]=['type'=>'Button','caption'=>'Ausschluss aufheben','onClick'=>
+                    'RCC_RestoreSystemTreeVariable($id, '.$qkey.', (int)$SystemRestoreVariable);'];
+            }
+            $items[]=['type'=>'ExpansionPanel','caption'=>'Datenpunkte entfernen und wieder zulassen','expanded'=>false,'items'=>$removeItems];
             if (!empty($s['scripts'])) {
                 $items[]=['type'=>'ExpansionPanel','caption'=>'Erkannte Skriptbezüge','expanded'=>false,'items'=>array_map(
                     static fn(array $x):array=>['type'=>'Label','caption'=>$x['label'].' #'.$x['id'].' · '.$x['references'].' statische Referenzen'],
@@ -568,6 +686,7 @@ trait RCCSystemTreeEditorTrait
     {
         return match($role){
             'stationTemperature'=>'Stationstemperatur','soilMoisture'=>'Bodenfeuchte','heaterSignal'=>'Heizung: Messsignal',
+            'outdoorTemperature'=>'Außentemperatur','rainSensor'=>'Regensensor','sensorBattery'=>'Sensorbatterie',
             'heaterStatus'=>'Heizung: Rückmeldung','winterMode'=>'Winterbetrieb (Ein/Aus)','pumpStatus'=>'Pumpe: Rückmeldung',
             'zoneStatus'=>'Kreis: Status','nextStart'=>'Nächster Start (Zeitstempel)','unknown'=>'Ungeklärt',
             'pumpManual'=>'Pumpe manuell','pumpInfo'=>'Pumpeninfo','pumpSetting'=>'Pumpeneinstellung','automatic'=>'Anlagenautomatik',
