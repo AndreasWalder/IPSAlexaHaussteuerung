@@ -59,6 +59,11 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
   Kreise, Bodenfeuchte, Winter und Zeitpläne in einer gruppierten Anlagenansicht.
   Alexa kann den saisonalen Status abfragen, archivierte Einschaltungen der
   Rohrbegleitheizung zählen und das letzte Pumpen-Einschaltdatum nennen.
+  Seit V3.8.17 lädt der Zahnrad-Dialog im Symcon-Listenformat und der
+  Anlagenbereich zeigt die Gruppen auch ohne Dialog. Der Button **JSON für
+  Analyse exportieren** lädt eine Diagnose für den ausgewählten Hauptordner
+  herunter. Verlinkte Sensoren werden über die tatsächlichen Symcon-Linktypen
+  und Eltern-IDs erkannt.
   [Einrichtung und Beispiele](docs/Bewaesserung_Objektbaum_V3816.md)
 
 - **Kompaktes Alexa-Protokoll und Ortsrückfrage (V3.8.15)**

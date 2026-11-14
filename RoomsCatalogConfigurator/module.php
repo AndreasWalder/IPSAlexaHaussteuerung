@@ -143,6 +143,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('CatalogRestorePreview','{}');
         $this->RegisterAttributeString('HuaweiDataSourcePreview','{}');
         $this->RegisterAttributeString('SystemTreePreview','{}');
+        $this->RegisterAttributeString('SystemTreeLastRoot','0');
         $this->RegisterAttributeString('SystemTreeNotice','Noch kein Anlagen-Scan gestartet.');
         $this->RegisterAttributeString('HuaweiDataSourceReport','');
         $this->RegisterAttributeString('HuaweiDataSourceNotice','Noch kein HuaweiPV-Scan gestartet.');
@@ -6139,7 +6140,7 @@ class RoomsCatalogConfigurator extends IPSModule
         }
 
         $main[]=$this->buildVoiceTestPanel();
-        $main[]=$this->buildSystemTreePanel();
+        $main[]=$this->buildSystemTreePanel($editCatalog,$prodCatalog);
         $huaweiId=$this->ReadPropertyInteger('HuaweiDataSourceInstanceId');
         $huaweiKey='huawei_'.$huaweiId;
         $huaweiEdit=$editCatalog['dataSources'][$huaweiKey]??null;

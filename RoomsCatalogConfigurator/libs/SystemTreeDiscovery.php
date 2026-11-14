@@ -128,7 +128,7 @@ final class RCCSystemTreeDiscovery
         if (!in_array((int)$obj['ObjectType'],[0,1],true))throw new RuntimeException('Bitte eine Kategorie oder Instanz auswählen.');
         $rootName=self::label((string)$obj['ObjectName']);
         $queue=[[$root,0,'','',true,'root',0]];
-        $points=[];$seen=[];$controllers=[];$scripts=[];$events=[];$actuators=[];$notes=[];$visited=0;
+        $points=[];$seen=[];$controllers=[];$scripts=[];$events=[];$actuators=[];$links=[];$notes=[];$visited=0;
         for ($head=0;isset($queue[$head]) && $visited<900;$head++) {
             [$id,$depth,$path,$alias,$expand,$evidence,$hops]=$queue[$head];
             if ($id<=0 || !IPS_ObjectExists($id))continue;
@@ -138,15 +138,16 @@ final class RCCSystemTreeDiscovery
             $ident=(string)($o['ObjectIdent']??'');
             if (preg_match(self::SECRET,$name.' '.$ident.' '.$alias))continue;
             $type=(int)$o['ObjectType'];
-            if (isset($seen[$id][$evidence])) {
-                if ($type===2 && isset($points[$id]) && $alias!=='')$points[$id]['aliases'][]=$alias;
-                continue;
-            }
-            $seen[$id][$evidence]=true;
+            // A second link to the same variable can supply a more specific
+            // alias or group, e.g. an unnamed weather value in Bodenfeuchte.
+            $visitKey=$type===2 && $evidence==='link'?$evidence.'|'.$alias.'|'.$path:$evidence;
+            if (isset($seen[$id][$visitKey]))continue;
+            $seen[$id][$visitKey]=true;
             $visited++;
-            $parent=(int)($o['ObjectParentID']??0);
-            if ($type===5 && $hops<8) {
+            $parent=(int)($o['ParentID']??$o['ObjectParentID']??0);
+            if ($type===6 && $hops<8) {
                 $target=(int)(IPS_GetLink($id)['TargetID']??0);
+                $links[$id]=['id'=>$id,'targetId'=>$target,'label'=>$name,'path'=>$path];
                 if ($target<=0 || !IPS_ObjectExists($target)) {$notes[]='Link #'.$id.' hat kein erreichbares Ziel.';continue;}
                 if ($target===$root)continue;
                 $queue[]=[$target,$depth+1,$path,$alias?:$name,$expand,'link',$hops+1];
@@ -273,7 +274,7 @@ final class RCCSystemTreeDiscovery
         if ($points===[])throw new RuntimeException('Keine Variablen unter dieser Wurzel gefunden.');
         return ['version'=>1,'provider'=>'ObjectTreeIrrigation','sourceRootId'=>$root,'title'=>$rootName,
             'domain'=>'bewaesserung','kiEnabled'=>true,'points'=>$points,'controllers'=>array_keys($controllers),
-            'scripts'=>$scripts,'events'=>$events,'actuators'=>$actuators,'notes'=>array_values(array_unique($notes)),'historySignals'=>[],
+            'scripts'=>$scripts,'events'=>$events,'links'=>$links,'actuators'=>$actuators,'notes'=>array_values(array_unique($notes)),'historySignals'=>[],
             'voiceActions'=>[],'winterFromMonth'=>11,'winterUntilMonth'=>3];
     }
 }
