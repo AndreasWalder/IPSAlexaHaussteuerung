@@ -888,6 +888,19 @@ function iah_rc_light_answer(string $text,array $devices,array $match): array
  * Preview supplies an already parsed catalog snapshot and the same read tools
  * as Alexa. A preview can neither include catalog PHP nor enable write tools.
  */
+/** Keep spoken answers complete when a configured word limit is reached. */
+function iah_rc_limit_voice_answer(string $answer,int $maxWords): string
+{
+    $plain=trim(preg_replace('/\\s+/u',' ',strip_tags($answer))??'');
+    $words=preg_split('/\\s+/u',$plain,-1,PREG_SPLIT_NO_EMPTY)?:[];
+    if(count($words)<=$maxWords)return $plain;
+    $bounded=implode(' ',array_slice($words,0,$maxWords));
+    $sentenceEnd=max((int)strrpos($bounded,'.'),(int)strrpos($bounded,'!'),(int)strrpos($bounded,'?'));
+    if($sentenceEnd>0)return trim(substr($bounded,0,$sentenceEnd+1));
+    if(preg_match('/^(.+?[.!?])(?:\\s|$)/u',$plain,$match))return trim($match[1]);
+    return rtrim($bounded,',;: ').'…';
+}
+
 function iah_rc_voice(
     string $text,array $cfg,?array $previewCatalog=null,?callable $http=null
 ): array
@@ -928,7 +941,8 @@ function iah_rc_voice(
     $wantsArchive=$archiveId>0 && (bool)preg_match(
         '/\b(wann|zuletzt|letzte[rsn]?|wie oft|wie haeufig|wie häufig|verlauf|historie|ereignisse|gestern|pro tag|in den letzten|vorletzte)\b/ui',$text);
     $scope=is_array($cfg['question_scope']??null)?$cfg['question_scope']:null;
-    $maxWords=max(8,min(45,(int)($cfg['max_words']??20)));
+    // Keep Alexa summaries long enough to finish a sentence and include their key values.
+    $maxWords=max(28,min(45,(int)($cfg['max_words']??32)));
     $lastReadResult=null;
     $archiveNeedsLocation=false;
     $archiveReadSucceeded=false;
@@ -1272,9 +1286,9 @@ function iah_rc_voice(
             $calls=$msg['tool_calls']??[];
             if(!$calls){
                 if ($archiveNeedsLocation && !$archiveReadSucceeded && !$wrote) return $costFinish($locationPrompt);
-                $words=preg_split('/\s+/u',trim(strip_tags((string)($msg['content']??''))),-1,PREG_SPLIT_NO_EMPTY)?:[];
-                if(!$words)throw new RuntimeException('Keine Sprachantwort');
-                $answer=implode(' ',array_slice($words,0,$maxWords));
+                $rawAnswer=trim(strip_tags((string)($msg['content']??'')));
+                if($rawAnswer==='')throw new RuntimeException('Keine Sprachantwort');
+                $answer=iah_rc_limit_voice_answer($rawAnswer,$maxWords);
                 if(!$preview)iah_rc_log('answer',['durationMs'=>round((microtime(true)-$started)*1000),'text'=>$answer]);
                 return $costFinish(['handled'=>true,'answer'=>$answer]);
             }
