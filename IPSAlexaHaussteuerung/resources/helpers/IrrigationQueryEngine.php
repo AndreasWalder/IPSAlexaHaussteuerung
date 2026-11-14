@@ -283,7 +283,7 @@ final class IAHIrrigationQuery
         foreach ($zone===null?self::statusPoints($s):[$zone] as $i) {
             $v=self::state($s,'zoneStatus',$i);
             if ($v===true) {
-                $label='Kreis '.$i;
+                $label=$i===11?'Nebenstelle (manuelles Wasserholen / manuelles Gießen)':'Kreis '.$i;
                 $remaining=self::points($s,'remaining',$i);
                 if ($remaining===[] && self::state($s,'automatic')===true)
                     $remaining=self::points($s,'duration',$i);
@@ -296,6 +296,17 @@ final class IAHIrrigationQuery
             } elseif ($v===null)$missing++;
         }
         if ($zone===null)$parts[]=$pump===null?'Pumpenstatus unbekannt':'Pumpe '.($pump?'ein':'aus');
+        $pressurePoints=self::points($s,'pumpPressure');$pressureActive=false;
+        foreach ($pressurePoints as $pressurePoint) {
+            $pressureValue=self::value($pressurePoint);
+            if (is_numeric($pressureValue) && (float)$pressureValue>4) {$pressureActive=true;break;}
+        }
+        $irrigationZones=array_filter(self::statusPoints($s),static fn(int $zone):bool=>$zone!==11);
+        $activeIrrigationZone=false;
+        foreach ($irrigationZones as $irrigationZone) {
+            if (self::state($s,'zoneStatus',$irrigationZone)===true) {$activeIrrigationZone=true;break;}
+        }
+        if ($pressureActive && $activeIrrigationZone)$parts[]='Bewässerung läuft (Pumpendruck über 4 bar und ein Bewässerungskreis aktiv)';
         if ($on!==[])$parts[]='Aktiv: '.implode(', ',$on);
         elseif ($missing===0 && ($zone!==null || self::statusPoints($s)!==[]))
             $parts[]=$zone!==null?'Kreis '.$zone.' ist aus':'alle erfassten Kreise aus';
@@ -343,11 +354,11 @@ final class IAHIrrigationQuery
         $q=self::norm($text);
         if ($q===''||preg_match('/^(?:oeffne|starte|stoppe|schalte|aktiviere|deaktiviere|bewaessere)\b/',$q)
             || in_array($q,['bewaesserung','gartenbewaesserung'],true)||self::systems($catalog)===[])return false;
-        $topic=preg_match('/bewae?sserung|garten\s*pumpe|pumpenschacht|rohr\s*(begleit\s*)?heiz|heizband|bodenfeucht|frostschutz|\bregensensor\b/',$q);
+        $topic=preg_match('/bewae?sserung|garten\s*pumpe|pumpenschacht|rohr\s*(begleit\s*)?heiz|heizband|bodenfeucht|frostschutz|\bregensensor\b|wasserholen|wasser holen|manuelles giessen|manuell giessen/',$q);
         $stations=preg_match('/(?:kalt|warm|temperatur).*station|station.*(?:kalt|warm|temperatur)/',$q);
         $pump=preg_match('/\bpumpe\b/',$q)&&preg_match('/\b(?:zuletzt|wann|laeuft|status|ein|aus)\b/',$q);
         $zone=preg_match('/\bkreis \d+\b/',$q)&&!preg_match('/heizkreis|heizung|stromkreis/',$q);
-        $context=$domain==='bewaesserung' && preg_match('/(?:\b(?:kreis|kreise|ventil|ventile|restlaufzeit|aussentemperatur|batterie[n]?|akkustand)\b|\b(?:noch )?alles aus\b|^wie geht es\b|wie feucht|trocken|temperatur draussen)/',$q);
+        $context=$domain==='bewaesserung' && preg_match('/(?:\b(?:kreis|kreise|ventil|ventile|restlaufzeit|wasserholen|wasser holen|manuelles giessen|manuell giessen|aussentemperatur|batterie[n]?|akkustand)\b|\b(?:noch )?alles aus\b|^wie geht es\b|wie feucht|trocken|temperatur draussen)/',$q);
         $soil=preg_match('/\b(?:wie feucht|boden am trockensten|welch\w* (?:beet|bereich|kreis).*trocken)\b/',$q);
         $knownStation=false;
         if (preg_match('/\b(?:kalt|warm|temperatur)\b/',$q)) {
@@ -357,7 +368,7 @@ final class IAHIrrigationQuery
             }
         }
         if (!$topic&&!$stations&&!$pump&&!$zone&&!$context&&!$soil&&!$knownStation)return false;
-        return (bool)preg_match('/^(?:und )?(?:wie|ist|sind|wann|was|welch\w*|laeuft|laufen|hat|wo|wieviel\w*|sag(?:e)? mir|zeige|nenne|pruefe|kontrolliere|status|temperatur|bodenfeuchte)\b/',$q);
+        return (bool)preg_match('/^(?:und )?(?:wie|ist|sind|wann|was|welch\w*|laeuft|laufen|hat|wo|wieviel\w*|sag(?:e)? mir|zeige|nenne|pruefe|kontrolliere|status|temperatur|bodenfeuchte|wasserholen|wasser|giessen)\b/',$q);
     }
 
     private static function systems(array $catalog): array

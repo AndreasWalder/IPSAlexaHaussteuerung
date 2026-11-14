@@ -716,10 +716,6 @@ trait RCCSystemTreeEditorTrait
             ];
             $items[]=['type'=>'ExpansionPanel','caption'=>'Variable ergänzen','expanded'=>false,'items'=>$addItems];
             if (in_array(52811,(array)($s['controllers']??[]),true)) {
-                $items[]=['type'=>'Button','caption'=>'Sensorzuordnung für Anlage #52811 übernehmen','onClick'=>
-                    'RCC_ApplyGarden52811Sensors($id, '.$qkey.');'];
-                $items[]=['type'=>'Button','caption'=>'Leistung und Strom der Rohrbegleitheizung ergänzen','onClick'=>
-                    'RCC_AddGardenHeaterMeters($id, '.$qkey.');'];
             }
             $temperatureOptions=[['caption'=>'Keine Temperaturauswertung','value'=>0]];
             foreach ($s['points'] as $p) {
