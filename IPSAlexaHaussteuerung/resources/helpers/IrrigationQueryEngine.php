@@ -408,10 +408,25 @@ final class IAHIrrigationQuery
             return ['answer'=>$entries===[]?'Kein passender Messwert zugeordnet.':implode('. ',$entries).'.',
                 'diagnostics'=>$diag+['operation'=>$weatherRole,'count'=>count($entries)]];
         }
+        if (preg_match('/durchschnitt.*temperatur|temperatur.*durchschnitt|mittelwert.*temperatur/',$q)) {
+            $top=[];$bottom=[];
+            foreach (self::points($s,'stationTemperature') as $point) {
+                $label=self::norm($point['label']);
+                if (str_contains($label,'pumpenschacht oben'))$top[]=$point;
+                if (str_contains($label,'pumpenschacht unten'))$bottom[]=$point;
+            }
+            $values=[];
+            foreach ([$top,$bottom] as $group)if(count($group)===1) {
+                $value=self::value(reset($group));
+                if(is_numeric($value))$values[]=(float)$value;
+            }
+            $answer=count($values)===2?'Die aktuelle Durchschnittstemperatur oben und unten beträgt '.self::number(array_sum($values)/2).' Grad.':'Für oben und unten fehlen aktuelle Temperaturwerte.';
+            return ['answer'=>$answer,'diagnostics'=>$diag+['operation'=>'pump_shaft_temperature_average','samples'=>count($values)]];
+        }
         $zones=self::zoneMatches($s,$q);
         if (count($zones)>1)return ['answer'=>'Welchen Bewässerungskreis meinst du?','diagnostics'=>$diag+['reason'=>'multiple_zones']];
         $zone=$zones[0]??null;
-        $isHeater=(bool)preg_match('/rohr\s*(begleit\s*)?heiz|heizband|frostschutzheiz/',$q);
+        $isHeater=(bool)preg_match('/rohr\s*(begleit\s*)?heiz|heizung|heizband|frostschutzheiz/',$q);
         $isPump=(bool)preg_match('/pumpe/',$q);
         $thermalRequested=$isHeater && preg_match('/temperatur|anstieg|sprung/',$q);
         $heaterHistory=$isHeater && ($thermalRequested || preg_match('/wie oft|wie haeufig|einschaltungen|angesprungen|hat .*eingeschaltet|wann .*eingeschaltet/',$q));

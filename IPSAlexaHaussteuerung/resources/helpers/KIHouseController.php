@@ -941,7 +941,19 @@ function iah_rc_voice(
         if ($irrigation!==null) {
             iah_rc_log('irrigation.query',$irrigation['diagnostics']);
             $readDetails=[['tool'=>'irrigation','result'=>$irrigation['diagnostics']]];
-            // Preserve dates and exact archive counts; no model rewriting.
+            if ($key!=='' && !empty($cfg['prefer_ai'])) {
+                try {
+                    $model=(string)($cfg['model']??'gpt-6-luna');
+                    $request=['model'=>$model,'max_completion_tokens'=>180,'messages'=>[
+                        ['role'=>'system','content'=>'Formuliere die gelieferten, geprüften Bewässerungsdaten natürlich und kurz auf Deutsch. Verwende nur diese Fakten. Erhalte Zahlen, Einheiten und Unsicherheiten exakt.'],
+                        ['role'=>'user','content'=>json_encode(['frage'=>$text,'messwerte'=>$irrigation['answer']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE)]
+                    ]];
+                    if($model==='gpt-6-luna')$request['reasoning_effort']='none';
+                    $msg=iah_rc_model_message($request,$key,$deadline,$http??'iah_rc_http',null,0,true);
+                    $spoken=trim(strip_tags((string)($msg['content']??'')));
+                    if($spoken!=='')$irrigation['answer']=$spoken;
+                } catch(Throwable $ignored) {}
+            }
             return $costFinish(['handled'=>true,'answer'=>$irrigation['answer'],'localHouseQuery'=>true,
                 'answerSource'=>'irrigation']);
         }
