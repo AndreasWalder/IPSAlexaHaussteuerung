@@ -2802,7 +2802,11 @@ function Execute($request = null)
                     $iahReadOnlyQuery = $iahPossibleFollowup || !$homeAgentSimpleCommand
                         || !$homeAgentAllowCommands
                         || strcasecmp((string)$intentName, 'HausUndIntent') === 0;
-                    $iahUseModuleQuery = $iahReadOnlyQuery && function_exists('IAH_QueryAlexaHouseReadOnly');
+                    $iahNeedsIrrigationEngine = (string)$iahVoiceContextDomain === 'bewaesserung'
+                        || preg_match('/bewaesserung|bewässerung|bewässern|bewaessern|garten\s*pumpe|pumpendruck|bodenfeucht|rohr\s*begleit\s*heiz|manuelles wasserholen|manuelles giessen/ui',
+                            $homeAgentSpokenQuestion) === 1;
+                    $iahUseModuleQuery = $iahReadOnlyQuery && function_exists('IAH_QueryAlexaHouseReadOnly')
+                        && !$iahNeedsIrrigationEngine;
                     if (isset($iahLastInteraction))
                         $iahLastInteraction['backend']=$iahUseModuleQuery ? 'module_read_only' : 'KIHouseController';
                     $log('info', 'KIVoice.backend.selected', [
