@@ -5408,8 +5408,11 @@ class RoomsCatalogConfigurator extends IPSModule
         // Nur einzelne String-Felder aus der aktuellen Zeile auslesen; niemals
         // das gesamte Objekt direkt an array_filter() übergeben.
         $saveSelectedRowCallback = $this->buildListRowSaveCallback($entriesEdit);
+        // Irrigation dialog buttons persist EDIT immediately. Closing the dialog must not resave the old row.
         $sourceRowSaveCallback='if (!empty($Entries["isDataSource"]) && str_starts_with((string)($Entries["key"] ?? ""), "irrigation_")) { '
-            .'RCC_SaveSystemTreeOverview($id, (string)$Entries["key"], (string)($Entries["title"] ?? ""), (bool)($Entries["kiEnabled"] ?? false)); '
+            .'if (isset($Entries["SystemReadEnabled"])) { RCC_ReloadCatalog($id); } '
+            .'else { RCC_SaveSystemTreeOverview($id, (string)$Entries["key"], (string)($Entries["title"] ?? ""), '
+            .'(bool)($Entries["kiEnabled"] ?? false)); } '
             .'} elseif (!empty($Entries["isDataSource"])) { '
             .'RCC_SaveHuaweiDataSourceOverview($id, (string)($Entries["key"] ?? ""), '
             .'(string)($Entries["title"] ?? ""), (bool)($Entries["kiEnabled"] ?? false)); '

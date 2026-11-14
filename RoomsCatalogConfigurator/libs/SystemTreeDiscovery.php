@@ -113,12 +113,59 @@ final class RCCSystemTreeDiscovery
             if (preg_match('/info|meldung|stoerung/',$s))return ['pump','pumpInfo',0];
             return ['pump','pumpSetting',0];
         }
-        if ($zone>0 && preg_match('/status|rueckmeldung/',$context))return ['zones','zoneStatus',$zone];
-        if ($zone>0 && preg_match('/\binfo\b/',$context))return ['zones','zoneInfo',$zone];
+        if ($zone===0 && $owned && str_contains($s,'nebenstelle'))$zone=11;
+        if ($owned && preg_match('/automatik gesamtsystem|gesamt automatik/',$s))return ['pump','automatic',0];
+        if ($owned && preg_match('/manuell(er)? schritt/',$s))return ['zones','manualStep',0];
+        if ($zone>0) {
+            foreach (['status|rueckmeldung'=>'zoneStatus','info'=>'zoneInfo','manuell'=>'zoneManual',
+                'automatik'=>'zoneAutomatic','dauer\s*start'=>'configuredDuration','dauer'=>'duration',
+                'prioritaet|prio'=>'priority'] as $pattern=>$role) {
+                if (preg_match('/\b(?:'.$pattern.')\b/',$s))return ['zones',$role,$zone];
+            }
+            if (preg_match('/\b(?:status|rueckmeldung)\b/',$context))return ['zones','zoneStatus',$zone];
+        }
         if (preg_match('/bodenfeucht|soil\s*moisture/',$context))return ['climate','soilMoisture',0];
         if (preg_match('/regen|luftfeucht|uv\s*index/',$s))return ['climate','weather',0];
         if ($unit==='W')return ['climate','power',0];
         return ['unknown','unknown',0];
+    }
+
+    public static function variableUnit(int $id, string $profile): string
+    {
+        if (function_exists('IPS_GetVariablePresentation')) {
+            try {
+                $unit=trim((string)(@IPS_GetVariablePresentation($id)['SUFFIX']??''));
+                if ($unit!=='')return preg_replace('/^°\s+C$/u','°C',$unit)??$unit;
+            } catch (Throwable $ignored) {}
+        }
+        if ($profile!=='' && function_exists('IPS_VariableProfileExists') && IPS_VariableProfileExists($profile)) {
+            $unit=trim((string)(IPS_GetVariableProfile($profile)['Suffix']??''));
+            if ($unit!=='')return preg_replace('/^°\s+C$/u','°C',$unit)??$unit;
+        }
+        return match (true) {
+            preg_match('/temperature/i',$profile)===1=>'°C',
+            preg_match('/humidity|percent/i',$profile)===1=>'%',
+            preg_match('/DurationMin/i',$profile)===1=>'min',default=>'',
+        };
+    }
+
+    public static function supplementalPoint(int $id, string $label): array
+    {
+        if (!IPS_VariableExists($id))throw new RuntimeException('Bitte eine bestehende Variable auswählen.');
+        $object=IPS_GetObject($id);
+        $label=self::label(trim($label)!==''?$label:(string)$object['ObjectName']);
+        $ident=(string)($object['ObjectIdent']??'');
+        if (preg_match(self::SECRET,$label.' '.$object['ObjectName'].' '.$ident))
+            throw new RuntimeException('Diese Variable kann der Anlage nicht zugeordnet werden.');
+        $v=IPS_GetVariable($id);
+        $type=(int)$v['VariableType'];
+        if (!in_array($type,[0,1,2],true))throw new RuntimeException('Bitte eine boolesche oder numerische Variable auswählen.');
+        $profile=(string)(($v['VariableCustomProfile']??'')?:($v['VariableProfile']??''));
+        return ['id'=>$id,'label'=>$label,'ident'=>$ident,'parent'=>(int)$object['ObjectParentID'],
+            'path'=>'','group'=>'unknown','role'=>'unknown','zone'=>0,'type'=>$type,
+            'unit'=>self::label(self::variableUnit($id,$profile)),'profile'=>self::label($profile),
+            'owned'=>false,'enabled'=>false,'actionCandidate'=>false,'aliases'=>[],
+            'evidence'=>['manual'],'manualEdit'=>true,'manualSource'=>true];
     }
 
     public static function scan(int $root): array
@@ -220,15 +267,10 @@ final class RCCSystemTreeDiscovery
             if ($owned && !isset($controllers[$parent]))
                 $queue[]=[$parent,$depth+1,'','',true,'controller',0];
             $profile=(string)(($v['VariableCustomProfile']??'')?:($v['VariableProfile']??''));
-            $p=$profile!=='' && function_exists('IPS_VariableProfileExists')&&IPS_VariableProfileExists($profile)
-                ? IPS_GetVariableProfile($profile):[];
-            $unit=trim((string)($p['Suffix']??''));
-            if ($unit==='')$unit=match (true) {
-                preg_match('/temperature/i',$profile)===1=>'°C',
-                preg_match('/humidity|percent/i',$profile)===1=>'%',
-                preg_match('/DurationMin/i',$profile)===1=>'min',default=>'',
-            };
+            $unit=self::variableUnit($id,$profile);
             [$group,$role,$zone]=self::role($alias?:$name,$ident,$path,$unit,$vt,$owned);
+            if ($alias!=='' && $role==='unknown')
+                [$group,$role,$zone]=self::role($name,$ident,$path,$unit,$vt,$owned);
             // An external reference is evidence, not permission to read an arbitrary value.
             $direct=in_array($evidence,['tree','link','controller'],true);
             if (!$direct && $role==='unknown' && $vt===3)continue;
@@ -254,11 +296,27 @@ final class RCCSystemTreeDiscovery
                     'profile'=>self::label($profile),'owned'=>$owned,'enabled'=>$safeRead,
                     'actionCandidate'=>$owned && $vt===0 && $custom===0
                         && (int)($v['VariableAction']??0)===$parent
-                        && in_array($role,['zoneManual','zoneAutomatic','pumpManual','automatic'],true),
+                        && preg_match('/^(?:Manuell[1-9][0-9]?|Automatik[1-9][0-9]?|PumpeManuell|GesamtAutomatik)$/D',$ident)===1,
                     '_rank'=>$rank,'aliases'=>$old['aliases']??[],'evidence'=>$old['evidence']??[]];
             }
             $points[$id]['evidence'][]=$evidence;
             if ($alias!=='')$points[$id]['aliases'][]=$alias;
+        }
+        foreach ($actuators as $mapping) {
+            foreach ($mapping as $property=>$id) {
+                if (!isset($points[$id]) || !in_array($points[$id]['role'],['unknown','pumpSetting','zoneActuator','pumpActuator'],true))continue;
+                $zone=$property==='PumpeAktorID'?0:(int)substr($property,7);
+                $point=&$points[$id];
+                if (($point['role']==='zoneActuator' && $point['zone']!==$zone) || ($point['role']==='pumpActuator' && $zone>0)) {
+                    $point['group']='unknown';$point['role']='sharedActuator';$point['zone']=0;
+                } else {
+                    $point['group']=$zone>0?'zones':'pump';
+                    $point['role']=$zone>0?'zoneActuator':'pumpActuator';
+                    $point['zone']=$zone;
+                }
+                $point['enabled']=false;
+                unset($point);
+            }
         }
         if (count($scripts)>=30)$notes[]='Maximal 30 Skripte geprüft.';
         if (isset($queue[$head]))$notes[]='Scanlimit erreicht. Weitere Objekte fehlen.';
