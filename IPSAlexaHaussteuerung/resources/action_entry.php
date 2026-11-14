@@ -2455,6 +2455,22 @@ function Execute($request = null)
                 IPS_LogMessage('Alexa','VoiceRules.V371 bridge exception type='.get_class($ignored));
             }
         }
+        if (!$iahVoiceIsAplEvent && empty($APL['args']) && !$IS_LAUNCH && !$IS_BACK && !$wantsExit
+            && !$iahPendingHouseLocation && function_exists('IAH_HandleAlexaIrrigationCommand')
+            && preg_match('/^(?:schalt(?:e)?|start(?:e)?|stopp?e?|aktiviere|deaktiviere|bewässere|bewaessere)\b/ui',$iahVoiceSpoken)) {
+            try {
+                $irr=json_decode(IAH_HandleAlexaIrrigationCommand(
+                    $instanceId,$iahVoiceSpoken,(int)($S['ROOMS_CATALOG']??0)),true,32,JSON_THROW_ON_ERROR);
+                if (!empty($irr['handled'])) {
+                    if (isset($iahLastInteraction)) {
+                        $iahLastInteraction['detail']=$irr['reason']??'irrigation_command';
+                        $iahLastInteraction['backend']='irrigation';
+                    }
+                    $iahLastOutcome('Bewässerungsaktion',(string)$irr['answer'],!empty($irr['ok'])?'Verarbeitet':'Nicht ausgeführt');
+                    return AskResponse::CreatePlainText((string)$irr['answer']);
+                }
+            } catch (Throwable $e) {IPS_LogMessage('Alexa','IAH.Irrigation.bridge_error '.get_class($e));}
+        }
         if (!empty($iahOwnCommandIntent)) {
             // No guessed action or legacy fall-through for an unknown rule.
             $iahCommandHint = $iahVoiceSpoken === ''

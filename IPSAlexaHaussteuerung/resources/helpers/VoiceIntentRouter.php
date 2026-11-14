@@ -167,6 +167,8 @@ function iah_vir_classify(array $input,array $saved=[]): array
         if(isset($aliases[$target]))return array_replace($result,
             ['category'=>'navigation','route'=>$aliases[$target],'reason'=>'explicit_tile']);
     }
+    if (preg_match('/^(?:laeuft|laufen|wie viele)\b.*\b(?:bewaesserung|gartenpumpe|rohrbegleitheizung|kreise|kreis \d+)\b/',$text))
+        return array_replace($result,['category'=>'query','reason'=>'irrigation_question']);
     if(preg_match('/^(?:schalte|schalt|mach|stelle|stell|fahre|fahr|oeffne|schliesse|starte|start|stoppe|stop|dimme|dimm|aktiviere|deaktiviere|setze)\b/u',$text)) {
         return array_replace($result,['category'=>'action','reason'=>'explicit_action']);
     }
