@@ -220,6 +220,7 @@ trait RCCSystemTreeEditorTrait
         $numeric=in_array($p['type'],[1,2],true);
         return match($role) {
             'stationTemperature','outdoorTemperature'=>$numeric&&$p['unit']==='°C',
+            'pumpPressure'=>$numeric&&$p['unit']==='bar',
             'soilMoisture','sensorBattery','rainSensor'=>$numeric&&$p['unit']==='%',
             'heaterSignal'=>$numeric&&in_array($p['unit'],['','W','kW','A','mA'],true),
             'heaterStatus','winterMode','pumpStatus','zoneStatus'=>$p['type']===0,
@@ -434,6 +435,7 @@ trait RCCSystemTreeEditorTrait
         56721=>['sensorBattery','Batterie Beet und Tröge',10,'beet und troege'],
         47807=>['sensorBattery','Batterie Eckbeet Ost',2,'eckbeet ost'],
         40021=>['sensorBattery','Batterie Hecke Ost',4,'hecke ost'],
+        16937=>['pumpPressure','Pumpendruck Bewässerung',0,'pumpendruck bewaesserung'],
         16564=>['sensorBattery','Batterie Hecke Süd',0,'hecke sued'],
         36149=>['sensorBattery','Batterie Kanal 6',0,'bodenfeuchtesensor 6',false],
         38027=>['sensorBattery','Batterie Rasen SüdMitte',0,'rasen suedmitte'],
@@ -474,7 +476,8 @@ trait RCCSystemTreeEditorTrait
                 if ($zone>0 && !str_contains(RCCSystemTreeDiscovery::norm((string)($configuration['ZoneName'.$zone]??'')),$zoneNames[$zone]))
                     $zone=0;
                 $source['points'][$pid]=array_replace($p,['role'=>$role,'zone'=>$zone,
-                    'group'=>self::SYSTEM_TREE_SUPPLEMENTAL_ROLES[$role],'enabled'=>$entry[4]??true]);
+                    'group'=>self::SYSTEM_TREE_SUPPLEMENTAL_ROLES[$role],'enabled'=>$entry[4]??true,
+                    'sensorType'=>in_array($role,['soilMoisture','sensorBattery'],true)?'WH51':null]);
                 $count++;
             }
             if ($count>0) {
@@ -495,7 +498,7 @@ trait RCCSystemTreeEditorTrait
     private const SYSTEM_TREE_SUPPLEMENTAL_ROLES=[
         'unknown'=>'unknown','stationTemperature'=>'winter','soilMoisture'=>'climate',
         'heaterStatus'=>'winter','heaterSignal'=>'winter','winterMode'=>'winter',
-        'pumpStatus'=>'pump','nextStart'=>'schedule','outdoorTemperature'=>'climate',
+        'pumpStatus'=>'pump','pumpPressure'=>'pump','nextStart'=>'schedule','outdoorTemperature'=>'climate',
         'rainSensor'=>'climate','sensorBattery'=>'climate',
     ];
 
@@ -509,7 +512,7 @@ trait RCCSystemTreeEditorTrait
                 || strtoupper((string)(IPS_GetInstance(52811)['ModuleInfo']['ModuleID']??''))!==RCCSystemTreeDiscovery::CONTROLLER)
                 throw new RuntimeException('Die Messwerte gehören zur Bewässerungsinstanz #52811.');
             $added=[];$unavailable=[];
-            foreach ([47232=>['leistung','W'],56599=>['stromstaerke','A']] as $pid=>[$name,$unit]) {
+            foreach ([47232=>['leistung','W'],56599=>['stromstaerke','A'],16937=>['pumpendruck bewaesserung','bar']] as $pid=>[$name,$unit]) {
                 if (isset($source['excludedPoints'][$pid]))continue;
                 if (($source['points'][$pid]['role']??'')==='heaterSignal')continue;
                 if (!IPS_VariableExists($pid) || RCCSystemTreeDiscovery::norm((string)IPS_GetObject($pid)['ObjectName'])!==$name
@@ -522,7 +525,7 @@ trait RCCSystemTreeEditorTrait
                     $unavailable[]=$pid;
                     continue;
                 }
-                $source['points'][$pid]=array_replace($point,['unit'=>$unit,'role'=>'heaterSignal','group'=>'winter','enabled'=>true]);
+                $source['points'][$pid]=array_replace($point,['unit'=>$unit,'role'=>$unit==='bar'?'pumpPressure':'heaterSignal','group'=>$unit==='bar'?'pump':'winter','enabled'=>true]);
                 $added[]=$pid;
             }
             if ($added!==[])$this->saveSystemTreeEdit($id,$old,$catalog);
@@ -713,10 +716,6 @@ trait RCCSystemTreeEditorTrait
             ];
             $items[]=['type'=>'ExpansionPanel','caption'=>'Variable ergänzen','expanded'=>false,'items'=>$addItems];
             if (in_array(52811,(array)($s['controllers']??[]),true)) {
-                $items[]=['type'=>'Button','caption'=>'Sensorzuordnung für Anlage #52811 übernehmen','onClick'=>
-                    'RCC_ApplyGarden52811Sensors($id, '.$qkey.');'];
-                $items[]=['type'=>'Button','caption'=>'Leistung und Strom der Rohrbegleitheizung ergänzen','onClick'=>
-                    'RCC_AddGardenHeaterMeters($id, '.$qkey.');'];
             }
             $temperatureOptions=[['caption'=>'Keine Temperaturauswertung','value'=>0]];
             foreach ($s['points'] as $p) {
@@ -777,7 +776,7 @@ trait RCCSystemTreeEditorTrait
     private static function systemTreeRoleLabel(string $role): string
     {
         return match($role){
-            'stationTemperature'=>'Stationstemperatur','soilMoisture'=>'Bodenfeuchte','heaterSignal'=>'Heizung: Messsignal',
+            'stationTemperature'=>'Stationstemperatur','soilMoisture'=>'Bodenfeuchte','pumpPressure'=>'Pumpendruck','heaterSignal'=>'Heizung: Messsignal',
             'outdoorTemperature'=>'Außentemperatur','rainSensor'=>'Regensensor','sensorBattery'=>'Sensorbatterie',
             'heaterStatus'=>'Heizung: Rückmeldung','winterMode'=>'Winterbetrieb (Ein/Aus)','pumpStatus'=>'Pumpe: Rückmeldung',
             'zoneStatus'=>'Kreis: Status','nextStart'=>'Nächster Start (Zeitstempel)','unknown'=>'Ungeklärt',

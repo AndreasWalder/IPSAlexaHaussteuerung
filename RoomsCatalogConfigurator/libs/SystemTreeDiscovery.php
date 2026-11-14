@@ -110,7 +110,7 @@ final class RCCSystemTreeDiscovery
             return ['winter','winterSetting',0];
         }
         if (preg_match('/pumpe|pumpen/',$s)) {
-            if (preg_match('/druck/',$s))return ['pump','pressure',0];
+            if (preg_match('/druck/',$s))return ['pump','pumpPressure',0];
             if (preg_match('/status|rueckmeldung|istzustand/',$s))return ['pump','pumpStatus',0];
             if (preg_match('/info|meldung|stoerung/',$s))return ['pump','pumpInfo',0];
             return ['pump','pumpSetting',0];
