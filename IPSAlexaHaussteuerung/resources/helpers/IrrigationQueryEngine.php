@@ -98,10 +98,10 @@ final class IAHIrrigationQuery
 
     /** Archive pages are newest-first. Read one overlap second and abort
      * if a page cannot advance without skipping same-second samples. */
-    private static function archive(int $archive,int $id,array $signal,int $start,int $end,float $deadline,bool $latest): array
+    private static function archive(int $archive,int $id,array $signal,int $start,int $end,float $deadline,bool $latest,array $inventory): array
     {
         $base=['count'=>0,'last'=>null,'samples'=>0,'baselineKnown'=>false,'reason'=>''];
-        if (!isset(iah_archive_inventory($archive)[$id])||!function_exists('AC_GetLoggedValues'))
+        if (!isset($inventory[$id])||!function_exists('AC_GetLoggedValues'))
             return array_replace($base,['reason'=>'not_archived']);
         $size=400;$rows=[];$cursor=$end;$complete=false;$foundLatest=false;$ambiguousBoundary=false;
         try {
@@ -340,19 +340,31 @@ final class IAHIrrigationQuery
         $zone=$zones[0]??null;
         $isHeater=(bool)preg_match('/rohr\s*(begleit\s*)?heiz|heizband|frostschutzheiz/',$q);
         $isPump=(bool)preg_match('/pumpe/',$q);
-        if ($isHeater && preg_match('/wie oft|wie haeufig|einschaltungen|anstieg/',$q)) {
+        $heaterHistory=$isHeater && preg_match('/wie oft|wie haeufig|einschaltungen|anstieg/',$q);
+        $pumpHistory=$isPump && preg_match('/\bzu\s*letzt\b|letzte einschaltung|\bwann\b.*eingeschaltet/',$q);
+        $inventory=[];
+        if ($heaterHistory || $pumpHistory) {
+            if (!iah_archive_valid($archive) && function_exists('IPS_GetInstanceListByModuleID')) {
+                $ids=IPS_GetInstanceListByModuleID('{43192F0B-135B-4CE7-A0A7-1475603F3060}');
+                if (count($ids)===1)$archive=(int)reset($ids);
+            }
+            $inventory=iah_archive_inventory($archive);
+        }
+        if ($heaterHistory) {
             [$start,$end,$label]=self::period($q,$mode,$now);
             $rows=[];$errors=[];$log=[];$set=(array)($s['historySignals']['heater']??[]);
             if ($set===[] && empty($s['historySignals']['heaterAutomaticDisabled'])) {
-                $p=self::points($s,'heaterStatus');
-                if (count($p)===1) $set[(int)reset($p)['id']]=['mode'=>'binary'];
+                $p=array_intersect_key(self::points($s,'heaterStatus'),$inventory);
+                foreach ($p as $id=>$point) {
+                    if (($point['type']??-1)===0)$set[$id]=['mode'=>'binary'];
+                }
             }
             foreach ($set as $id=>$signal) {
                 if (count($log)>=8 || microtime(true)>=$deadline){$errors[]='weitere Signale nicht geprüft';break;}
                 $p=$s['points'][(int)$id]??null;
                 if (!is_array($p)||empty($p['enabled'])||!in_array($p['role']??'',['heaterStatus','heaterSignal'],true)
                     || self::value($p)===null)continue;
-                $a=self::archive($archive,(int)$id,$signal,$start,$end,$deadline,false);
+                $a=self::archive($archive,(int)$id,$signal,$start,$end,$deadline,false,$inventory);
                 $log[]=['id'=>(int)$id]+$a;
                 if ($a['samples']>0 && ($a['count']>0 || ($a['reason']==='' && $a['baselineKnown']))) {
                     $n=$a['count'];
@@ -367,18 +379,19 @@ final class IAHIrrigationQuery
             return ['answer'=>$answer,'diagnostics'=>$diag+['operation'=>'heater_edges','start'=>$start,'end'=>$end,
                 'archiveId'=>$archive,'signals'=>$log,'configuredSignals'=>count($set)]];
         }
-        if ($isPump && preg_match('/\bzu\s*letzt\b|letzte einschaltung|\bwann\b.*eingeschaltet/',$q)) {
+        if ($pumpHistory) {
             $p=self::points($s,'pumpStatus');
             $explicit=(int)($s['historySignals']['pumpId']??0);
             if ($explicit>0)$p=array_intersect_key($p,[$explicit=>true]);
             else {
+                $p=array_filter(array_intersect_key($p,$inventory),static fn($point)=>($point['type']??-1)===0);
                 $feedback=array_filter($p,static fn(array $pt):bool=>empty($pt['owned'])
                     && in_array('link',(array)($pt['evidence']??[]),true));
                 if ($feedback!==[])$p=$feedback;
             }
             $pt=count($p)===1?reset($p):null;
             $a=is_array($pt)&&($pt['type']??-1)===0&&is_bool(self::value($pt))
-                ?self::archive($archive,(int)$pt['id'],['mode'=>'binary'],0,$now->getTimestamp(),$deadline,true):[];
+                ?self::archive($archive,(int)$pt['id'],['mode'=>'binary'],0,$now->getTimestamp(),$deadline,true,$inventory):[];
             $date=empty($a['last'])?null:$now->setTimestamp((int)$a['last'])->format('d.m.Y');
             $answer=$date??match($a['reason']??'no_signal'){
                 'not_archived','no_samples'=>'Für die Pumpe liegen keine Archivdaten vor.',

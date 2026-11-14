@@ -29,6 +29,64 @@ trait RCCSystemTreeEditorTrait
         return $data;
     }
 
+    private function systemTreeArchive(): array
+    {
+        $preferred=$this->huaweiEditorArchiveId();
+        if ($preferred>0)return [$preferred,RCCDataSourceEditor::archiveInventory($preferred)];
+        if (function_exists('IPS_GetInstanceListByModuleID')) {
+            $ids=IPS_GetInstanceListByModuleID('{43192F0B-135B-4CE7-A0A7-1475603F3060}');
+            if (count($ids)===1) {
+                $id=(int)reset($ids);
+                return [$id,RCCDataSourceEditor::archiveInventory($id)];
+            }
+        }
+        return [0,null];
+    }
+
+    public function ExportSystemTreeJson(int $root): void
+    {
+        try {
+            $scan=RCCSystemTreeDiscovery::scan($root);
+            $suggestions=[];
+            try {
+                $snapshot=$this->systemTreeSnapshot($root);
+                if ($snapshot['treeHash']===hash('sha256',serialize($scan)))$suggestions=$snapshot['suggestions'];
+            } catch (RuntimeException $ignored) {}
+            [,,$catalog]=$this->systemTreeEditContext();
+            $edit=$catalog['dataSources']['irrigation_'.$root]??[];
+            if (($edit['provider']??'')!=='ObjectTreeIrrigation')$edit=[];
+            [$archiveId,$inventory]=$this->systemTreeArchive();
+            $formatPoints=static function (array $points) use ($inventory): array {
+                foreach ($points as &$p) {
+                    $p=array_intersect_key($p,array_flip(['id','label','ident','parent','path','group','role','zone','type',
+                        'unit','profile','enabled','aliases','evidence','actionCandidate','manualSource']));
+                    foreach (['label','path','ident','profile','unit'] as $field) {
+                        if (isset($p[$field]))$p[$field]=self::systemTreeAiLabel($p[$field]);
+                    }
+                    if (isset($p['aliases']))$p['aliases']=array_map([self::class,'systemTreeAiLabel'],$p['aliases']);
+                    $row=$inventory[$p['id']]??null;
+                    $p['archive']=$inventory===null?null:[
+                        'listed'=>$row!==null,'loggingActive'=>$row['AggregationActive']??null,
+                        'recordCount'=>$row['RecordCount']??null,'firstTime'=>$row['FirstTime']??null,
+                        'lastTime'=>$row['LastTime']??null,
+                    ];
+                }
+                unset($p);
+                return array_values($points);
+            };
+            $scan['points']=$formatPoints($scan['points']);
+            $json=json_encode(['schemaVersion'=>1,'archiveId'=>$archiveId?:null,'scan'=>$scan,
+                'suggestions'=>(object)$suggestions,'editPoints'=>$formatPoints((array)($edit['points']??[])),
+                'editHistorySignals'=>$edit['historySignals']??[]],
+                JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR);
+            $this->UpdateFormField('SystemTreeJson','value',$json);
+            $this->systemTreeNotice('JSON bereit. Den Inhalt aus dem Feld „JSON für die Analyse“ kopieren.');
+        } catch (Throwable $e) {
+            $this->UpdateFormField('SystemTreeJson','value','');
+            $this->systemTreeNotice($e->getMessage());
+        }
+    }
+
     public function PreviewSystemTree(int $root): void
     {
         $this->WriteAttributeString('SystemTreePreview','{}');
@@ -192,9 +250,21 @@ trait RCCSystemTreeEditorTrait
             }
             foreach ((array)($old['points']??[]) as $pid=>$p) {
                 $next=$source['points'][$pid]??null;
+                if (!empty($p['manualSource'])) {
+                    if (!IPS_VariableExists((int)$pid))continue;
+                    $object=IPS_GetObject((int)$pid);
+                    if ((int)$object['ObjectParentID']!==$p['parent'] || (string)$object['ObjectIdent']!==$p['ident']
+                        || (int)IPS_GetVariable((int)$pid)['VariableType']!==$p['type'])continue;
+                    $source['points'][$pid]=$p;
+                    continue;
+                }
                 if (!is_array($next)||!self::systemTreeSamePoint($p,$next))continue;
                 if (!empty($p['manualEdit'])) {
-                    foreach (['role','zone','group','enabled','manualEdit'] as $field)$source['points'][$pid][$field]=$p[$field];
+                    foreach (['role','zone','group','enabled','manualEdit','manualUnit'] as $field) {
+                        if (isset($p[$field]))$source['points'][$pid][$field]=$p[$field];
+                    }
+                    if ($source['points'][$pid]['unit']==='' && isset($p['manualUnit']))
+                        $source['points'][$pid]['unit']=$p['manualUnit'];
                 }
             }
             foreach (['title','winterFromMonth','winterUntilMonth','kiEnabled'] as $field)
@@ -253,7 +323,7 @@ trait RCCSystemTreeEditorTrait
         } catch (Throwable $e) {echo $e->getMessage();}
     }
 
-    public function SaveSystemTreeSettings(string $key,int $from,int $until,bool $enabled): void
+    public function SaveSystemTreeSettings(string $key,int $from,int $until,bool $enabled,string $title=''): void
     {
         try {
             [$id,$old,$catalog]=$this->systemTreeEditContext();
@@ -261,10 +331,54 @@ trait RCCSystemTreeEditorTrait
                 || min($from,$until)<1 || max($from,$until)>12)throw new RuntimeException('Anlage oder Wintermonate ungültig.');
             $s=&$catalog['dataSources'][$key];
             $s['winterFromMonth']=$from;$s['winterUntilMonth']=$until;$s['kiEnabled']=$enabled;
+            $title=trim($title);
+            if (mb_strlen($title)>100)throw new RuntimeException('Der Anlagenname darf höchstens 100 Zeichen enthalten.');
+            if ($title!=='')$s['title']=$title;
             $this->saveSystemTreeEdit($id,$old,$catalog);
             echo 'Einstellungen in EDIT gespeichert.';
         } catch (Throwable $e) {echo $e->getMessage();}
     }
+
+    public function AddSystemTreeVariable(string $key,int $pid,string $role,string $label): void
+    {
+        try {
+            [$id,$old,$catalog]=$this->systemTreeEditContext();
+            $source=&$catalog['dataSources'][$key];
+            if (($source['provider']??'')!=='ObjectTreeIrrigation')throw new RuntimeException('Anlage fehlt in EDIT.');
+            if (isset($source['points'][$pid]))throw new RuntimeException('Die Variable ist bereits in der Liste der Anlage enthalten.');
+            $p=RCCSystemTreeDiscovery::supplementalPoint($pid,$label);
+            if ($role==='stationTemperature' && $p['unit']==='')$p['unit']='°C';
+            if ($role==='soilMoisture' && $p['unit']==='')$p['unit']='%';
+            if ($role!=='unknown' && (!isset(self::SYSTEM_TREE_SUPPLEMENTAL_ROLES[$role]) || !self::systemTreeRoleMatches($p,$role)))
+                throw new RuntimeException('Rolle, Datentyp oder Maßeinheit passen nicht zusammen.');
+            $p['role']=$role;
+            $p['group']=self::SYSTEM_TREE_SUPPLEMENTAL_ROLES[$role]??'unknown';
+            $p['enabled']=$role!=='unknown';
+            $source['points'][$pid]=$p;
+            $this->saveSystemTreeEdit($id,$old,$catalog);
+            echo 'Variable in EDIT ergänzt. Bitte das Zahnrad erneut öffnen.';
+        } catch (Throwable $e) {echo $e->getMessage();}
+    }
+
+    public function RemoveSystemTreeVariable(string $key,int $pid): void
+    {
+        try {
+            [$id,$old,$catalog]=$this->systemTreeEditContext();
+            $source=&$catalog['dataSources'][$key];
+            if (($source['provider']??'')!=='ObjectTreeIrrigation' || empty($source['points'][$pid]['manualSource']))
+                throw new RuntimeException('Nur manuell hinzugefügte Variablen können hier entfernt werden.');
+            unset($source['points'][$pid],$source['historySignals']['heater'][$pid]);
+            if ((int)($source['historySignals']['pumpId']??0)===$pid)unset($source['historySignals']['pumpId']);
+            $this->saveSystemTreeEdit($id,$old,$catalog);
+            echo 'Variable aus EDIT entfernt. Bitte das Zahnrad erneut öffnen.';
+        } catch (Throwable $e) {echo $e->getMessage();}
+    }
+
+    private const SYSTEM_TREE_SUPPLEMENTAL_ROLES=[
+        'unknown'=>'unknown','stationTemperature'=>'winter','soilMoisture'=>'climate',
+        'heaterStatus'=>'winter','heaterSignal'=>'winter','winterMode'=>'winter',
+        'pumpStatus'=>'pump','nextStart'=>'schedule',
+    ];
 
     public function SaveSystemTreePoint(string $key,int $pid,string $json): void
     {
@@ -278,6 +392,11 @@ trait RCCSystemTreeEditorTrait
                 || !is_string($options['role']??null)||!is_int($options['zone']??null)
                 || !is_string($options['archiveMode']??null))throw new RuntimeException('Eingaben unvollständig.');
             $role=$options['role'];$zone=$options['zone'];$mode=$options['archiveMode'];
+            if ($role!==$p['role'] && $p['role']==='unknown' && $p['unit']===''
+                && in_array($p['type'],[1,2],true) && in_array($role,['stationTemperature','soilMoisture'],true)) {
+                $p['unit']=$role==='stationTemperature'?'°C':'%';
+                $p['manualUnit']=$p['unit'];
+            }
             if ($role!==$p['role'] && (!in_array($p['role'],['unknown','heaterStatus','heaterSignal','heaterOther',
                 'stationTemperature','soilMoisture','winterMode','pumpStatus','zoneStatus','nextStart'],true)
                 || !self::systemTreeRoleMatches($p,$role)))throw new RuntimeException('Diese Rolle passt nicht zum Datenpunkttyp.');
@@ -319,26 +438,52 @@ trait RCCSystemTreeEditorTrait
             $s=$catalog['dataSources'][$key]??null;
             if (!is_array($s)||($s['provider']??'')!=='ObjectTreeIrrigation')throw new RuntimeException('Anlage fehlt in EDIT.');
             $qkey=var_export($key,true);
-            $inventory=RCCDataSourceEditor::archiveInventory($this->huaweiEditorArchiveId());
-            $items=[['type'=>'Label','caption'=>'Anlage #'.$s['sourceRootId'].'. Die Liste zeigt Zustände und Konfiguration getrennt. Änderungen landen in EDIT.'],
+            [$archiveId,$inventory]=$this->systemTreeArchive();
+            $items=[['type'=>'Label','caption'=>'Anlage #'.$s['sourceRootId'].' · '.count($s['points']).' Variablen in EDIT.'],
+                ['type'=>'ValidationTextBox','name'=>'SystemTitle','caption'=>'Anlagenname','value'=>$s['title']],
                 ['type'=>'CheckBox','name'=>'SystemReadEnabled','caption'=>'Anlage für Alexa-Hausfragen verwenden','value'=>$s['kiEnabled']],
                 ['type'=>'NumberSpinner','name'=>'SystemWinterFrom','caption'=>'Winter ab Monat (1–12)','minimum'=>1,'maximum'=>12,'value'=>$s['winterFromMonth']],
                 ['type'=>'NumberSpinner','name'=>'SystemWinterUntil','caption'=>'Winter bis einschließlich Monat (1–12)','minimum'=>1,'maximum'=>12,'value'=>$s['winterUntilMonth']],
                 ['type'=>'Button','caption'=>'Anlageneinstellungen nach EDIT speichern','onClick'=>
-                    'RCC_SaveSystemTreeSettings($id, '.$qkey.', (int)$SystemWinterFrom, (int)$SystemWinterUntil, (bool)$SystemReadEnabled);'],
+                    'RCC_SaveSystemTreeSettings($id, '.$qkey.', (int)$SystemWinterFrom, (int)$SystemWinterUntil, (bool)$SystemReadEnabled, (string)$SystemTitle);'],
+                ['type'=>'Label','caption'=>$inventory===null
+                    ? 'Kein eindeutiges Archiv gefunden. Bei mehreren Archiven das Archiv für Hausabfragen im Alexa-Modul wählen.'
+                    : 'Archiv #'.$archiveId.' automatisch geprüft. Eindeutige archivierte Rückmeldungen werden automatisch verwendet.'],
             ];
-            foreach (RCCSystemTreeDiscovery::GROUPS as $group=>$title) {
+            $groups=RCCSystemTreeDiscovery::GROUPS;
+            $zoneNames=[];
+            foreach ($s['points'] as $p) {
+                $zone=(int)$p['zone'];
+                if ($p['group']!=='zones' || $zone<1)continue;
+                $zoneNames[$zone]??='Kreis '.$zone;
+                if ($p['role']==='zoneStatus' && preg_match('/\bKreis\s+'.$zone.'\s+(.+?)(?:\s*\([^)]*\))?$/iu',$p['label'],$match))
+                    $zoneNames[$zone]='Kreis '.$zone.' · '.$match[1];
+                if ($zone===11 && stripos($p['label'],'Nebenstelle')!==false)$zoneNames[$zone]='Kreis 11 · Nebenstelle';
+            }
+            ksort($zoneNames,SORT_NUMERIC);
+            if ($zoneNames!==[]) {
+                $groups=array_slice($groups,0,2,true)+array_combine(
+                    array_map(static fn($zone)=>'zone_'.$zone,array_keys($zoneNames)),$zoneNames)+array_slice($groups,2,null,true);
+            }
+            if (!in_array('stationTemperature',array_column($s['points'],'role'),true))
+                $items[]=['type'=>'Label','caption'=>'Keine Stationstemperatur zugeordnet. Unter „Variable ergänzen“ kannst du einen vorhandenen Messwert auswählen.'];
+            foreach ($groups as $group=>$title) {
                 $rows=[];
                 foreach ($s['points'] as $p) {
-                    if ($p['group']!==$group)continue;
+                    $pointGroup=$p['group']==='zones' && $p['zone']>0?'zone_'.$p['zone']:$p['group'];
+                    if ($pointGroup!==$group)continue;
                     $pid=$p['id'];$v='—';
                     try {
                         if (IPS_VariableExists($pid) && $p['role']!=='unknown' && $p['type']!==3)
                             $v=function_exists('GetValueFormatted')?(string)GetValueFormatted($pid):json_encode(GetValue($pid));
                     } catch (Throwable $ignored) {}
                     $signal=$s['historySignals']['heater'][$pid]??[];
+                    $archiveRow=$inventory[$pid]??null;
+                    $archiveStatus=$inventory===null?'Unbekannt':($archiveRow===null?'Kein Archiv':
+                        (empty($archiveRow['AggregationActive']) && isset($archiveRow['AggregationActive'])?'Logging aus':'Archiviert'));
+                    if (isset($archiveRow['RecordCount']))$archiveStatus.=' · '.$archiveRow['RecordCount'].' Werte';
                     $rows[]=['pid'=>$pid,'label'=>$p['label'],'role'=>$p['role'],'zone'=>$p['zone'],'reading'=>$v,
-                        'archive'=>$inventory===null?'Archiv nicht konfiguriert':(isset($inventory[$pid])?'Archiviert':'Nicht archiviert'),
+                        'archive'=>$archiveStatus,
                         'enabled'=>$p['enabled'],'allowAction'=>in_array($pid,$s['voiceActions'],true),
                         'archiveMode'=>(int)($s['historySignals']['pumpId']??0)===$pid?'pump':($signal['mode']??'none'),
                         'on'=>(string)($signal['on']??''),'off'=>(string)($signal['off']??''),
@@ -379,6 +524,28 @@ trait RCCSystemTreeEditorTrait
                     ]
                 ]];
             }
+            $roleOptions=[];
+            foreach (array_keys(self::SYSTEM_TREE_SUPPLEMENTAL_ROLES) as $role)
+                $roleOptions[]=['caption'=>self::systemTreeRoleLabel($role),'value'=>$role];
+            $addItems=[
+                ['type'=>'SelectVariable','name'=>'SystemAdditionalVariable','caption'=>'Vorhandene IP-Symcon-Variable',
+                    'validVariableTypes'=>[0,1,2]],
+                ['type'=>'Select','name'=>'SystemAdditionalRole','caption'=>'Rolle (Temperatur in °C, Feuchte in %)','value'=>'unknown','options'=>$roleOptions],
+                ['type'=>'ValidationTextBox','name'=>'SystemAdditionalLabel','caption'=>'Anzeigename, z. B. Pumpenschacht oben (optional)'],
+                ['type'=>'Button','caption'=>'Variable nach EDIT ergänzen','onClick'=>
+                    'RCC_AddSystemTreeVariable($id, '.$qkey.', (int)$SystemAdditionalVariable, (string)$SystemAdditionalRole, (string)$SystemAdditionalLabel);'],
+            ];
+            $manualOptions=[['caption'=>'Bitte auswählen','value'=>0]];
+            foreach ($s['points'] as $p) {
+                if (!empty($p['manualSource']))$manualOptions[]=['caption'=>$p['label'].' #'.$p['id'],'value'=>$p['id']];
+            }
+            if (count($manualOptions)>1) {
+                $addItems[]=['type'=>'Select','name'=>'SystemRemoveVariable','caption'=>'Manuell hinzugefügte Variable',
+                    'value'=>0,'options'=>$manualOptions];
+                $addItems[]=['type'=>'Button','caption'=>'Zuordnung aus EDIT entfernen','onClick'=>
+                    'RCC_RemoveSystemTreeVariable($id, '.$qkey.', (int)$SystemRemoveVariable);'];
+            }
+            $items[]=['type'=>'ExpansionPanel','caption'=>'Variable ergänzen','expanded'=>false,'items'=>$addItems];
             if (!empty($s['scripts'])) {
                 $items[]=['type'=>'ExpansionPanel','caption'=>'Erkannte Skriptbezüge','expanded'=>false,'items'=>array_map(
                     static fn(array $x):array=>['type'=>'Label','caption'=>$x['label'].' #'.$x['id'].' · '.$x['references'].' statische Referenzen'],
@@ -393,8 +560,8 @@ trait RCCSystemTreeEditorTrait
                             .' · nächster Ereignislauf '.($next?date('d.m.Y H:i',$next):'—')];
                     },array_values($s['events']))];
             }
-            return json_encode(['elements'=>$items],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
-        } catch (Throwable $e) {return json_encode(['elements'=>[['type'=>'Label','caption'=>$e->getMessage()]]],JSON_THROW_ON_ERROR);}
+            return json_encode($items,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
+        } catch (Throwable $e) {return json_encode([['type'=>'Label','caption'=>$e->getMessage()]],JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);}
     }
 
     private static function systemTreeRoleLabel(string $role): string
@@ -405,6 +572,7 @@ trait RCCSystemTreeEditorTrait
             'zoneStatus'=>'Kreis: Status','nextStart'=>'Nächster Start (Zeitstempel)','unknown'=>'Ungeklärt',
             'pumpManual'=>'Pumpe manuell','pumpInfo'=>'Pumpeninfo','pumpSetting'=>'Pumpeneinstellung','automatic'=>'Anlagenautomatik',
             'zoneManual'=>'Kreis manuell','zoneAutomatic'=>'Kreisautomatik','zoneInfo'=>'Kreisinfo','remaining'=>'Restlaufzeit',
+            'zoneActuator'=>'Kreisaktor','pumpActuator'=>'Pumpenaktor','sharedActuator'=>'Gemeinsam genutzter Aktor',
             'duration'=>'Dauer / Automatik-Restlaufzeit','configuredDuration'=>'Vorgabedauer','priority'=>'Priorität',
             'scheduleValue'=>'Schaltzeit / Zeitplan',default=>$role};
     }
@@ -420,7 +588,9 @@ trait RCCSystemTreeEditorTrait
                 ['type'=>'Button','caption'=>'3 – Nach EDIT übernehmen','onClick'=>'RCC_ImportSystemTreeToEdit($id, (int)$SystemTreeRootId, false);'],
                 ['type'=>'Button','caption'=>'3 – Mit KI-Vorschlägen nach EDIT','onClick'=>'RCC_ImportSystemTreeToEdit($id, (int)$SystemTreeRootId, true);'],
             ]],
+            ['type'=>'Button','caption'=>'JSON für die Analyse ausgeben','onClick'=>'RCC_ExportSystemTreeJson($id, (int)$SystemTreeRootId);'],
             ['type'=>'Label','name'=>'SystemTreeNotice','caption'=>$this->ReadAttributeString('SystemTreeNotice')],
+            ['type'=>'ValidationTextBox','name'=>'SystemTreeJson','caption'=>'JSON für die Analyse','multiline'=>true,'width'=>'100%','value'=>''],
             ['type'=>'ValidationTextBox','name'=>'SystemTreeReport','caption'=>'Objekte, Beziehungen und Vorschläge','multiline'=>true,'width'=>'100%','value'=>''],
             ['type'=>'Label','caption'=>'Nach dem Import die Anlage unter Geräte bearbeiten → Bewässerung über das Zahnrad öffnen. Dort Wintermonate, Archivsignale und Alexa-Aktionen prüfen.'],
         ]];
