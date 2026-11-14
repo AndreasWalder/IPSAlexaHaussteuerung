@@ -151,19 +151,21 @@ test(count($scan['notes'])===1,'broken link is reported');
 class Editor {
     use RCCSystemTreeEditorTrait;
     public array $attr=[],$updates=[];
+    public int $listRefreshes=0;
     public function ReadPropertyInteger(string $key): int {return ['RoomsCatalogEditScriptID'=>10001,'RoomsCatalogScriptID'=>10002][$key]??0;}
     public function ReadAttributeString(string $key): string {return $this->attr[$key]??'';}
     public function WriteAttributeString(string $key,string $value): void {$this->attr[$key]=$value;}
     public function UpdateFormField(string $name,string $key,mixed $val): void {$this->updates[$name.'.'.$key]=$val;}
     private function catalogBackupCurrentEdit(int $id,string $content,string $reason): int {IPS_SetScriptContent(10003,$content);return 10003;}
     private function reloadAllFromCatalog(): void {}
-    private function RefreshVisibleLists(): void {}
+    private function RefreshVisibleLists(): void {$this->listRefreshes++;}
     private function huaweiEditorArchiveId(): int {return 17597;}
 }
 $initial="<?php return ['rooms'=>[], 'dataSources'=>['huawei_1'=>['provider'=>'HuaweiPV']]];";
 $scripts[10001]=$initial;$scripts[10002]=$initial;
 $ed=new Editor();
 ob_start();$ed->PreviewSystemTree(41578);$ed->ImportSystemTreeToEdit(41578);$response=ob_get_clean();
+test($ed->listRefreshes===1,'top-level import refreshes the devices list');
 $catalog=IAHVoiceRuleLiteralReader::read($scripts[10001]);
 test(isset($catalog['dataSources']['irrigation_41578'],$catalog['dataSources']['huawei_1'])
     &&$scripts[10002]===$initial&&$scripts[10003]===$initial,'EDIT only with backup and Huawei untouched: '.$response);
@@ -292,12 +294,16 @@ test(($pp[15690]['label']??'')==='Pumpenschacht oben' && $pp[42306]['label']==='
     && $pp[40021]['role']==='sensorBattery' && $pp[44047]['role']==='outdoorTemperature','garden sensor assignment: '.$result);
 test(IAHIrrigationQuery::query($preset,'Wie hoch ist die Batterie Hecke Ost der Bewässerung?','',17597,microtime(true)+4,$now)['answer']
     ==='Batterie Hecke Ost 80 Prozent.','battery reading is distinct from soil moisture');
+$refreshes=$ed->listRefreshes;
 ob_start();
 $ed->AddGardenHeaterMeters($key);
 $ed->SaveSystemTreeHeaterTemperature($key,15690,'1,0',10);
+$ed->SaveSystemTreeSettings($key,11,3,true,'Bewässerung Test');
 ob_end_clean();
 $heating=IAHVoiceRuleLiteralReader::read($scripts[10001]);
 $heatingSource=$heating['dataSources'][$key];
+test($ed->listRefreshes===$refreshes && $heatingSource['title']==='Bewässerung Test',
+    'dialog buttons save EDIT without invalidating the active devices row');
 test($heatingSource['points'][47232]['role']==='heaterSignal' && $heatingSource['points'][56599]['unit']==='A'
     && $heatingSource['historySignals']['heaterTemperature']['id']===15690
     && !isset($heatingSource['historySignals']['heater'][47232]),'meters do not invent switching thresholds');

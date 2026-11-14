@@ -291,6 +291,7 @@ trait RCCSystemTreeEditorTrait
             foreach ($source['excludedPoints'] as $pid=>$label)self::removeSystemTreePoint($source,(int)$pid);
             $catalog['dataSources'][$key]=$source;
             $backup=$this->saveSystemTreeEdit($id,$original,$catalog);
+            $this->refreshSystemTreeCatalog();
             $this->WriteAttributeString('SystemTreePreview','{}');
             $this->systemTreeNotice('Anlage in EDIT gespeichert. Backup #'.$backup.'. PROD bleibt unverändert.');
         } catch (Throwable $e) {$this->systemTreeNotice($e->getMessage());}
@@ -315,8 +316,13 @@ trait RCCSystemTreeEditorTrait
             IPS_SetScriptContent($id,$old);
             throw new RuntimeException('EDIT konnte nicht sicher gespeichert werden. Backup #'.$backup.'.');
         }
-        $this->reloadAllFromCatalog();$this->RefreshVisibleLists();
         return $backup;
+    }
+
+    private function refreshSystemTreeCatalog(): void
+    {
+        $this->reloadAllFromCatalog();
+        $this->RefreshVisibleLists();
     }
 
     public function SaveSystemTreeOverview(string $key,string $title,bool $enabled): void
@@ -330,6 +336,7 @@ trait RCCSystemTreeEditorTrait
             $catalog['dataSources'][$key]['title']=$title;
             $catalog['dataSources'][$key]['kiEnabled']=$enabled;
             $this->saveSystemTreeEdit($id,$old,$catalog);
+            $this->refreshSystemTreeCatalog();
             echo 'Anlage in EDIT gespeichert.';
         } catch (Throwable $e) {echo $e->getMessage();}
     }
@@ -606,6 +613,7 @@ trait RCCSystemTreeEditorTrait
             $qkey=var_export($key,true);
             [$archiveId,$inventory]=$this->systemTreeArchive();
             $items=[['type'=>'Label','caption'=>'Anlage #'.$s['sourceRootId'].' · '.count($s['points']).' Variablen in EDIT.'],
+                ['type'=>'Label','caption'=>'Die Speichern-Schaltflächen schreiben direkt nach EDIT. OK schließt das Fenster und aktualisiert die Geräteübersicht.'],
                 ['type'=>'ValidationTextBox','name'=>'SystemTitle','caption'=>'Anlagenname','value'=>$s['title']],
                 ['type'=>'CheckBox','name'=>'SystemReadEnabled','caption'=>'Anlage für Alexa-Hausfragen verwenden','value'=>$s['kiEnabled']],
                 ['type'=>'NumberSpinner','name'=>'SystemWinterFrom','caption'=>'Winter ab Monat (1–12)','minimum'=>1,'maximum'=>12,'value'=>$s['winterFromMonth']],
