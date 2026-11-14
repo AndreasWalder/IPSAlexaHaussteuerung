@@ -2092,10 +2092,24 @@ function Execute($request = null)
             $iahLastInteraction['status'] = $status;
             $iahLastInteraction['ruleKey'] = $rule;
         };
-        $kiAlexaKeepOpen = static function (string $text, string $status = 'Hinweis') use ($iahLastOutcome) {
+        $kiAlexaKeepOpen = static function (string $text, string $status = 'Hinweis', string $question = '') use ($iahLastOutcome, $baseUrl, $token) {
             $iahLastOutcome('Hausabfrage', $text, $status);
-            return AskResponse::CreatePlainText($text)
+            $response = AskResponse::CreatePlainText($text)
                 ->SetRepromptPlainText('Noch eine Frage oder ein Schaltbefehl?');
+
+            // Bewaesserungs- und PV-Antworten als Alexa-Standardkarte wie
+            // die Jalousie-Antwort anzeigen. Echo Show rendert die Karte,
+            // solange keine APL-Seite fuer diese Antwort mitgesendet wird.
+            $normalizedQuestion = mb_strtolower($question, 'UTF-8');
+            $topic = preg_match('/\\b(?:bewässerung|bewaesserung|bewässern|bewaessern|gießen|giessen|bodenfeuchte|pumpendruck|wasser holen)\\b/u', $normalizedQuestion)
+                ? 'Bewässerung'
+                : (preg_match('/\\b(?:pv|photovoltaik|solaranlage|solarenergie|einspeisung)\\b/u', $normalizedQuestion)
+                    ? 'Photovoltaik' : '');
+            $image = rtrim((string)$baseUrl, '/') . '/hook/iah-alexa-icons?f=Logo.png&token=' . rawurlencode((string)$token);
+            if ($topic !== '' && preg_match('~^https://[a-z0-9.-]+(?::\\d{1,5})?(?:/[^\\s]*)?$~iD', $image)) {
+                $response->SetStandardCard($topic . ' – Zusammenfassung', $text, $image, $image);
+            }
+            return $response;
         };
         // Eigener Freitext-Intent hat Vorrang. GetHaus und sämtliche APL-Aktionen bleiben erhalten.
         // --- Lokaler KI-Sprachrouter: Navigation vor OpenAI klassifizieren ---
@@ -2813,7 +2827,8 @@ function Execute($request = null)
                                     $iahLastInteraction['detail'] = $housePlan['reason'] ?? 'local_question_plan';
                                 }
                                 return $kiAlexaKeepOpen((string)$housePlan['answer'],
-                                    !empty($housePlan['reason']) ? 'Rückfrage' : 'Hinweis');
+                                    !empty($housePlan['reason']) ? 'Rückfrage' : 'Hinweis',
+                                    $homeAgentSpokenQuestion);
                             }
                             if ($iahPossibleFollowup && !isset($housePlan['question'])) {
                                 if (isset($iahLastInteraction)) {
@@ -2905,7 +2920,8 @@ function Execute($request = null)
                                     'durationMs'=>(int)round($homeAgentElapsed*1000),
                                     'model'=>(string)($propsEarly['KIModelSelection']??'gpt-6-luna')]);
                                 return $kiAlexaKeepOpen($homeAgentAnswer,
-                                    $iahAwaitingLocation ? 'Rückfrage' : 'Beantwortet');
+                                    $iahAwaitingLocation ? 'Rückfrage' : 'Beantwortet',
+                                    $homeAgentSpokenQuestion);
                             }
                             if (isset($iahLastInteraction))
                                 $iahLastInteraction['detail']=is_array($homeAgentData) ? 'backend_unhandled' : 'invalid_backend_reply';
