@@ -184,6 +184,62 @@ final class IAHIrrigationQuery
         return $out;
     }
 
+    /** Read archived temperature samples in a period. A capped or
+     * ambiguous page is reported as partial, never as proof of no frost. */
+    private static function temperatureRange(int $archive,int $id,int $start,int $end,float $deadline,array $inventory): array
+    {
+        $base=['samples'=>0,'min'=>null,'max'=>null,'belowThreshold'=>0,'complete'=>false,'reason'=>''];
+        if (!isset($inventory[$id])||!function_exists('AC_GetLoggedValues'))
+            return array_replace($base,['reason'=>'not_archived']);
+        $rows=[];$cursor=$end;$complete=false;$size=400;
+        try {
+            for ($page=0;$page<12 && microtime(true)<$deadline && $cursor>=$start;$page++) {
+                $batch=AC_GetLoggedValues($archive,$id,$start,$cursor,$size);
+                if (!is_array($batch))throw new RuntimeException('read');
+                $rows=array_merge($rows,$batch);
+                if (count($batch)<$size){$complete=true;break;}
+                $earliest=(int)($batch[array_key_last($batch)]['TimeStamp']??0);
+                if ($earliest<=0||$earliest>=$cursor)break;
+                if ($earliest<=$start){$complete=true;break;}
+                $cursor=$earliest;
+            }
+        } catch (Throwable $e) {
+            return array_replace($base,['reason'=>'archive_error']);
+        }
+        $seen=[];$values=[];
+        foreach ($rows as $row) {
+            $ts=(int)($row['TimeStamp']??0);$value=$row['Value']??null;
+            if ($ts<$start||$ts>$end||!is_numeric($value)||!is_finite((float)$value))continue;
+            $key=$ts.':'.(string)$value;
+            if (isset($seen[$key]))continue;
+            $seen[$key]=true;$values[]=(float)$value;
+        }
+        if ($values!==[]) {
+            $base['samples']=count($values);
+            $base['min']=min($values);$base['max']=max($values);
+            $base['belowThreshold']=count(array_filter($values,static fn(float $v):bool=>$v<0.0));
+        }
+        $base['complete']=$complete;
+        if (!$complete)$base['reason']='partial';
+        elseif (function_exists('AC_GetLoggingStatus')) {
+            try {if (!AC_GetLoggingStatus($archive,$id))$base['reason']='logging_inactive';}
+            catch (Throwable $ignored) {$base['reason']='logging_status_unknown';}
+        }
+        if ($base['samples']===0&&$base['reason']==='')$base['reason']='no_samples';
+        return $base;
+    }
+
+    private static function pumpShaftTemperatures(array $system): array
+    {
+        $selected=['oben'=>[],'unten'=>[]];
+        foreach (self::points($system,'stationTemperature') as $point) {
+            $label=self::norm((string)($point['label']??''));
+            if (str_contains($label,'pumpenschacht oben'))$selected['oben'][]=$point;
+            elseif (str_contains($label,'pumpenschacht unten'))$selected['unten'][]=$point;
+        }
+        return $selected;
+    }
+
     private static function number(float $value): string
     {
         return rtrim(rtrim(number_format($value,1,',',''), '0'), ',');
@@ -354,7 +410,8 @@ final class IAHIrrigationQuery
         $q=self::norm($text);
         if ($q===''||preg_match('/^(?:oeffne|starte|stoppe|schalte|aktiviere|deaktiviere|bewaessere)\b/',$q)
             || in_array($q,['bewaesserung','gartenbewaesserung'],true)||self::systems($catalog)===[])return false;
-        $topic=preg_match('/bewae?sserung|garten\s*pumpe|pumpenschacht|rohr\s*(begleit\s*)?heiz|heizband|bodenfeucht|frostschutz|\bregensensor\b|wasserholen|wasser holen|manuelles giessen|manuell giessen/',$q);
+        $topic=preg_match('/bewae?sserung|garten\s*pumpe|pumpenschacht|rohr\s*(begleit\s*)?heiz|heizband|bodenfeucht|frost|\bregensensor\b|wasserholen|wasser holen|manuelles giessen|manuell giessen/',$q);
+        $systemHealth=(bool)preg_match('/alles in ordnung|zusammenfassung|status.*(?:bewae?sserung|heiz)|(?:bewae?sserung|heiz).*status/',$q);
         $stations=preg_match('/(?:kalt|warm|temperatur).*station|station.*(?:kalt|warm|temperatur)/',$q);
         $pump=preg_match('/\bpumpe\b/',$q)&&preg_match('/\b(?:zuletzt|wann|laeuft|status|ein|aus)\b/',$q);
         $zone=preg_match('/\bkreis \d+\b/',$q)&&!preg_match('/heizkreis|heizung|stromkreis/',$q);
@@ -367,8 +424,8 @@ final class IAHIrrigationQuery
                 if (mb_strlen($name)>=5&&str_contains(' '.$q.' ',' '.$name.' ')){$knownStation=true;break 2;}
             }
         }
-        if (!$topic&&!$stations&&!$pump&&!$zone&&!$context&&!$soil&&!$knownStation)return false;
-        return (bool)preg_match('/^(?:und )?(?:wie|ist|sind|wann|was|welch\w*|laeuft|laufen|hat|wo|wieviel\w*|sag(?:e)? mir|zeige|nenne|pruefe|kontrolliere|status|temperatur|bodenfeuchte|wasserholen|wasser|giessen)\b/',$q);
+        if (!$topic&&!$stations&&!$pump&&!$zone&&!$context&&!$soil&&!$knownStation&&!$systemHealth)return false;
+        return (bool)preg_match('/^(?:und )?(?:wie|ist|sind|war|wann|was|welch\w*|laeuft|laufen|hat|wo|wieviel\w*|sag(?:e)? mir|zeige|nenne|pruefe|kontrolliere|status|alles|zusammenfassung|temperatur|bodenfeuchte|wasserholen|wasser|giessen)\b/',$q);
     }
 
     private static function systems(array $catalog): array
@@ -428,11 +485,13 @@ final class IAHIrrigationQuery
         $zone=$zones[0]??null;
         $isHeater=(bool)preg_match('/rohr\s*(begleit\s*)?heiz|heizung|heizband|frostschutzheiz/',$q);
         $isPump=(bool)preg_match('/pumpe/',$q);
+        $frostRequested=(bool)preg_match('/frost|unter null|unter 0|minusgrade|minus temperatur/',$q);
+        $combinedStatus=(bool)preg_match('/alles in ordnung|zusammenfassung|status.*(?:bewae?sserung|heiz)|(?:bewae?sserung|heiz).*status/',$q);
         $thermalRequested=$isHeater && preg_match('/temperatur|anstieg|sprung/',$q);
         $heaterHistory=$isHeater && ($thermalRequested || preg_match('/wie oft|wie haeufig|einschaltungen|angesprungen|hat .*eingeschaltet|wann .*eingeschaltet/',$q));
         $pumpHistory=$isPump && preg_match('/\bzu\s*letzt\b|letzte einschaltung|\bwann\b.*eingeschaltet/',$q);
         $inventory=[];
-        if ($heaterHistory || $pumpHistory) {
+        if ($heaterHistory || $pumpHistory || $frostRequested || $combinedStatus) {
             if (!iah_archive_valid($archive) && function_exists('IPS_GetInstanceListByModuleID')) {
                 $ids=IPS_GetInstanceListByModuleID('{43192F0B-135B-4CE7-A0A7-1475603F3060}');
                 if (count($ids)===1)$archive=(int)reset($ids);
@@ -485,6 +544,68 @@ final class IAHIrrigationQuery
                 :implode('. ',array_merge($rows,$errors)).' '.$label.'.';
             return ['answer'=>$answer,'diagnostics'=>$diag+['operation'=>'heater_edges','start'=>$start,'end'=>$end,
                 'archiveId'=>$archive,'signals'=>$log,'configuredSignals'=>count($set)]];
+        }
+        if ($combinedStatus || $frostRequested) {
+            [$start,$end,$label]=self::period($q,$mode,$now);
+            // A plain health-summary request describes today's operation.
+            if ($combinedStatus && !preg_match('/\bheute\b|\bgestern\b|letzten \d+ tage|diesen winter|im winter/',$q)) {
+                $start=$now->setTime(0,0)->getTimestamp();
+                $end=$now->getTimestamp();
+                $label='heute';
+            }
+            $stations=self::pumpShaftTemperatures($s);
+            $archiveRows=[];$frostReadings=[];$sampleTotal=0;$allComplete=true;$hasFrost=false;
+            foreach (['oben','unten'] as $position) {
+                if (count($stations[$position])!==1) {
+                    $allComplete=false;
+                    $frostReadings[]=$position.': Sensor nicht eindeutig zugeordnet';
+                    continue;
+                }
+                $point=reset($stations[$position]);$id=(int)$point['id'];
+                $range=self::temperatureRange($archive,$id,$start,$end,$deadline,$inventory);
+                $archiveRows[$position]=['id'=>$id]+$range;
+                $sampleTotal+=(int)$range['samples'];
+                $allComplete=$allComplete&&!empty($range['complete'])&&$range['reason']==='';
+                if ((int)$range['belowThreshold']>0) {
+                    $hasFrost=true;
+                    $frostReadings[]=self::clean($point['label']).': Frostwerte unter 0 Grad, Minimum '
+                        .self::number((float)$range['min']).' Grad';
+                } elseif ($range['samples']>0) {
+                    $frostReadings[]=self::clean($point['label']).': Minimum '
+                        .self::number((float)$range['min']).' Grad';
+                } else {
+                    $frostReadings[]=self::clean($point['label']).': keine Archivwerte ('.$range['reason'].')';
+                }
+            }
+            $avgParts=[];
+            foreach (['oben','unten'] as $position) {
+                if (count($stations[$position])===1) {
+                    $value=self::value(reset($stations[$position]));
+                    if (is_numeric($value))$avgParts[]=(float)$value;
+                }
+            }
+            $parts=[];
+            if ($combinedStatus) {
+                $parts[]=self::summary($s,false,false,null);
+                $heat=self::heaterState($s);
+                $parts[]='Rohrbegleitheizung aktuell '.($heat===null?'nicht eindeutig':($heat?'ein':'aus'));
+                $heater=self::query($catalog,'Wie oft war die Rohrbegleitheizung heute eingeschaltet',$domain,$archive,$deadline,$now);
+                $parts[]=is_array($heater)&&isset($heater['answer'])?'Heizung heute: '.$heater['answer']:'Heizungsarchiv heute nicht auswertbar';
+                if (count($avgParts)===2)$parts[]='Aktueller Durchschnitt Pumpenschacht oben und unten '
+                    .self::number(($avgParts[0]+$avgParts[1])/2).' Grad';
+                elseif ($avgParts!==[])$parts[]='Nur ein aktueller Pumpenschacht-Temperaturwert verfügbar';
+            }
+            if ($frostReadings===[])$frostReadings[]='keine eindeutigen Pumpenschacht-Temperatursensoren';
+            if ($allComplete&&$sampleTotal>0&&!$hasFrost)$frostSummary='keine Archivtemperatur unter 0 Grad';
+            elseif ($hasFrost)$frostSummary='Frostbereich erreicht; '.implode('; ',$frostReadings);
+            elseif (!$allComplete)$frostSummary='Frostprüfung unvollständig; '.implode('; ',$frostReadings);
+            else $frostSummary='keine ausreichenden Archivwerte für die Frostprüfung';
+            $parts[]='Temperaturprüfung '.$label.': '.$frostSummary;
+            return ['answer'=>implode('. ',$parts).'.','diagnostics'=>$diag+[
+                'operation'=>$combinedStatus?'irrigation_heater_health_summary':'temperature_frost_archive',
+                'period'=>$label,'start'=>$start,'end'=>$end,'archiveId'=>$archive,
+                'frostThresholdC'=>0,'temperatureArchives'=>$archiveRows,
+                'heaterSummary'=>$combinedStatus?($heater['diagnostics']??[]):null]];
         }
         if ($pumpHistory) {
             $p=self::points($s,'pumpStatus');
