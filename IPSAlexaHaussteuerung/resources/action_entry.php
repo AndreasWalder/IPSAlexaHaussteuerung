@@ -2101,7 +2101,7 @@ function Execute($request = null)
             // die Jalousie-Antwort anzeigen. Echo Show rendert die Karte,
             // solange keine APL-Seite fuer diese Antwort mitgesendet wird.
             $normalizedQuestion = mb_strtolower($question, 'UTF-8');
-            $topic = preg_match('/\\b(?:bewässerung|bewaesserung|bewässern|bewaessern|gießen|giessen|bodenfeuchte|pumpendruck|wasser holen)\\b/u', $normalizedQuestion)
+            $topic = preg_match('/\\b(?:bewässerung|bewaesserung|bewässern|bewaessern|gießen|giessen|bodenfeuchte|pumpendruck|wasser holen|alles in ordnung|zusammenfassung)\\b/u', $normalizedQuestion)
                 ? 'Bewässerung'
                 : (preg_match('/\\b(?:pv|photovoltaik|solaranlage|solarenergie|einspeisung)\\b/u', $normalizedQuestion)
                     ? 'Photovoltaik' : '');

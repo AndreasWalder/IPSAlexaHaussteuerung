@@ -193,7 +193,7 @@ final class IAHIrrigationQuery
             return array_replace($base,['reason'=>'not_archived']);
         $rows=[];$cursor=$end;$complete=false;$size=400;
         try {
-            for ($page=0;$page<12 && microtime(true)<$deadline && $cursor>=$start;$page++) {
+            for ($page=0;$page<96 && microtime(true)<$deadline && $cursor>=$start;$page++) {
                 $batch=AC_GetLoggedValues($archive,$id,$start,$cursor,$size);
                 if (!is_array($batch))throw new RuntimeException('read');
                 $rows=array_merge($rows,$batch);
@@ -597,10 +597,11 @@ final class IAHIrrigationQuery
             }
             if ($frostReadings===[])$frostReadings[]='keine eindeutigen Pumpenschacht-Temperatursensoren';
             if ($allComplete&&$sampleTotal>0&&!$hasFrost)$frostSummary='keine Archivtemperatur unter 0 Grad';
-            elseif ($hasFrost)$frostSummary='Frostbereich erreicht; '.implode('; ',$frostReadings);
+            elseif ($hasFrost)$frostSummary=$allComplete?'Frostbereich erreicht; '.implode('; ',$frostReadings):'Frostbereich mindestens einmal erreicht, Archivprüfung unvollständig; '.implode('; ',$frostReadings);
             elseif (!$allComplete)$frostSummary='Frostprüfung unvollständig; '.implode('; ',$frostReadings);
             else $frostSummary='keine ausreichenden Archivwerte für die Frostprüfung';
             $parts[]='Temperaturprüfung '.$label.': '.$frostSummary;
+            $parts=array_map(static fn(string $part):string=>rtrim(trim($part),'. '),$parts);
             return ['answer'=>implode('. ',$parts).'.','diagnostics'=>$diag+[
                 'operation'=>$combinedStatus?'irrigation_heater_health_summary':'temperature_frost_archive',
                 'period'=>$label,'start'=>$start,'end'=>$end,'archiveId'=>$archive,

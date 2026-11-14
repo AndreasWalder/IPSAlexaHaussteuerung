@@ -937,7 +937,7 @@ function iah_rc_voice(
     try{
         $catalog=$previewCatalog??iah_rc_load_catalog($catalogId);
         $irrigation=IAHIrrigationQuery::query($catalog,$text,(string)($cfg['ui_context_domain']??''),
-            $archiveId,min($deadline,microtime(true)+3));
+            $archiveId,min($deadline,microtime(true)+4));
         if ($irrigation!==null) {
             iah_rc_log('irrigation.query',$irrigation['diagnostics']);
             $readDetails=[['tool'=>'irrigation','result'=>$irrigation['diagnostics']]];
