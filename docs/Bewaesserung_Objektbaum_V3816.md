@@ -8,6 +8,22 @@ bestehende Veröffentlichung **EDIT nach PROD** aktiviert die Konfiguration für
 Alexa. Der Import verändert keine Aktoren, Programme, Archiveinstellungen
 oder Alexa-Intents.
 
+## JSON für die Analyse exportieren (ab V3.8.17)
+
+Im selben Abschnitt direkt unter den Scan-/Import-Schaltflächen auf
+**JSON für Analyse exportieren** klicken. Der Button erzeugt
+`Bewässerung_Analyse.json` aus einem frischen Scan der ausgewählten Wurzel.
+Er funktioniert ohne Zahnrad, ohne KI-Aufruf und ohne Import nach EDIT oder
+PROD. Im Export stehen Datenpunkte mit Rollen, Links, Skriptbezüge,
+Archivverfügbarkeit und der Vergleich zum jeweiligen Katalogstand. Für
+erkannte Messpunkte enthält er auch ausgewählte numerische und boolesche
+Istwerte. Skriptquelltexte und Archiv-Rohwerte werden nicht exportiert.
+
+Wenn zuerst nur die Steuerungsinstanz importiert wurde, für die vollständige
+Anlage den Übersichtsordner (z. B. #41578) auswählen. Ist in dessen Baum genau
+dieser eine Controller eindeutig verlinkt, ersetzt ein anschließender Import
+den früheren Controller-Eintrag in EDIT. Für den Export ist das nicht nötig.
+
 ## Was der Scan erkennt
 
 - Kategorien, Dummy-Module, Links und Linkketten. Gleiche Zielvariablen erscheinen

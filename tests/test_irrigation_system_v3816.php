@@ -12,7 +12,7 @@ require_once __DIR__.'/../IPSAlexaHaussteuerung/resources/helpers/VoiceIntentRou
 function test(bool $ok,string $message): void {if (!$ok)throw new RuntimeException($message);}
 $objects=[];$variables=[];$values=[];$scripts=[];$links=[];$events=[];$archive=[];$log=[];$requests=[];$config=[];
 function obj(int $id,int $type,int $parent,string $name,string $ident=''): void {
-    $GLOBALS['objects'][$id]=['ObjectType'=>$type,'ObjectParentID'=>$parent,'ObjectName'=>$name,'ObjectIdent'=>$ident];
+    $GLOBALS['objects'][$id]=['ObjectType'=>$type,'ParentID'=>$parent,'ObjectName'=>$name,'ObjectIdent'=>$ident];
 }
 function variable(int $id,int $parent,string $name,string $ident,int $type,mixed $value,string $profile='',int $action=0,int $custom=0): void {
     obj($id,2,$parent,$name,$ident);
@@ -20,12 +20,12 @@ function variable(int $id,int $parent,string $name,string $ident,int $type,mixed
     $GLOBALS['values'][$id]=$value;
 }
 function linkTo(int $id,int $parent,string $name,int $target): void {
-    obj($id,5,$parent,$name);$GLOBALS['links'][$id]=$target;
+    obj($id,6,$parent,$name);$GLOBALS['links'][$id]=$target;
 }
 function IPS_ObjectExists(int $id): bool {return isset($GLOBALS['objects'][$id]);}
 function IPS_GetObject(int $id): array {return $GLOBALS['objects'][$id]??[];}
-function IPS_GetChildrenIDs(int $id): array {return array_keys(array_filter($GLOBALS['objects'],static fn($x)=>$x['ObjectParentID']===$id));}
-function IPS_GetLink(int $id): array {return ['TargetID'=>$GLOBALS['links'][$id]??0];}
+function IPS_GetChildrenIDs(int $id): array {return array_keys(array_filter($GLOBALS['objects'],static fn($x)=>$x['ParentID']===$id));}
+function IPS_GetLink(int $id): array {if (IPS_GetObject($id)['ObjectType']!==6)throw new RuntimeException('not a link');return ['TargetID'=>$GLOBALS['links'][$id]??0];}
 function IPS_InstanceExists(int $id): bool {return isset($GLOBALS['objects'][$id])&&$GLOBALS['objects'][$id]['ObjectType']===1;}
 function IPS_GetInstance(int $id): array {
     return ['ModuleInfo'=>['ModuleID'=>match($id){
@@ -58,7 +58,7 @@ function AC_GetLoggedValues(int $archiveId,int $id,int $from,int $to,int $limit)
 }
 function record(int $id,int $ts,mixed $v): void {$GLOBALS['archive'][$id][]=['TimeStamp'=>$ts,'Value'=>$v];}
 
-obj(41578,0,0,'Bewässerung');obj(14136,1,41578,'Kreise Manuell');obj(14872,1,41578,'Kreise Status');
+obj(41578,0,0,'Bewässerung');obj(64000,5,41578,'Visualisierungsplan');obj(14136,1,41578,'Kreise Manuell');obj(14872,1,41578,'Kreise Status');
 obj(40892,1,41578,'Bodenfeuchte');obj(26483,1,41578,'Allgemein');obj(51071,1,41578,'Plan');
 obj(50000,1,0,'IPSBewaesserung');obj(61000,1,0,'Wetterstation');obj(17597,1,0,'Archive Control');
 obj(63000,1,0,'Messung');obj(65000,3,41578,'Frostschutz');obj(65001,4,65000,'Frostschutzregel');
@@ -142,14 +142,19 @@ class Editor {
     private function reloadAllFromCatalog(): void {}
     private function RefreshVisibleLists(): void {}
     private function huaweiEditorArchiveId(): int {return 17597;}
+    public function panel(array $edit,array $prod): array {return $this->buildSystemTreePanel($edit,$prod);}
 }
 $initial="<?php return ['rooms'=>[], 'dataSources'=>['huawei_1'=>['provider'=>'HuaweiPV']]];";
 $scripts[10001]=$initial;$scripts[10002]=$initial;
 $ed=new Editor();
+// A controller-only import like #52811 can be upgraded to the overview without a second entry.
+ob_start();$ed->PreviewSystemTree(50000);$ed->ImportSystemTreeToEdit(50000);ob_end_clean();
+$controllerEdit=$scripts[10001];
+test(isset(IAHVoiceRuleLiteralReader::read($controllerEdit)['dataSources']['irrigation_50000']),'controller-only import exists');
 ob_start();$ed->PreviewSystemTree(41578);$ed->ImportSystemTreeToEdit(41578);$response=ob_get_clean();
 $catalog=IAHVoiceRuleLiteralReader::read($scripts[10001]);
 test(isset($catalog['dataSources']['irrigation_41578'],$catalog['dataSources']['huawei_1'])
-    &&$scripts[10002]===$initial&&$scripts[10003]===$initial,'EDIT only with backup and Huawei untouched: '.$response);
+    &&!isset($catalog['dataSources']['irrigation_50000'])&&$scripts[10002]===$initial&&$scripts[10003]===$controllerEdit,'EDIT only with backup and Huawei untouched: '.$response);
 $key='irrigation_41578';
 $bad=['enabled'=>true,'allowAction'=>true,'role'=>'heaterSignal','zone'=>0,'archiveMode'=>'threshold','on'=>'14','off'=>'5'];
 $ok=$bad;$ok['allowAction']=false;
@@ -159,7 +164,31 @@ ob_start();$ed->SaveSystemTreePoint($key,63101,json_encode($ok));$ed->SaveSystem
     json_encode(['enabled'=>false,'allowAction'=>true,'role'=>'zoneManual','zone'=>4,'archiveMode'=>'none']));ob_end_clean();
 $catalog=IAHVoiceRuleLiteralReader::read($scripts[10001]);$s=$catalog['dataSources'][$key];
 test($s['historySignals']['heater'][63101]['on']===14.0&&$s['voiceActions']===[50104],'approval and threshold persistence');
-test(str_contains($ed->GetSystemTreeEditForm($key),'Winter und Stationen'),'Grouped editor');
+$form=json_decode($ed->GetSystemTreeEditForm($key),true,512,JSON_THROW_ON_ERROR);
+$errorForm=json_decode($ed->GetSystemTreeEditForm('absent'),true,512,JSON_THROW_ON_ERROR);
+test(array_is_list($form)&&array_is_list($errorForm)&&$errorForm[0]['type']==='Label','List.form always returns a flat iterable');
+test(in_array('Winter und Stationen ('.count(array_filter($s['points'],static fn($p)=>$p['group']==='winter')).')',
+    array_column($form,'caption'),true),'Grouped editor');
+$panel=$ed->panel($catalog,[]);
+$buttons=array_filter($panel['items'],static fn($e)=>($e['type']??'')==='Button');
+test(count($buttons)===1&&reset($buttons)['download']==='Bewässerung_Analyse.json','download is below import buttons in the system panel');
+$overview=array_values(array_filter($panel['items'],static fn($e)=>($e['type']??'')==='ExpansionPanel'));
+test(count($overview)===6&&$overview[0]['items'][0]['values']!==[],'grouped overview independent of gear dialog');
+$beforeExport=$scripts;
+ob_start();$ed->ExportSystemTreeDiagnostics(41578);$encoded=ob_get_clean();
+$prefix='data:application/json;charset=utf-8;base64,';
+test(str_starts_with($encoded,$prefix),'JSON download format');
+$json=base64_decode(substr($encoded,strlen($prefix)),true);
+$export=json_decode($json,true,512,JSON_THROW_ON_ERROR);
+test($export['rootId']===41578&&$export['catalog']['EDIT']['status']==='present'
+    &&$export['catalog']['PROD']['status']==='not_imported'
+    &&$export['summary']['links']===count($scan['links'])
+    &&$export['source']['groups']['winter']['points']!==[]
+    &&$export['catalog']['EDIT']['historySignals']['heater'][63101]['on']==14,'diagnostic snapshot after import');
+test(!str_contains($json,'private-test-secret')&&!str_contains($json,'GetValue(63101)')
+    &&!str_contains($json,'huawei_1')&&$scripts===$beforeExport&&$requests===[],'scoped read-only diagnostic');
+ob_start();$ed->ExportSystemTreeDiagnostics(99999);$error=ob_get_clean();
+test(isset(json_decode(base64_decode(substr($error,strlen($prefix))),true)['error']),'downloadable diagnostics even on scan error');
 $rows=RCCDataSourceEditor::sourceRows($catalog);
 test(count($rows)===2&&$rows[1]['domain']==='bewaesserung','virtual irrigation source alongside Huawei');
 ob_start();$ed->PreviewSystemTree(41578);$ed->ImportSystemTreeToEdit(41578);ob_end_clean();

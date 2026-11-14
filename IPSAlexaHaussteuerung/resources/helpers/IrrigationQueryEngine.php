@@ -25,7 +25,7 @@ final class IAHIrrigationQuery
         try {
             $obj=IPS_GetObject($id);
             if ((string)($obj['ObjectIdent']??'')!==(string)($p['ident']??'')
-                || (int)($obj['ObjectParentID']??0)!==(int)($p['parent']??0)
+                || (int)($obj['ParentID']??$obj['ObjectParentID']??0)!==(int)($p['parent']??0)
                 || (int)(IPS_GetVariable($id)['VariableType']??-1)!==(int)($p['type']??-2))return null;
             return GetValue($id);
         } catch (Throwable $e) {return null;}

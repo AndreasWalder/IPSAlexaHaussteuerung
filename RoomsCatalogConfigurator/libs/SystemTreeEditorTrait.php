@@ -37,6 +37,7 @@ trait RCCSystemTreeEditorTrait
             $scan=RCCSystemTreeDiscovery::scan($root);
             $snap=['root'=>$root,'until'=>time()+1800,'editHash'=>hash('sha256',$content),
                 'treeHash'=>hash('sha256',serialize($scan)),'source'=>$scan,'suggestions'=>[]];
+            $this->WriteAttributeString('SystemTreeLastRoot',(string)$root);
             $this->WriteAttributeString('SystemTreePreview',json_encode($snap,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE));
             $this->systemTreePreviewReport($snap);
             $counts=array_count_values(array_column($scan['points'],'group'));
@@ -53,6 +54,7 @@ trait RCCSystemTreeEditorTrait
                 .count($scan['events']).' Zeitereignisse gefunden.');
         } catch (Throwable $e) {
             $this->UpdateFormField('SystemTreeReport','value','');
+            $this->refreshSystemTreeOverview([]);
             $this->systemTreeNotice($e->getMessage());
         }
     }
@@ -80,6 +82,7 @@ trait RCCSystemTreeEditorTrait
                 .($s['zone']?' / Kreis '.$s['zone']:'').' (noch nicht freigegeben)';
         $lines=array_merge($lines,$scan['notes']);
         $this->UpdateFormField('SystemTreeReport','value',implode("\n",$lines));
+        $this->refreshSystemTreeOverview($scan);
     }
 
     /** Sends only local row numbers and sanitized object labels/types/roles.
@@ -180,7 +183,19 @@ trait RCCSystemTreeEditorTrait
             if (hash('sha256',serialize($source))!==$snap['treeHash'])
                 throw new RuntimeException('Der Objektbaum wurde geändert. Bitte erneut scannen.');
             $key='irrigation_'.$root;$old=$catalog['dataSources'][$key]??null;
-            if ($old!==null && (!is_array($old)||($old['provider']??'')!=='ObjectTreeIrrigation'||($old['sourceRootId']??0)!==$root))
+            $replacedKey=null;
+            // The broader overview and its single linked controller are the
+            // same installation. Upgrade the earlier controller-only import.
+            if ($old===null && count($source['controllers'])===1) {
+                $controller=(int)reset($source['controllers']);
+                $candidate='irrigation_'.$controller;
+                $prior=$catalog['dataSources'][$candidate]??null;
+                if ($controller!==$root && is_array($prior) && ($prior['provider']??'')==='ObjectTreeIrrigation'
+                    && (int)($prior['sourceRootId']??0)===$controller) {
+                    $old=$prior;$replacedKey=$candidate;
+                }
+            }
+            if ($old!==null && (!is_array($old)||($old['provider']??'')!=='ObjectTreeIrrigation'||($replacedKey===null && ($old['sourceRootId']??0)!==$root)))
                 throw new RuntimeException('Ein anderer Eintrag belegt den Anlagenschlüssel.');
             if ($withAI)foreach ($snap['suggestions'] as $pid=>$s) {
                 $p=&$source['points'][$pid];
@@ -198,7 +213,7 @@ trait RCCSystemTreeEditorTrait
                 }
             }
             foreach (['title','winterFromMonth','winterUntilMonth','kiEnabled'] as $field)
-                if (isset($old[$field]))$source[$field]=$old[$field];
+                if (isset($old[$field]) && !($field==='title' && $replacedKey!==null))$source[$field]=$old[$field];
             foreach ((array)($old['voiceActions']??[]) as $pid)
                 if (!empty($source['points'][$pid]['actionCandidate'])&&self::systemTreeSamePoint($old['points'][$pid]??[],$source['points'][$pid]))
                     $source['voiceActions'][]=$pid;
@@ -208,10 +223,14 @@ trait RCCSystemTreeEditorTrait
             $pid=(int)($old['historySignals']['pumpId']??0);
             if ($pid>0&&isset($source['points'][$pid])&&self::systemTreeSamePoint($old['points'][$pid]??[],$source['points'][$pid]))
                 $source['historySignals']['pumpId']=$pid;
+            if ($replacedKey!==null)unset($catalog['dataSources'][$replacedKey]);
             $catalog['dataSources'][$key]=$source;
             $backup=$this->saveSystemTreeEdit($id,$original,$catalog);
             $this->WriteAttributeString('SystemTreePreview','{}');
-            $this->systemTreeNotice('Anlage in EDIT gespeichert. Backup #'.$backup.'. PROD bleibt unverändert.');
+            $this->refreshSystemTreeOverview($source);
+            $this->systemTreeNotice('Anlage in EDIT gespeichert. '
+                .($replacedKey!==null?'Die bisherige reine Steuerungsquelle wurde durch den Übersichtsordner ersetzt. ':'')
+                .'Backup #'.$backup.'. PROD bleibt unverändert.');
         } catch (Throwable $e) {$this->systemTreeNotice($e->getMessage());}
     }
 
@@ -321,11 +340,12 @@ trait RCCSystemTreeEditorTrait
             $qkey=var_export($key,true);
             $inventory=RCCDataSourceEditor::archiveInventory($this->huaweiEditorArchiveId());
             $items=[['type'=>'Label','caption'=>'Anlage #'.$s['sourceRootId'].'. Die Liste zeigt Zustände und Konfiguration getrennt. Änderungen landen in EDIT.'],
-                ['type'=>'CheckBox','name'=>'SystemReadEnabled','caption'=>'Anlage für Alexa-Hausfragen verwenden','value'=>$s['kiEnabled']],
+                ['type'=>'ValidationTextBox','name'=>'title','caption'=>'Anlagenname','value'=>(string)$s['title']],
+                ['type'=>'CheckBox','name'=>'kiEnabled','caption'=>'Anlage für Alexa-Hausfragen verwenden','value'=>$s['kiEnabled']],
                 ['type'=>'NumberSpinner','name'=>'SystemWinterFrom','caption'=>'Winter ab Monat (1–12)','minimum'=>1,'maximum'=>12,'value'=>$s['winterFromMonth']],
                 ['type'=>'NumberSpinner','name'=>'SystemWinterUntil','caption'=>'Winter bis einschließlich Monat (1–12)','minimum'=>1,'maximum'=>12,'value'=>$s['winterUntilMonth']],
-                ['type'=>'Button','caption'=>'Anlageneinstellungen nach EDIT speichern','onClick'=>
-                    'RCC_SaveSystemTreeSettings($id, '.$qkey.', (int)$SystemWinterFrom, (int)$SystemWinterUntil, (bool)$SystemReadEnabled);'],
+                ['type'=>'Button','caption'=>'Wintermonate und Lesefreigabe nach EDIT speichern','onClick'=>
+                    'RCC_SaveSystemTreeSettings($id, '.$qkey.', (int)$SystemWinterFrom, (int)$SystemWinterUntil, (bool)$kiEnabled);'],
             ];
             foreach (RCCSystemTreeDiscovery::GROUPS as $group=>$title) {
                 $rows=[];
@@ -346,6 +366,8 @@ trait RCCSystemTreeEditorTrait
                         'actionAvailable'=>!empty($p['actionCandidate'])?'Freigabe möglich':'Nicht unterstützt'];
                 }
                 if ($rows===[])continue;
+                usort($rows,static fn(array $a,array $b):int=>$a['zone']<=>$b['zone']
+                    ?:strnatcasecmp($a['label'],$b['label']));
                 $name='SystemPoint_'.$group;
                 $v='$'.$name;
                 $roles=array_values(array_unique(array_merge(array_column($rows,'role'),
@@ -393,8 +415,8 @@ trait RCCSystemTreeEditorTrait
                             .' · nächster Ereignislauf '.($next?date('d.m.Y H:i',$next):'—')];
                     },array_values($s['events']))];
             }
-            return json_encode(['elements'=>$items],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
-        } catch (Throwable $e) {return json_encode(['elements'=>[['type'=>'Label','caption'=>$e->getMessage()]]],JSON_THROW_ON_ERROR);}
+            return json_encode($items,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
+        } catch (Throwable $e) {return json_encode([['type'=>'Label','caption'=>$e->getMessage()]],JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);}
     }
 
     private static function systemTreeRoleLabel(string $role): string
@@ -409,11 +431,154 @@ trait RCCSystemTreeEditorTrait
             'scheduleValue'=>'Schaltzeit / Zeitplan',default=>$role};
     }
 
-    private function buildSystemTreePanel(): array
+    private function systemTreeOverviewSource(array $edit,array $prod): array
     {
-        return ['type'=>'ExpansionPanel','caption'=>'ANLAGE AUS OBJEKTBAUM – Bewässerung','expanded'=>false,'items'=>[
+        $snap=json_decode($this->ReadAttributeString('SystemTreePreview'),true);
+        if (is_array($snap['source']??null)&&($snap['until']??0)>=time())return $snap['source'];
+        $sources=array_filter((array)($edit['dataSources']??[])+(array)($prod['dataSources']??[]),
+            static fn($s):bool=>is_array($s)&&($s['provider']??'')==='ObjectTreeIrrigation');
+        $root=(int)$this->ReadAttributeString('SystemTreeLastRoot')?:$this->ReadPropertyInteger('SystemTreeRootId');
+        return $sources['irrigation_'.$root]??(count($sources)===1?reset($sources):[]);
+    }
+
+    private static function systemTreeOverviewRows(array $source): array
+    {
+        $groups=array_fill_keys(array_keys(RCCSystemTreeDiscovery::GROUPS),[]);
+        foreach ((array)($source['points']??[]) as $p) {
+            $group=(string)($p['group']??'unknown');
+            if (!isset($groups[$group]))$group='unknown';
+            $groups[$group][]=['pid'=>(int)$p['id'],'title'=>(string)$p['label'],'zone'=>(int)$p['zone'],
+                'role'=>self::systemTreeRoleLabel((string)$p['role']),'unit'=>(string)$p['unit'],
+                'mode'=>!empty($p['actionCandidate'])?'Aktion vorhanden':(!empty($p['enabled'])?'Lesen':'Nicht freigegeben')];
+        }
+        foreach ($groups as &$rows)usort($rows,static fn(array $a,array $b):int=>$a['zone']<=>$b['zone']
+            ?:strnatcasecmp($a['title'],$b['title']));
+        unset($rows);
+        return $groups;
+    }
+
+    private static function systemTreeOverviewCaption(array $s): string
+    {
+        return $s===[]?'Noch keine Anlage zum Anzeigen.':(string)$s['title'].' #'.$s['sourceRootId']
+            .' · '.count($s['points']).' Datenpunkte nach Funktion und Kreis.';
+    }
+
+    private function refreshSystemTreeOverview(array $s): void
+    {
+        $this->UpdateFormField('SystemTreeOverviewNotice','caption',self::systemTreeOverviewCaption($s));
+        foreach (self::systemTreeOverviewRows($s) as $group=>$rows) {
+            $name='SystemTreeOverview_'.$group;
+            $this->UpdateFormField($name,'caption',RCCSystemTreeDiscovery::GROUPS[$group].' ('.count($rows).')');
+            $this->UpdateFormField($name,'values',json_encode($rows,JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR));
+        }
+    }
+
+    private static function systemTreeExportText(string $text): string
+    {
+        $text=preg_replace('~https?://[^\s]+|\b(?:\d{1,3}\.){3}\d{1,3}\b|\b(?:sk-|ghp_|github_pat_)[A-Za-z0-9_-]+|\b(?:passwort|password|token|secret|api[_ -]?key|authorization)\s*[:=]\s*[^\s]+~iu','[ausgeblendet]',$text)??'';
+        return mb_substr($text,0,180);
+    }
+
+    /** Analysis snapshot for the selected system only. No actions, source text,
+     * archive sample values, credentials, or unrelated catalog entries. */
+    public function ExportSystemTreeDiagnostics(int $root): void
+    {
+        $report=['schema'=>'RoomsCatalogIrrigationDiagnostics/1','createdAt'=>date(DATE_ATOM),'rootId'=>$root];
+        try {
+            $catalogs=[];
+            foreach (['EDIT'=>'RoomsCatalogEditScriptID','PROD'=>'RoomsCatalogScriptID'] as $kind=>$prop) {
+                $id=$this->ReadPropertyInteger($prop);
+                $catalogs[$kind]=$id>0&&IPS_ScriptExists($id)?IAHVoiceRuleLiteralReader::read(IPS_GetScriptContent($id)):null;
+            }
+            if ($root<=0) {
+                $current=$this->systemTreeOverviewSource($catalogs['EDIT']??[],$catalogs['PROD']??[]);
+                $root=(int)($current['sourceRootId']??0);
+                $report['rootId']=$root;
+            }
+            $key='irrigation_'.$root;
+            $report['catalog']=[];
+            $archiveId=$this->huaweiEditorArchiveId();
+            $inventory=RCCDataSourceEditor::archiveInventory($archiveId);
+            $report['archive']=['configured'=>$inventory!==null,'id'=>$archiveId?:null];
+            $preview=json_decode($this->ReadAttributeString('SystemTreePreview'),true);
+            $suggestions=(int)($preview['root']??0)===$root && ($preview['until']??0)>=time()
+                ?(array)($preview['suggestions']??[]):[];
+            $report['aiSuggestions']=[];
+            foreach ($suggestions as $id=>$s)
+                $report['aiSuggestions'][]=['id'=>(int)$id,'role'=>(string)$s['role'],'zone'=>(int)$s['zone']];
+            foreach ($catalogs as $kind=>$cat) {
+                $s=$cat['dataSources'][$key]??null;
+                $report['catalog'][$kind]=is_array($s)?[
+                    'status'=>'present','title'=>self::systemTreeExportText((string)$s['title']),
+                    'points'=>count((array)$s['points']),'roles'=>array_count_values(array_column((array)$s['points'],'role')),
+                    'kiEnabled'=>!empty($s['kiEnabled']),'voiceActions'=>array_values((array)$s['voiceActions']),
+                    'historySignals'=>(array)$s['historySignals'],'winterMonths'=>[$s['winterFromMonth'],$s['winterUntilMonth']],
+                ]:['status'=>$cat===null?'catalog_unavailable':'not_imported'];
+            }
+            $scan=RCCSystemTreeDiscovery::scan($root);
+            $report['controllerOnlyImports']=[];
+            foreach ($scan['controllers'] as $controller) {
+                if ($controller===$root)continue;
+                foreach ($catalogs as $kind=>$cat) {
+                    $related=$cat['dataSources']['irrigation_'.$controller]??null;
+                    if (is_array($related)&&($related['provider']??'')==='ObjectTreeIrrigation')
+                        $report['controllerOnlyImports'][]=['catalog'=>$kind,'rootId'=>$controller,
+                            'points'=>count((array)$related['points'])];
+                }
+            }
+            $report['source']=['title'=>self::systemTreeExportText($scan['title']),'controllers'=>$scan['controllers'],
+                'notes'=>$scan['notes'],'actuators'=>$scan['actuators'],'groups'=>[]];
+            foreach (RCCSystemTreeDiscovery::GROUPS as $group=>$label)
+                $report['source']['groups'][$group]=['label'=>$label,'points'=>[]];
+            foreach ($scan['points'] as $p) {
+                $id=(int)$p['id'];$row=array_intersect_key($p,array_flip(
+                    ['id','parent','ident','label','path','role','zone','type','unit','profile','owned','enabled','actionCandidate','aliases','evidence']));
+                foreach (['ident','label','path','unit','profile'] as $field)$row[$field]=self::systemTreeExportText((string)$row[$field]);
+                $row['aliases']=array_map(static fn(string $x):string=>self::systemTreeExportText($x),$row['aliases']);
+                $row['archived']=$inventory===null?null:isset($inventory[$id]);
+                if ($row['archived']===true&&function_exists('AC_GetLoggingStatus')) {
+                    try {$row['loggingActive']=(bool)AC_GetLoggingStatus($archiveId,$id);} catch (Throwable $ignored) {}
+                }
+                // Useful live facts without exposing arbitrary free text or unknown variables.
+                if ($p['enabled']&&in_array($p['role'],['pumpStatus','zoneStatus','winterMode','stationTemperature',
+                    'heaterStatus','heaterSignal','pressure','soilMoisture','power'],true)) {
+                    try {
+                        $value=GetValue($id);
+                        if (is_bool($value)||is_int($value)||(is_float($value)&&is_finite($value)))$row['currentValue']=$value;
+                    } catch (Throwable $ignored) {}
+                }
+                foreach ($catalogs as $kind=>$cat) {
+                    $saved=$cat['dataSources'][$key]['points'][$id]??null;
+                    if (is_array($saved))$row['catalog'][$kind]=array_intersect_key($saved,
+                        array_flip(['role','zone','enabled','manualEdit','actionCandidate','parent']));
+                }
+                $report['source']['groups'][$p['group']]['points'][]=$row;
+            }
+            foreach (['links','scripts','events'] as $type) {
+                $report['source'][$type]=array_map(static function(array $x):array {
+                    foreach (['label','path'] as $field)
+                        if (isset($x[$field]))$x[$field]=self::systemTreeExportText($x[$field]);
+                    return $x;
+                },array_values($scan[$type]??[]));
+            }
+            $report['summary']=['points'=>count($scan['points']),'links'=>count($scan['links']),
+                'scripts'=>count($scan['scripts']),'events'=>count($scan['events']),
+                'groups'=>array_map(static fn(array $g):int=>count($g['points']),$report['source']['groups'])];
+        } catch (Throwable $e) {
+            $report['error']=self::systemTreeExportText($e->getMessage());
+        }
+        $json=json_encode($report,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES
+            |JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR);
+        echo 'data:application/json;charset=utf-8;base64,'.base64_encode($json);
+    }
+
+    private function buildSystemTreePanel(array $edit,array $prod): array
+    {
+        $source=$this->systemTreeOverviewSource($edit,$prod);
+        $items=[
             ['type'=>'Label','caption'=>'Hauptordner wählen. Der lokale Scan folgt Dummy-Modulen, Links, Zeitereignissen und lesbaren Skriptbezügen.'],
-            ['type'=>'SelectObject','name'=>'SystemTreeRootId','caption'=>'Hauptordner / Kategorie oder Instanz'],
+            ['type'=>'SelectObject','name'=>'SystemTreeRootId','caption'=>'Hauptordner / Kategorie oder Instanz',
+                'value'=>((int)($source['sourceRootId']??0))?:$this->ReadPropertyInteger('SystemTreeRootId')],
             ['type'=>'RowLayout','items'=>[
                 ['type'=>'Button','caption'=>'1 – Anlage scannen','onClick'=>'RCC_PreviewSystemTree($id, (int)$SystemTreeRootId);'],
                 ['type'=>'Button','caption'=>'2 – Mit KI analysieren (optional)','onClick'=>'RCC_AnalyzeSystemTreeWithAI($id, (int)$SystemTreeRootId);'],
@@ -421,8 +586,31 @@ trait RCCSystemTreeEditorTrait
                 ['type'=>'Button','caption'=>'3 – Mit KI-Vorschlägen nach EDIT','onClick'=>'RCC_ImportSystemTreeToEdit($id, (int)$SystemTreeRootId, true);'],
             ]],
             ['type'=>'Label','name'=>'SystemTreeNotice','caption'=>$this->ReadAttributeString('SystemTreeNotice')],
-            ['type'=>'ValidationTextBox','name'=>'SystemTreeReport','caption'=>'Objekte, Beziehungen und Vorschläge','multiline'=>true,'width'=>'100%','value'=>''],
-            ['type'=>'Label','caption'=>'Nach dem Import die Anlage unter Geräte bearbeiten → Bewässerung über das Zahnrad öffnen. Dort Wintermonate, Archivsignale und Alexa-Aktionen prüfen.'],
-        ]];
+            ['type'=>'Button','caption'=>'JSON für Analyse exportieren','download'=>'Bewässerung_Analyse.json',
+                'onClick'=>'RCC_ExportSystemTreeDiagnostics($id, (int)$SystemTreeRootId);'],
+            ['type'=>'Label','caption'=>'Der Download untersucht den gewählten Ordner frisch. Kein Import nach EDIT oder PROD nötig.'],
+            ['type'=>'Label','name'=>'SystemTreeOverviewNotice','caption'=>self::systemTreeOverviewCaption($source)],
+        ];
+        $groups=[];
+        foreach (self::systemTreeOverviewRows($source) as $group=>$rows) {
+            $caption=RCCSystemTreeDiscovery::GROUPS[$group];
+            $groups[]=['type'=>'ExpansionPanel','caption'=>$caption,'expanded'=>false,'items'=>[[
+                'type'=>'List','name'=>'SystemTreeOverview_'.$group,'caption'=>$caption.' ('.count($rows).')',
+                'rowCount'=>6,'add'=>false,'delete'=>false,'loadValuesFromConfiguration'=>false,'values'=>$rows,
+                'columns'=>[
+                    ['name'=>'pid','caption'=>'ID','width'=>'65px','save'=>false],
+                    ['name'=>'zone','caption'=>'Kreis','width'=>'70px','save'=>false],
+                    ['name'=>'title','caption'=>'Datenpunkt','width'=>'auto','save'=>false],
+                    ['name'=>'role','caption'=>'Rolle','width'=>'225px','save'=>false],
+                    ['name'=>'unit','caption'=>'Einheit','width'=>'75px','save'=>false],
+                    ['name'=>'mode','caption'=>'Erkennung','width'=>'155px','save'=>false],
+                ],
+            ]]];
+        }
+        $items[]=['type'=>'Label','caption'=>'Aufschlüsselung der Anlage'];
+        array_push($items,...$groups);
+        $items[]=['type'=>'ValidationTextBox','name'=>'SystemTreeReport','caption'=>'Scanprotokoll und KI-Vorschläge','multiline'=>true,'width'=>'100%','value'=>''];
+        $items[]=['type'=>'Label','caption'=>'Nach dem Import die Anlage unter Geräte bearbeiten → Bewässerung über das Zahnrad öffnen. Dort Wintermonate, Archivsignale und Alexa-Aktionen prüfen.'];
+        return ['type'=>'ExpansionPanel','caption'=>'ANLAGE AUS OBJEKTBAUM – Bewässerung','expanded'=>false,'items'=>$items];
     }
 }
