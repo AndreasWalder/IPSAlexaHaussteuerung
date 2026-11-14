@@ -166,7 +166,7 @@ final class RCCSystemTreeDiscovery
         $type=(int)$v['VariableType'];
         if (!in_array($type,[0,1,2],true))throw new RuntimeException('Bitte eine boolesche oder numerische Variable auswählen.');
         $profile=(string)(($v['VariableCustomProfile']??'')?:($v['VariableProfile']??''));
-        return ['id'=>$id,'label'=>$label,'ident'=>$ident,'parent'=>(int)$object['ObjectParentID'],
+        return ['id'=>$id,'label'=>$label,'ident'=>$ident,'parent'=>(int)$object['ParentID'],
             'path'=>'','group'=>'unknown','role'=>'unknown','zone'=>0,'type'=>$type,
             'unit'=>self::label(self::variableUnit($id,$profile)),'profile'=>self::label($profile),
             'owned'=>false,'enabled'=>false,'actionCandidate'=>false,'aliases'=>[],
@@ -196,8 +196,8 @@ final class RCCSystemTreeDiscovery
             }
             $seen[$id][$evidence]=true;
             $visited++;
-            $parent=(int)($o['ObjectParentID']??0);
-            if ($type===5 && $hops<8) {
+            $parent=(int)($o['ParentID']??0);
+            if ($type===6 && $hops<8) {
                 $target=(int)(IPS_GetLink($id)['TargetID']??0);
                 if ($target<=0 || !IPS_ObjectExists($target)) {$notes[]='Link #'.$id.' hat kein erreichbares Ziel.';continue;}
                 if ($target===$root)continue;
