@@ -498,7 +498,7 @@ final class IAHIrrigationQuery
             }
             $inventory=iah_archive_inventory($archive);
         }
-        if ($heaterHistory) {
+        if ($heaterHistory && !$combinedStatus && !$frostRequested) {
             [$start,$end,$label]=self::period($q,$mode,$now);
             $rows=[];$errors=[];$log=[];$set=(array)($s['historySignals']['heater']??[]);
             if ($set===[] && empty($s['historySignals']['heaterAutomaticDisabled'])) {
