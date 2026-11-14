@@ -29,7 +29,7 @@ function IPS_GetLink(int $id): array {return ['TargetID'=>$GLOBALS['links'][$id]
 function IPS_InstanceExists(int $id): bool {return isset($GLOBALS['objects'][$id])&&$GLOBALS['objects'][$id]['ObjectType']===1;}
 function IPS_GetInstance(int $id): array {
     return ['ModuleInfo'=>['ModuleID'=>match($id){
-        50000=>RCCSystemTreeDiscovery::CONTROLLER,17597=>'{43192F0B-135B-4CE7-A0A7-1475603F3060}',default=>''}]];
+        50000,52811=>RCCSystemTreeDiscovery::CONTROLLER,17597=>'{43192F0B-135B-4CE7-A0A7-1475603F3060}',default=>''}]];
 }
 function IPS_GetInstanceListByModuleID(string $module): array {
     return $module==='{43192F0B-135B-4CE7-A0A7-1475603F3060}'?[17597]:[];
@@ -195,6 +195,22 @@ $rows=RCCDataSourceEditor::sourceRows($catalog);
 test(count($rows)===2&&$rows[1]['domain']==='bewaesserung','virtual irrigation source alongside Huawei');
 ob_start();$ed->PreviewSystemTree(41578);$ed->ImportSystemTreeToEdit(41578);ob_end_clean();
 test(IAHVoiceRuleLiteralReader::read($scripts[10001])['dataSources'][$key]['voiceActions']===[50104],'same verified capability survives rescan');
+ob_start();
+$ed->RemoveSystemTreeVariable($key,50104);
+$ed->PreviewSystemTree(41578);
+$ed->ImportSystemTreeToEdit(41578);
+ob_end_clean();
+$excluded=IAHVoiceRuleLiteralReader::read($scripts[10001])['dataSources'][$key];
+test(isset($excluded['excludedPoints'][50104])&&!isset($excluded['points'][50104])
+    && $excluded['voiceActions']===[],'discovered point and its action stay removed after rescan');
+ob_start();
+$ed->RestoreSystemTreeVariable($key,50104);
+$ed->PreviewSystemTree(41578);
+$ed->ImportSystemTreeToEdit(41578);
+ob_end_clean();
+$restored=IAHVoiceRuleLiteralReader::read($scripts[10001])['dataSources'][$key];
+test(isset($restored['points'][50104])&&!isset($restored['excludedPoints'][50104])
+    && $restored['voiceActions']===[],'restoring a point does not restore its action permission');
 ob_start();$ed->PreviewSystemTree(41578);$scripts[10001].="\n";$ed->ImportSystemTreeToEdit(41578);$conflict=ob_get_clean();
 test(str_contains($conflict,'EDIT wurde geändert'),'refuse stale preview');
 
@@ -243,4 +259,24 @@ test(IAHIrrigationQuery::command($catalog,'Stoppe Kreis 4',true,true)['reason']=
 $r=iah_rc_voice('Wie kalt ist es im Pumpenschacht oben?',['archive_control_id'=>17597],$catalog);
 test($r['answer']==='Pumpenschacht oben 9,2 Grad.'&&$r['answerSource']==='irrigation','voice backend without AI');
 test(str_contains(json_encode($log),'KIRoomsCatalog.irrigation.query'),'shared Alexa log trace');
+obj(52811,1,0,'IPSBewaesserung');
+$config[52811]=['ZoneName4'=>'Kreis 4 Hecke Ost'];
+variable(15690,61000,'externe Temperatur Pumpenschacht oben','GardenTop',2,8.8,'~Temperature');
+variable(42306,61000,'externe Temperatur Pumpenschacht unten','GardenBottom',2,7.6,'~Temperature');
+variable(25030,61000,'Bodenfeuchte (1) Hecke Ost','GardenSoil',1,57,'~Humidity');
+variable(47490,61000,'Bodenfeuchte (2) Hecke Süd','GardenSoilSouth',1,49,'~Humidity');
+variable(31242,61000,'Bodenfeuchte (6)','OldSoil',1,3,'~Humidity');
+variable(40021,61000,'Batterie Bodenfeuchtesensor (1) - Hecke Ost','GardenBattery',1,80,'~Humidity');
+variable(44047,61000,'Temperatur (Aussensensor)','Outside',2,-2.9,'~Temperature');
+$preset=$catalog;
+$preset['dataSources'][$key]['controllers']=[52811];
+$scripts[10001]="<?php return ".var_export($preset,true).";";
+ob_start();$ed->ApplyGarden52811Sensors($key);$result=ob_get_clean();
+$preset=IAHVoiceRuleLiteralReader::read($scripts[10001]);
+$pp=$preset['dataSources'][$key]['points'];
+test(($pp[15690]['label']??'')==='Pumpenschacht oben' && $pp[42306]['label']==='Pumpenschacht unten'
+    && $pp[25030]['zone']===4 && $pp[47490]['zone']===0 && !$pp[31242]['enabled']
+    && $pp[40021]['role']==='sensorBattery' && $pp[44047]['role']==='outdoorTemperature','garden sensor assignment: '.$result);
+test(IAHIrrigationQuery::query($preset,'Wie hoch ist die Batterie Hecke Ost der Bewässerung?','',17597,microtime(true)+4,$now)['answer']
+    ==='Batterie Hecke Ost 80 Prozent.','battery reading is distinct from soil moisture');
 echo "PASS V3.8.16: link/script graph, checked EDIT import, seasonal voice, rising edges and action guards\n";
