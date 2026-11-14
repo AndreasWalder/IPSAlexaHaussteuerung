@@ -12,7 +12,7 @@ require_once __DIR__.'/../IPSAlexaHaussteuerung/resources/helpers/VoiceIntentRou
 function test(bool $ok,string $message): void {if (!$ok)throw new RuntimeException($message);}
 $objects=[];$variables=[];$values=[];$scripts=[];$links=[];$events=[];$archive=[];$log=[];$requests=[];$config=[];
 function obj(int $id,int $type,int $parent,string $name,string $ident=''): void {
-    $GLOBALS['objects'][$id]=['ObjectType'=>$type,'ObjectParentID'=>$parent,'ObjectName'=>$name,'ObjectIdent'=>$ident];
+    $GLOBALS['objects'][$id]=['ObjectType'=>$type,'ParentID'=>$parent,'ObjectName'=>$name,'ObjectIdent'=>$ident];
 }
 function variable(int $id,int $parent,string $name,string $ident,int $type,mixed $value,string $profile='',int $action=0,int $custom=0): void {
     obj($id,2,$parent,$name,$ident);
@@ -20,12 +20,15 @@ function variable(int $id,int $parent,string $name,string $ident,int $type,mixed
     $GLOBALS['values'][$id]=$value;
 }
 function linkTo(int $id,int $parent,string $name,int $target): void {
-    obj($id,5,$parent,$name);$GLOBALS['links'][$id]=$target;
+    obj($id,6,$parent,$name);$GLOBALS['links'][$id]=$target;
 }
 function IPS_ObjectExists(int $id): bool {return isset($GLOBALS['objects'][$id]);}
 function IPS_GetObject(int $id): array {return $GLOBALS['objects'][$id]??[];}
-function IPS_GetChildrenIDs(int $id): array {return array_keys(array_filter($GLOBALS['objects'],static fn($x)=>$x['ObjectParentID']===$id));}
-function IPS_GetLink(int $id): array {return ['TargetID'=>$GLOBALS['links'][$id]??0];}
+function IPS_GetChildrenIDs(int $id): array {return array_keys(array_filter($GLOBALS['objects'],static fn($x)=>$x['ParentID']===$id));}
+function IPS_GetLink(int $id): array {
+    if (($GLOBALS['objects'][$id]['ObjectType']??null)!==6)throw new LogicException('Not a link');
+    return ['TargetID'=>$GLOBALS['links'][$id]??0];
+}
 function IPS_InstanceExists(int $id): bool {return isset($GLOBALS['objects'][$id])&&$GLOBALS['objects'][$id]['ObjectType']===1;}
 function IPS_GetInstance(int $id): array {
     return ['ModuleInfo'=>['ModuleID'=>match($id){
@@ -68,6 +71,7 @@ obj(41578,0,0,'Bewässerung');obj(14136,1,41578,'Kreise Manuell');obj(14872,1,41
 obj(40892,1,41578,'Bodenfeuchte');obj(26483,1,41578,'Allgemein');obj(51071,1,41578,'Plan');
 obj(50000,1,0,'IPSBewaesserung');obj(61000,1,0,'Wetterstation');obj(17597,1,0,'Archive Control');
 obj(63000,1,0,'Messung');obj(65000,3,41578,'Frostschutz');obj(65001,4,65000,'Frostschutzregel');
+obj(65003,5,41578,'Visualisierung');
 obj(65002,3,0,'Heizung bewerten');obj(70000,0,0,'Sonstiges');
 variable(50104,50000,'Manuell Hecke Ost','Manuell4',0,false,'~Switch',50000);
 variable(50204,50000,'Status Hecke Ost','Status4',0,false);
@@ -177,6 +181,12 @@ test($export['archiveId']===17597 && $export['scan']['sourceRootId']===41578
 $supplement=IAHVoiceRuleLiteralReader::read($scripts[10001])['dataSources'][$key]['points'][60109];
 test($supplement['unit']==='°C'&&$supplement['enabled']&&!$supplement['actionCandidate']
     && $supplement['role']==='stationTemperature','supplemental sensor persists across rescan');
+$legacy=IAHVoiceRuleLiteralReader::read($scripts[10001]);
+$legacy['dataSources'][$key]['points'][60109]['parent']=0;
+$scripts[10001]="<?php return ".var_export($legacy,true).";";
+ob_start();$ed->PreviewSystemTree(41578);$ed->ImportSystemTreeToEdit(41578);ob_end_clean();
+$recovered=IAHVoiceRuleLiteralReader::read($scripts[10001])['dataSources'][$key]['points'][60109];
+test($recovered['parent']===61000&&IAHIrrigationQuery::value($recovered)===4.5,'rescan repairs older sensor bindings');
 ob_start();$ed->RemoveSystemTreeVariable($key,60109);ob_end_clean();
 test(!isset(IAHVoiceRuleLiteralReader::read($scripts[10001])['dataSources'][$key]['points'][60109]),
     'supplemental sensor can be removed');
@@ -275,6 +285,7 @@ ob_start();$ed->ApplyGarden52811Sensors($key);$result=ob_get_clean();
 $preset=IAHVoiceRuleLiteralReader::read($scripts[10001]);
 $pp=$preset['dataSources'][$key]['points'];
 test(($pp[15690]['label']??'')==='Pumpenschacht oben' && $pp[42306]['label']==='Pumpenschacht unten'
+    && $pp[15690]['parent']===61000 && IAHIrrigationQuery::value($pp[15690])===8.8
     && $pp[25030]['zone']===4 && $pp[47490]['zone']===0 && !$pp[31242]['enabled']
     && $pp[40021]['role']==='sensorBattery' && $pp[44047]['role']==='outdoorTemperature','garden sensor assignment: '.$result);
 test(IAHIrrigationQuery::query($preset,'Wie hoch ist die Batterie Hecke Ost der Bewässerung?','',17597,microtime(true)+4,$now)['answer']

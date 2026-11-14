@@ -254,8 +254,12 @@ trait RCCSystemTreeEditorTrait
                 if (!empty($p['manualSource'])) {
                     if (!IPS_VariableExists((int)$pid))continue;
                     $object=IPS_GetObject((int)$pid);
-                    if ((int)$object['ObjectParentID']!==$p['parent'] || (string)$object['ObjectIdent']!==$p['ident']
+                    $parent=(int)($object['ParentID']??-1);
+                    if ($parent<0 || ($p['parent']!==0 && $parent!==$p['parent'])
+                        || (string)$object['ObjectIdent']!==$p['ident']
                         || (int)IPS_GetVariable((int)$pid)['VariableType']!==$p['type'])continue;
+                    // Older imports stored zero for external sensor parents.
+                    $p['parent']=$parent;
                     $source['points'][$pid]=$p;
                     continue;
                 }
@@ -462,7 +466,7 @@ trait RCCSystemTreeEditorTrait
             if ($count>0) {
                 foreach ([56338=>25030,42523=>47490,47297=>40021,49553=>16564] as $link=>$target) {
                     if (isset($source['points'][$target],$source['points'][$link]) && IPS_ObjectExists($link)
-                        && (int)IPS_GetObject($link)['ObjectType']===5 && (int)IPS_GetLink($link)['TargetID']===$target) {
+                        && (int)IPS_GetObject($link)['ObjectType']===6 && (int)IPS_GetLink($link)['TargetID']===$target) {
                         $source['excludedPoints'][$link]=$source['points'][$link]['label'];
                         self::removeSystemTreePoint($source,$link);
                     }
