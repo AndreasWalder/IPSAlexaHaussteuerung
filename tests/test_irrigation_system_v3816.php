@@ -278,6 +278,8 @@ variable(47490,61000,'Bodenfeuchte (2) Hecke Süd','GardenSoilSouth',1,49,'~Humi
 variable(31242,61000,'Bodenfeuchte (6)','OldSoil',1,3,'~Humidity');
 variable(40021,61000,'Batterie Bodenfeuchtesensor (1) - Hecke Ost','GardenBattery',1,80,'~Humidity');
 variable(44047,61000,'Temperatur (Aussensensor)','Outside',2,-2.9,'~Temperature');
+variable(47232,63000,'Leistung','HeaterWatt',2,14.9,'~Watt');
+variable(56599,63000,'Stromstärke','HeaterAmpere',2,0.1);
 $preset=$catalog;
 $preset['dataSources'][$key]['controllers']=[52811];
 $scripts[10001]="<?php return ".var_export($preset,true).";";
@@ -290,4 +292,19 @@ test(($pp[15690]['label']??'')==='Pumpenschacht oben' && $pp[42306]['label']==='
     && $pp[40021]['role']==='sensorBattery' && $pp[44047]['role']==='outdoorTemperature','garden sensor assignment: '.$result);
 test(IAHIrrigationQuery::query($preset,'Wie hoch ist die Batterie Hecke Ost der Bewässerung?','',17597,microtime(true)+4,$now)['answer']
     ==='Batterie Hecke Ost 80 Prozent.','battery reading is distinct from soil moisture');
+ob_start();
+$ed->AddGardenHeaterMeters($key);
+$ed->SaveSystemTreeHeaterTemperature($key,15690,'1,0',10);
+ob_end_clean();
+$heating=IAHVoiceRuleLiteralReader::read($scripts[10001]);
+$heatingSource=$heating['dataSources'][$key];
+test($heatingSource['points'][47232]['role']==='heaterSignal' && $heatingSource['points'][56599]['unit']==='A'
+    && $heatingSource['historySignals']['heaterTemperature']['id']===15690
+    && !isset($heatingSource['historySignals']['heater'][47232]),'meters do not invent switching thresholds');
+foreach ([0=>5,120=>5.7,240=>6.2,360=>6.8,480=>5.5,600=>6.7,2400=>9] as $dt=>$value)
+    record(15690,$day+$dt,$value);
+$temperatureAnswer=IAHIrrigationQuery::query($heating,'Zeige Temperaturanstiege der Rohrbegleitheizung diesen Winter','',17597,microtime(true)+4,$now);
+test(str_contains($temperatureAnswer['answer'],'2 schnelle Temperaturanstiege')
+    && str_contains($temperatureAnswer['answer'],'Hinweise auf Heizbetrieb')
+    && $temperatureAnswer['diagnostics']['operation']==='heater_temperature_rises','temperature rises are separate from measured switch events');
 echo "PASS V3.8.16: link/script graph, checked EDIT import, seasonal voice, rising edges and action guards\n";

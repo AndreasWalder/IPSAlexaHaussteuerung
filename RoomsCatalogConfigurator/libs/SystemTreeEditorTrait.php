@@ -280,6 +280,11 @@ trait RCCSystemTreeEditorTrait
             foreach ((array)($old['historySignals']['heater']??[]) as $pid=>$signal)
                 if (isset($source['points'][$pid])&&self::systemTreeSamePoint($old['points'][$pid]??[],$source['points'][$pid]))
                     $source['historySignals']['heater'][$pid]=$signal;
+            $thermal=(array)($old['historySignals']['heaterTemperature']??[]);
+            $temperatureId=(int)($thermal['id']??0);
+            if (isset($source['points'][$temperatureId])
+                && self::systemTreeSamePoint($old['points'][$temperatureId]??[],$source['points'][$temperatureId]))
+                $source['historySignals']['heaterTemperature']=$thermal;
             $pid=(int)($old['historySignals']['pumpId']??0);
             if ($pid>0&&isset($source['points'][$pid])&&self::systemTreeSamePoint($old['points'][$pid]??[],$source['points'][$pid]))
                 $source['historySignals']['pumpId']=$pid;
@@ -384,6 +389,8 @@ trait RCCSystemTreeEditorTrait
     private static function removeSystemTreePoint(array &$source,int $pid): void
     {
         unset($source['points'][$pid],$source['historySignals']['heater'][$pid]);
+        if ((int)($source['historySignals']['heaterTemperature']['id']??0)===$pid)
+            unset($source['historySignals']['heaterTemperature']);
         if ((int)($source['historySignals']['pumpId']??0)===$pid)unset($source['historySignals']['pumpId']);
         $source['voiceActions']=array_values(array_diff((array)($source['voiceActions']??[]),[$pid]));
     }
@@ -484,6 +491,60 @@ trait RCCSystemTreeEditorTrait
         'pumpStatus'=>'pump','nextStart'=>'schedule','outdoorTemperature'=>'climate',
         'rainSensor'=>'climate','sensorBattery'=>'climate',
     ];
+
+    public function AddGardenHeaterMeters(string $key): void
+    {
+        try {
+            [$id,$old,$catalog]=$this->systemTreeEditContext();
+            $source=&$catalog['dataSources'][$key];
+            if (($source['provider']??'')!=='ObjectTreeIrrigation' || !in_array(52811,(array)($source['controllers']??[]),true)
+                || !IPS_InstanceExists(52811)
+                || strtoupper((string)(IPS_GetInstance(52811)['ModuleInfo']['ModuleID']??''))!==RCCSystemTreeDiscovery::CONTROLLER)
+                throw new RuntimeException('Die Messwerte gehören zur Bewässerungsinstanz #52811.');
+            $added=[];$unavailable=[];
+            foreach ([47232=>['leistung','W'],56599=>['stromstaerke','A']] as $pid=>[$name,$unit]) {
+                if (isset($source['excludedPoints'][$pid]))continue;
+                if (($source['points'][$pid]['role']??'')==='heaterSignal')continue;
+                if (!IPS_VariableExists($pid) || RCCSystemTreeDiscovery::norm((string)IPS_GetObject($pid)['ObjectName'])!==$name
+                    || !in_array((int)IPS_GetVariable($pid)['VariableType'],[1,2],true)) {
+                    $unavailable[]=$pid;
+                    continue;
+                }
+                $point=RCCSystemTreeDiscovery::supplementalPoint($pid,'Rohrbegleitheizung '.($unit==='W'?'Leistung':'Stromstärke'));
+                if ($point['unit']!=='' && $point['unit']!==$unit) {
+                    $unavailable[]=$pid;
+                    continue;
+                }
+                $source['points'][$pid]=array_replace($point,['unit'=>$unit,'role'=>'heaterSignal','group'=>'winter','enabled'=>true]);
+                $added[]=$pid;
+            }
+            if ($added!==[])$this->saveSystemTreeEdit($id,$old,$catalog);
+            echo count($added).' Heizungsmesswerte ergänzt. Zahnrad erneut öffnen und für die Leistung oder Stromstärke die Archivschwellen einstellen.'
+                .($unavailable===[]?'':' Bitte Objekt-ID, Name und Einheit prüfen: #'.implode(', #',$unavailable).'.');
+        } catch (Throwable $e) {echo $e->getMessage();}
+    }
+
+    public function SaveSystemTreeHeaterTemperature(string $key,int $pid,string $rise,int $minutes): void
+    {
+        try {
+            [$id,$old,$catalog]=$this->systemTreeEditContext();
+            $source=&$catalog['dataSources'][$key];
+            if (($source['provider']??'')!=='ObjectTreeIrrigation')throw new RuntimeException('Anlage fehlt in EDIT.');
+            if ($pid===0) {
+                unset($source['historySignals']['heaterTemperature']);
+            } else {
+                $point=$source['points'][$pid]??[];
+                $rise=str_replace(',','.',trim($rise));
+                if (($point['role']??'')!=='stationTemperature' || empty($point['enabled']) || ($point['unit']??'')!=='°C')
+                    throw new RuntimeException('Bitte eine lesbare Stationstemperatur auswählen.');
+                if (!is_numeric($rise) || !is_finite((float)$rise) || (float)$rise<0.1 || (float)$rise>30 || $minutes<1 || $minutes>120)
+                    throw new RuntimeException('Bitte 0,1 bis 30 °C und 1 bis 120 Minuten eintragen.');
+                $source['historySignals']['heaterTemperature']=['id'=>$pid,'rise'=>(float)$rise,'seconds'=>$minutes*60];
+            }
+            $this->saveSystemTreeEdit($id,$old,$catalog);
+            echo 'Temperaturauswertung in EDIT gespeichert.';
+        } catch (Throwable $e) {echo $e->getMessage();}
+    }
 
     public function SaveSystemTreePoint(string $key,int $pid,string $json): void
     {
@@ -646,7 +707,26 @@ trait RCCSystemTreeEditorTrait
             if (in_array(52811,(array)($s['controllers']??[]),true)) {
                 $items[]=['type'=>'Button','caption'=>'Sensorzuordnung für Anlage #52811 übernehmen','onClick'=>
                     'RCC_ApplyGarden52811Sensors($id, '.$qkey.');'];
+                $items[]=['type'=>'Button','caption'=>'Leistung und Strom der Rohrbegleitheizung ergänzen','onClick'=>
+                    'RCC_AddGardenHeaterMeters($id, '.$qkey.');'];
             }
+            $temperatureOptions=[['caption'=>'Keine Temperaturauswertung','value'=>0]];
+            foreach ($s['points'] as $p) {
+                if ($p['role']==='stationTemperature' && !empty($p['enabled']))
+                    $temperatureOptions[]=['caption'=>$p['label'].' #'.$p['id'],'value'=>$p['id']];
+            }
+            $thermal=$s['historySignals']['heaterTemperature']??[];
+            $items[]=['type'=>'ExpansionPanel','caption'=>'Rohrbegleitheizung am Temperaturverlauf erkennen','expanded'=>false,'items'=>[
+                ['type'=>'Label','caption'=>'Wähle den Sensor an der beheizten Stelle. Ein schneller Temperaturanstieg ist ein Hinweis auf Heizbetrieb.'],
+                ['type'=>'Select','name'=>'HeaterTemperaturePoint','caption'=>'Temperatursensor',
+                    'options'=>$temperatureOptions,'value'=>(int)($thermal['id']??0)],
+                ['type'=>'ValidationTextBox','name'=>'HeaterTemperatureRise','caption'=>'Temperaturanstieg in °C',
+                    'value'=>(string)($thermal['rise']??1.0)],
+                ['type'=>'NumberSpinner','name'=>'HeaterTemperatureWindow','caption'=>'Innerhalb von Minuten','minimum'=>1,'maximum'=>120,
+                    'value'=>(int)(($thermal['seconds']??600)/60)],
+                ['type'=>'Button','caption'=>'Temperaturauswertung nach EDIT speichern','onClick'=>
+                    'RCC_SaveSystemTreeHeaterTemperature($id, '.$qkey.', (int)$HeaterTemperaturePoint, (string)$HeaterTemperatureRise, (int)$HeaterTemperatureWindow);'],
+            ]];
             $pointOptions=[['caption'=>'Bitte auswählen','value'=>0]];
             foreach ($s['points'] as $p) {
                 $pointOptions[]=['caption'=>$p['label'].' #'.$p['id'],'value'=>$p['id']];
