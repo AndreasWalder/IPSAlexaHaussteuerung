@@ -2092,22 +2092,73 @@ function Execute($request = null)
             $iahLastInteraction['status'] = $status;
             $iahLastInteraction['ruleKey'] = $rule;
         };
-        $kiAlexaKeepOpen = static function (string $text, string $status = 'Hinweis', string $question = '') use ($iahLastOutcome, $baseUrl, $token) {
+        $kiAlexaKeepOpen = static function (string $text, string $status = 'Hinweis', string $question = '', bool $aplSupported = false) use ($iahLastOutcome, $baseUrl, $token) {
             $iahLastOutcome('Hausabfrage', $text, $status);
             $response = AskResponse::CreatePlainText($text)
                 ->SetRepromptPlainText('Noch eine Frage oder ein Schaltbefehl?');
 
-            // Bewaesserungs- und PV-Antworten als Alexa-Standardkarte wie
-            // die Jalousie-Antwort anzeigen. Echo Show rendert die Karte,
-            // solange keine APL-Seite fuer diese Antwort mitgesendet wird.
+            // Standardkarte als Rueckfall fuer die Alexa-App und Geraete ohne APL.
             $normalizedQuestion = mb_strtolower($question, 'UTF-8');
-            $topic = preg_match('/\\b(?:bewässerung|bewaesserung|bewässern|bewaessern|gießen|giessen|bodenfeuchte|pumpendruck|wasser holen|alles in ordnung|zusammenfassung)\\b/u', $normalizedQuestion)
+            $topic = preg_match('/\b(?:bewässerung|bewaesserung|bewässern|bewaessern|gießen|giessen|bodenfeuchte|pumpendruck|wasser holen|alles in ordnung|zusammenfassung)\b/u', $normalizedQuestion)
                 ? 'Bewässerung'
-                : (preg_match('/\\b(?:pv|photovoltaik|solaranlage|solarenergie|einspeisung)\\b/u', $normalizedQuestion)
+                : (preg_match('/\b(?:pv|photovoltaik|solaranlage|solarenergie|einspeisung)\b/u', $normalizedQuestion)
                     ? 'Photovoltaik' : '');
+            $title = $topic !== '' ? $topic . ' – Zusammenfassung' : 'Zusammenfassung';
             $image = rtrim((string)$baseUrl, '/') . '/hook/iah-alexa-icons?f=Logo.png&token=' . rawurlencode((string)$token);
-            if ($topic !== '' && preg_match('~^https://[a-z0-9.-]+(?::\\d{1,5})?(?:/[^\\s]*)?$~iD', $image)) {
-                $response->SetStandardCard($topic . ' – Zusammenfassung', $text, $image, $image);
+            if ($topic !== '' && preg_match('~^https://[a-z0-9.-]+(?::\d{1,5})?(?:/[^\s]*)?$~iD', $image)) {
+                $response->SetStandardCard($title, $text, $image, $image);
+            }
+            if ($aplSupported && $topic !== '') {
+                // Kompakte Show-Ansicht mit kleinerer, gut lesbarer Schrift.
+                $response->AddDirective([
+                    'type' => 'Alexa.Presentation.APL.RenderDocument',
+                    'token' => 'iah-house-summary',
+                    'document' => [
+                        'type' => 'APL',
+                        'version' => '1.4',
+                        'mainTemplate' => [
+                            'parameters' => ['payload'],
+                            'items' => [[
+                                'type' => 'Container',
+                                'width' => '100vw',
+                                'height' => '100vh',
+                                'paddingLeft' => '36dp',
+                                'paddingRight' => '36dp',
+                                'paddingTop' => '28dp',
+                                'paddingBottom' => '28dp',
+                                'backgroundColor' => '#F4F6F8',
+                                'items' => [
+                                    [
+                                        'type' => 'Text',
+                                        'text' => '${payload.title}',
+                                        'fontSize' => '30dp',
+                                        'fontWeight' => 'bold',
+                                        'color' => '#18324A',
+                                        'maxLines' => 2
+                                    ],
+                                    [
+                                        'type' => 'ScrollView',
+                                        'width' => '100%',
+                                        'height' => '100%',
+                                        'items' => [[
+                                            'type' => 'Text',
+                                            'text' => '${payload.text}',
+                                            'fontSize' => '21dp',
+                                            'lineHeight' => '29dp',
+                                            'color' => '#202830'
+                                        ]]
+                                    ]
+                                ]
+                            ]]
+                        ]
+                    ],
+                    'datasources' => [
+                        'payload' => [
+                            'title' => $title,
+                            'text' => $text
+                        ]
+                    ]
+                ]);
             }
             return $response;
         };
@@ -2832,7 +2883,8 @@ function Execute($request = null)
                                 }
                                 return $kiAlexaKeepOpen((string)$housePlan['answer'],
                                     !empty($housePlan['reason']) ? 'Rückfrage' : 'Hinweis',
-                                    $homeAgentSpokenQuestion);
+                                    $homeAgentSpokenQuestion,
+                                    (bool)($iahVoiceHasScreen ?? false));
                             }
                             if ($iahPossibleFollowup && !isset($housePlan['question'])) {
                                 if (isset($iahLastInteraction)) {
@@ -2925,7 +2977,8 @@ function Execute($request = null)
                                     'model'=>(string)($propsEarly['KIModelSelection']??'gpt-6-luna')]);
                                 return $kiAlexaKeepOpen($homeAgentAnswer,
                                     $iahAwaitingLocation ? 'Rückfrage' : 'Beantwortet',
-                                    $homeAgentSpokenQuestion);
+                                    $homeAgentSpokenQuestion,
+                                    (bool)($iahVoiceHasScreen ?? false));
                             }
                             if (isset($iahLastInteraction))
                                 $iahLastInteraction['detail']=is_array($homeAgentData) ? 'backend_unhandled' : 'invalid_backend_reply';
