@@ -941,7 +941,7 @@ function iah_rc_voice(
         if ($irrigation!==null) {
             iah_rc_log('irrigation.query',$irrigation['diagnostics']);
             $readDetails=[['tool'=>'irrigation','result'=>$irrigation['diagnostics']]];
-            if ($key!=='' && !empty($cfg['prefer_ai'])) {
+            if ($key!=='') {
                 try {
                     $model=(string)($cfg['model']??'gpt-6-luna');
                     $request=['model'=>$model,'max_completion_tokens'=>180,'messages'=>[
