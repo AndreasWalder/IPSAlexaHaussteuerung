@@ -31,8 +31,23 @@ final class RCCDataSourceEditor
     {
         $rows=[];
         foreach ((array)($catalog['dataSources']??[]) as $key=>$source) {
-            if (!is_string($key) || !is_array($source)
-                || ($source['provider']??'')!=='HuaweiPV')continue;
+            if (!is_string($key)||!is_array($source))continue;
+            if (($source['provider']??'')==='ObjectTreeIrrigation') {
+                $id=(int)($source['sourceRootId']??0);
+                $valid=$id>0 && function_exists('IPS_ObjectExists') && IPS_ObjectExists($id);
+                $read=!empty($source['kiEnabled']);
+                $all=count((array)($source['points']??[]));
+                $actions=count((array)($source['voiceActions']??[]));
+                $rows[]=['selected'=>false,'isDataSource'=>true,'roomKey'=>'__irrigation_source__',
+                    'roomLabel'=>'Garten','floor'=>'—','domain'=>'bewaesserung','group'=>'anlage','key'=>$key,
+                    'title'=>(string)($source['title']??'Bewässerung'),'kiEnabled'=>$read,'kiReadOnly'=>$actions===0,
+                    'kiStatus'=>$read?($actions>0?'Lesen + Schalten':'Nur lesen'):'Ohne KI',
+                    'ipsObjectIds'=>(string)$id,'ipsInstanceIds'=>'','checkStatus'=>$valid?'Anlage':'Quelle fehlt',
+                    'checkDetails'=>$all.' Datenpunkte, '.$actions.' freigegebene Alexa-Aktionen',
+                    'rowColor'=>$valid?'#E2F2FF':'#FFCCCC','sourceKey'=>$key,'metricCount'=>$all];
+                continue;
+            }
+            if (($source['provider']??'')!=='HuaweiPV')continue;
             $metrics=(array)($source['metrics']??[]);
             $enabled=count(array_filter($metrics,
                 static fn($m):bool=>is_array($m) && !empty($m['enabled'])));

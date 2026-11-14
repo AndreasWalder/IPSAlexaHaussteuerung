@@ -10,6 +10,9 @@ require_once __DIR__ . '/libs/GuidedDiscovery.php';
 require_once __DIR__ . '/libs/ModuleDataSources.php';
 require_once __DIR__ . '/libs/DataSourceEditor.php';
 require_once __DIR__ . '/libs/DataSourceEditorTrait.php';
+require_once __DIR__ . '/libs/SystemTreeDiscovery.php';
+require_once __DIR__ . '/libs/SystemTreeEditorTrait.php';
+require_once dirname(__DIR__) . '/IPSAlexaHaussteuerung/src/VoiceRuleLiteralReader.php';
 require_once __DIR__ . '/../IPSAlexaHaussteuerung/src/VoiceRulePreviewForm.php';
 
 /**
@@ -86,6 +89,7 @@ class RoomsCatalogConfigurator extends IPSModule
 {
     private const ALEXA_MODULE_ID = '{F528D4D0-5729-4315-AE88-9BBABDBD0392}';
     use RCCDataSourceEditorTrait;
+    use RCCSystemTreeEditorTrait;
     // V3.4.4: Typen, editierbare Eigenschaften und Rollen nur noch zentral
     // in libs/DeviceTypeRegistry.php pflegen, nicht in diesem Formular.
 
@@ -112,6 +116,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterPropertyBoolean('DiscoveryUseAI', false);
         $this->RegisterPropertyInteger('DiscoveryAlexaInstanceId', 0);
         $this->RegisterPropertyInteger('HuaweiDataSourceInstanceId', 0);
+        $this->RegisterPropertyInteger('SystemTreeRootId', 0);
 
         $this->RegisterAttributeString('RuntimeEntries', '[]');
         $this->RegisterAttributeString('RuntimeEditHash', '');
@@ -137,6 +142,8 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('MarkedEditorNotice','');
         $this->RegisterAttributeString('CatalogRestorePreview','{}');
         $this->RegisterAttributeString('HuaweiDataSourcePreview','{}');
+        $this->RegisterAttributeString('SystemTreePreview','{}');
+        $this->RegisterAttributeString('SystemTreeNotice','Noch kein Anlagen-Scan gestartet.');
         $this->RegisterAttributeString('HuaweiDataSourceReport','');
         $this->RegisterAttributeString('HuaweiDataSourceNotice','Noch kein HuaweiPV-Scan gestartet.');
         $this->RegisterAttributeString('CatalogRestoreNotice','Noch kein Backup zur Wiederherstellung ausgewaehlt.');
@@ -193,6 +200,8 @@ class RoomsCatalogConfigurator extends IPSModule
             'MarkedEditorNotice'=>'',
             'CatalogRestorePreview'=>'{}',
             'HuaweiDataSourcePreview'=>'{}',
+            'SystemTreePreview'=>'{}',
+            'SystemTreeNotice'=>'Noch kein Anlagen-Scan gestartet.',
             'HuaweiDataSourceReport'=>'',
             'TechnicalDeviceSnapshot'=>'{}',
             'TechnicalDevicePreview'=>'{}',
@@ -5399,7 +5408,9 @@ class RoomsCatalogConfigurator extends IPSModule
         // Nur einzelne String-Felder aus der aktuellen Zeile auslesen; niemals
         // das gesamte Objekt direkt an array_filter() übergeben.
         $saveSelectedRowCallback = $this->buildListRowSaveCallback($entriesEdit);
-        $sourceRowSaveCallback='if (!empty($Entries["isDataSource"])) { '
+        $sourceRowSaveCallback='if (!empty($Entries["isDataSource"]) && str_starts_with((string)($Entries["key"] ?? ""), "irrigation_")) { '
+            .'RCC_SaveSystemTreeOverview($id, (string)$Entries["key"], (string)($Entries["title"] ?? ""), (bool)($Entries["kiEnabled"] ?? false)); '
+            .'} elseif (!empty($Entries["isDataSource"])) { '
             .'RCC_SaveHuaweiDataSourceOverview($id, (string)($Entries["key"] ?? ""), '
             .'(string)($Entries["title"] ?? ""), (bool)($Entries["kiEnabled"] ?? false)); '
             .'} else { '.$saveSelectedRowCallback.' }';
@@ -5677,11 +5688,13 @@ class RoomsCatalogConfigurator extends IPSModule
                             'caption'  => 'Geraete und KI-Freigaben',
                             'rowCount' => 20,
                             'loadValuesFromConfiguration' => false,
-                            'form' => 'return json_decode(!empty($Entries["isDataSource"]) '
+                            'form' => 'return json_decode(str_starts_with((string)($Entries["key"] ?? ""), "irrigation_") && !empty($Entries["isDataSource"]) '
+                                .'? RCC_GetSystemTreeEditForm($id, (string)($Entries["key"] ?? "")) '
+                                .': (!empty($Entries["isDataSource"]) '
                                 .'? RCC_GetHuaweiDataSourceEditForm($id, (string)($Entries["key"] ?? "")) '
                                 .': RCC_GetEntryEditForm($id, (string)($Entries["roomKey"] ?? ""), '
                                 .'(string)($Entries["domain"] ?? ""), (string)($Entries["group"] ?? ""), '
-                                .'(string)($Entries["key"] ?? "")), true);',
+                                .'(string)($Entries["key"] ?? ""))), true);',
                             'add'      => true,
                             'delete'   => false,
                             'sort'     => ['column' => 'roomLabel', 'direction' => 'ascending'],
@@ -6126,6 +6139,7 @@ class RoomsCatalogConfigurator extends IPSModule
         }
 
         $main[]=$this->buildVoiceTestPanel();
+        $main[]=$this->buildSystemTreePanel();
         $huaweiId=$this->ReadPropertyInteger('HuaweiDataSourceInstanceId');
         $huaweiKey='huawei_'.$huaweiId;
         $huaweiEdit=$editCatalog['dataSources'][$huaweiKey]??null;
@@ -6885,7 +6899,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $domainOptions = [['caption' => 'Alle', 'value' => '']];
         foreach (array_keys($domains) as $domainKey) {
             $domainOptions[] = [
-                'caption' => $domainKey,
+                'caption' => $domainKey==='bewaesserung'?'Bewässerung':$domainKey,
                 'value'   => $domainKey
             ];
         }

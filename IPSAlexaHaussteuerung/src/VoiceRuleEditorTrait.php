@@ -1156,6 +1156,11 @@ trait IAHVoiceRuleEditorTrait
         $decision=iah_vir_classify(['text'=>$spoken,'routes'=>$this->readRendererDomainsProperty($navCatalog)]);
         $normalized=iah_vir_norm($spoken);
         $category=$decision['category'];
+        require_once __DIR__.'/../resources/helpers/IrrigationQueryEngine.php';
+        $irr=IAHIrrigationQuery::command($catalog??[],$spoken,
+            $this->ReadPropertyBoolean('HomeAgentVoiceRouteCommands'),false);
+        if ($irr!==null)return ['category'=>'action','matched'=>true,'ok'=>$irr['ok'],
+            'route'=>'bewaesserung','reason'=>$irr['reason'],'answer'=>$irr['answer']];
         if($category==='navigation'){
             return ['category'=>'navigation','matched'=>true,'ok'=>true,
                 'route'=>$decision['route'],'reason'=>$decision['reason'],
@@ -1274,6 +1279,33 @@ trait IAHVoiceRuleEditorTrait
         }
     }
 
+    /** Called only after existing exact PROD voice rules; no model decides writes. */
+    public function HandleAlexaIrrigationCommand(string $question,int $catalogId): string
+    {
+        if ($catalogId<=0||!IPS_ScriptExists($catalogId)||mb_strlen($question)>300)return '{}';
+        try {
+            require_once __DIR__.'/../resources/helpers/IrrigationQueryEngine.php';
+            $settings=$this->getObjectIDByIdentOrName($this->InstanceID,'iahSettings','Einstellungen');
+            $default=$settings>0?$this->getObjectIDByIdentOrName($settings,'roomsCatalog','RoomsCatalog'):0;
+            if ($catalogId!==$default) {
+                $prodId=$this->systemConfigurationScriptIds($settings)['prod'];
+                $prod=IAHVoiceRuleLiteralReader::read($this->getScriptContent($prodId));
+                if ((int)($prod['script']['ROOMS_CATALOG']??0)!==$catalogId)return '{}';
+            }
+            $catalog=IAHVoiceRuleLiteralReader::read(IPS_GetScriptContent($catalogId));
+            if ($catalog===null)return '{}';
+            $result=IAHIrrigationQuery::command($catalog,$question,
+                $this->ReadPropertyBoolean('HomeAgentVoiceRouteCommands'),true);
+            if ($result!==null)IPS_LogMessage('Alexa','IAH.Irrigation.command '.json_encode([
+                'reason'=>$result['reason'],'ok'=>$result['ok']
+            ]));
+            return json_encode($result??(object)[],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+        } catch (Throwable $e) {
+            IPS_LogMessage('Alexa','IAH.Irrigation.command_error '.get_class($e));
+            return '{}';
+        }
+    }
+
     public function ShowAlexaVoiceTest(string $spoken,string $source,string $conversation=''): void
     {
         $json=$this->GetAlexaVoiceTest($spoken,$source,$conversation);
@@ -1346,6 +1378,8 @@ trait IAHVoiceRuleEditorTrait
             $this->updateHouseQuestionContext($key,null);
             $question=IAHHouseQuestionContext::isNewQuestion($spoken)
                 ?(preg_replace('/^\s*und\s+/ui','',$spoken)??$spoken):$spoken;
+            require_once __DIR__.'/../resources/helpers/IrrigationQueryEngine.php';
+            if (IAHIrrigationQuery::matchesQuestion($catalog,$question))return ['question'=>$question];
             $scope=$resolveInitial?IAHHouseQuestionContext::initialScope($question,$catalog):null;
             if(($scope['type']??'')==='unresolved')
                 return ['answer'=>'Diesen Raum oder diese Etage kann ich im RoomsCatalog nicht eindeutig zuordnen.'];

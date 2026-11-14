@@ -53,6 +53,14 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
   Die KI darf das geprüfte Ergebnis formulieren, aber nicht die Auswahl
   der Sensoren oder den Zeitpunkt ändern.
 
+- **Bewässerung als Anlage aus dem Objektbaum (V3.8.16)**
+  Im RoomsCatalog einen Hauptordner auswählen. Der Scan löst Dummy-Module,
+  Links und statische Skriptbezüge auf. Nach dem EDIT-Import stehen Pumpe,
+  Kreise, Bodenfeuchte, Winter und Zeitpläne in einer gruppierten Anlagenansicht.
+  Alexa kann den saisonalen Status abfragen, archivierte Einschaltungen der
+  Rohrbegleitheizung zählen und das letzte Pumpen-Einschaltdatum nennen.
+  [Einrichtung und Beispiele](docs/Bewaesserung_Objektbaum_V3816.md)
+
 - **Kompaktes Alexa-Protokoll und Ortsrückfrage (V3.8.15)**
   Die bestehende Variable **Alexa-Meldungen (letzte 500)** enthält jetzt
   kompakte `IAH.Request`-Zeilen mit Intent, erkanntem Wortlaut (bei aktiver

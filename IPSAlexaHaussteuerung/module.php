@@ -1969,6 +1969,15 @@ PHP;
                     $content=str_replace('// IAH_ENERGY_QUERY_ENGINE_INSERT',
                         'if (!function_exists(\'iah_energy_query\')) {'."\n"
                         .$energySource."\n".'}',$content);
+                    $irrigation=file_get_contents(__DIR__.'/resources/helpers/IrrigationQueryEngine.php');
+                    $irrigation=is_string($irrigation)
+                        ?preg_replace('/^<\?php\s*declare\(strict_types=1\);\s*/','',$irrigation):null;
+                    if (!is_string($irrigation)||!str_contains($content,'// IAH_IRRIGATION_QUERY_ENGINE_INSERT')) {
+                        IPS_LogMessage('Alexa','KIHouseController nicht erneuert: Bewässerungsabfrage fehlt.');
+                        return (int)$id;
+                    }
+                    $content=str_replace('// IAH_IRRIGATION_QUERY_ENGINE_INSERT',
+                        "if (!class_exists('IAHIrrigationQuery', false)) {\n".$irrigation."\n}",$content);
                 }
                 IPS_SetScriptContent($id, $content);
             }

@@ -31,6 +31,11 @@ if (!function_exists('iah_energy_query')) {
     require_once __DIR__ . '/EnergyQueryEngine.php';
 }
 
+// IAH_IRRIGATION_QUERY_ENGINE_INSERT
+if (!class_exists('IAHIrrigationQuery', false)) {
+    require_once __DIR__ . '/IrrigationQueryEngine.php';
+}
+
 /**
  * Alexa KI -> produktiver RoomsCatalog -> sichere IP-Symcon-Aktionen.
  * Keine Home-Agent-Installation, keine freien PHP-/Variablen-ID-Aufrufe.
@@ -931,6 +936,15 @@ function iah_rc_voice(
         'awaitingLocation'=>true,'answerSource'=>'archive_clarification'];
     try{
         $catalog=$previewCatalog??iah_rc_load_catalog($catalogId);
+        $irrigation=IAHIrrigationQuery::query($catalog,$text,(string)($cfg['ui_context_domain']??''),
+            $archiveId,min($deadline,microtime(true)+3));
+        if ($irrigation!==null) {
+            iah_rc_log('irrigation.query',$irrigation['diagnostics']);
+            $readDetails=[['tool'=>'irrigation','result'=>$irrigation['diagnostics']]];
+            // Preserve dates and exact archive counts; no model rewriting.
+            return $costFinish(['handled'=>true,'answer'=>$irrigation['answer'],'localHouseQuery'=>true,
+                'answerSource'=>'irrigation']);
+        }
         if($scope===null && IAHHouseQuestionContext::isNewQuestion($text))
             $scope=IAHHouseQuestionContext::initialScope($text,$catalog);
         if(($scope['type']??'')==='unresolved')

@@ -66,6 +66,9 @@ jobs:
           php -l RoomsCatalogConfigurator/libs/ModuleDataSources.php
           php -l RoomsCatalogConfigurator/libs/DataSourceEditor.php
           php -l RoomsCatalogConfigurator/libs/DataSourceEditorTrait.php
+          php -l RoomsCatalogConfigurator/libs/SystemTreeDiscovery.php
+          php -l RoomsCatalogConfigurator/libs/SystemTreeEditorTrait.php
+          php -l IPSAlexaHaussteuerung/resources/helpers/IrrigationQueryEngine.php
           php -l RoomsCatalogConfigurator/libs/SafeAutoRepair.php
       - name: Check Alexa HTML diagnostic JavaScript syntax
         run: |
@@ -94,6 +97,8 @@ jobs:
           php -r 'json_decode(file_get_contents("IPSAlexaHaussteuerung/form.json"), true, 512, JSON_THROW_ON_ERROR);'
           php -r 'json_decode(file_get_contents("docs/HomeAgentFrageIntent.json"), true, 512, JSON_THROW_ON_ERROR);'
           php -r 'json_decode(file_get_contents("docs/Alexa_Hausfragen_Intent_Paket.json"), true, 512, JSON_THROW_ON_ERROR);'
+      - name: Test V3.8.16 irrigation tree, seasonal voice, archive edges and action guards
+        run: php tests/test_irrigation_system_v3816.php
       - name: Test RoomsCatalog KI permission checks
         run: php tests/test_ki_rooms_catalog.php
       - name: Test V3.4 typed RoomsCatalog multi-property KI and confirmed actuator guards
