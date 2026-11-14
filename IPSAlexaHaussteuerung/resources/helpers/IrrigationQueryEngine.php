@@ -207,7 +207,7 @@ final class IAHIrrigationQuery
             $v=self::value($p);
             if (is_int($v)||is_float($v))$entries[]=self::clean($p['label']).' '.self::number($v)
                 .match($role){'stationTemperature','outdoorTemperature'=>' Grad',
-                    'soilMoisture','rainSensor','sensorBattery'=>' Prozent',default=>' '.($p['unit']??'')};
+                    'soilMoisture','rainSensor','sensorBattery'=>' Prozent','pumpPressure'=>' bar',default=>' '.($p['unit']??'')};
         }
         return $entries;
     }
@@ -510,12 +510,18 @@ final class IAHIrrigationQuery
                 .$now->setTimestamp(min($times))->format('H:i').' Uhr.';
             return ['answer'=>$answer,'diagnostics'=>$diag+['operation'=>'next_start','zone'=>$zone]];
         }
-        if (preg_match('/bodenfeucht|trocken|wie feucht/',$q)) {
+        if (preg_match('/pumpendruck|druck der pumpe/',$q)) {
+            $values=self::entries($s,'pumpPressure');
+            return ['answer'=>$values===[]?'Kein Pumpendruck zugeordnet.':implode('. ',$values).'.',
+                'diagnostics'=>$diag+['operation'=>'pump_pressure','count'=>count($values)]];
+        }
+        if (preg_match('/bodenfeucht|trocken|wie feucht|giessempfehlung|giessen/',$q)) {
             $values=[];
             foreach (self::points($s,'soilMoisture') as $p) {
                 $v=self::value($p);
                 if (!is_numeric($v)||($p['unit']??'')!=='%')continue;
-                $values[]=['label'=>self::clean($p['label']),'value'=>(float)$v,'zone'=>(int)$p['zone']];
+                $values[]=['label'=>self::clean($p['label']),'value'=>(float)$v,'zone'=>(int)$p['zone'],
+                    'sensorType'=>(string)($p['sensorType']??'WH51')];
             }
             if (preg_match('/\bkreis \d+\b/',$q) && $zone!==null)
                 $values=array_values(array_filter($values,static fn($p)=>$p['zone']===$zone));
@@ -532,7 +538,12 @@ final class IAHIrrigationQuery
                 if ($values!==[])$values=array_values(array_filter($values,static fn($p)=>$p['value']===$values[0]['value']));
             }
             return ['answer'=>$values===[]?'Keine passenden Bodenfeuchtesensoren zugeordnet.':
-                implode('. ',array_map(static fn($p)=>$p['label'].' '.self::number($p['value']).' Prozent',$values)).'.',
+                implode('. ',array_map(static function($p):string {
+                    $v=$p['value'];$advice=$v<10?'sehr trocken, sofort gießen':($v<20?'trocken, gießen empfohlen':
+                        ($v<30?'leicht trocken, empfindliche Pflanzen gießen':($v<60?'optimal, kein Gießen nötig':
+                        ($v<=80?'feucht, Gießen vermeiden':'sehr feucht, keine Bewässerung'))));
+                    return $p['label'].' '.self::number($v).' Prozent, '.$advice;
+                },$values)).'.',
                 'diagnostics'=>$diag+['operation'=>'soil_moisture','count'=>count($values)]];
         }
         if ($isHeater) {
