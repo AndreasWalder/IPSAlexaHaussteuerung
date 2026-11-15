@@ -55,7 +55,11 @@ Anlageneditor kontrollieren, welche Datenpunkte archiviert sind:
   auf Grundverbrauch einmal. Eine Spitze über dem Band wird verworfen.
   Als Uhrzeit zählt der Eintritt ins Band. Tageszahlen folgen der Ortszeit.
   Der direkte Status zeigt den aktuellen Messwert, die Starts und Uhrzeiten
-  von heute und den letzten erkannten Start.
+  von heute und den letzten erkannten Start. Zusätzlich sieht man die
+  Variablen-ID und den Bereich der tatsächlich gelesenen Archivwerte.
+  Ein archivierter Link „Schaltschrank Verteiler“ innerhalb der Anlage wird
+  auch bei älterem RoomsCatalog erkannt. Ohne Rohwerte im angefragten
+  Zeitraum bleibt die Anzahl offen.
 - Ohne Zeitraum wird im Winter ab dem eingestellten Saisonbeginn gezählt,
   sonst über die letzten 30 Tage. „Heute“, „gestern“, „diesen Winter“ und
   „in den letzten sieben Tagen“ werden ebenfalls unterstützt. Ist die

@@ -544,7 +544,8 @@ trait RCCSystemTreeEditorTrait
                 $p['unit']=$role==='stationTemperature'?'°C':'%';
                 $p['manualUnit']=$p['unit'];
             }
-            if ($role!==$p['role'] && (!in_array($p['role'],[...array_keys(self::SYSTEM_TREE_SUPPLEMENTAL_ROLES),'heaterOther','zoneStatus'],true)
+            $selectPower=$mode==='heaterPower' && $role==='heaterSignal' && in_array($p['unit'],['W','kW'],true);
+            if ($role!==$p['role'] && ((!$selectPower && !in_array($p['role'],[...array_keys(self::SYSTEM_TREE_SUPPLEMENTAL_ROLES),'heaterOther','zoneStatus'],true))
                 || !self::systemTreeRoleMatches($p,$role)))throw new RuntimeException('Diese Rolle passt nicht zum Datenpunkttyp.');
             if ($zone<0||$zone>99||($zone!==$p['zone']&&!in_array($role,['soilMoisture','sensorBattery','zoneStatus','nextStart'],true))
                 || ($role==='zoneStatus'&&$zone<1))throw new RuntimeException('Kreiszuordnung ungültig.');

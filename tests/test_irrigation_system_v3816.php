@@ -392,4 +392,32 @@ $named=$askEnergy($energyCatalog,'Status Rohrbegleitheizung');
 test($named['diagnostics']['id']===64100
     && array_column($named['displayRows'],'value','label')['Heizstarts heute']==='1',
     'the exact archive chart title resolves to the live model without relying on a catalog point ID');
+
+// The chart link may resolve to a different variable with nearly the same idle reading.
+unset($archive[64100],$energyCatalog['dataSources'][$key]['excludedPoints'][47232],
+    $energyCatalog['dataSources'][$key]['points'][60103]);
+record(47232,$today-60,15.0);
+record(47232,$today+500,15.0);
+record(60103,$today-60,15.1);
+record(60103,$today+600,218.0);
+record(60103,$today+630,15.0);
+record(60103,$today+1200,180.0);
+record(60103,$today+1230,15.1);
+$linked=$askEnergy($energyCatalog,'Status Rohrbegleitheizung');
+$linkedRows=array_column($linked['displayRows'],'value','label');
+test($linked['diagnostics']['id']===60103 && $linkedRows['Heizstarts heute']==='2'
+    && $linkedRows['Archiv · Variable #60103']==='15–218 W',
+    'archived short-name link takes precedence over a flat fallback even when an older catalog omits the point');
+
+unset($archive[60103]);
+$archive[47232]=[['TimeStamp'=>$today-60,'Value'=>15.0]];
+$empty=$askEnergy($energyCatalog,'Status Rohrbegleitheizung');
+$emptyRows=array_column($empty['displayRows'],'value','label');
+test($emptyRows['Heizstarts heute']==='Keine Rohwerte im Zeitraum'
+    && $emptyRows['Archiv · Variable #47232']==='Keine Rohwerte',
+    'a pre-midnight baseline does not prove zero starts today');
+record(47232,$today+240,215.0);
+$pending=array_column($askEnergy($energyCatalog,'Status Rohrbegleitheizung')['displayRows'],'value','label');
+test($pending['Heizstarts heute']==='Lastspitze noch nicht abgeschlossen',
+    'a matching spike with no logged fall yet does not appear as zero starts');
 echo "PASS V3.8.16: link/script graph, checked EDIT import, seasonal voice, rising edges and action guards\n";
