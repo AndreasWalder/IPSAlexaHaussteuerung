@@ -49,14 +49,16 @@ Anlageneditor kontrollieren, welche Datenpunkte archiviert sind:
   hat Vorrang. Die Anlage erkennt außerdem die bekannte Leistungsvariable
   #47232. Im Anlageneditor lässt sich die zugehörige Watt-Variable als
   **Rohrbegleitheizung: Leistung** explizit zuordnen.
-  Die aus dem Diagramm abgelesenen Spitzen von etwa 160 bis 250 W ergeben
-  mit 15 % Toleranz ein Band von **136 bis 287,5 W**. Nach dem Grundverbrauch
+  Die Rohmessung von **2.775,2 W** im Archiv der Variable #47232 dient
+  als Referenz. Mit 15 % Toleranz ergibt sich ein Erkennungsband von
+  **2.358,92 bis 3.191,48 W**. Nach dem Grundverbrauch
   (bis 30 W) zählt eine in diesem Band liegende Lastspitze beim Abfallen
   auf Grundverbrauch einmal. Eine Spitze über dem Band wird verworfen.
   Als Uhrzeit zählt der Eintritt ins Band. Tageszahlen folgen der Ortszeit.
   Der direkte Status zeigt den aktuellen Messwert, die Starts und Uhrzeiten
   von heute und den letzten erkannten Start. Zusätzlich sieht man die
-  Variablen-ID und den Bereich der tatsächlich gelesenen Archivwerte.
+  Variablen-ID, den Bereich der tatsächlich gelesenen Archivwerte und
+  das verwendete Erkennungsband.
   Ein archivierter Link „Schaltschrank Verteiler“ innerhalb der Anlage wird
   auch bei älterem RoomsCatalog erkannt. Ohne Rohwerte im angefragten
   Zeitraum bleibt die Anzahl offen.

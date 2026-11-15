@@ -8,8 +8,8 @@ final class IAHIrrigationQuery
     private const HEATER_METER_GROUP='energiewerte bewaesserung';
     private const HEATER_METER_TITLE='schaltschrank verteiler und heizung pumpe';
     private const HEATER_METER_LINK='schaltschrank verteiler';
-    // Reference peaks read from the irrigation power chart, in watts.
-    private const HEATER_REFERENCE_WATTS=[160.0,250.0];
+    // Confirmed raw archive peak of irrigation power #47232, in watts.
+    private const HEATER_REFERENCE_WATTS=2775.2;
     private const HEATER_TOLERANCE=0.15;
     private const HEATER_IDLE_WATTS=30.0;
 
@@ -442,11 +442,10 @@ final class IAHIrrigationQuery
             } catch (Throwable $ignored) {
                 continue;
             }
-            [$referenceMin,$referenceMax]=self::HEATER_REFERENCE_WATTS;
             $scale=$unit==='kW'?1000.0:1.0;
             $signal=['mode'=>'heater_power_band','off'=>self::HEATER_IDLE_WATTS/$scale,
-                'on'=>$referenceMin*(1-self::HEATER_TOLERANCE)/$scale,
-                'max'=>round($referenceMax*(1+self::HEATER_TOLERANCE),2)/$scale];
+                'on'=>round(self::HEATER_REFERENCE_WATTS*(1-self::HEATER_TOLERANCE),2)/$scale,
+                'max'=>round(self::HEATER_REFERENCE_WATTS*(1+self::HEATER_TOLERANCE),2)/$scale];
             $priority=[$selected,$named===2,$archived,$named,$known,$value!==null];
             $candidates[]=['id'=>$id,'unit'=>$unit,'value'=>$value,'priority'=>$priority,'signal'=>$signal];
         }
@@ -630,14 +629,19 @@ final class IAHIrrigationQuery
             $rows[]=['label'=>'Uhrzeiten '.$periodLabel,'value'=>implode(' · ',$times)];
         }
         if ($includeTimes || ($series['count']===0 && $latest===null)) {
+            $factor=$meter['unit']==='kW'?1000.0:1.0;
             $range='Keine Rohwerte';
             if (!empty($measurements['samples'])) {
-                $factor=$meter['unit']==='kW'?1000.0:1.0;
                 $min=self::number($measurements['min']*$factor);
                 $max=self::number($measurements['max']*$factor);
                 $range=($min===$max?$min:$min.'–'.$max).' W';
             }
             $rows[]=['label'=>'Archiv · Variable #'.$id,'value'=>$range];
+            if ($includeTimes) {
+                $lower=number_format($signal['on']*$factor,2,',','.');
+                $upper=number_format($signal['max']*$factor,2,',','.');
+                $rows[]=['label'=>'Erkennungsband','value'=>$lower.'–'.$upper.' W'];
+            }
             if ($series['count']===0 && !empty($measurements['samples']) && !$pending) {
                 $explanation=match(true){
                     !empty($series['rejected'])=>'Spitze über der Obergrenze',

@@ -229,7 +229,7 @@ test(str_contains($conflict,'EDIT wurde geändert'),'refuse stale preview');
 
 $tz=new DateTimeZone('Europe/Vienna');$now=new DateTimeImmutable('2026-11-14 11:19:00',$tz);
 $day=(new DateTimeImmutable('2026-11-01 00:00:00',$tz))->getTimestamp();
-foreach ([-10=>1,0=>6,3=>220,4=>230,5=>65,6=>18,7=>15,8=>190,9=>20] as $dt=>$v)record(63101,$day+$dt,$v);
+foreach ([-10=>1,0=>6,3=>2650,4=>2730,5=>65,6=>18,7=>15,8=>2590,9=>20] as $dt=>$v)record(63101,$day+$dt,$v);
 $on=(new DateTimeImmutable('2026-10-17 10:33:00',$tz))->getTimestamp();
 foreach ([-30=>true,-20=>false,0=>true,1=>true,40=>false] as $dt=>$v)record(60101,$on+$dt,$v);
 $ask=static fn($q,$d='')=>IAHIrrigationQuery::query($catalog,$q,$d,17597,microtime(true)+4,$now);
@@ -318,8 +318,8 @@ $today=$now->setTime(0,0)->getTimestamp();
 $yesterday=$now->modify('-1 day')->setTime(0,0)->getTimestamp();
 record(47232,$today-7*86400,15.0);
 record(47232,$today-60,14.9);
-foreach ([0=>14.9,180=>234,360=>65,480=>14.9,600=>176,720=>208,840=>14.9,
-    920=>180,940=>420,960=>186,980=>14.9,1020=>125,1040=>14.9] as $offset=>$watts) {
+foreach ([0=>14.9,180=>2775.2,360=>65,480=>14.9,600=>2500,720=>2708,840=>14.9,
+    920=>2580,940=>4200,960=>2686,980=>14.9,1020=>234,1040=>14.9] as $offset=>$watts) {
     record(47232,$today+9*3600+$offset,$watts);
 }
 record(56599,$today-60,0.1);
@@ -339,8 +339,8 @@ test($rows['Rohrbegleitheizung']==='Aus · 14,9 W' && $rows['Heizstarts heute']=
 test(str_contains($askEnergy($energyCatalog,'Wann hat die Rohrbegleitheizung zuletzt eingeschaltet?')['answer'],'heute um 09:10 Uhr')
     && str_contains($askEnergy($energyCatalog,'Wie oft hat die Rohrbegleitheizung heute eingeschaltet?')['answer'],'2 Einschaltungen'),
     'direct last-on and count queries use the same archive readings');
-$values[47232]=214;
-test($askEnergy($energyCatalog,'Ist die Rohrbegleitheizung an?')['displayRows'][0]['value']==='Ein · 214 W',
+$values[47232]=2775.2;
+test($askEnergy($energyCatalog,'Ist die Rohrbegleitheizung an?')['displayRows'][0]['value']==='Ein · 2775,2 W',
     'live status changes with the electrical reading');
 $values[47232]=65;
 test($askEnergy($energyCatalog,'Ist die Rohrbegleitheizung an?')['displayRows'][0]['value']==='Aus · 65 W',
@@ -348,7 +348,7 @@ test($askEnergy($energyCatalog,'Ist die Rohrbegleitheizung an?')['displayRows'][
 $values[47232]=14.9;
 $archive[47232]=[];
 record(47232,$yesterday+9*3600,14.9);
-record(47232,$yesterday+9*3600+180,208);
+record(47232,$yesterday+9*3600+180,2708);
 record(47232,$today-60,14.9);
 record(47232,$today+100,15.0);
 $rows=array_column($askEnergy($energyCatalog,'Wie ist meine Bewässerung?')['displayRows'],'value','label');
@@ -360,19 +360,20 @@ test($statusRows['Aktueller Status']==='Aus · 14,9 W' && $statusRows['Heizstart
     && $statusRows['Letzter Heizstart']==='Am 13.11.2026 um 09:03 Uhr',
     'the direct status includes the current reading, today count and last start');
 record(47232,$today-7*86400,15.0);
-record(47232,$today+300,136.0);
-record(47232,$today+305,287.5);
+record(47232,$today+300,2358.92);
+record(47232,$today+305,3191.48);
 record(47232,$today+315,15.0);
 $statusRows=array_column($askEnergy($energyCatalog,'Status Rohrbegleitheizung')['displayRows'],'value','label');
-test($statusRows['Heizstarts heute']==='1' && $statusRows['Uhrzeiten heute']==='00:05',
+test($statusRows['Heizstarts heute']==='1' && $statusRows['Uhrzeiten heute']==='00:05'
+    && $statusRows['Erkennungsband']==='2.358,92–3.191,48 W',
     'both band limits are inclusive and status includes the observed times');
 $daily=array_column($askEnergy($energyCatalog,'Wie oft hat die Rohrbegleitheizung pro Tag eingeschaltet?')['displayRows'],'value','label');
 test($daily['14.11.2026']==='1' && $daily['13.11.2026']==='1' && $daily['12.11.2026']==='0',
     'the daily report groups starts by local date and includes confirmed zero days');
-$band=['mode'=>'heater_power_band','off'=>30,'on'=>136,'max'=>287.5];
+$band=['mode'=>'heater_power_band','off'=>30,'on'=>2358.92,'max'=>3191.48];
 $midnight=IAHIrrigationQuery::edges([
     ['TimeStamp'=>$today-120,'Value'=>15],
-    ['TimeStamp'=>$today-30,'Value'=>210],
+    ['TimeStamp'=>$today-30,'Value'=>2775.2],
     ['TimeStamp'=>$today+20,'Value'=>15],
 ],$band,$yesterday,$today-1,$today+20);
 test($midnight['last']===$today-30 && $midnight['count']===1,'a spike ending after midnight belongs to its start date');
@@ -386,7 +387,7 @@ test($rows['Rohrbegleitheizung']==='Energiemesswert fehlt' && $rows['Heizstarts 
     'unrelated signals and excluded power points never stand in for the reference measurement');
 variable(64100,63000,'Schaltschrank Verteiler und Heizung Pumpe','ChartWatts',2,15.0,'~Watt');
 record(64100,$today-60,15.0);
-record(64100,$today+600,190.0);
+record(64100,$today+600,2690.0);
 record(64100,$today+630,15.0);
 $named=$askEnergy($energyCatalog,'Status Rohrbegleitheizung');
 test($named['diagnostics']['id']===64100
@@ -399,14 +400,14 @@ unset($archive[64100],$energyCatalog['dataSources'][$key]['excludedPoints'][4723
 record(47232,$today-60,15.0);
 record(47232,$today+500,15.0);
 record(60103,$today-60,15.1);
-record(60103,$today+600,218.0);
+record(60103,$today+600,2775.2);
 record(60103,$today+630,15.0);
-record(60103,$today+1200,180.0);
+record(60103,$today+1200,2680.0);
 record(60103,$today+1230,15.1);
 $linked=$askEnergy($energyCatalog,'Status Rohrbegleitheizung');
 $linkedRows=array_column($linked['displayRows'],'value','label');
 test($linked['diagnostics']['id']===60103 && $linkedRows['Heizstarts heute']==='2'
-    && $linkedRows['Archiv · Variable #60103']==='15–218 W',
+    && $linkedRows['Archiv · Variable #60103']==='15–2775,2 W',
     'archived short-name link takes precedence over a flat fallback even when an older catalog omits the point');
 
 unset($archive[60103]);
@@ -416,7 +417,7 @@ $emptyRows=array_column($empty['displayRows'],'value','label');
 test($emptyRows['Heizstarts heute']==='Keine Rohwerte im Zeitraum'
     && $emptyRows['Archiv · Variable #47232']==='Keine Rohwerte',
     'a pre-midnight baseline does not prove zero starts today');
-record(47232,$today+240,215.0);
+record(47232,$today+240,2775.2);
 $pending=array_column($askEnergy($energyCatalog,'Status Rohrbegleitheizung')['displayRows'],'value','label');
 test($pending['Heizstarts heute']==='Lastspitze noch nicht abgeschlossen',
     'a matching spike with no logged fall yet does not appear as zero starts');
