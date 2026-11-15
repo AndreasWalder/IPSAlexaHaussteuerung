@@ -153,6 +153,51 @@ function iah_energy_current(array $metric,array $source): array
     return $entry;
 }
 
+function iah_energy_status_overview(array $sources): array
+{
+    $overview = iah_energy_query($sources, ['operation'=>'overview'], 0);
+    $values = array_column($overview['values'], null, 'metric');
+    $labels = [
+        'PVPower'=>'PV-Leistung', 'DailyYield'=>'Ertrag heute', 'BatterySOC'=>'Akku-Ladestand',
+        'HouseConsumption'=>'Hausverbrauch', 'GridPower'=>'Netzleistung', 'GridFeedIn'=>'Einspeisung',
+        'GridImport'=>'Netzbezug', 'BatteryPower'=>'Akkuleistung', 'SelfSufficiency'=>'Autarkie',
+        'DeviceStatus'=>'Wechselrichter', 'Online'=>'Verbindung',
+    ];
+    $online = $values['Online']['value'] ?? null;
+    if ($online === false || $online === 0) {
+        return ['answer'=>'Die Verbindung zur PV-Anlage ist offline.',
+            'energyOverview'=>[['label'=>$labels['Online'], 'value'=>'Offline']]];
+    }
+
+    $rows = [];
+    foreach ($labels as $metric=>$label) {
+        $reading = $values[$metric] ?? [];
+        $value = $reading['value'] ?? null;
+        if ($value === null || $value === '' || (is_numeric($values['GridPower']['value'] ?? null)
+            && in_array($metric, ['GridFeedIn', 'GridImport'], true))) {
+            continue;
+        }
+        if ($metric === 'Online' && ($online === true || $online === 1)) {
+            $display = 'Online';
+        } elseif ($metric === 'DeviceStatus') {
+            $display = (string)($reading['formatted'] ?? $value);
+        } elseif ($metric !== 'Online' && is_numeric($value) && is_finite((float)$value)) {
+            $direction = (string)($reading['direction'] ?? '');
+            $number = $direction === '' ? (float)$value : abs((float)$value);
+            $formatted = rtrim(rtrim(number_format($number, 2, ',', '.'), '0'), ',');
+            $display = trim($formatted . ' ' . $reading['unit'] . ' ' . $direction);
+        } else {
+            continue;
+        }
+        $rows[] = ['label'=>$label, 'value'=>$display];
+    }
+    $spoken = array_map(static fn(array $row): string => $row['label'] . ' ' . $row['value'], array_slice($rows, 0, 3));
+    return [
+        'answer'=>$spoken === [] ? 'Für die PV-Anlage sind gerade keine Messwerte verfügbar.' : implode(', ', $spoken) . '.',
+        'energyOverview'=>$rows,
+    ];
+}
+
 function iah_energy_period(string $name): array
 {
     $now=time();

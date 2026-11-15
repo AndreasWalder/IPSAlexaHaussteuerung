@@ -2092,76 +2092,112 @@ function Execute($request = null)
             $iahLastInteraction['status'] = $status;
             $iahLastInteraction['ruleKey'] = $rule;
         };
-        $kiAlexaKeepOpen = static function (string $text, string $status = 'Hinweis', string $question = '', bool $aplSupported = false) use ($iahLastOutcome, $baseUrl, $token) {
+        // IAH_HOUSE_SUMMARY_BEGIN
+        $kiAlexaKeepOpen = static function (
+            string $text, string $status = 'Hinweis', string $question = '', bool $aplSupported = false,
+            string $answerSource = '', array $readings = []
+        ) use ($iahLastOutcome, $applyApl, $baseUrl, $token) {
             $iahLastOutcome('Hausabfrage', $text, $status);
             $response = AskResponse::CreatePlainText($text)
                 ->SetRepromptPlainText('Noch eine Frage oder ein Schaltbefehl?');
 
-            // Standardkarte als Rueckfall fuer die Alexa-App und Geraete ohne APL.
-            $normalizedQuestion = mb_strtolower($question, 'UTF-8');
-            $topic = preg_match('/\b(?:bewässerung|bewaesserung|bewässern|bewaessern|gießen|giessen|bodenfeuchte|pumpendruck|wasser holen|alles in ordnung|zusammenfassung)\b/u', $normalizedQuestion)
-                ? 'Bewässerung'
-                : (preg_match('/\b(?:pv|photovoltaik|solaranlage|solarenergie|einspeisung)\b/u', $normalizedQuestion)
-                    ? 'Photovoltaik' : '');
-            $title = $topic !== '' ? $topic . ' – Zusammenfassung' : 'Zusammenfassung';
+            $title = match (true) {
+                $answerSource === 'irrigation' || preg_match(
+                    '/\b(?:bewässerung|bewaesserung|bewässern|bewaessern|gießen|giessen|bodenfeuchte|pumpendruck|wasser holen)\b/ui',
+                    $question
+                ) === 1 => 'Bewässerung',
+                $answerSource === 'energy_overview' || preg_match(
+                    '/\b(?:p\s*v(?:[\s-]*anlage)?|huawei[\s-]*pv|photovoltaik(?:[\s-]*anlage)?|solaranlage|solarenergie|einspeisung)\b/ui',
+                    $question
+                ) === 1 => 'PV-Anlage',
+                default => '',
+            };
+            if ($title === '') {
+                return $response;
+            }
+
+            // The Alexa app can also display the summary as a standard card.
             $image = rtrim((string)$baseUrl, '/') . '/hook/iah-alexa-icons?f=Logo.png&token=' . rawurlencode((string)$token);
-            if ($topic !== '' && preg_match('~^https://[a-z0-9.-]+(?::\d{1,5})?(?:/[^\s]*)?$~iD', $image)) {
+            if (preg_match('~^https://[a-z0-9.-]+(?::\d{1,5})?(?:/[^\s]*)?$~iD', $image)) {
                 $response->SetStandardCard($title, $text, $image, $image);
             }
-            if ($aplSupported && $topic !== '') {
-                // Kompakte Show-Ansicht mit kleinerer, gut lesbarer Schrift.
-                $response->AddDirective([
-                    'type' => 'Alexa.Presentation.APL.RenderDocument',
-                    'token' => 'iah-house-summary',
-                    'document' => [
-                        'type' => 'APL',
-                        'version' => '1.4',
-                        'mainTemplate' => [
-                            'parameters' => ['payload'],
-                            'items' => [[
-                                'type' => 'Container',
-                                'width' => '100vw',
-                                'height' => '100vh',
-                                'paddingLeft' => '36dp',
-                                'paddingRight' => '36dp',
-                                'paddingTop' => '28dp',
-                                'paddingBottom' => '28dp',
-                                'backgroundColor' => '#F4F6F8',
-                                'items' => [
-                                    [
-                                        'type' => 'Text',
-                                        'text' => '${payload.title}',
-                                        'fontSize' => '30dp',
-                                        'fontWeight' => 'bold',
-                                        'color' => '#18324A',
-                                        'maxLines' => 2
-                                    ],
-                                    [
-                                        'type' => 'ScrollView',
-                                        'width' => '100%',
-                                        'height' => '100%',
-                                        'items' => [[
-                                            'type' => 'Text',
-                                            'text' => '${payload.text}',
-                                            'fontSize' => '21dp',
-                                            'lineHeight' => '29dp',
-                                            'color' => '#202830'
-                                        ]]
-                                    ]
-                                ]
-                            ]]
-                        ]
-                    ],
-                    'datasources' => [
-                        'payload' => [
-                            'title' => $title,
-                            'text' => $text
-                        ]
-                    ]
-                ]);
+            if (!$aplSupported) {
+                return $response;
             }
+
+            // APL Text interprets markup, so escape measured or model-supplied text.
+            $escape = static fn(string $value): string => htmlspecialchars($value, ENT_NOQUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            $bodyText = [
+                'type' => 'Text',
+                'fontSize' => '${viewport.width < 600 ? 16 : 18}',
+                'lineHeight' => '125%',
+                'color' => '#202830',
+            ];
+            $body = $bodyText + ['text' => '${summary.text}'];
+            if ($readings !== []) {
+                $body = [
+                    'type' => 'Container',
+                    'data' => '${summary.readings}',
+                    'items' => [[
+                        'type' => 'Container',
+                        'direction' => 'row',
+                        'spacing' => '6dp',
+                        'items' => [
+                            $bodyText + ['text' => '${data.label}', 'grow' => 1, 'shrink' => 1],
+                            $bodyText + ['text' => '${data.value}', 'fontWeight' => 'bold', 'spacing' => '12dp'],
+                        ],
+                    ]],
+                ];
+            }
+            $applyApl($response, [
+                'doc' => [
+                    'type' => 'APL',
+                    'version' => '1.4',
+                    'background' => '#F4F6F8',
+                    'mainTemplate' => [
+                        'parameters' => ['summary'],
+                        'items' => [[
+                            'type' => 'Container',
+                            'width' => '100vw',
+                            'height' => '100vh',
+                            'paddingLeft' => '${viewport.width < 600 ? 16 : 28}',
+                            'paddingRight' => '${viewport.width < 600 ? 16 : 28}',
+                            'paddingTop' => '16dp',
+                            'paddingBottom' => '12dp',
+                            'items' => [
+                                [
+                                    'type' => 'Text',
+                                    'text' => '${summary.title}',
+                                    'fontSize' => '${viewport.width < 600 ? 22 : 26}',
+                                    'fontWeight' => 'bold',
+                                    'color' => '#18324A',
+                                ],
+                                [
+                                    'type' => 'ScrollView',
+                                    'width' => '100%',
+                                    'height' => '0dp',
+                                    'grow' => 1,
+                                    'spacing' => '8dp',
+                                    'items' => [$body],
+                                ],
+                            ],
+                        ]],
+                    ],
+                ],
+                'ds' => [
+                    'summary' => [
+                        'title' => $title,
+                        'text' => str_replace(["\r\n", "\r", "\n"], '<br>', $escape($text)),
+                        'readings' => array_map(static fn(array $row): array => [
+                            'label' => $escape($row['label']),
+                            'value' => $escape($row['value']),
+                        ], $readings),
+                    ],
+                ],
+            ], 'iah-house-summary');
             return $response;
         };
+        // IAH_HOUSE_SUMMARY_END
         // Eigener Freitext-Intent hat Vorrang. GetHaus und sämtliche APL-Aktionen bleiben erhalten.
         // --- Lokaler KI-Sprachrouter: Navigation vor OpenAI klassifizieren ---
         // Die Helper-Skript-ID wird wie die bestehenden Voice-Bridges dynamisch
@@ -2217,8 +2253,12 @@ function Execute($request = null)
         // IAH_TILE_VOICE_BRIDGE_END
         $iahVoiceRequestType = (string)(((array)(((array)$rawData)['request'] ?? []))['type'] ?? $request->type ?? '');
         $iahVoiceIsAplEvent = $iahVoiceRequestType === 'Alexa.Presentation.APL.UserEvent';
-        $iahVoiceHasScreen = isset($request->context->System->device->supportedInterfaces->{'Alexa.Presentation.APL'});
-        $iahHtmlInterfaces=$request->context->System->device->supportedInterfaces ?? null;
+        $rawContext = (array)(((array)$rawData)['context'] ?? []);
+        $rawSystem = (array)($rawContext['System'] ?? []);
+        $rawDevice = (array)($rawSystem['device'] ?? []);
+        $iahHtmlInterfaces = $rawDevice['supportedInterfaces']
+            ?? $request->context->System->device->supportedInterfaces ?? null;
+        $iahVoiceHasScreen = array_key_exists('Alexa.Presentation.APL', (array)$iahHtmlInterfaces);
         $iahHtmlSupport=$iahHtmlInterfaces === null ? null :
             (is_object($iahHtmlInterfaces)
                 ? isset($iahHtmlInterfaces->{'Alexa.Presentation.HTML'})
@@ -2977,8 +3017,10 @@ function Execute($request = null)
                                     'model'=>(string)($propsEarly['KIModelSelection']??'gpt-6-luna')]);
                                 return $kiAlexaKeepOpen($homeAgentAnswer,
                                     $iahAwaitingLocation ? 'Rückfrage' : 'Beantwortet',
-                                    $homeAgentSpokenQuestion,
-                                    (bool)($iahVoiceHasScreen ?? false));
+                                    $houseQuestion,
+                                    $iahVoiceHasScreen,
+                                    (string)($homeAgentData['answerSource'] ?? ''),
+                                    (array)($homeAgentData['energyOverview'] ?? []));
                             }
                             if (isset($iahLastInteraction))
                                 $iahLastInteraction['detail']=is_array($homeAgentData) ? 'backend_unhandled' : 'invalid_backend_reply';
@@ -3003,7 +3045,8 @@ function Execute($request = null)
                         'model'=>(string)($propsEarly['KIModelSelection']??'gpt-6-luna')]);
                     if ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {
                         // Erkannte Fragen duerfen beim KI-Fehler keine Kachel ausloesen.
-                        return $kiAlexaKeepOpen('Bitte anders formulieren.', 'Fehler');
+                        return $kiAlexaKeepOpen('Bitte anders formulieren.', 'Fehler',
+                            $homeAgentSpokenQuestion, $iahVoiceHasScreen);
                     }
                 }
             } elseif ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {

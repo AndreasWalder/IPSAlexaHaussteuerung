@@ -174,6 +174,22 @@ check36(($battery['error']??'')==='unknown_metric','cannot invent missing measur
 $overview=iah_energy_query($energy,['operation'=>'overview'],17597);
 check36(($overview['ok']??false)===true && count($overview['values'])>=5,
     'natural-language PV overview includes known measurements');
+$pvStatus=static fn(string $question):array=>json_decode(iah_rc_bridge_reply(
+    static fn():array=>iah_rc_voice($question,['catalog_script_id'=>41])
+),true,512,JSON_THROW_ON_ERROR);
+foreach (['Wie geht es meiner PV Anlage?', 'Wie geht es meiner PV-Anlage?', 'Wie läuft meine PVAnlage?'] as $question) {
+    $status=$pvStatus($question);
+    $display=array_column($status['energyOverview']??[],'value','label');
+    check36(($status['answerSource']??'')==='energy_overview'
+        && str_contains($status['answer'],'8,26 kWh') && ($display['PV-Leistung']??'')==='1.200 W'
+        && ($display['Akku-Ladestand']??'')==='86,5 %' && ($display['Netzleistung']??'')==='420 W Netzbezug',
+        'PV status returns live readings for Alexa and structures them for APL without an API key');
+}
+$GLOBALS['h36Values'][70008]=false;
+$offline=$pvStatus('Wie geht es meiner PV Anlage?');
+check36(($offline['energyOverview']??[])===[['label'=>'Verbindung','value'=>'Offline']],
+    'an offline source cannot show previous readings as live values');
+$GLOBALS['h36Values'][70008]=true;
 $grid=iah_energy_query($energy,['metric'=>'GridPower'],17597);
 check36(($grid['reading']['direction']??'')==='Netzbezug','Huawei grid sign is interpreted');
 $delta=iah_energy_query($energy,['metric'=>'DailyYield','operation'=>'delta','period'=>'last_month'],17597);

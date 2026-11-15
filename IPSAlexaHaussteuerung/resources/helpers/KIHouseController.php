@@ -975,6 +975,17 @@ function iah_rc_voice(
             $scope=IAHHouseQuestionContext::initialScope($text,$catalog);
         if(($scope['type']??'')==='unresolved')
             return $costFinish(['handled'=>true,'answer'=>'Diesen Raum oder diese Etage kann ich im RoomsCatalog nicht eindeutig zuordnen.']);
+        if ($scope === null && preg_match(
+            '/^wie (?:geht es (?:der|meiner|unserer) |(?:laeuft|steht es um) (?:die|meine|unsere) )(?:p ?v(?: ?anlage)?|photovoltaik(?: ?anlage)?|solaranlage|huawei ?pv)(?: (?:gerade|heute))?$/',
+            iah_rc_norm($text)
+        ) === 1) {
+            $statusSources = iah_energy_catalog_sources($catalog);
+            if (count($statusSources) === 1) {
+                return $costFinish(iah_energy_status_overview($statusSources) + [
+                    'handled'=>true, 'localHouseQuery'=>true, 'answerSource'=>'energy_overview',
+                ]);
+            }
+        }
         $allowWrites=!$preview&&$scope===null&&(bool)($cfg['allow_writes']??false);
         $localText=$scope===null?$text:IAHHouseQuestionContext::withoutLocation($text,$catalog);
         $local=iah_rc_preview_lights($localText,$catalog,$scope)

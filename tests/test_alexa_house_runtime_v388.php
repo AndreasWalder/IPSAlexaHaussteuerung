@@ -44,4 +44,59 @@ ck38(str_contains($action,'$iahUseModuleQuery = $iahReadOnlyQuery')
 $template=file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/resources/helpers/KIHouseController.php');
 ck38(!str_contains($template,'use ($_IPS)'),'generated helper never tries to capture the Symcon auto-global');
 
+class AskResponse
+{
+    public array $apl=[];
+    public array $card=[];
+    public string $reprompt='';
+
+    public function __construct(public string $speech) {}
+    public static function CreatePlainText(string $speech): self { return new self($speech); }
+    public function SetRepromptPlainText(string $text): self { $this->reprompt=$text; return $this; }
+    public function SetStandardCard(string ...$card): void { $this->card=$card; }
+    public function AddAPLRenderDocument(array $doc,array $ds,string $token): void
+    {
+        $this->apl=['document'=>$doc,'datasources'=>$ds,'token'=>$token];
+    }
+}
+
+preg_match('/\/\/ IAH_HOUSE_SUMMARY_BEGIN\R(.*?)\R *\/\/ IAH_HOUSE_SUMMARY_END/s',$action,$summaryBlock);
+ck38(isset($summaryBlock[1]),'the house summary is part of the installed Action template');
+$renderSummary=static function (string $source): Closure {
+    $iahLastOutcome=static function (): void {};
+    $applyApl=(require __DIR__.'/../IPSAlexaHaussteuerung/resources/helpers/CoreHelpers.php')['applyApl'];
+    $baseUrl='https://example.org';
+    $token='test';
+    eval($source);
+    return $kiAlexaKeepOpen;
+};
+$summary=$renderSummary($summaryBlock[1]);
+$irrigation=$summary("Pumpe aus.\nFeuchtigkeit < 30 %.",'Beantwortet','Wie ist meine Bewässerung?',true);
+$main=$irrigation->apl['document']['mainTemplate'];
+$scroll=$main['items'][0]['items'][1];
+ck38($main['parameters']===['summary'] && $main['items'][0]['items'][0]['text']==='${summary.title}'
+    && $scroll['type']==='ScrollView' && $scroll['grow']===1
+    && $scroll['items'][0]['text']==='${summary.text}' && $scroll['items'][0]['lineHeight']==='125%'
+    && $irrigation->apl['datasources']['summary']['text']==='Pumpe aus.<br>Feuchtigkeit &lt; 30 %.'
+    && $irrigation->apl['datasources']['summary']['title']==='Bewässerung'
+    && $irrigation->reprompt!=='','irrigation uses a bound, scrollable APL document and keeps the reprompt');
+$readings=[['label'=>'PV-Leistung','value'=>'1.200 W']];
+$pv=$summary('PV-Leistung 1.200 W.','Beantwortet','Wie geht es meiner PV-Anlage?',true,'energy_overview',$readings);
+ck38($pv->apl['datasources']['summary']['title']==='PV-Anlage'
+    && $pv->apl['datasources']['summary']['readings']===$readings
+    && $pv->apl['document']['mainTemplate']['items'][0]['items'][1]['items'][0]['data']==='${summary.readings}',
+    'PV values are bound to the visual rows');
+ck38($summary('Antwort','Beantwortet','Wie geht es meiner PVAnlage?',true)->apl!==[],
+    'PV compound spelling gets the visual response even for a backend answer without rows');
+$withoutScreen=$summary('Antwort','Beantwortet','Wie geht es meiner PV Anlage?');
+ck38($withoutScreen->apl===[] && $withoutScreen->card[0]==='PV-Anlage',
+    'devices without APL keep the voice and standard app card');
+
+$oldAction=str_replace($summaryBlock[0],"\$kiAlexaKeepOpen = static fn() => 'previous summary';",$action)
+    ."\n// Custom Action retained\n";
+IPS_SetScriptContent(9191,$oldAction);
+(new ReflectionMethod($module,'patchActionScriptKIVoice'))->invoke($module,9191);
+ck38(IPS_GetScriptContent(9191)===$action."\n// Custom Action retained\n",
+    'the module update applies the summary to existing Action scripts');
+
 echo "PASS V3.8.8: live module route, AI wording with fixed sensor facts and local fallback\n";
