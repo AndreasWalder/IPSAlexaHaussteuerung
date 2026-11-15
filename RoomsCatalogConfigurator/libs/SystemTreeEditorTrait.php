@@ -522,7 +522,7 @@ trait RCCSystemTreeEditorTrait
                 $added[]=$pid;
             }
             if ($added!==[])$this->saveSystemTreeEdit($id,$old,$catalog);
-            echo count($added).' Heizungsmesswerte ergänzt. Zahnrad erneut öffnen und für die Leistung oder Stromstärke die Archivschwellen einstellen.'
+            echo count($added).' Heizungsmesswerte ergänzt. Zahnrad erneut öffnen und bei Bedarf die passende Leistungsquelle als Archivsignal auswählen.'
                 .($unavailable===[]?'':' Bitte Objekt-ID, Name und Einheit prüfen: #'.implode(', #',$unavailable).'.');
         } catch (Throwable $e) {echo $e->getMessage();}
     }
@@ -559,13 +559,13 @@ trait RCCSystemTreeEditorTrait
             if ($mode!=='none' && !$options['enabled'])throw new RuntimeException('Archivsignale benötigen eine lesbare Variable.');
             if ($mode==='pump' && $role==='pumpStatus' && $p['type']===0)
                 $s['historySignals']['pumpId']=$pid;
-            elseif ($mode==='threshold' && $role==='heaterSignal' && in_array($p['type'],[1,2],true)) {
-                $on=str_replace(',','.',trim((string)($options['on']??'')));
-                $off=str_replace(',','.',trim((string)($options['off']??'')));
-                if (!is_numeric($on)||!is_numeric($off)||!is_finite((float)$on)||!is_finite((float)$off)||(float)$off<0||(float)$off>=(float)$on)
-                    throw new RuntimeException('Bitte zwei gültige Schwellen eingeben. AUS muss kleiner als EIN sein.');
-                $s['historySignals']['heater'][$pid]=['mode'=>'threshold','on'=>(float)$on,'off'=>(float)$off];
-            } elseif ($mode!=='none')throw new RuntimeException('Archivmodus und Rolle passen nicht zusammen.');
+            elseif ($mode==='heaterPower' && $role==='heaterSignal' && in_array($p['type'],[1,2],true)
+                && in_array($p['unit'],['W','kW'],true)) {
+                foreach ($s['historySignals']['heater'] as $other=>$existing) {
+                    if (($existing['mode']??'')==='heaterPower')unset($s['historySignals']['heater'][$other]);
+                }
+                $s['historySignals']['heater'][$pid]=['mode'=>'heaterPower'];
+            } elseif ($mode!=='none')throw new RuntimeException('Als Heizungsquelle bitte eine Leistungsvariable in W oder kW auswählen.');
             $p['role']=$role;$p['zone']=$zone;$p['enabled']=$options['enabled'];$p['manualEdit']=true;
             $p['group']=match($role){
                 'stationTemperature','winterMode','heaterStatus','heaterSignal'=>'winter',
@@ -633,8 +633,7 @@ trait RCCSystemTreeEditorTrait
                     $rows[]=['pid'=>$pid,'label'=>$p['label'],'role'=>$p['role'],'zone'=>$p['zone'],'reading'=>$v,
                         'archive'=>$archiveStatus,
                         'enabled'=>$p['enabled'],'allowAction'=>in_array($pid,$s['voiceActions'],true),
-                        'archiveMode'=>(int)($s['historySignals']['pumpId']??0)===$pid?'pump':(($signal['mode']??'')==='threshold'?'threshold':'none'),
-                        'on'=>(string)($signal['on']??''),'off'=>(string)($signal['off']??''),
+                        'archiveMode'=>(int)($s['historySignals']['pumpId']??0)===$pid?'pump':(($signal['mode']??'')==='heaterPower'?'heaterPower':'none'),
                         'origin'=>implode(', ',$p['evidence']),
                         'actionAvailable'=>!empty($p['actionCandidate'])?'Freigabe möglich':'Nicht unterstützt'];
                 }
@@ -656,9 +655,7 @@ trait RCCSystemTreeEditorTrait
                             ['name'=>'archive','caption'=>'Archiv','width'=>'130px','save'=>false],
                             ['name'=>'archiveMode','caption'=>'Archivsignal','width'=>'135px','edit'=>['type'=>'Select','options'=>[
                                 ['caption'=>'Automatisch / keines','value'=>'none'],['caption'=>'Pumpenstatus','value'=>'pump'],
-                                ['caption'=>'Heizung mit Schwellen','value'=>'threshold']]]],
-                            ['name'=>'on','caption'=>'EIN ab','width'=>'80px','edit'=>['type'=>'ValidationTextBox']],
-                            ['name'=>'off','caption'=>'AUS bis','width'=>'80px','edit'=>['type'=>'ValidationTextBox']],
+                                ['caption'=>'Rohrbegleitheizung: Leistung','value'=>'heaterPower']]]],
                             ['name'=>'enabled','caption'=>'Lesen','width'=>'75px','edit'=>['type'=>'CheckBox']],
                             ['name'=>'allowAction','caption'=>'Alexa-Schalten','width'=>'110px','edit'=>['type'=>'CheckBox']],
                             ['name'=>'actionAvailable','caption'=>'Aktion','width'=>'135px','save'=>false],
@@ -667,7 +664,6 @@ trait RCCSystemTreeEditorTrait
                         'onEdit'=>'RCC_SaveSystemTreePoint($id, '.$qkey.', (int)('.$v.'["pid"] ?? 0), json_encode(['
                             .'"role" => (string)('.$v.'["role"] ?? ""), "zone" => (int)('.$v.'["zone"] ?? 0), '
                             .'"archiveMode" => (string)('.$v.'["archiveMode"] ?? "none"), '
-                            .'"on" => (string)('.$v.'["on"] ?? ""), "off" => (string)('.$v.'["off"] ?? ""), '
                             .'"enabled" => (bool)('.$v.'["enabled"] ?? false), "allowAction" => (bool)('.$v.'["allowAction"] ?? false)]));'
                     ]
                 ]];
@@ -684,7 +680,7 @@ trait RCCSystemTreeEditorTrait
                     'RCC_AddSystemTreeVariable($id, '.$qkey.', (int)$SystemAdditionalVariable, (string)$SystemAdditionalRole, (string)$SystemAdditionalLabel);'],
             ];
             $items[]=['type'=>'ExpansionPanel','caption'=>'Variable ergänzen','expanded'=>false,'items'=>$addItems];
-            $items[]=['type'=>'Label','caption'=>'Die Rohrbegleitheizung wird aus Leistung oder Stromstärke unter „Energiewerte Bewässerung“ ausgewertet. Eigene EIN-/AUS-Schwellen lassen sich am Messwert unter „Winter und Stationen“ einstellen.'];
+            $items[]=['type'=>'Label','caption'=>'Die Rohrbegleitheizung wird aus der Leistung unter „Energiewerte Bewässerung“ ausgewertet. Bei Bedarf die passende Leistungsvariable in W oder kW als Archivsignal „Rohrbegleitheizung: Leistung“ auswählen.'];
             $pointOptions=[['caption'=>'Bitte auswählen','value'=>0]];
             foreach ($s['points'] as $p) {
                 $pointOptions[]=['caption'=>$p['label'].' #'.$p['id'],'value'=>$p['id']];

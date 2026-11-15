@@ -45,16 +45,17 @@ Anlageneditor kontrollieren, welche Datenpunkte archiviert sind:
 - **Pumpe:** bestätigten booleschen Pumpenstatus als Archivsignal wählen, falls
   der Scan mehrere mögliche Zustände gefunden hat. Es zählt der jüngste
   nachweisbare Aus→Ein-Wechsel. Alexa gibt nur das lokale Datum aus.
-- **Rohrbegleitheizung:** Die Abfrage verwendet einen Leistungs- oder
-  Strommesswert aus **Energiewerte Bewässerung**. Für die Bewässerungsinstanz
-  #52811 werden **Leistung #47232** und **Stromstärke #56599** bei
-  passender Zuordnung auch mit älteren RoomsCatalog-Versionen erkannt.
-  Standardwerte sind **EIN ab 100 W, AUS bis 30 W** bzw.
-  **EIN ab 0,45 A, AUS bis 0,15 A**. Eigene Schwellen für einen Messwert
-  haben Vorrang. Zwischen den Schwellen gilt der zuletzt belegte Zustand.
-  Für Anzahl und Uhrzeit verwendet Alexa eine einzige archivierte Messreihe.
-  Ein Heizstart zählt beim belegten Wechsel von AUS auf EIN. Die
-  Stationstemperaturen bleiben in der Übersicht als separate Istwerte sichtbar.
+- **Rohrbegleitheizung:** Die Messreihe **Schaltschrank Verteiler und Heizung Pumpe**
+  hat Vorrang. Die Anlage erkennt außerdem die bekannte Leistungsvariable
+  #47232. Im Anlageneditor lässt sich die zugehörige Watt-Variable als
+  **Rohrbegleitheizung: Leistung** explizit zuordnen.
+  Die aus dem Diagramm abgelesenen Spitzen von etwa 160 bis 250 W ergeben
+  mit 15 % Toleranz ein Band von **136 bis 287,5 W**. Nach dem Grundverbrauch
+  (bis 30 W) zählt eine in diesem Band liegende Lastspitze beim Abfallen
+  auf Grundverbrauch einmal. Eine Spitze über dem Band wird verworfen.
+  Als Uhrzeit zählt der Eintritt ins Band. Tageszahlen folgen der Ortszeit.
+  Der direkte Status zeigt den aktuellen Messwert, die Starts und Uhrzeiten
+  von heute und den letzten erkannten Start.
 - Ohne Zeitraum wird im Winter ab dem eingestellten Saisonbeginn gezählt,
   sonst über die letzten 30 Tage. „Heute“, „gestern“, „diesen Winter“ und
   „in den letzten sieben Tagen“ werden ebenfalls unterstützt. Ist die
@@ -66,6 +67,8 @@ Beispiele für Alexa oder den Sprachtest:
 - „Wie kalt ist es in den jeweiligen Stationen?“
 - „Wie oft hat die Rohrbegleitheizung diesen Winter eingeschaltet?“
 - „Wann hat die Rohrbegleitheizung zuletzt eingeschaltet?“
+- „Status Rohrbegleitheizung“
+- „Wie oft hat die Rohrbegleitheizung pro Tag eingeschaltet?“
 - „Ist bei der Bewässerung noch alles aus?“
 - „Wann war die Pumpe zuletzt eingeschaltet?“
 - „Wann startet Kreis 4 wieder?“

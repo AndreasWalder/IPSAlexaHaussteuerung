@@ -2102,6 +2102,8 @@ function Execute($request = null)
                 ->SetRepromptPlainText('Noch eine Frage oder ein Schaltbefehl?');
 
             $title = match (true) {
+                preg_match('/\brohr[\s-]*(?:begleit[\s-]*)?heiz\w*|\bheizband\b/ui', $question) === 1
+                    => 'Rohrbegleitheizung',
                 $answerSource === 'irrigation' || preg_match(
                     '/\b(?:bewässerung|bewaesserung|bewässern|bewaessern|gießen|giessen|bodenfeuchte|pumpendruck|wasser holen)\b/ui',
                     $question
@@ -2116,8 +2118,9 @@ function Execute($request = null)
                 return $response;
             }
 
-            $irrigation = $title === 'Bewässerung';
-            $iconFile = $irrigation ? 'Bewaesserung.png' : 'Logo.png';
+            $solar = $title === 'PV-Anlage';
+            $iconFile = $solar ? 'Energie.png' : 'Bewaesserung.png';
+            $graphicName = $solar ? 'solarPanel' : 'waterDrop';
             $image = rtrim((string)$baseUrl, '/') . '/hook/iah-alexa-icons?f=' . $iconFile . '&token=' . rawurlencode((string)$token);
             if (preg_match('~^https://[a-z0-9.-]+(?::\d{1,5})?(?:/[^\s]*)?$~iD', $image)) {
                 $response->SetStandardCard($title, $text, $image, $image);
@@ -2130,9 +2133,9 @@ function Execute($request = null)
             $escape = static fn(string $value): string => htmlspecialchars($value, ENT_NOQUOTES | ENT_SUBSTITUTE, 'UTF-8');
             $bodyText = [
                 'type' => 'Text',
-                'fontSize' => $irrigation ? '${readingFont}' : '${viewport.width < 600 ? 16 : 18}',
+                'fontSize' => '${readingFont}',
                 'lineHeight' => '125%',
-                'color' => $irrigation ? '#E2EDF1' : '#202830',
+                'color' => '#E2EDF1',
             ];
             $body = $bodyText + ['text' => '${summary.text}'];
             if ($readings !== []) {
@@ -2144,18 +2147,16 @@ function Execute($request = null)
                     'spacing' => '6dp',
                     'items' => [$rowLabel, $rowValue],
                 ];
-                if ($irrigation) {
-                    $row['alignItems'] = 'center';
-                    $row['width'] = '100%';
-                    $row['minHeight'] = '${readingHeight - 4}';
-                    $row['paddingLeft'] = $row['paddingRight'] = '12dp';
-                    $row['paddingTop'] = $row['paddingBottom'] = '7dp';
-                    $row['items'][0]['color'] = '#A6C6D1';
-                    $row['items'][0]['width'] = '0dp';
-                    $row['items'][1] += ['width' => '48%', 'textAlign' => 'right', 'shrink' => 1];
-                    $row = ['type' => 'Frame', 'backgroundColor' => '#132C39', 'borderRadius' => '8dp',
-                        'width' => '100%', 'height' => 'auto', 'spacing' => '4dp', 'item' => $row];
-                }
+                $row['alignItems'] = 'center';
+                $row['width'] = '100%';
+                $row['minHeight'] = '${readingHeight - 4}';
+                $row['paddingLeft'] = $row['paddingRight'] = '12dp';
+                $row['paddingTop'] = $row['paddingBottom'] = '7dp';
+                $row['items'][0]['color'] = '#A6C6D1';
+                $row['items'][0]['width'] = '0dp';
+                $row['items'][1] += ['width' => '48%', 'textAlign' => 'right', 'shrink' => 1];
+                $row = ['type' => 'Frame', 'backgroundColor' => '#132C39', 'borderRadius' => '8dp',
+                    'width' => '100%', 'height' => 'auto', 'spacing' => '4dp', 'item' => $row];
                 $body = [
                     'type' => 'Container',
                     'width' => '100%',
@@ -2166,37 +2167,40 @@ function Execute($request = null)
             $heading = [
                 'type' => 'Text',
                 'text' => '${summary.title}',
-                'fontSize' => $irrigation ? '${headingFont}' : '${viewport.width < 600 ? 22 : 26}',
+                'fontSize' => '${headingFont}',
                 'fontWeight' => 'bold',
-                'color' => $irrigation ? '#F2FBFD' : '#18324A',
+                'color' => '#F2FBFD',
             ];
-            $graphics = [];
-            $responsive = [];
-            if ($irrigation) {
-                $responsive = ['bind' => [
-                    ['name' => 'readingHeight', 'value' => '${Math.min(76, Math.max(34, (viewport.height - 86) / Math.max(4, summary.rowCount)))}'],
-                    ['name' => 'readingFont', 'value' => '${Math.max(17, Math.floor(Math.min(34, readingHeight * 0.54, viewport.width * 0.043)))}'],
-                    ['name' => 'headingFont', 'value' => '${Math.max(25, Math.min(42, viewport.height * 0.083, viewport.width * 0.065))}'],
-                ]];
-                $heading['spacing'] = '10dp';
-                $heading = ['type' => 'Container', 'direction' => 'row', 'alignItems' => 'center', 'items' => [
-                    ['type' => 'VectorGraphic', 'source' => 'waterDrop', 'width' => '${headingFont + 9}',
-                        'height' => '${headingFont + 9}', 'scale' => 'best-fit'],
-                    $heading,
-                ]];
-                $graphics = ['graphics' => ['waterDrop' => [
-                    'type' => 'AVG', 'version' => '1.1', 'width' => 36, 'height' => 36,
-                    'items' => [
-                        ['type' => 'path', 'fill' => '#1A4352', 'pathData' => 'M18,1 A17,17 0 1,1 18,35 A17,17 0 1,1 18,1 Z'],
-                        ['type' => 'path', 'fill' => '#5BE3D2', 'pathData' => 'M18,7 C15,12 10,16 10,21 A8,8 0 1,0 26,21 C26,16 21,12 18,7 Z'],
-                    ],
-                ]]];
-            }
+            $responsive = ['bind' => [
+                ['name' => 'readingHeight', 'value' => '${Math.min(76, Math.max(34, (viewport.height - 86) / Math.max(4, summary.rowCount)))}'],
+                ['name' => 'readingFont', 'value' => '${Math.max(17, Math.floor(Math.min(34, readingHeight * 0.54, viewport.width * 0.043)))}'],
+                ['name' => 'headingFont', 'value' => '${Math.max(25, Math.min(42, viewport.height * 0.083, viewport.width * 0.065))}'],
+            ]];
+            $heading['spacing'] = '10dp';
+            $heading = ['type' => 'Container', 'direction' => 'row', 'alignItems' => 'center', 'items' => [
+                ['type' => 'VectorGraphic', 'source' => $graphicName, 'width' => '${headingFont + 9}',
+                    'height' => '${headingFont + 9}', 'scale' => 'best-fit'],
+                $heading,
+            ]];
+            $iconPaths = $solar ? [
+                ['type' => 'path', 'fill' => '#FFE083', 'pathData' => 'M21,6 A4,4 0 1,1 21,14 A4,4 0 1,1 21,6 Z'],
+                ['type' => 'path', 'fill' => '#FFE083', 'pathData' => 'M10,16 H26 L30,27 H6 Z'],
+                ['type' => 'path', 'fill' => '#1A4352', 'pathData' => 'M15,16 H16 L15,27 H14 Z M21,16 H22 L24,27 H23 Z M8,21 H28 V22 H8 Z'],
+            ] : [
+                ['type' => 'path', 'fill' => '#5BE3D2', 'pathData' => 'M18,7 C15,12 10,16 10,21 A8,8 0 1,0 26,21 C26,16 21,12 18,7 Z'],
+            ];
+            $graphics = ['graphics' => [$graphicName => [
+                'type' => 'AVG', 'version' => '1.1', 'width' => 36, 'height' => 36,
+                'items' => [
+                    ['type' => 'path', 'fill' => '#1A4352', 'pathData' => 'M18,1 A17,17 0 1,1 18,35 A17,17 0 1,1 18,1 Z'],
+                    ...$iconPaths,
+                ],
+            ]]];
             $applyApl($response, [
                 'doc' => [
                     'type' => 'APL',
                     'version' => '1.4',
-                    'background' => $irrigation ? '#0B1D28' : '#F4F6F8',
+                    'background' => '#0B1D28',
                     'mainTemplate' => [
                         'parameters' => ['summary'],
                         'items' => [[

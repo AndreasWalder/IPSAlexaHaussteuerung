@@ -977,7 +977,7 @@ function iah_rc_voice(
         if(($scope['type']??'')==='unresolved')
             return $costFinish(['handled'=>true,'answer'=>'Diesen Raum oder diese Etage kann ich im RoomsCatalog nicht eindeutig zuordnen.']);
         if ($scope === null && preg_match(
-            '/^wie (?:geht es (?:der|meiner|unserer) |(?:laeuft|steht es um) (?:die|meine|unsere) )(?:p ?v(?: ?anlage)?|photovoltaik(?: ?anlage)?|solaranlage|huawei ?pv)(?: (?:gerade|heute))?$/',
+            '/^(?:wie (?:geht es (?:der|meiner|unserer) |(?:laeuft|steht es um) (?:die|meine|unsere) )|(?:wie ist der )?status (?:(?:der|meiner) )?)(?:p ?v(?: ?anlage)?|photovoltaik(?: ?anlage)?|solaranlage|huawei ?pv)(?: (?:gerade|heute))?$|^p ?v(?: ?anlage)? status$/',
             iah_rc_norm($text)
         ) === 1) {
             $statusSources = iah_energy_catalog_sources($catalog);

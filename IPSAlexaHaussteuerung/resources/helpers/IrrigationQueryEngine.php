@@ -6,7 +6,11 @@ final class IAHIrrigationQuery
 {
     private const CONTROLLER='{DEADBEAF-0000-0000-0000-000000000001}';
     private const HEATER_METER_GROUP='energiewerte bewaesserung';
-    private const HEATER_METER_DEFAULTS=['W'=>[100,30],'kW'=>[0.1,0.03],'A'=>[0.45,0.15],'mA'=>[450,150]];
+    private const HEATER_METER_TITLE='schaltschrank verteiler und heizung pumpe';
+    // Reference peaks read from the irrigation power chart, in watts.
+    private const HEATER_REFERENCE_WATTS=[160.0,250.0];
+    private const HEATER_TOLERANCE=0.15;
+    private const HEATER_IDLE_WATTS=30.0;
 
     private static function norm(string $s): string
     {
@@ -49,18 +53,19 @@ final class IAHIrrigationQuery
 
     /** Evaluate strictly observed OFF -> ON. The oldest sample never counts
      * by itself. Analog deadband holds the known previous state. */
-    public static function edges(array $rows,array $signal,int $start,int $end): array
+    public static function edges(array $rows,array $signal,int $start,int $end,?int $readEnd=null): array
     {
         $states=[];$previous=null;$last=null;$count=0;
         usort($rows,static fn(array $a,array $b):int=>(int)($a['TimeStamp']??0)<=>(int)($b['TimeStamp']??0));
         foreach ($rows as $r) {
             $ts=(int)($r['TimeStamp']??0);$v=$r['Value']??null;
-            if ($ts<=0 || $ts>$end)continue;
+            if ($ts<=0 || $ts>($readEnd??$end))continue;
             $state=self::sampleState($v,$signal);
             // Opposing states in the same second have no proven order.
             if (array_key_exists($ts,$states) && $states[$ts]!==$state)$states[$ts]='ambiguous';
             else $states[$ts]=$state;
         }
+        if (($signal['mode']??'')==='heater_power_band')return self::heaterEdges($states,$start,$end);
         foreach ($states as $ts=>$state) {
             if ($state==='ambiguous'||$state==='unknown'){$previous=null;continue;}
             if ($state===null)continue;
@@ -70,6 +75,28 @@ final class IAHIrrigationQuery
             $previous=$state;
         }
         return ['count'=>$count,'last'=>$last,'samples'=>count($states),'baselineKnown'=>self::hasBaseline($states,$start),'lastState'=>$previous];
+    }
+
+    private static function heaterEdges(array $states,int $start,int $end): array
+    {
+        $armed=false;$overshoot=false;$entry=null;$starts=[];$baseline=false;$uncertain=false;$live=null;
+        foreach ($states as $time=>$state) {
+            if ($state==='unknown' || $state==='ambiguous') {
+                $armed=false;$overshoot=false;$entry=null;$live=null;
+                $uncertain=$uncertain || ($time>=$start && $time<=$end);
+            } elseif ($state===false) {
+                if ($entry!==null && !$overshoot && $entry>=$start && $entry<=$end)$starts[]=$entry;
+                $armed=true;$overshoot=false;$entry=null;$live=false;
+            } elseif ($state==='above') {
+                $overshoot=true;$live=null;
+            } elseif ($state===true && !$overshoot) {
+                if ($armed && $entry===null)$entry=$time;
+                $live=true;
+            }
+            if ($time<$start)$baseline=$armed;
+        }
+        return ['count'=>count($starts),'starts'=>$starts,'last'=>$starts===[]?null:end($starts),'samples'=>count($states),
+            'baselineKnown'=>$baseline,'lastState'=>$live,'overshoot'=>$overshoot,'uncertain'=>$uncertain];
     }
 
     private static function hasBaseline(array $states,int $start): bool
@@ -90,6 +117,12 @@ final class IAHIrrigationQuery
             if (in_array($value,[1,1.0,'1'],true))return true;
             return 'unknown';
         }
+        if (($signal['mode']??'')==='heater_power_band') {
+            if (!is_numeric($value) || !is_finite((float)$value) || (float)$value<0)return 'unknown';
+            if ((float)$value<=$signal['off'])return false;
+            if ((float)$value>$signal['max'])return 'above';
+            return (float)$value>=$signal['on']?true:null;
+        }
         if (($signal['mode']??'')!=='threshold'||!is_numeric($value)
             || !is_finite((float)$value) || (float)$value<0
             || !is_numeric($signal['on']??null)||!is_numeric($signal['off']??null)
@@ -101,14 +134,14 @@ final class IAHIrrigationQuery
 
     /** Archive pages are newest-first. Read one overlap second and abort
      * if a page cannot advance without skipping same-second samples. */
-    private static function archive(int $archive,int $id,array $signal,int $start,int $end,float $deadline,bool $latest,array $inventory): array
+    private static function archive(int $archive,int $id,array $signal,int $start,int $end,float $deadline,bool $latest,array $inventory,?int $readEnd=null): array
     {
         $base=['count'=>0,'last'=>null,'samples'=>0,'baselineKnown'=>false,'reason'=>''];
         if (!isset($inventory[$id])||!function_exists('AC_GetLoggedValues'))
             return array_replace($base,['reason'=>'not_archived']);
-        $analog=($signal['mode']??'')==='threshold';
+        $analog=($signal['mode']??'')!=='binary';
         $size=$analog?1000:400;$maxPages=$analog?24:12;
-        $rows=[];$cursor=$end;$complete=false;$foundLatest=false;$ambiguousBoundary=false;
+        $rows=[];$cursor=$readEnd??$end;$complete=false;$foundLatest=false;$ambiguousBoundary=false;
         try {
             for ($page=0;$page<$maxPages && microtime(true)<$deadline && $cursor>=max(1,$start);$page++) {
                 $batch=AC_GetLoggedValues($archive,$id,$start,$cursor,$size);
@@ -118,7 +151,7 @@ final class IAHIrrigationQuery
                     $boundary=(int)($batch[array_key_last($batch)]['TimeStamp']??0);
                     // Do not conclude from a potentially split timestamp at a full-page boundary.
                     $proof=count($batch)<$size?$rows:array_filter($rows,static fn($r)=>(int)($r['TimeStamp']??0)>$boundary);
-                    if (self::edges($proof,$signal,$start,$end)['last']!==null) {
+                    if (self::edges($proof,$signal,$start,$end,$readEnd)['last']!==null) {
                         $rows=$proof;$foundLatest=true;break;
                     }
                 }
@@ -134,9 +167,9 @@ final class IAHIrrigationQuery
                 }
             }
         } catch (Throwable $e) {return array_replace($base,['reason'=>'archive_error']);}
-        $out=self::edges($rows,$signal,$start,$end);
+        $out=self::edges($rows,$signal,$start,$end,$readEnd);
         if ($latest && !$foundLatest && !$complete)$out['last']=null;
-        $out['reason']=$foundLatest||($complete && !$ambiguousBoundary)?'':'partial';
+        $out['reason']=$foundLatest||($complete && !$ambiguousBoundary && empty($out['uncertain']))?'':'partial';
         if (!$latest && $out['reason']==='' && function_exists('AC_GetLoggingStatus')) {
             try {if (!AC_GetLoggingStatus($archive,$id))$out['reason']='logging_inactive';}
             catch (Throwable $ignored) {$out['reason']='logging_status_unknown';}
@@ -292,20 +325,39 @@ final class IAHIrrigationQuery
     private static function heaterMeter(array $system,array $inventory): ?array
     {
         $points=(array)($system['points']??[]);
-        $garden=in_array(52811,(array)($system['controllers']??[]),true);
-        $known=$garden?[47232=>'W',56599=>'A']:[];
+        $garden=(int)($system['sourceRootId']??0)===41578 || in_array(52811,(array)($system['controllers']??[]),true);
+        $namedArchive=[];
+        if ($garden) {
+            $points+=[47232=>[]];
+            // An older catalog can omit the source or use a link caption rather than the variable name.
+            if (function_exists('IPS_GetName')) {
+                foreach (array_slice(array_keys($inventory),0,2000) as $id) {
+                    if (IPS_VariableExists($id) && self::norm((string)IPS_GetName($id))===self::HEATER_METER_TITLE) {
+                        $points[$id]??=[];
+                        $namedArchive[$id]=true;
+                    }
+                }
+            }
+        }
         $candidates=[];
-        foreach ($points+array_fill_keys(array_keys($known),[]) as $id=>$point) {
+        foreach ($points as $id=>$point) {
+            $id=(int)$id;
+            $known=$garden && $id===47232;
+            $selected=!empty($point['enabled']) && ($point['role']??'')==='heaterSignal'
+                && ($system['historySignals']['heater'][$id]['mode']??'')==='heaterPower';
             $catalogPath=array_map([self::class,'norm'],explode('/',(string)($point['path']??'')));
             $inCatalogGroup=in_array(self::HEATER_METER_GROUP,$catalogPath,true);
+            $labels=array_merge([(string)($point['label']??'')],(array)($point['aliases']??[]));
+            $named=in_array(self::HEATER_METER_TITLE,array_map([self::class,'norm'],$labels),true)
+                || isset($namedArchive[$id]);
             if (isset($system['excludedPoints'][$id])
                 || (!empty($point['manualEdit']) && empty($point['enabled']))
-                || (!isset($known[$id]) && (empty($point['enabled'])
+                || (!$selected && !$known && !$named && (empty($point['enabled'])
                     || (!$inCatalogGroup && ($point['role']??'')!=='heaterSignal')))
-                || !IPS_VariableExists((int)$id))continue;
+                || !IPS_VariableExists($id))continue;
             try {
-                $object=IPS_GetObject((int)$id);
-                $variable=IPS_GetVariable((int)$id);
+                $object=IPS_GetObject($id);
+                $variable=IPS_GetVariable($id);
                 $parent=(int)($object['ParentID']??0);
                 $type=(int)($variable['VariableType']??-1);
                 $ident=(string)($object['ObjectIdent']??'');
@@ -314,41 +366,39 @@ final class IAHIrrigationQuery
                         || $type!==(int)($point['type']??-1) || $ident!==($point['ident']??null))))continue;
 
                 $name=self::norm((string)($object['ObjectName']??''));
-                $nameKind=match($name) {
-                    'leistung','wirkleistung','rohrbegleitheizung leistung'=>'power',
-                    'strom','stromstaerke','rohrbegleitheizung stromstaerke'=>'current',
-                    default=>'',
-                };
+                $named=$named || $name===self::HEATER_METER_TITLE;
+                $powerName=in_array($name,['leistung','wirkleistung','rohrbegleitheizung leistung'],true);
                 $unit=(string)($point['unit']??'');
-                if (isset($known[$id]) && function_exists('IPS_GetVariablePresentation')) {
-                    $unit=trim((string)(IPS_GetVariablePresentation((int)$id)['SUFFIX']??''))?:$unit;
+                if ($unit==='' && function_exists('IPS_GetVariablePresentation')) {
+                    $unit=trim((string)(IPS_GetVariablePresentation($id)['SUFFIX']??''));
                 }
-                if ($unit==='')$unit=$known[$id]??'';
-                if (!isset(self::HEATER_METER_DEFAULTS[$unit]))continue;
-                $kind=in_array($unit,['W','kW'],true)?'power':'current';
-                if ($nameKind!==$kind && (isset($known[$id]) || ($point['role']??'')!=='heaterSignal'))continue;
+                $profile=(string)(($variable['VariableCustomProfile']??'')?:($variable['VariableProfile']??''));
+                if ($unit==='' && $profile!=='' && function_exists('IPS_VariableProfileExists') && IPS_VariableProfileExists($profile))
+                    $unit=trim((string)(IPS_GetVariableProfile($profile)['Suffix']??''));
+                if ($unit==='' && ($named || ($known && $powerName)))$unit='W';
+                if (!in_array($unit,['W','kW'],true))continue;
+
+                // The named chart and the known garden power ID can refer to linked/renamed objects.
                 $inGroup=$inCatalogGroup && in_array('link',(array)($point['evidence']??[]),true);
-                for ($ancestor=$parent,$depth=0;!$inGroup && $ancestor>0 && $depth<8;$depth++) {
+                for ($ancestor=$parent,$depth=0;!$inGroup && !$named && !$known && $ancestor>0 && $depth<8;$depth++) {
                     $container=IPS_GetObject($ancestor);
                     $inGroup=self::norm((string)($container['ObjectName']??''))===self::HEATER_METER_GROUP;
                     $ancestor=(int)($container['ParentID']??0);
                 }
-                if (!$inGroup)continue;
-                $reading=GetValue((int)$id);
+                if (!$selected && !$named && !$known && (!$inGroup || (!$powerName && ($point['role']??'')!=='heaterSignal')))continue;
+                $reading=GetValue($id);
                 $value=is_numeric($reading) && is_finite((float)$reading) && (float)$reading>=0?(float)$reading:null;
             } catch (Throwable $ignored) {
                 continue;
             }
-            $configured=$system['historySignals']['heater'][$id]??[];
-            $custom=($configured['mode']??'')==='threshold'
-                && is_numeric($configured['on']??null) && is_numeric($configured['off']??null)
-                && is_finite((float)$configured['on']) && is_finite((float)$configured['off'])
-                && (float)$configured['on']>(float)$configured['off'] && (float)$configured['off']>=0;
-            [$on,$off]=$custom?[(float)$configured['on'],(float)$configured['off']]:self::HEATER_METER_DEFAULTS[$unit];
+            [$referenceMin,$referenceMax]=self::HEATER_REFERENCE_WATTS;
+            $scale=$unit==='kW'?1000.0:1.0;
+            $signal=['mode'=>'heater_power_band','off'=>self::HEATER_IDLE_WATTS/$scale,
+                'on'=>$referenceMin*(1-self::HEATER_TOLERANCE)/$scale,
+                'max'=>round($referenceMax*(1+self::HEATER_TOLERANCE),2)/$scale];
             $archived=isset($inventory[$id]) && ($inventory[$id]['AggregationActive']??true);
-            $priority=[$archived,$custom,$kind==='power',isset($known[$id]),$value!==null];
-            $candidates[]=['id'=>(int)$id,'unit'=>$unit,'value'=>$value,'priority'=>$priority,
-                'signal'=>['mode'=>'threshold','on'=>$on,'off'=>$off]];
+            $priority=[$selected,$named,$archived,$known,$value!==null];
+            $candidates[]=['id'=>$id,'unit'=>$unit,'value'=>$value,'priority'=>$priority,'signal'=>$signal];
         }
         usort($candidates,static fn(array $a,array $b):int=>$b['priority']<=>$a['priority']);
         if (isset($candidates[1]) && $candidates[0]['priority']===$candidates[1]['priority'])return null;
@@ -362,10 +412,11 @@ final class IAHIrrigationQuery
         if (($meter['value']??null)!==null) {
             $value=$meter['value'];
             $unit=$meter['unit'];
-            $precision=in_array($unit,['kW','A'],true)?3:1;
+            $precision=$unit==='kW'?3:1;
             $measurement=rtrim(rtrim(number_format($value,$precision,',',''),'0'),',').' '.$unit;
             $sample=self::sampleState($value,$meter['signal']);
-            $state=is_bool($sample)?$sample:(($series['reason']??null)===''?($series['lastState']??null):null);
+            if ($sample===false || ($sample===true && empty($series['overshoot'])))$state=$sample;
+            elseif ($sample===null && ($series['reason']??null)==='')$state=$series['lastState']??null;
         }
         $status=match($state){true=>'Ein',false=>'Aus',null=>'Unbekannt'};
         $reading=match(true){
@@ -479,22 +530,26 @@ final class IAHIrrigationQuery
 
     private static function heaterHistory(
         ?array $meter,int $archive,array $inventory,array $period,DateTimeImmutable $now,float $deadline,
-        bool $includePrevious=false
+        bool $includePrevious=false,bool $includeTimes=false,bool $perDay=false
     ): array {
         [$start,$end,$periodLabel]=$period;
         $diagnostics=['operation'=>'heater_energy_history','start'=>$start,'end'=>$end,'archiveId'=>$archive,
             'id'=>$meter['id']??0,'unit'=>$meter['unit']??'','thresholds'=>$meter['signal']??[]];
         if ($meter===null) {
-            return ['answer'=>'Kein eindeutiger Leistungs- oder Strommesswert unter Energiewerte Bewässerung.',
-                'displayRows'=>[],'diagnostics'=>$diagnostics+['reason'=>'no_meter']];
+            return ['answer'=>'Kein eindeutiger Leistungswert für den Heizungsverlauf.',
+                'displayRows'=>[['label'=>'Heizstarts '.$periodLabel,'value'=>'Leistungsquelle fehlt']],
+                'diagnostics'=>$diagnostics+['reason'=>'no_meter']];
         }
 
         $id=$meter['id'];
         $signal=$meter['signal'];
-        $series=self::archive($archive,$id,$signal,$start,$end,$deadline,false,$inventory);
+        // Observe the end of a spike after midnight, while counting the start on its own day.
+        $readEnd=min($now->getTimestamp(),$end+3600);
+        $series=self::archive($archive,$id,$signal,$start,$end,$deadline,false,$inventory,$readEnd);
         $latest=$series['last'];
         if ($latest===null && $includePrevious && $start>1 && isset($inventory[$id])) {
-            $previous=self::archive($archive,$id,$signal,0,$start-1,$deadline,true,$inventory);
+            $previous=self::archive($archive,$id,$signal,0,$start-1,$deadline,true,$inventory,
+                min($now->getTimestamp(),$start+3599));
             $diagnostics['previousArchive']=$previous;
             $latest=$previous['last'];
         }
@@ -514,6 +569,28 @@ final class IAHIrrigationQuery
             $time=self::eventTime($now,$latest);
             $rows[]=['label'=>'Letzter Heizstart','value'=>ucfirst($time)];
             $answers[]='Letzter Heizstart '.$time;
+        }
+        $starts=$series['starts']??[];
+        if ($includeTimes && $starts!==[]) {
+            $times=array_map(static fn(int $time):string=>$now->setTimestamp($time)->format('H:i'),$starts);
+            $rows[]=['label'=>'Uhrzeiten '.$periodLabel,'value'=>implode(' · ',$times)];
+        }
+        if ($perDay && $end>=$start) {
+            $byDay=[];
+            foreach ($starts as $time) {
+                $date=$now->setTimestamp($time)->format('Y-m-d');
+                $byDay[$date]=($byDay[$date]??0)+1;
+            }
+            $firstDay=$now->setTimestamp($start)->setTime(0,0);
+            $day=$now->setTimestamp($end)->setTime(0,0);
+            $complete=$series['reason']==='' && $series['baselineKnown'];
+            // The total still covers the full period on long requests.
+            for ($index=0;$day>=$firstDay && $index<31;$index++,$day=$day->modify('-1 day')) {
+                $number=$byDay[$day->format('Y-m-d')]??0;
+                $value=$complete?(string)$number:($number>0?'Mindestens '.$number:'Unbekannt');
+                $rows[]=['label'=>$day->format('d.m.Y'),'value'=>$value];
+                if ($index<7)$answers[]=$day->format('d.m.').' '.$value;
+            }
         }
         return ['answer'=>implode('. ',$answers).'.','displayRows'=>$rows,
             'diagnostics'=>$diagnostics+['archive'=>$series]];
@@ -546,7 +623,7 @@ final class IAHIrrigationQuery
             }
         }
         if (!$topic&&!$stations&&!$pump&&!$zone&&!$context&&!$soil&&!$knownStation&&!$systemHealth)return false;
-        return (bool)preg_match('/^(?:und )?(?:wie|ist|sind|war|wann|was|welch\w*|laeuft|laufen|hat|wo|wieviel\w*|sag(?:e)? mir|zeige|nenne|pruefe|kontrolliere|status|alles|zusammenfassung|temperatur|bodenfeuchte|wasserholen|wasser|giessen)\b/',$q);
+        return (bool)preg_match('/^(?:und )?(?:wie|ist|sind|war|wann|was|welch\w*|laeuft|laufen|hat|wo|wieviel\w*|sag(?:e)? mir|zeige|nenne|pruefe|kontrolliere|status|heizstarts|alles|zusammenfassung|temperatur|bodenfeuchte|wasserholen|wasser|giessen)\b/',$q);
     }
 
     private static function systems(array $catalog): array
@@ -609,8 +686,9 @@ final class IAHIrrigationQuery
         $frostRequested=(bool)preg_match('/\bfrost(?:werte|bereich)?\b|unter null|unter 0|minusgrade|minus temperatur/',$q);
         $combinedStatus=(bool)preg_match('/alles in ordnung|zusammenfassung|status.*bewae?sserung|bewae?sserung.*status/',$q);
         $heaterLatest=$isHeater && preg_match('/\bzu\s*letzt\b|letzte[srn]? einschalt|\bwann\b.*(?:eingeschaltet|angesprungen|gelaufen|aktiv)/',$q);
+        $heaterDaily=$isHeater && preg_match('/\b(?:pro tag|je tag|tageweise|taeglich)\b/',$q)===1;
         $heatingHistoryRequested=$isHeater && ($heaterLatest
-            || preg_match('/wie oft|wie haeufig|einschaltungen|angesprungen|hat .*eingeschaltet/',$q));
+            || $heaterDaily || preg_match('/wie oft|wie haeufig|einschaltungen|angesprungen|hat .*eingeschaltet/',$q));
         $pumpHistory=$isPump && preg_match('/\bzu\s*letzt\b|letzte einschaltung|\bwann\b.*eingeschaltet/',$q);
         $inventory=[];
         if ($isHeater || $pumpHistory || $frostRequested || $combinedStatus) {
@@ -620,11 +698,21 @@ final class IAHIrrigationQuery
             $meter=self::heaterMeter($s,$inventory);
             $explicitPeriod=preg_match('/\b(?:heute|gestern|winter|letzten)\b/',$q)===1;
             $period=self::period($heatingHistoryRequested?$q:'heute',$mode,$now);
-            $history=self::heaterHistory($meter,$archive,$inventory,$period,$now,$deadline,(bool)$heaterLatest&&!$explicitPeriod);
+            if ($heaterDaily && !$explicitPeriod) {
+                $period=[$now->setTime(0,0)->modify('-6 days')->getTimestamp(),$now->getTimestamp(),'in den letzten 7 Tagen'];
+            } elseif ($heaterDaily && str_starts_with($period[2],'in den letzten ')) {
+                $period[0]=$now->setTimestamp($period[0])->setTime(0,0)->modify('+1 day')->getTimestamp();
+            }
+            $history=self::heaterHistory($meter,$archive,$inventory,$period,$now,$deadline,
+                !$heatingHistoryRequested || ($heaterLatest&&!$explicitPeriod),
+                in_array($period[2],['heute','gestern'],true),$heaterDaily);
             $history['diagnostics']=$diag+$history['diagnostics'];
             if ($heatingHistoryRequested)return $history;
             $heat=self::heaterLive($meter,$history['diagnostics']['archive']??[]);
-            return ['answer'=>$heat['speech'].'.','displayRows'=>[$heat],'diagnostics'=>$history['diagnostics']];
+            $history['answer']=$heat['speech'].'. '.$history['answer'];
+            $heat['label']='Aktueller Status';
+            array_unshift($history['displayRows'],$heat);
+            return $history;
         }
         if ($combinedStatus || $frostRequested) {
             [$start,$end,$label]=self::period($q,$mode,$now);

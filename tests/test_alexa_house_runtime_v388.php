@@ -96,10 +96,15 @@ ck38($irrigation->apl['datasources']['summary']['readings']===$irrigationRows
     'irrigation scales the status rows and their two columns to the screen');
 $readings=[['label'=>'PV-Leistung','value'=>'1.200 W']];
 $pv=$summary('PV-Leistung 1.200 W.','Beantwortet','Wie geht es meiner PV-Anlage?',true,'energy_overview',$readings);
+$pvMain=$pv->apl['document']['mainTemplate']['items'][0];
 ck38($pv->apl['datasources']['summary']['title']==='PV-Anlage'
     && $pv->apl['datasources']['summary']['readings']===$readings
-    && $pv->apl['document']['mainTemplate']['items'][0]['items'][1]['items'][0]['data']==='${summary.readings}',
-    'PV values are bound to the visual rows');
+    && $pvMain['bind']===$layout && $pvMain['items'][0]['items'][0]['source']==='solarPanel'
+    && $pvMain['items'][1]['items'][0]===$list && isset($pv->apl['document']['graphics']['solarPanel']),
+    'PV has the same responsive rows as irrigation, with a solar icon');
+$heater=$summary('Heizstarts heute.','Beantwortet','Status Rohrbegleitheizung',true,'irrigation',$irrigationRows);
+ck38($heater->apl['datasources']['summary']['title']==='Rohrbegleitheizung',
+    'the direct heater status has its own title');
 ck38($summary('Antwort','Beantwortet','Wie geht es meiner PVAnlage?',true)->apl!==[],
     'PV compound spelling gets the visual response even for a backend answer without rows');
 $withoutScreen=$summary('Antwort','Beantwortet','Wie geht es meiner PV Anlage?');
