@@ -90,6 +90,10 @@ final class RCCSystemTreeDiscovery
         if (preg_match('/einschaltzeit|ausschaltzeit|zeitplan|wochenplan|startzeit|endzeit|schaltzeit/',$s))
             return ['schedule','scheduleValue',$zone];
         if (preg_match('/restlauf|restzeit|remaining/',$s))return ['zones','remaining',$zone];
+        if (in_array($type,[1,2],true) && in_array($unit,['W','kW','A','mA'],true)
+            && in_array(self::norm($label),['leistung','wirkleistung','strom','stromstaerke'],true)
+            && in_array('energiewerte bewaesserung',array_map([self::class,'norm'],explode('/',$path)),true))
+            return ['winter','heaterSignal',0];
         if (preg_match('/rohr\s*(begleit\s*)?heiz|begleitheiz|heizband|frostschutzheiz/',$context)) {
             if ($unit==='°C'||preg_match('/temperatur|sollwert|grenzwert|schwellwert/',$s))
                 return $unit==='°C' && !preg_match('/soll|grenz|schwell/',$s)

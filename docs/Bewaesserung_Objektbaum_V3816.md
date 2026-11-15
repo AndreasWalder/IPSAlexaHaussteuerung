@@ -35,7 +35,8 @@ Eine eindeutig lesbare boolesche Wintermodus-Variable hat Vorrang. Ohne diese
 Variable gelten die eingestellten Monate (Standard November bis März).
 Im Winter nennt der Überblick auch den Live-Status der Rohrbegleitheizung,
 die Aktivität von heute, das letzte erkannte Ereignis und die Stationstemperaturen.
-Auf Geräten mit Alexa-Bildschirm erscheint eine Übersicht mit einzelnen Statuszeilen.
+Auf Geräten mit Alexa-Bildschirm passen sich Schrift und Höhe der Statuszeilen
+an die Bildschirmgröße und die Anzahl der Zeilen an.
 Im Sommer stehen Pumpe, Kreise und Bodenfeuchte im Vordergrund.
 
 Im Alexa-Modul muss **Archiv für Hausabfragen** eingerichtet sein. Im
@@ -44,19 +45,16 @@ Anlageneditor kontrollieren, welche Datenpunkte archiviert sind:
 - **Pumpe:** bestätigten booleschen Pumpenstatus als Archivsignal wählen, falls
   der Scan mehrere mögliche Zustände gefunden hat. Es zählt der jüngste
   nachweisbare Aus→Ein-Wechsel. Alexa gibt nur das lokale Datum aus.
-- **Rohrbegleitheizung:** archivierte Ein/Aus-Rückmeldung oder einen
-  geeigneten Leistungs-/Strommesswert verwenden. Für Messwerte sowohl
-  **EIN ab** als auch **AUS bis** in der Einheit der Variable eingeben.
-  Zwischen diesen Schwellen bleibt der zuletzt belegte Zustand erhalten.
-  Ein gleichbleibender hoher Messwert, ein Standby-Verbrauch und der erste
-  vorhandene Ein-Wert ohne nachgewiesenen vorherigen Aus-Wert ergeben
-  keine zusätzliche Einschaltung. Fehlt ein auswertbares Schaltsignal, nutzt
-  die Abfrage den eingestellten Temperaturfühler an der beheizten Stelle.
-  Ohne eigene Einstellung verwendet sie den eindeutig zugeordneten Fühler
-  **Pumpenschacht unten**. Der Standard für diesen Fühler ist ein Anstieg von
-  mindestens 1 °C innerhalb von 10 Minuten. Alexa nennt die erkannten Anstiege
-  und die Uhrzeit, zu der der letzte Anstieg die Schwelle erreichte. Das ist
-  ein Hinweis auf Heizbetrieb. Der Fühler benötigt aktive Archivaufzeichnung.
+- **Rohrbegleitheizung:** Die Abfrage verwendet einen Leistungs- oder
+  Strommesswert aus **Energiewerte Bewässerung**. Für die Bewässerungsinstanz
+  #52811 werden **Leistung #47232** und **Stromstärke #56599** bei
+  passender Zuordnung auch mit älteren RoomsCatalog-Versionen erkannt.
+  Standardwerte sind **EIN ab 100 W, AUS bis 30 W** bzw.
+  **EIN ab 0,45 A, AUS bis 0,15 A**. Eigene Schwellen für einen Messwert
+  haben Vorrang. Zwischen den Schwellen gilt der zuletzt belegte Zustand.
+  Für Anzahl und Uhrzeit verwendet Alexa eine einzige archivierte Messreihe.
+  Ein Heizstart zählt beim belegten Wechsel von AUS auf EIN. Die
+  Stationstemperaturen bleiben in der Übersicht als separate Istwerte sichtbar.
 - Ohne Zeitraum wird im Winter ab dem eingestellten Saisonbeginn gezählt,
   sonst über die letzten 30 Tage. „Heute“, „gestern“, „diesen Winter“ und
   „in den letzten sieben Tagen“ werden ebenfalls unterstützt. Ist die

@@ -70,7 +70,7 @@ function record(int $id,int $ts,mixed $v): void {$GLOBALS['archive'][$id][]=['Ti
 obj(41578,0,0,'Bewässerung');obj(14136,1,41578,'Kreise Manuell');obj(14872,1,41578,'Kreise Status');
 obj(40892,1,41578,'Bodenfeuchte');obj(26483,1,41578,'Allgemein');obj(51071,1,41578,'Plan');
 obj(50000,1,0,'IPSBewaesserung');obj(61000,1,0,'Wetterstation');obj(17597,1,0,'Archive Control');
-obj(63000,1,0,'Messung');obj(65000,3,41578,'Frostschutz');obj(65001,4,65000,'Frostschutzregel');
+obj(63000,1,0,'Energiewerte Bewässerung');obj(65000,3,41578,'Frostschutz');obj(65001,4,65000,'Frostschutzregel');
 obj(65003,5,41578,'Visualisierung');
 obj(65002,3,0,'Heizung bewerten');obj(70000,0,0,'Sonstiges');
 variable(50104,50000,'Manuell Hecke Ost','Manuell4',0,false,'~Switch',50000);
@@ -280,8 +280,10 @@ variable(47490,61000,'Bodenfeuchte (2) Hecke Süd','GardenSoilSouth',1,49,'~Humi
 variable(31242,61000,'Bodenfeuchte (6)','OldSoil',1,3,'~Humidity');
 variable(40021,61000,'Batterie Bodenfeuchtesensor (1) - Hecke Ost','GardenBattery',1,80,'~Humidity');
 variable(44047,61000,'Temperatur (Aussensensor)','Outside',2,-2.9,'~Temperature');
-variable(47232,63000,'Leistung','HeaterWatt',2,14.9,'~Watt');
-variable(56599,63000,'Stromstärke','HeaterAmpere',2,0.1);
+obj(63000,1,0,'Andere Messwerte');
+obj(63200,0,41578,'Energiewerte Bewässerung');
+variable(47232,63200,'Leistung','HeaterWatt',2,14.9,'~Watt');
+variable(56599,63200,'Stromstärke','HeaterAmpere',2,0.1);
 $preset=$catalog;
 $preset['dataSources'][$key]['controllers']=[52811];
 $scripts[10001]="<?php return ".var_export($preset,true).";";
@@ -297,7 +299,6 @@ test(IAHIrrigationQuery::query($preset,'Wie hoch ist die Batterie Hecke Ost der 
 $refreshes=$ed->listRefreshes;
 ob_start();
 $ed->AddGardenHeaterMeters($key);
-$ed->SaveSystemTreeHeaterTemperature($key,15690,'1,0',10);
 $ed->SaveSystemTreeSettings($key,11,3,true,'Bewässerung Test');
 ob_end_clean();
 $heating=IAHVoiceRuleLiteralReader::read($scripts[10001]);
@@ -305,49 +306,62 @@ $heatingSource=$heating['dataSources'][$key];
 test($ed->listRefreshes===$refreshes && $heatingSource['title']==='Bewässerung Test',
     'dialog buttons save EDIT without invalidating the active devices row');
 test($heatingSource['points'][47232]['role']==='heaterSignal' && $heatingSource['points'][56599]['unit']==='A'
-    && $heatingSource['historySignals']['heaterTemperature']['id']===15690
-    && !isset($heatingSource['historySignals']['heater'][47232]),'meters do not invent switching thresholds');
-foreach ([0=>5,120=>5.7,240=>6.2,360=>6.8,480=>5.5,600=>6.7,2400=>9] as $dt=>$value)
-    record(15690,$day+$dt,$value);
-$temperatureAnswer=IAHIrrigationQuery::query($heating,'Zeige Temperaturanstiege der Rohrbegleitheizung diesen Winter','',17597,microtime(true)+4,$now);
-test(str_contains($temperatureAnswer['answer'],'2 schnelle Temperaturanstiege')
-    && str_contains($temperatureAnswer['answer'],'Hinweise auf Heizbetrieb')
-    && $temperatureAnswer['diagnostics']['operation']==='heater_temperature_rises','temperature rises are separate from measured switch events');
-
-$inferred=$preset;
-$inferred['dataSources'][$key]['historySignals']=['heaterAutomaticDisabled'=>true];
+    && !isset($heatingSource['historySignals']['heater'][47232]),'adding meters does not overwrite configured thresholds');
+$energyCatalog=$preset; // Simulates an installed PROD catalog from before energy meters were added in EDIT.
+$energyCatalog['dataSources'][$key]['historySignals']['heater'][63102]=['mode'=>'binary'];
+$energyCatalog['dataSources'][$key]['historySignals']['heaterTemperature']=['id'=>42306,'rise'=>1.0,'seconds'=>600];
 $today=$now->setTime(0,0)->getTimestamp();
 $yesterday=$now->modify('-1 day')->setTime(0,0)->getTimestamp();
-foreach ([0=>4.3,180=>5.5,360=>5.9,480=>4.0,600=>5.3,720=>5.8] as $offset=>$value) {
-    record(42306,$today+9*3600+$offset,$value);
+record(47232,$today-60,14.9);
+foreach ([0=>14.9,180=>420,360=>65,480=>14.9,600=>410,720=>415,840=>14.9] as $offset=>$watts) {
+    record(47232,$today+9*3600+$offset,$watts);
 }
-record(42306,$yesterday+9*3600,4.0);
-record(42306,$yesterday+9*3600+180,5.2);
-$askInferred=static fn(string $q)=>IAHIrrigationQuery::query($inferred,$q,'',0,microtime(true)+4,$now);
-$overview=$askInferred('Wie ist meine Bewässerung?');
+record(56599,$today-60,0.1);
+record(56599,$today+9*3600+180,1.82);
+record(63102,$today-60,false);
+record(63102,$today+120,true);
+record(42306,$today+100,4.0);
+record(42306,$today+220,8.0);
+$askEnergy=static fn(array $data,string $q)=>IAHIrrigationQuery::query($data,$q,'',0,microtime(true)+4,$now);
+$overview=$askEnergy($energyCatalog,'Wie ist meine Bewässerung?');
 $rows=array_column($overview['displayRows'],'value','label');
-test($rows['Temperaturverlauf heute']==='2 schnelle Temperaturanstiege'
-    && $rows['Letzter erkannter Anstieg']==='heute um 09:10 Uhr'
-    && $rows['Pumpenschacht unten']==='7,6 °C'
-    && $overview['diagnostics']['heaterSummary']['id']===42306,
-    'winter overview uses the lower sensor when none is explicitly mapped, with separate count and time');
-test(str_contains($askInferred('Wann hat die Rohrbegleitheizung zuletzt eingeschaltet?')['answer'],'heute um 09:10 Uhr')
-    && str_contains($askInferred('Wie oft hat die Rohrbegleitheizung heute eingeschaltet?')['answer'],'2 schnelle Temperaturanstiege'),
-    'direct last-on and count questions use the temperature history if there is no reliable contact');
-$archive[42306]=array_values(array_filter($archive[42306],static fn(array $sample)=>$sample['TimeStamp']<$today));
-record(42306,$today+100,6.0);
-record(42306,$today+200,6.2);
-$rows=array_column($askInferred('Wie ist meine Bewässerung?')['displayRows'],'value','label');
-test($rows['Temperaturverlauf heute']==='Kein schneller Temperaturanstieg in den Archivwerten'
-    && $rows['Letzter erkannter Anstieg']==='am 13.11.2026 um 09:03 Uhr',
-    'a previous event still appears when the observed period today has no rise');
-unset($archive[42306]);
-$inferred['dataSources'][$key]['historySignals']['heaterTemperature']=['id'=>42306,'rise'=>1.0,'seconds'=>600];
-$rows=array_column(IAHIrrigationQuery::query($inferred,'Wie ist meine Bewässerung?','',17597,microtime(true)+4,$now)['displayRows'],'value','label');
-test($rows['Temperaturverlauf heute']==='Temperatur nicht archiviert' && !isset($rows['Letzter erkannter Anstieg']),
-    'missing archive never appears as zero heating activity');
-$r=iah_rc_voice('Wie ist meine Bewässerung?',['archive_control_id'=>17597,'api_key'=>'unused'],$inferred,
-    static fn():array=>['choices'=>[['message'=>['content'=>'Falsche Test-Antwort']]]]);
-test($r['answerSource']==='irrigation' && $r['displayRows'][0]===['label'=>'Pumpe','value'=>'Aus']
-    && str_contains($r['answer'],'Temperatur nicht archiviert'),'APL rows and spoken archive facts travel through the Alexa bridge');
+test($rows['Rohrbegleitheizung']==='Aus · 14,9 W' && $rows['Heizstarts heute']==='2'
+    && $rows['Letzter Heizstart']==='Heute um 09:10 Uhr' && $rows['Pumpenschacht unten']==='7,6 °C'
+    && $overview['diagnostics']['heaterSummary']['id']===47232
+    && !str_contains($overview['answer'],'Temperaturanstieg'),
+    'known power source is available to older PROD, with one counted series and intact station temperature readings');
+test(str_contains($askEnergy($energyCatalog,'Wann hat die Rohrbegleitheizung zuletzt eingeschaltet?')['answer'],'heute um 09:10 Uhr')
+    && str_contains($askEnergy($energyCatalog,'Wie oft hat die Rohrbegleitheizung heute eingeschaltet?')['answer'],'2 Einschaltungen'),
+    'direct last-on and count queries use the same archive readings');
+$values[47232]=420;
+test($askEnergy($energyCatalog,'Ist die Rohrbegleitheizung an?')['displayRows'][0]['value']==='Ein · 420 W',
+    'live status changes with the electrical reading');
+$values[47232]=65;
+test($askEnergy($energyCatalog,'Ist die Rohrbegleitheizung an?')['displayRows'][0]['value']==='Aus · 65 W',
+    'a live value in the deadband uses the last known electrical state');
+$values[47232]=14.9;
+$archive[47232]=[];
+record(47232,$yesterday+9*3600,14.9);
+record(47232,$yesterday+9*3600+180,408);
+record(47232,$today-60,14.9);
+record(47232,$today+100,15.0);
+$rows=array_column($askEnergy($energyCatalog,'Wie ist meine Bewässerung?')['displayRows'],'value','label');
+test($rows['Heizstarts heute']==='0' && $rows['Letzter Heizstart']==='Am 13.11.2026 um 09:03 Uhr',
+    'zero starts today with a known baseline still includes the last start from a previous day');
+unset($archive[47232]);
+$values[56599]=1.8;
+$rows=array_column($askEnergy($energyCatalog,'Wie ist meine Bewässerung?')['displayRows'],'value','label');
+test($rows['Rohrbegleitheizung']==='Ein · 1,8 A' && $rows['Heizstarts heute']==='1',
+    'current is used when the power channel has no archive');
+unset($archive[56599]);
+$rows=array_column($askEnergy($energyCatalog,'Wie ist meine Bewässerung?')['displayRows'],'value','label');
+test($rows['Rohrbegleitheizung']==='Aus · 14,9 W' && $rows['Heizstarts heute']==='Messwert nicht archiviert'
+    && !isset($rows['Letzter Heizstart']),'missing archive preserves current power and does not imply zero starts');
+$energyCatalog['dataSources'][$key]['excludedPoints'][47232]='Ausgeschlossen';
+test($askEnergy($energyCatalog,'Ist die Rohrbegleitheizung an?')['displayRows'][0]['value']==='Ein · 1,8 A',
+    'the older-catalog fallback respects explicit point exclusions');
+obj(63200,0,41578,'Nicht zur Bewässerungsenergie gehörig');
+$rows=array_column($askEnergy($energyCatalog,'Wie ist meine Bewässerung?')['displayRows'],'value','label');
+test($rows['Rohrbegleitheizung']==='Energiemesswert fehlt' && !isset($rows['Heizstarts heute']),
+    'unrelated electrical signals, legacy contacts and temperatures never stand in for the named source');
 echo "PASS V3.8.16: link/script graph, checked EDIT import, seasonal voice, rising edges and action guards\n";

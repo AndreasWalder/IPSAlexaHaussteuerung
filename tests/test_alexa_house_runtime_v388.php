@@ -85,10 +85,15 @@ ck38($main['parameters']===['summary'] && $main['items'][0]['items'][0]['items']
 $irrigationRows=[['label'=>'Pumpe','value'=>'Aus'],['label'=>'Pumpenschacht unten','value'=>'7,6 °C']];
 $irrigation=$summary('Pumpe aus.','Beantwortet','Wie ist meine Bewässerung?',true,'irrigation',$irrigationRows);
 $list=$irrigation->apl['document']['mainTemplate']['items'][0]['items'][1]['items'][0];
+$layout=$irrigation->apl['document']['mainTemplate']['items'][0]['bind'];
 ck38($irrigation->apl['datasources']['summary']['readings']===$irrigationRows
+    && $irrigation->apl['datasources']['summary']['rowCount']===2
+    && str_contains($layout[0]['value'],'viewport.height') && str_contains($layout[0]['value'],'summary.rowCount')
     && $list['data']==='${summary.readings}' && $list['items'][0]['type']==='Frame'
-    && $list['items'][0]['item']['items'][1]['text']==='${data.value}',
-    'irrigation draws one separate status row per backend value');
+    && $list['items'][0]['item']['items'][1]['text']==='${data.value}'
+    && $list['items'][0]['item']['items'][1]['fontSize']==='${readingFont}'
+    && $list['items'][0]['item']['items'][1]['textAlign']==='right',
+    'irrigation scales the status rows and their two columns to the screen');
 $readings=[['label'=>'PV-Leistung','value'=>'1.200 W']];
 $pv=$summary('PV-Leistung 1.200 W.','Beantwortet','Wie geht es meiner PV-Anlage?',true,'energy_overview',$readings);
 ck38($pv->apl['datasources']['summary']['title']==='PV-Anlage'

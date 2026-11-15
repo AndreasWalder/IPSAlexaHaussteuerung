@@ -2130,7 +2130,7 @@ function Execute($request = null)
             $escape = static fn(string $value): string => htmlspecialchars($value, ENT_NOQUOTES | ENT_SUBSTITUTE, 'UTF-8');
             $bodyText = [
                 'type' => 'Text',
-                'fontSize' => '${viewport.width < 600 ? 16 : 18}',
+                'fontSize' => $irrigation ? '${readingFont}' : '${viewport.width < 600 ? 16 : 18}',
                 'lineHeight' => '125%',
                 'color' => $irrigation ? '#E2EDF1' : '#202830',
             ];
@@ -2146,15 +2146,19 @@ function Execute($request = null)
                 ];
                 if ($irrigation) {
                     $row['alignItems'] = 'center';
+                    $row['width'] = '100%';
+                    $row['minHeight'] = '${readingHeight - 4}';
                     $row['paddingLeft'] = $row['paddingRight'] = '12dp';
                     $row['paddingTop'] = $row['paddingBottom'] = '7dp';
                     $row['items'][0]['color'] = '#A6C6D1';
-                    $row['items'][1] += ['maxWidth' => '57%', 'textAlign' => 'right', 'shrink' => 1];
+                    $row['items'][0]['width'] = '0dp';
+                    $row['items'][1] += ['width' => '48%', 'textAlign' => 'right', 'shrink' => 1];
                     $row = ['type' => 'Frame', 'backgroundColor' => '#132C39', 'borderRadius' => '8dp',
                         'width' => '100%', 'height' => 'auto', 'spacing' => '4dp', 'item' => $row];
                 }
                 $body = [
                     'type' => 'Container',
+                    'width' => '100%',
                     'data' => '${summary.readings}',
                     'items' => [$row],
                 ];
@@ -2162,15 +2166,22 @@ function Execute($request = null)
             $heading = [
                 'type' => 'Text',
                 'text' => '${summary.title}',
-                'fontSize' => '${viewport.width < 600 ? 22 : 26}',
+                'fontSize' => $irrigation ? '${headingFont}' : '${viewport.width < 600 ? 22 : 26}',
                 'fontWeight' => 'bold',
                 'color' => $irrigation ? '#F2FBFD' : '#18324A',
             ];
             $graphics = [];
+            $responsive = [];
             if ($irrigation) {
+                $responsive = ['bind' => [
+                    ['name' => 'readingHeight', 'value' => '${Math.min(76, Math.max(34, (viewport.height - 86) / Math.max(4, summary.rowCount)))}'],
+                    ['name' => 'readingFont', 'value' => '${Math.max(17, Math.floor(Math.min(34, readingHeight * 0.54, viewport.width * 0.043)))}'],
+                    ['name' => 'headingFont', 'value' => '${Math.max(25, Math.min(42, viewport.height * 0.083, viewport.width * 0.065))}'],
+                ]];
                 $heading['spacing'] = '10dp';
                 $heading = ['type' => 'Container', 'direction' => 'row', 'alignItems' => 'center', 'items' => [
-                    ['type' => 'VectorGraphic', 'source' => 'waterDrop', 'width' => '36dp', 'height' => '36dp'],
+                    ['type' => 'VectorGraphic', 'source' => 'waterDrop', 'width' => '${headingFont + 9}',
+                        'height' => '${headingFont + 9}', 'scale' => 'best-fit'],
                     $heading,
                 ]];
                 $graphics = ['graphics' => ['waterDrop' => [
@@ -2207,13 +2218,14 @@ function Execute($request = null)
                                     'items' => [$body],
                                 ],
                             ],
-                        ]],
+                        ] + $responsive],
                     ],
                 ] + $graphics,
                 'ds' => [
                     'summary' => [
                         'title' => $title,
                         'text' => str_replace(["\r\n", "\r", "\n"], '<br>', $escape($text)),
+                        'rowCount' => count($readings),
                         'readings' => array_map(static fn(array $row): array => [
                             'label' => $escape($row['label']),
                             'value' => $escape($row['value']),
