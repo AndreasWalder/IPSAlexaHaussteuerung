@@ -33,7 +33,9 @@ oder Alexa-Intents.
 
 Eine eindeutig lesbare boolesche Wintermodus-Variable hat Vorrang. Ohne diese
 Variable gelten die eingestellten Monate (Standard November bis März).
-Im Winter nennt der Überblick auch Rohrbegleitheizung und Stationstemperaturen.
+Im Winter nennt der Überblick auch den Live-Status der Rohrbegleitheizung,
+die Aktivität von heute, das letzte erkannte Ereignis und die Stationstemperaturen.
+Auf Geräten mit Alexa-Bildschirm erscheint eine Übersicht mit einzelnen Statuszeilen.
 Im Sommer stehen Pumpe, Kreise und Bodenfeuchte im Vordergrund.
 
 Im Alexa-Modul muss **Archiv für Hausabfragen** eingerichtet sein. Im
@@ -48,7 +50,13 @@ Anlageneditor kontrollieren, welche Datenpunkte archiviert sind:
   Zwischen diesen Schwellen bleibt der zuletzt belegte Zustand erhalten.
   Ein gleichbleibender hoher Messwert, ein Standby-Verbrauch und der erste
   vorhandene Ein-Wert ohne nachgewiesenen vorherigen Aus-Wert ergeben
-  keine zusätzliche Einschaltung. Keine Rückschlüsse aus Temperaturanstiegen.
+  keine zusätzliche Einschaltung. Fehlt ein auswertbares Schaltsignal, nutzt
+  die Abfrage den eingestellten Temperaturfühler an der beheizten Stelle.
+  Ohne eigene Einstellung verwendet sie den eindeutig zugeordneten Fühler
+  **Pumpenschacht unten**. Der Standard für diesen Fühler ist ein Anstieg von
+  mindestens 1 °C innerhalb von 10 Minuten. Alexa nennt die erkannten Anstiege
+  und die Uhrzeit, zu der der letzte Anstieg die Schwelle erreichte. Das ist
+  ein Hinweis auf Heizbetrieb. Der Fühler benötigt aktive Archivaufzeichnung.
 - Ohne Zeitraum wird im Winter ab dem eingestellten Saisonbeginn gezählt,
   sonst über die letzten 30 Tage. „Heute“, „gestern“, „diesen Winter“ und
   „in den letzten sieben Tagen“ werden ebenfalls unterstützt. Ist die
@@ -59,6 +67,7 @@ Beispiele für Alexa oder den Sprachtest:
 - „Wie geht es meiner Bewässerung?“
 - „Wie kalt ist es in den jeweiligen Stationen?“
 - „Wie oft hat die Rohrbegleitheizung diesen Winter eingeschaltet?“
+- „Wann hat die Rohrbegleitheizung zuletzt eingeschaltet?“
 - „Ist bei der Bewässerung noch alles aus?“
 - „Wann war die Pumpe zuletzt eingeschaltet?“
 - „Wann startet Kreis 4 wieder?“

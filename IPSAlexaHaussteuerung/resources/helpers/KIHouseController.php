@@ -955,7 +955,8 @@ function iah_rc_voice(
         if ($irrigation!==null) {
             iah_rc_log('irrigation.query',$irrigation['diagnostics']);
             $readDetails=[['tool'=>'irrigation','result'=>$irrigation['diagnostics']]];
-            if ($key!=='') {
+            $displayRows=$irrigation['displayRows']??[];
+            if ($key!=='' && $displayRows===[]) {
                 try {
                     $model=(string)($cfg['model']??'gpt-6-luna');
                     $request=['model'=>$model,'max_completion_tokens'=>180,'messages'=>[
@@ -969,7 +970,7 @@ function iah_rc_voice(
                 } catch(Throwable $ignored) {}
             }
             return $costFinish(['handled'=>true,'answer'=>$irrigation['answer'],'localHouseQuery'=>true,
-                'answerSource'=>'irrigation']);
+                'answerSource'=>'irrigation','displayRows'=>$displayRows]);
         }
         if($scope===null && IAHHouseQuestionContext::isNewQuestion($text))
             $scope=IAHHouseQuestionContext::initialScope($text,$catalog);

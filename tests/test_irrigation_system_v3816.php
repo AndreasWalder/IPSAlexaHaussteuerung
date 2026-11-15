@@ -313,4 +313,41 @@ $temperatureAnswer=IAHIrrigationQuery::query($heating,'Zeige Temperaturanstiege 
 test(str_contains($temperatureAnswer['answer'],'2 schnelle Temperaturanstiege')
     && str_contains($temperatureAnswer['answer'],'Hinweise auf Heizbetrieb')
     && $temperatureAnswer['diagnostics']['operation']==='heater_temperature_rises','temperature rises are separate from measured switch events');
+
+$inferred=$preset;
+$inferred['dataSources'][$key]['historySignals']=['heaterAutomaticDisabled'=>true];
+$today=$now->setTime(0,0)->getTimestamp();
+$yesterday=$now->modify('-1 day')->setTime(0,0)->getTimestamp();
+foreach ([0=>4.3,180=>5.5,360=>5.9,480=>4.0,600=>5.3,720=>5.8] as $offset=>$value) {
+    record(42306,$today+9*3600+$offset,$value);
+}
+record(42306,$yesterday+9*3600,4.0);
+record(42306,$yesterday+9*3600+180,5.2);
+$askInferred=static fn(string $q)=>IAHIrrigationQuery::query($inferred,$q,'',0,microtime(true)+4,$now);
+$overview=$askInferred('Wie ist meine Bewässerung?');
+$rows=array_column($overview['displayRows'],'value','label');
+test($rows['Temperaturverlauf heute']==='2 schnelle Temperaturanstiege'
+    && $rows['Letzter erkannter Anstieg']==='heute um 09:10 Uhr'
+    && $rows['Pumpenschacht unten']==='7,6 °C'
+    && $overview['diagnostics']['heaterSummary']['id']===42306,
+    'winter overview uses the lower sensor when none is explicitly mapped, with separate count and time');
+test(str_contains($askInferred('Wann hat die Rohrbegleitheizung zuletzt eingeschaltet?')['answer'],'heute um 09:10 Uhr')
+    && str_contains($askInferred('Wie oft hat die Rohrbegleitheizung heute eingeschaltet?')['answer'],'2 schnelle Temperaturanstiege'),
+    'direct last-on and count questions use the temperature history if there is no reliable contact');
+$archive[42306]=array_values(array_filter($archive[42306],static fn(array $sample)=>$sample['TimeStamp']<$today));
+record(42306,$today+100,6.0);
+record(42306,$today+200,6.2);
+$rows=array_column($askInferred('Wie ist meine Bewässerung?')['displayRows'],'value','label');
+test($rows['Temperaturverlauf heute']==='Kein schneller Temperaturanstieg in den Archivwerten'
+    && $rows['Letzter erkannter Anstieg']==='am 13.11.2026 um 09:03 Uhr',
+    'a previous event still appears when the observed period today has no rise');
+unset($archive[42306]);
+$inferred['dataSources'][$key]['historySignals']['heaterTemperature']=['id'=>42306,'rise'=>1.0,'seconds'=>600];
+$rows=array_column(IAHIrrigationQuery::query($inferred,'Wie ist meine Bewässerung?','',17597,microtime(true)+4,$now)['displayRows'],'value','label');
+test($rows['Temperaturverlauf heute']==='Temperatur nicht archiviert' && !isset($rows['Letzter erkannter Anstieg']),
+    'missing archive never appears as zero heating activity');
+$r=iah_rc_voice('Wie ist meine Bewässerung?',['archive_control_id'=>17597,'api_key'=>'unused'],$inferred,
+    static fn():array=>['choices'=>[['message'=>['content'=>'Falsche Test-Antwort']]]]);
+test($r['answerSource']==='irrigation' && $r['displayRows'][0]===['label'=>'Pumpe','value'=>'Aus']
+    && str_contains($r['answer'],'Temperatur nicht archiviert'),'APL rows and spoken archive facts travel through the Alexa bridge');
 echo "PASS V3.8.16: link/script graph, checked EDIT import, seasonal voice, rising edges and action guards\n";

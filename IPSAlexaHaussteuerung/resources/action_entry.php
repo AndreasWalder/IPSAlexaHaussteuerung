@@ -2116,8 +2116,9 @@ function Execute($request = null)
                 return $response;
             }
 
-            // The Alexa app can also display the summary as a standard card.
-            $image = rtrim((string)$baseUrl, '/') . '/hook/iah-alexa-icons?f=Logo.png&token=' . rawurlencode((string)$token);
+            $irrigation = $title === 'Bewässerung';
+            $iconFile = $irrigation ? 'Bewaesserung.png' : 'Logo.png';
+            $image = rtrim((string)$baseUrl, '/') . '/hook/iah-alexa-icons?f=' . $iconFile . '&token=' . rawurlencode((string)$token);
             if (preg_match('~^https://[a-z0-9.-]+(?::\d{1,5})?(?:/[^\s]*)?$~iD', $image)) {
                 $response->SetStandardCard($title, $text, $image, $image);
             }
@@ -2131,29 +2132,60 @@ function Execute($request = null)
                 'type' => 'Text',
                 'fontSize' => '${viewport.width < 600 ? 16 : 18}',
                 'lineHeight' => '125%',
-                'color' => '#202830',
+                'color' => $irrigation ? '#E2EDF1' : '#202830',
             ];
             $body = $bodyText + ['text' => '${summary.text}'];
             if ($readings !== []) {
+                $rowLabel = $bodyText + ['text' => '${data.label}', 'grow' => 1, 'shrink' => 1];
+                $rowValue = $bodyText + ['text' => '${data.value}', 'fontWeight' => 'bold', 'spacing' => '12dp'];
+                $row = [
+                    'type' => 'Container',
+                    'direction' => 'row',
+                    'spacing' => '6dp',
+                    'items' => [$rowLabel, $rowValue],
+                ];
+                if ($irrigation) {
+                    $row['alignItems'] = 'center';
+                    $row['paddingLeft'] = $row['paddingRight'] = '12dp';
+                    $row['paddingTop'] = $row['paddingBottom'] = '7dp';
+                    $row['items'][0]['color'] = '#A6C6D1';
+                    $row['items'][1] += ['maxWidth' => '57%', 'textAlign' => 'right', 'shrink' => 1];
+                    $row = ['type' => 'Frame', 'backgroundColor' => '#132C39', 'borderRadius' => '8dp',
+                        'width' => '100%', 'height' => 'auto', 'spacing' => '4dp', 'item' => $row];
+                }
                 $body = [
                     'type' => 'Container',
                     'data' => '${summary.readings}',
-                    'items' => [[
-                        'type' => 'Container',
-                        'direction' => 'row',
-                        'spacing' => '6dp',
-                        'items' => [
-                            $bodyText + ['text' => '${data.label}', 'grow' => 1, 'shrink' => 1],
-                            $bodyText + ['text' => '${data.value}', 'fontWeight' => 'bold', 'spacing' => '12dp'],
-                        ],
-                    ]],
+                    'items' => [$row],
                 ];
+            }
+            $heading = [
+                'type' => 'Text',
+                'text' => '${summary.title}',
+                'fontSize' => '${viewport.width < 600 ? 22 : 26}',
+                'fontWeight' => 'bold',
+                'color' => $irrigation ? '#F2FBFD' : '#18324A',
+            ];
+            $graphics = [];
+            if ($irrigation) {
+                $heading['spacing'] = '10dp';
+                $heading = ['type' => 'Container', 'direction' => 'row', 'alignItems' => 'center', 'items' => [
+                    ['type' => 'VectorGraphic', 'source' => 'waterDrop', 'width' => '36dp', 'height' => '36dp'],
+                    $heading,
+                ]];
+                $graphics = ['graphics' => ['waterDrop' => [
+                    'type' => 'AVG', 'version' => '1.1', 'width' => 36, 'height' => 36,
+                    'items' => [
+                        ['type' => 'path', 'fill' => '#1A4352', 'pathData' => 'M18,1 A17,17 0 1,1 18,35 A17,17 0 1,1 18,1 Z'],
+                        ['type' => 'path', 'fill' => '#5BE3D2', 'pathData' => 'M18,7 C15,12 10,16 10,21 A8,8 0 1,0 26,21 C26,16 21,12 18,7 Z'],
+                    ],
+                ]]];
             }
             $applyApl($response, [
                 'doc' => [
                     'type' => 'APL',
                     'version' => '1.4',
-                    'background' => '#F4F6F8',
+                    'background' => $irrigation ? '#0B1D28' : '#F4F6F8',
                     'mainTemplate' => [
                         'parameters' => ['summary'],
                         'items' => [[
@@ -2165,13 +2197,7 @@ function Execute($request = null)
                             'paddingTop' => '16dp',
                             'paddingBottom' => '12dp',
                             'items' => [
-                                [
-                                    'type' => 'Text',
-                                    'text' => '${summary.title}',
-                                    'fontSize' => '${viewport.width < 600 ? 22 : 26}',
-                                    'fontWeight' => 'bold',
-                                    'color' => '#18324A',
-                                ],
+                                $heading,
                                 [
                                     'type' => 'ScrollView',
                                     'width' => '100%',
@@ -2183,7 +2209,7 @@ function Execute($request = null)
                             ],
                         ]],
                     ],
-                ],
+                ] + $graphics,
                 'ds' => [
                     'summary' => [
                         'title' => $title,
@@ -3020,7 +3046,7 @@ function Execute($request = null)
                                     $houseQuestion,
                                     $iahVoiceHasScreen,
                                     (string)($homeAgentData['answerSource'] ?? ''),
-                                    (array)($homeAgentData['energyOverview'] ?? []));
+                                    (array)($homeAgentData['displayRows'] ?? $homeAgentData['energyOverview'] ?? []));
                             }
                             if (isset($iahLastInteraction))
                                 $iahLastInteraction['detail']=is_array($homeAgentData) ? 'backend_unhandled' : 'invalid_backend_reply';

@@ -82,12 +82,13 @@ final class IAHIrrigationQuery
             $samples[$ts]=array_key_exists($ts,$samples) && $samples[$ts]!==$value?null:$value;
         }
         ksort($samples,SORT_NUMERIC);
-        $count=0;$last=null;$previous=null;$peak=null;$minima=[];$head=0;$baseline=false;
+        $count=0;$last=null;$previous=null;$peak=null;$minima=[];$head=0;$baseline=false;$comparable=false;
         foreach ($samples as $ts=>$value) {
+            $comparable=$comparable || ($value!==null && $ts>=$start && $previous!==null && $ts-$previous<=$window);
             if ($value===null || ($previous!==null && $ts-$previous>$window)) {
                 $peak=null;$minima=[];$head=0;
             }
-            $previous=$ts;
+            $previous=$value===null?null:$ts;
             if ($value===null || $rise<=0 || $window<=0)continue;
             $baseline=$baseline || $ts<$start;
             if ($peak!==null) {
@@ -109,7 +110,7 @@ final class IAHIrrigationQuery
             $minima[]=[$ts,$value];
         }
         return ['count'=>$count,'last'=>$last,'samples'=>count(array_filter($samples,static fn($value)=>$value!==null)),
-            'baselineKnown'=>$baseline];
+            'baselineKnown'=>$baseline,'comparable'=>$comparable];
     }
 
     private static function hasBaseline(array $states,int $start): bool
@@ -258,14 +259,25 @@ final class IAHIrrigationQuery
 
     private static function entries(array $system,string $role,?int $zone=null): array
     {
-        $entries=[];
+        return array_column(self::measurements($system,$role,$zone),'speech');
+    }
+
+    private static function measurements(array $system,string $role,?int $zone=null): array
+    {
+        $rows=[];
         foreach (self::points($system,$role,$zone) as $p) {
             $v=self::value($p);
-            if (is_int($v)||is_float($v))$entries[]=self::clean($p['label']).' '.self::number($v)
-                .match($role){'stationTemperature','outdoorTemperature'=>' Grad',
-                    'soilMoisture','rainSensor','sensorBattery'=>' Prozent','pumpPressure'=>' bar',default=>' '.($p['unit']??'')};
+            if ((!is_int($v)&&!is_float($v)) || !is_finite((float)$v))continue;
+            $label=self::clean($p['label']);$number=self::number($v);
+            [$unit,$spokenUnit]=match($role){
+                'stationTemperature','outdoorTemperature'=>['°C','Grad'],
+                'soilMoisture','rainSensor','sensorBattery'=>['%','Prozent'],
+                'pumpPressure'=>['bar','bar'],
+                default=>[$p['unit']??'', $p['unit']??''],
+            };
+            $rows[]=['label'=>$label,'value'=>trim($number.' '.$unit),'speech'=>trim($label.' '.$number.' '.$spokenUnit)];
         }
-        return $entries;
+        return $rows;
     }
 
     private static function state(array $system,string $role,?int $zone=null): ?bool
@@ -332,11 +344,12 @@ final class IAHIrrigationQuery
         return $states===[]?false:null;
     }
 
-    private static function summary(array $s,bool $winter,bool $onlyState,?int $zone): string
+    private static function summary(array $s,bool $winter,bool $onlyState,?int $zone,array $heating=[]): array
     {
-        $parts=[];$on=[];$missing=0;
+        $parts=[];$rows=[];$on=[];$missing=0;
         $pump=self::state($s,'pumpStatus');
-        foreach ($zone===null?self::statusPoints($s):[$zone] as $i) {
+        $zones=self::statusPoints($s);
+        foreach ($zone===null?$zones:[$zone] as $i) {
             $v=self::state($s,'zoneStatus',$i);
             if ($v===true) {
                 $label=$i===11?'Nebenstelle (manuelles Wasserholen / manuelles Gießen)':'Kreis '.$i;
@@ -351,38 +364,54 @@ final class IAHIrrigationQuery
                 $on[]=$label;
             } elseif ($v===null)$missing++;
         }
-        if ($zone===null)$parts[]=$pump===null?'Pumpenstatus unbekannt':'Pumpe '.($pump?'ein':'aus');
+        if ($zone===null) {
+            $parts[]=$pump===null?'Pumpenstatus unbekannt':'Pumpe '.($pump?'ein':'aus');
+            $rows[]=['label'=>'Pumpe','value'=>match($pump){true=>'Ein',false=>'Aus',null=>'Unbekannt'}];
+        }
         $pressurePoints=self::points($s,'pumpPressure');$pressureActive=false;
         foreach ($pressurePoints as $pressurePoint) {
             $pressureValue=self::value($pressurePoint);
             if (is_numeric($pressureValue) && (float)$pressureValue>4) {$pressureActive=true;break;}
         }
-        $irrigationZones=array_filter(self::statusPoints($s),static fn(int $zone):bool=>$zone!==11);
+        $irrigationZones=array_filter($zones,static fn(int $zone):bool=>$zone!==11);
         $activeIrrigationZone=false;
         foreach ($irrigationZones as $irrigationZone) {
             if (self::state($s,'zoneStatus',$irrigationZone)===true) {$activeIrrigationZone=true;break;}
         }
         if ($pressureActive && $activeIrrigationZone)$parts[]='Bewässerung läuft (Pumpendruck über 4 bar und ein Bewässerungskreis aktiv)';
-        if ($on!==[])$parts[]='Aktiv: '.implode(', ',$on);
-        elseif ($missing===0 && ($zone!==null || self::statusPoints($s)!==[]))
+        if ($on!==[]) {
+            $parts[]='Aktiv: '.implode(', ',$on);
+            $rows[]=['label'=>'Aktive Kreise','value'=>implode(', ',$on)];
+        } elseif ($missing===0 && ($zone!==null || $zones!==[])) {
             $parts[]=$zone!==null?'Kreis '.$zone.' ist aus':'alle erfassten Kreise aus';
-        if ($missing>0)$parts[]=$zone!==null?'Status von Kreis '.$zone.' unbekannt'
-            :$missing.' Kreis'.($missing===1?'':'e').' ohne verlässlichen Status';
-        if ($onlyState && $winter && $zone===null) {
-            $heat=self::heaterState($s);
-            $parts[]=$heat===null?'Rohrbegleitheizung nicht eindeutig':'Rohrbegleitheizung '.($heat?'ein':'aus');
+            $rows[]=['label'=>$zone!==null?'Kreis '.$zone:'Erfasste Kreise','value'=>$zone!==null?'Aus':'Alle aus'];
         }
-        if (!$onlyState && $zone===null) {
+        if ($missing>0) {
+            $parts[]=$zone!==null?'Status von Kreis '.$zone.' unbekannt':$missing.' Kreis'.($missing===1?'':'e').' ohne verlässlichen Status';
+            $rows[]=['label'=>$zone!==null?'Kreis '.$zone:'Kreise ohne Rückmeldung','value'=>$zone!==null?'Unbekannt':(string)$missing];
+        }
+        if ($zone===null) {
             if ($winter) {
                 $heat=self::heaterState($s);
-                $parts[]=$heat===null?'Rohrbegleitheizung nicht eindeutig':'Rohrbegleitheizung '.($heat?'ein':'aus');
-                $parts=array_merge($parts,self::entries($s,'stationTemperature'));
-            } elseif ($pump===false || $on!==[]) {
-                $soil=self::entries($s,'soilMoisture');
-                if ($soil!==[])$parts[]='Bodenfeuchte: '.implode(', ',array_slice($soil,0,4));
+                $parts[]=$heat===null?'Kein eindeutiger Live-Status der Rohrbegleitheizung':'Rohrbegleitheizung '.($heat?'ein':'aus');
+                $rows[]=['label'=>'Rohrbegleitheizung','value'=>match($heat){true=>'Ein',false=>'Aus',null=>'Live-Status unbekannt'}];
+                if ($heating!==[]) {
+                    $parts[]=rtrim($heating['answer'],'. ');
+                    $rows=array_merge($rows,$heating['displayRows']);
+                }
+                if (!$onlyState) {
+                    $measurements=self::measurements($s,'stationTemperature');
+                    $parts=array_merge($parts,array_column($measurements,'speech'));
+                    $rows=array_merge($rows,$measurements);
+                }
+            } elseif (!$onlyState && ($pump===false || $on!==[])) {
+                $soil=array_slice(self::measurements($s,'soilMoisture'),0,4);
+                if ($soil!==[])$parts[]='Bodenfeuchte: '.implode(', ',array_column($soil,'speech'));
+                $rows=array_merge($rows,$soil);
             }
         }
-        return $parts!==[]?implode('. ',$parts).'.':'Keine eindeutigen Zustände gefunden.';
+        return ['answer'=>$parts!==[]?implode('. ',$parts).'.':'Keine eindeutigen Zustände gefunden.',
+            'displayRows'=>$rows];
     }
 
     private static function period(string $q,array $mode,DateTimeImmutable $now): array
@@ -403,6 +432,111 @@ final class IAHIrrigationQuery
             return [$from->getTimestamp(),min($end,$now->getTimestamp()),'seit dem '.$from->format('d.m.Y')];
         }
         return [$now->modify('-30 days')->getTimestamp(),$now->getTimestamp(),'in den letzten 30 Tagen'];
+    }
+
+    private static function archiveInventory(int &$archive): array
+    {
+        if (!iah_archive_valid($archive) && function_exists('IPS_GetInstanceListByModuleID')) {
+            $ids=IPS_GetInstanceListByModuleID('{43192F0B-135B-4CE7-A0A7-1475603F3060}');
+            if (count($ids)===1)$archive=(int)reset($ids);
+        }
+        return iah_archive_inventory($archive);
+    }
+
+    private static function heaterHistory(
+        array $system,int $archive,array $inventory,array $period,DateTimeImmutable $now,float $deadline,
+        bool $temperatureOnly=false,bool $includePrevious=false
+    ): array {
+        [$start,$end,$periodLabel]=$period;
+        $set=(array)($system['historySignals']['heater']??[]);
+        if ($set===[] && empty($system['historySignals']['heaterAutomaticDisabled'])) {
+            foreach (array_intersect_key(self::points($system,'heaterStatus'),$inventory) as $id=>$point) {
+                if (($point['type']??-1)===0)$set[$id]=['mode'=>'binary'];
+            }
+        }
+
+        $diagnostics=['operation'=>'heater_edges','start'=>$start,'end'=>$end,'archiveId'=>$archive,
+            'configuredSignals'=>count($set),'signals'=>[]];
+        $answers=[];$rows=[];
+        foreach ($temperatureOnly?[]:$set as $id=>$signal) {
+            if (count($diagnostics['signals'])>=8 || microtime(true)>=$deadline)break;
+            $point=$system['points'][(int)$id]??[];
+            if (empty($point['enabled']) || !in_array($point['role']??'',['heaterStatus','heaterSignal'],true)
+                || self::value($point)===null)continue;
+            $series=self::archive($archive,(int)$id,$signal,$start,$end,$deadline,false,$inventory);
+            $diagnostics['signals'][]=['id'=>(int)$id]+$series;
+            if ($series['count']===0 && ($series['reason']!=='' || !$series['baselineKnown']))continue;
+            $latest=$series['last'];
+            if ($latest===null && $includePrevious && $start>1) {
+                $latest=self::archive($archive,(int)$id,$signal,0,$start-1,$deadline,true,$inventory)['last'];
+            }
+            $label=count($set)>1?self::clean($point['label']):'';
+            $count=($series['reason']!==''||!$series['baselineKnown']?'mindestens ':'').$series['count']
+                .($series['count']===1?' Einschaltung':' Einschaltungen');
+            $rows[]=['label'=>$label===''?'Einschaltungen '.$periodLabel:$label.' '.$periodLabel,'value'=>$count];
+            $answers[]=($label!==''?$label.' meldet ':'').$count.' '.$periodLabel;
+            if ($latest!==null) {
+                $time=self::eventTime($now,$latest);
+                $rows[]=['label'=>trim($label.' Letztes Einschalten'),'value'=>$time];
+                $answers[]='Letztes Einschalten '.$time;
+            }
+        }
+        if ($answers!==[])return ['answer'=>implode('. ',$answers).'.','displayRows'=>$rows,'diagnostics'=>$diagnostics];
+
+        $thermal=(array)($system['historySignals']['heaterTemperature']??[]);
+        if ($thermal===[]) {
+            $lower=self::pumpShaftTemperatures($system)['unten'];
+            $loggedLower=array_filter($lower,static fn(array $point):bool=>isset($inventory[(int)$point['id']]));
+            if (count($loggedLower)===1)$lower=$loggedLower;
+            if (count($lower)===1)$thermal=['id'=>(int)reset($lower)['id'],'rise'=>1.0,'seconds'=>600];
+        }
+        $id=(int)($thermal['id']??0);
+        $point=self::points($system,'stationTemperature')[$id]??[];
+        $diagnostics['operation']='heater_temperature_rises';
+        $diagnostics['id']=$id;
+        $diagnostics['sensorMode']=empty($system['historySignals']['heaterTemperature'])?'pump_shaft_lower':'configured';
+        if (($point['unit']??'')!=='°C' || self::value($point)===null
+            || !is_numeric($thermal['rise']??null) || !is_finite((float)$thermal['rise'])
+            || (float)$thermal['rise']<0.1 || (int)($thermal['seconds']??0)<60 || (int)$thermal['seconds']>7200) {
+            return ['answer'=>'Für den Heizungsverlauf fehlt ein zugeordneter Temperatursensor.',
+                'displayRows'=>[['label'=>'Heizungsverlauf','value'=>'Temperatursensor fehlt']],
+                'diagnostics'=>$diagnostics+['reason'=>'no_sensor']];
+        }
+        $signal=['mode'=>'temperatureRise']+$thermal;
+        $series=self::archive($archive,$id,$signal,$start,$end,$deadline,false,$inventory);
+        $diagnostics['archive']=$series;
+        $latest=$series['last'];
+        if ($latest===null && $includePrevious && $start>1 && isset($inventory[$id])) {
+            $previous=self::archive($archive,$id,$signal,0,$start-1,$deadline,true,$inventory);
+            $diagnostics['previousArchive']=$previous;
+            $latest=$previous['last'];
+        }
+        $n=$series['count'];
+        $summary=match(true){
+            $n>0=>($series['reason']!==''?'Mindestens ':'').$n.($n===1?' schneller Temperaturanstieg':' schnelle Temperaturanstiege'),
+            $series['reason']==='not_archived'=>'Temperatur nicht archiviert',
+            $series['reason']==='archive_error'=>'Temperaturarchiv nicht lesbar',
+            $series['reason']==='partial'=>'Temperaturarchiv nur teilweise ausgewertet',
+            empty($series['comparable'])=>'Zu wenige zusammenhängende Temperaturwerte',
+            default=>'Kein schneller Temperaturanstieg in den Archivwerten',
+        };
+        $label=self::clean($point['label']);
+        $rows[]=['label'=>'Temperaturverlauf '.$periodLabel,'value'=>$summary];
+        $answers[]=$summary.' '.$periodLabel.' bei '.$label;
+        if ($latest!==null) {
+            $time=self::eventTime($now,$latest);
+            $rows[]=['label'=>'Letzter erkannter Anstieg','value'=>$time];
+            $answers[]='Letzter erkannter Anstieg '.$time;
+            $answers[]=$n>1?'Das sind Hinweise auf Heizbetrieb':'Das ist ein Hinweis auf Heizbetrieb';
+        }
+        return ['answer'=>implode('. ',$answers).'.','displayRows'=>$rows,'diagnostics'=>$diagnostics];
+    }
+
+    private static function eventTime(DateTimeImmutable $now,int $timestamp): string
+    {
+        $event=$now->setTimestamp($timestamp);
+        return ($event->format('Y-m-d')===$now->format('Y-m-d')?'heute':'am '.$event->format('d.m.Y'))
+            .' um '.$event->format('H:i').' Uhr';
     }
 
     public static function matchesQuestion(array $catalog,string $text,string $domain=''): bool
@@ -488,62 +622,20 @@ final class IAHIrrigationQuery
         $frostRequested=(bool)preg_match('/frost|unter null|unter 0|minusgrade|minus temperatur/',$q);
         $combinedStatus=(bool)preg_match('/alles in ordnung|zusammenfassung|status.*(?:bewae?sserung|heiz)|(?:bewae?sserung|heiz).*status/',$q);
         $thermalRequested=$isHeater && preg_match('/temperatur|anstieg|sprung/',$q);
-        $heaterHistory=$isHeater && ($thermalRequested || preg_match('/wie oft|wie haeufig|einschaltungen|angesprungen|hat .*eingeschaltet|wann .*eingeschaltet/',$q));
+        $heaterLatest=$isHeater && preg_match('/\bzu\s*letzt\b|letzte[srn]? (?:einschalt|anstieg)|\bwann\b.*(?:eingeschaltet|angesprungen|gelaufen|aktiv)/',$q);
+        $heaterHistory=$isHeater && ($thermalRequested || $heaterLatest
+            || preg_match('/wie oft|wie haeufig|einschaltungen|angesprungen|hat .*eingeschaltet/',$q));
         $pumpHistory=$isPump && preg_match('/\bzu\s*letzt\b|letzte einschaltung|\bwann\b.*eingeschaltet/',$q);
         $inventory=[];
         if ($heaterHistory || $pumpHistory || $frostRequested || $combinedStatus) {
-            if (!iah_archive_valid($archive) && function_exists('IPS_GetInstanceListByModuleID')) {
-                $ids=IPS_GetInstanceListByModuleID('{43192F0B-135B-4CE7-A0A7-1475603F3060}');
-                if (count($ids)===1)$archive=(int)reset($ids);
-            }
-            $inventory=iah_archive_inventory($archive);
+            $inventory=self::archiveInventory($archive);
         }
         if ($heaterHistory && !$combinedStatus && !$frostRequested) {
-            [$start,$end,$label]=self::period($q,$mode,$now);
-            $rows=[];$errors=[];$log=[];$set=(array)($s['historySignals']['heater']??[]);
-            if ($set===[] && empty($s['historySignals']['heaterAutomaticDisabled'])) {
-                $p=array_intersect_key(self::points($s,'heaterStatus'),$inventory);
-                foreach ($p as $id=>$point) {
-                    if (($point['type']??-1)===0)$set[$id]=['mode'=>'binary'];
-                }
-            }
-            foreach ($thermalRequested?[]:$set as $id=>$signal) {
-                if (count($log)>=8 || microtime(true)>=$deadline){$errors[]='weitere Signale nicht geprüft';break;}
-                $p=$s['points'][(int)$id]??null;
-                if (!is_array($p)||empty($p['enabled'])||!in_array($p['role']??'',['heaterStatus','heaterSignal'],true)
-                    || self::value($p)===null)continue;
-                $a=self::archive($archive,(int)$id,$signal,$start,$end,$deadline,false,$inventory);
-                $log[]=['id'=>(int)$id]+$a;
-                if ($a['samples']>0 && ($a['count']>0 || ($a['reason']==='' && $a['baselineKnown']))) {
-                    $n=$a['count'];
-                    $rows[]=(count($set)>1?self::clean($p['label']).': ':'')
-                        .(($a['reason']!==''||!$a['baselineKnown'])?'mindestens ':'')
-                        .$n.' '.($n===1?'Einschaltung':'Einschaltungen');
-                } elseif ($a['samples']>0) $errors[]='Kein vollständiger Nachweis für '.self::clean($p['label']);
-                else $errors[]=self::clean($p['label']).' ohne Archivdaten';
-            }
-            if ($rows===[]) {
-                $thermal=(array)($s['historySignals']['heaterTemperature']??[]);
-                $id=(int)($thermal['id']??0);$p=$s['points'][$id]??[];
-                if (($p['role']??'')==='stationTemperature' && !empty($p['enabled']) && ($p['unit']??'')==='°C'
-                    && self::value($p)!==null) {
-                    $a=self::archive($archive,$id,['mode'=>'temperatureRise']+$thermal,$start,$end,$deadline,false,$inventory);
-                    $n=$a['count'];
-                    $answer=$n>0
-                        ?($a['reason']!==''?'Mindestens ':'').$n.($n===1?' schneller Temperaturanstieg':' schnelle Temperaturanstiege')
-                            .' bei '.self::clean($p['label']).' '.$label
-                            .($n===1?'. Das ist ein Hinweis auf Heizbetrieb.':'. Das sind Hinweise auf Heizbetrieb.')
-                        :($a['samples']<2?'Für die Temperaturauswertung fehlen ausreichend Archivwerte.':
-                            'In den ausgewerteten Temperaturwerten wurde kein schneller Anstieg erkannt.');
-                    return ['answer'=>$answer,'diagnostics'=>$diag+['operation'=>'heater_temperature_rises','id'=>$id,'archive'=>$a]];
-                }
-                if ($thermalRequested)return ['answer'=>'Für die Rohrbegleitheizung ist keine Stationstemperatur zur Verlaufsauswertung zugeordnet.',
-                    'diagnostics'=>$diag+['operation'=>'heater_temperature_rises','reason'=>'no_sensor']];
-            }
-            $answer=$rows===[]?($errors===[]?'Für die Rohrbegleitheizung ist kein eindeutiges Archivsignal zugeordnet.':implode('. ',$errors).'.')
-                :implode('. ',array_merge($rows,$errors)).' '.$label.'.';
-            return ['answer'=>$answer,'diagnostics'=>$diag+['operation'=>'heater_edges','start'=>$start,'end'=>$end,
-                'archiveId'=>$archive,'signals'=>$log,'configuredSignals'=>count($set)]];
+            $explicitPeriod=preg_match('/\b(?:heute|gestern|winter|letzten)\b/',$q)===1;
+            $result=self::heaterHistory($s,$archive,$inventory,self::period($q,$mode,$now),$now,$deadline,
+                (bool)$thermalRequested,(bool)$heaterLatest&&!$explicitPeriod);
+            $result['diagnostics']=$diag+$result['diagnostics'];
+            return $result;
         }
         if ($combinedStatus || $frostRequested) {
             [$start,$end,$label]=self::period($q,$mode,$now);
@@ -584,13 +676,12 @@ final class IAHIrrigationQuery
                     if (is_numeric($value))$avgParts[]=(float)$value;
                 }
             }
-            $parts=[];
+            $parts=[];$displayRows=[];
             if ($combinedStatus) {
-                $parts[]=self::summary($s,false,false,null);
-                $heat=self::heaterState($s);
-                $parts[]='Rohrbegleitheizung aktuell '.($heat===null?'nicht eindeutig':($heat?'ein':'aus'));
-                $heater=self::query($catalog,'Wie oft war die Rohrbegleitheizung heute eingeschaltet',$domain,$archive,$deadline,$now);
-                $parts[]=is_array($heater)&&isset($heater['answer'])?'Heizung heute: '.$heater['answer']:'Heizungsarchiv heute nicht auswertbar';
+                $heater=self::heaterHistory($s,$archive,$inventory,self::period('heute',$mode,$now),$now,$deadline,false,true);
+                $overview=self::summary($s,true,false,null,$heater);
+                $parts[]=$overview['answer'];
+                $displayRows=$overview['displayRows'];
                 if (count($avgParts)===2)$parts[]='Aktueller Durchschnitt Pumpenschacht oben und unten '
                     .self::number(($avgParts[0]+$avgParts[1])/2).' Grad';
                 elseif ($avgParts!==[])$parts[]='Nur ein aktueller Pumpenschacht-Temperaturwert verfügbar';
@@ -602,7 +693,8 @@ final class IAHIrrigationQuery
             else $frostSummary='keine ausreichenden Archivwerte für die Frostprüfung';
             $parts[]='Temperaturprüfung '.$label.': '.$frostSummary;
             $parts=array_map(static fn(string $part):string=>rtrim(trim($part),'. '),$parts);
-            return ['answer'=>implode('. ',$parts).'.','diagnostics'=>$diag+[
+            if ($combinedStatus)$displayRows[]=['label'=>'Frostprüfung '.$label,'value'=>$frostSummary];
+            return ['answer'=>implode('. ',$parts).'.','displayRows'=>$displayRows,'diagnostics'=>$diag+[
                 'operation'=>$combinedStatus?'irrigation_heater_health_summary':'temperature_frost_archive',
                 'period'=>$label,'start'=>$start,'end'=>$end,'archiveId'=>$archive,
                 'frostThresholdC'=>0,'temperatureArchives'=>$archiveRows,
@@ -696,14 +788,30 @@ final class IAHIrrigationQuery
         }
         if ($isHeater) {
             $v=self::heaterState($s);
-            return ['answer'=>$v===null?'Der Zustand der Rohrbegleitheizung ist nicht eindeutig.':
-                'Die Rohrbegleitheizung ist '.($v?'ein':'aus').'.','diagnostics'=>$diag+['operation'=>'heater_status']];
+            if ($v===null) {
+                $inventory=self::archiveInventory($archive);
+                $history=self::heaterHistory($s,$archive,$inventory,self::period('heute',$mode,$now),
+                    $now,$deadline,false,true);
+                $history['answer']='Der Live-Status der Rohrbegleitheizung ist unbekannt. '.$history['answer'];
+                $history['diagnostics']=$diag+$history['diagnostics'];
+                array_unshift($history['displayRows'],['label'=>'Rohrbegleitheizung','value'=>'Live-Status unbekannt']);
+                return $history;
+            }
+            return ['answer'=>'Die Rohrbegleitheizung ist '.($v?'ein':'aus').'.',
+                'displayRows'=>[['label'=>'Rohrbegleitheizung','value'=>$v?'Ein':'Aus']],
+                'diagnostics'=>$diag+['operation'=>'heater_status']];
         }
         if ($zone===null && preg_match('/\b(?:ventil|ventile|kreis|kreise)\b/',$q)
             && !preg_match('/\b(?:welche|wieviele|viele|alle|alles|laufen)\b/',$q))
             return ['answer'=>'Welchen Bewässerungskreis meinst du?','diagnostics'=>$diag+['operation'=>'zone_missing']];
-        return ['answer'=>self::summary($s,$mode['winter'],(bool)preg_match('/alles aus|welche kreise|restlauf|laeuft/',$q),$zone),
-            'diagnostics'=>$diag+['operation'=>'status','zone'=>$zone]];
+        $onlyState=preg_match('/alles aus|welche kreise|restlauf|^laeuft/',$q)===1;
+        $heating=[];
+        if ($mode['winter'] && !$onlyState && $zone===null) {
+            $inventory=self::archiveInventory($archive);
+            $heating=self::heaterHistory($s,$archive,$inventory,self::period('heute',$mode,$now),$now,$deadline,false,true);
+        }
+        return self::summary($s,$mode['winter'],$onlyState,$zone,$heating)
+            +['diagnostics'=>$diag+['operation'=>'status','zone'=>$zone,'heaterSummary'=>$heating['diagnostics']??null]];
     }
 
     /** Explicit controller actions only. Model output and detected scripts

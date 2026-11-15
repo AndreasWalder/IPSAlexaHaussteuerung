@@ -74,12 +74,21 @@ $summary=$renderSummary($summaryBlock[1]);
 $irrigation=$summary("Pumpe aus.\nFeuchtigkeit < 30 %.",'Beantwortet','Wie ist meine Bewässerung?',true);
 $main=$irrigation->apl['document']['mainTemplate'];
 $scroll=$main['items'][0]['items'][1];
-ck38($main['parameters']===['summary'] && $main['items'][0]['items'][0]['text']==='${summary.title}'
+ck38($main['parameters']===['summary'] && $main['items'][0]['items'][0]['items'][1]['text']==='${summary.title}'
+    && $main['items'][0]['items'][0]['items'][0]['source']==='waterDrop'
+    && $irrigation->apl['document']['graphics']['waterDrop']['type']==='AVG'
     && $scroll['type']==='ScrollView' && $scroll['grow']===1
     && $scroll['items'][0]['text']==='${summary.text}' && $scroll['items'][0]['lineHeight']==='125%'
     && $irrigation->apl['datasources']['summary']['text']==='Pumpe aus.<br>Feuchtigkeit &lt; 30 %.'
     && $irrigation->apl['datasources']['summary']['title']==='Bewässerung'
     && $irrigation->reprompt!=='','irrigation uses a bound, scrollable APL document and keeps the reprompt');
+$irrigationRows=[['label'=>'Pumpe','value'=>'Aus'],['label'=>'Pumpenschacht unten','value'=>'7,6 °C']];
+$irrigation=$summary('Pumpe aus.','Beantwortet','Wie ist meine Bewässerung?',true,'irrigation',$irrigationRows);
+$list=$irrigation->apl['document']['mainTemplate']['items'][0]['items'][1]['items'][0];
+ck38($irrigation->apl['datasources']['summary']['readings']===$irrigationRows
+    && $list['data']==='${summary.readings}' && $list['items'][0]['type']==='Frame'
+    && $list['items'][0]['item']['items'][1]['text']==='${data.value}',
+    'irrigation draws one separate status row per backend value');
 $readings=[['label'=>'PV-Leistung','value'=>'1.200 W']];
 $pv=$summary('PV-Leistung 1.200 W.','Beantwortet','Wie geht es meiner PV-Anlage?',true,'energy_overview',$readings);
 ck38($pv->apl['datasources']['summary']['title']==='PV-Anlage'
