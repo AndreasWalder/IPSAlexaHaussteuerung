@@ -2102,13 +2102,14 @@ function Execute($request = null)
                 ->SetRepromptPlainText('Noch eine Frage oder ein Schaltbefehl?');
 
             $title = match (true) {
+                in_array($answerSource, ['energy_overview', 'ai_energy_overview'], true) => 'PV-Anlage',
                 preg_match('/\brohr[\s-]*(?:begleit[\s-]*)?heiz\w*|\bheizband\b/ui', $question) === 1
                     => 'Rohrbegleitheizung',
                 $answerSource === 'irrigation' || preg_match(
                     '/\b(?:bewässerung|bewaesserung|bewässern|bewaessern|gießen|giessen|bodenfeuchte|pumpendruck|wasser holen)\b/ui',
                     $question
                 ) === 1 => 'Bewässerung',
-                $answerSource === 'energy_overview' || preg_match(
+                preg_match(
                     '/\b(?:p\s*v(?:[\s-]*anlage)?|huawei[\s-]*pv|photovoltaik(?:[\s-]*anlage)?|solaranlage|solarenergie|einspeisung)\b/ui',
                     $question
                 ) === 1 => 'PV-Anlage',

@@ -96,6 +96,10 @@ ck38($irrigation->apl['datasources']['summary']['readings']===$irrigationRows
     'irrigation scales the status rows and their two columns to the screen');
 $readings=[['label'=>'PV-Leistung','value'=>'1.200 W']];
 $pv=$summary('PV-Leistung 1.200 W.','Beantwortet','Wie geht es meiner PV-Anlage?',true,'energy_overview',$readings);
+$aiPv=$summary('Gerade 1.200 W.','Beantwortet','Wie steht die Solarproduktion gerade da?',true,'ai_energy_overview',$readings);
+ck38($aiPv->apl['datasources']['summary']['title']==='PV-Anlage'
+    && $aiPv->apl['datasources']['summary']['readings']===$readings,
+    'verified overview tool emits the PV visual even without the PV keyword in the request');
 $pvMain=$pv->apl['document']['mainTemplate']['items'][0];
 ck38($pv->apl['datasources']['summary']['title']==='PV-Anlage'
     && $pv->apl['datasources']['summary']['readings']===$readings

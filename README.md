@@ -177,6 +177,20 @@ Geräte-/Schaltfreigaben erfolgen ausschließlich im RoomsCatalogConfigurator.
 Die alten MCP-Einstellungen und die Bridge wurden entfernt; bereits
 eingerichtete Alexa-Intents müssen deshalb nicht umgebaut werden.
 
+**Sprachvarianten:** Im RoomsCatalogConfigurator können Geräte unter
+**Synonyme** mehrere Namen erhalten. Wiederkehrende Varianten aus dem
+Alexa-Protokoll lassen sich in EDIT speichern, nach PROD übernehmen und
+mit **Sprachbefehl testen** prüfen. Bei Lesefragen kann die KI bekannte
+Synonyme zusammen mit Raum und Gerätetyp zur Zuordnung nutzen.
+
+**PV-Status:** Fragen wie „Wie läuft meine Solaranlage?“ und „Status
+Photovoltaikanlage“ laden dieselbe lokale Übersicht. Das erkannte
+„Wie geht es meiner T. V. Anlage?“ wird bei einer eindeutigen PV-Quelle
+ebenfalls als PV-Status verarbeitet. Ist ein TV-Gerät im Katalog vorhanden,
+fragt der Controller nach. Eine erfolgreich per KI gelesene PV-Übersicht
+liefert auf der Echo Show dieselbe Anzeige mit den tatsächlich gelesenen
+Messwerten.
+
 **Fehlerbehebungen in V3.4.6:** Licht-Iststatus wird auch bei typisierten
 Boolean-/0/1-/Text-Rückmeldungen korrekt ausgewertet, bei Jalousien werden
 Positionen ohne Zu/Offen-Statusmapping nicht als Zustandsbestätigung

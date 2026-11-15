@@ -19,6 +19,14 @@ foreach(['zurück','Hauptmenü','Home','Zur Startseite'] as $word) {
 foreach(['Welche Lichter sind an?','Wie warm ist das Büro?','Welche sind eingeschaltet'] as $word){
     t(classify($word)['category']==='query',"read-only question [$word]");
 }
+foreach (['GetHaus','HomeAgentFrageIntent','HausWieIntent'] as $intent) {
+    foreach (['Status Photovoltaikanlage','Wie geht es meiner t. v. anlage','Was macht meine Fotowoltaik-Anlage?'] as $word) {
+        t(classify($word,$intent)['reason']==='energy_question', "PV overview routes for $intent [$word]");
+    }
+}
+t(IAHPvStatusQuestion::match('Wie viel hat die PV-Anlage gestern produziert?')===''
+    && IAHPvStatusQuestion::match('Status TV Anlage')===''
+    && classify('Schalte die TV-Anlage ein')['category']==='action', 'history and TV commands keep their routes');
 foreach(['Schalte das Licht im Wohnzimmer ein','Fahre die Jalousie runter','Dimme die Lampe','Öffne die Jalousie'] as $word){
     t(classify($word)['category']==='action',"explicit action [$word]");
 }

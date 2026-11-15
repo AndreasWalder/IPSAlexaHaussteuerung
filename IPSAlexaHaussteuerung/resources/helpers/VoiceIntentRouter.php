@@ -1,6 +1,11 @@
 <?php
 declare(strict_types=1);
 
+// IAH_PV_STATUS_QUESTION_INSERT
+if (!class_exists('IAHPvStatusQuestion', false)) {
+    require_once __DIR__ . '/PvStatusQuestion.php';
+}
+
 /**
  * Deterministischer Alexa-Sprach-/UI-Router (kein OpenAI-Aufruf).
  * Datenschutz: nicht den Sprachtext, Device-ID, User-ID, Session-ID,
@@ -169,7 +174,7 @@ function iah_vir_classify(array $input,array $saved=[]): array
     }
     if (preg_match('/^(?:laeuft|laufen|wie viele|status|heizstarts)\b.*\b(?:bewaesserung|gartenpumpe|rohrbegleitheizung|kreise|kreis \d+)\b/',$text))
         return array_replace($result,['category'=>'query','reason'=>'irrigation_question']);
-    if (preg_match('/^(?:status (?:der |meiner )?p ?v(?: ?anlage)?|p ?v(?: ?anlage)? status)$/',$text))
+    if (IAHPvStatusQuestion::match($text)!=='')
         return array_replace($result,['category'=>'query','reason'=>'energy_question']);
     if(preg_match('/^(?:schalte|schalt|mach|stelle|stell|fahre|fahr|oeffne|schliesse|starte|start|stoppe|stop|dimme|dimm|aktiviere|deaktiviere|setze)\b/u',$text)) {
         return array_replace($result,['category'=>'action','reason'=>'explicit_action']);

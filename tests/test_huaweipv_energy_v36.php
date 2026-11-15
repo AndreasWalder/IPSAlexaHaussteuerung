@@ -177,7 +177,8 @@ check36(($overview['ok']??false)===true && count($overview['values'])>=5,
 $pvStatus=static fn(string $question):array=>json_decode(iah_rc_bridge_reply(
     static fn():array=>iah_rc_voice($question,['catalog_script_id'=>41])
 ),true,512,JSON_THROW_ON_ERROR);
-foreach (['Wie geht es meiner PV Anlage?', 'Wie geht es meiner PV-Anlage?', 'Wie läuft meine PVAnlage?'] as $question) {
+foreach (['Wie geht es meiner PV Anlage?', 'Wie geht es meiner P. V. Anlage?', 'Wie läuft meine PVAnlage?',
+    'Status Photovoltaikanlage', 'Wie geht es meiner t. v. anlage', 'Was macht meine Fotowoltaik-Anlage?'] as $question) {
     $status=$pvStatus($question);
     $display=array_column($status['energyOverview']??[],'value','label');
     check36(($status['answerSource']??'')==='energy_overview'
@@ -185,6 +186,35 @@ foreach (['Wie geht es meiner PV Anlage?', 'Wie geht es meiner PV-Anlage?', 'Wie
         && ($display['Akku-Ladestand']??'')==='86,5 %' && ($display['Netzleistung']??'')==='420 W Netzbezug',
         'PV status returns live readings for Alexa and structures them for APL without an API key');
 }
+$withTv=$edit;
+$withTv['buero']['domains']['licht']['switches']['fernseher']=['title'=>'Fernseher','state'=>56417];
+$clarify=iah_rc_voice('Wie geht es meiner TV-Anlage?',[],$withTv);
+check36(($clarify['answerSource']??'')==='clarification' && !isset($clarify['energyOverview']),
+    'a known TV turns the plausible PV misrecognition into a clarification');
+$pvWithIrrigationContext=iah_rc_voice('Wie geht es meiner Photovoltaik-Anlage?',
+    ['ui_context_domain'=>'bewaesserung'],$edit);
+check36(($pvWithIrrigationContext['answerSource']??'')==='energy_overview',
+    'an explicit PV question keeps its overview independently of the current screen');
+$overviewTool=['tool_calls'=>[['id'=>'energy','type'=>'function','function'=>[
+    'name'=>'query_energy','arguments'=>'{"operation":"overview"}',
+]]]];
+$calls=0;
+$aiOverview=iah_rc_voice('Wie steht die Solarproduktion gerade da?',['api_key'=>'fake'],$edit,
+    static function () use (&$calls,$overviewTool): array {
+        return ['choices'=>[['message'=>++$calls===1?$overviewTool:['content'=>'Deine Anlage liefert 1.200 Watt.']]]];
+    });
+check36($calls===2 && ($aiOverview['answerSource']??'')==='ai_energy_overview'
+    && str_contains($aiOverview['answer'],'1.200 Watt') && count($aiOverview['energyOverview']??[])>=4,
+    'the AI reply carries display rows derived from the tool result');
+$calls=0;
+$fallbackOverview=iah_rc_voice('Wie steht die Solarproduktion gerade da?',['api_key'=>'fake'],$edit,
+    static function () use (&$calls,$overviewTool): array {
+        if (++$calls>1)throw new RuntimeException('API-Zeitlimit erreicht');
+        return ['choices'=>[['message'=>$overviewTool]]];
+    });
+check36(($fallbackOverview['answerSource']??'')==='ai_energy_overview'
+    && str_contains($fallbackOverview['answer'],'8,26 kWh') && $fallbackOverview['energyOverview']===$aiOverview['energyOverview'],
+    'the measured overview survives a failed AI wording request');
 $GLOBALS['h36Values'][70008]=false;
 $offline=$pvStatus('Wie geht es meiner PV Anlage?');
 check36(($offline['energyOverview']??[])===[['label'=>'Verbindung','value'=>'Offline']],

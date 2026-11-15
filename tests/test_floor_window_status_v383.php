@@ -138,9 +138,17 @@ $generated=(new ReflectionMethod($module,'ensureScriptTemplate'))->invoke(
     $module,200,'KIHouseController','kiHouseControllerScript',$template);
 $generatedSource=IPS_GetScriptContent($generated);
 ck38(str_contains($generatedSource,'final class IAHHouseQuestionContext')
+    && str_contains($generatedSource,'final class IAHPvStatusQuestion')
     &&!str_contains($generatedSource,'// IAH_HOUSE_QUESTION_CONTEXT_INSERT'),
     'generated live helper embeds the location resolver');
 token_get_all($generatedSource,TOKEN_PARSE);
+$routerTemplate=dirname($template).'/VoiceIntentRouter.php';
+$routerScript=(new ReflectionMethod($module,'ensureScriptTemplate'))->invoke(
+    $module,200,'VoiceIntentRouter','voiceIntentRouterScript',$routerTemplate);
+$routerSource=IPS_GetScriptContent($routerScript);
+ck38(str_contains($routerSource,'final class IAHPvStatusQuestion')
+    && !str_contains($routerSource,'// IAH_PV_STATUS_QUESTION_INSERT'), 'installed router embeds the same PV matcher');
+token_get_all($routerSource,TOKEN_PARSE);
 ck38($source===IPS_GetScriptContent(502)&&$GLOBALS['preview38Actions']===[],
     'production settings and hardware are unchanged');
 echo "PASS V3.8.3: shared floor aliases, stable windows and scoped diagnostics\n";

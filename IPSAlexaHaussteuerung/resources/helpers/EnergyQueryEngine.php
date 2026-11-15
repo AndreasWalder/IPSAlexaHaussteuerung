@@ -155,8 +155,12 @@ function iah_energy_current(array $metric,array $source): array
 
 function iah_energy_status_overview(array $sources): array
 {
-    $overview = iah_energy_query($sources, ['operation'=>'overview'], 0);
-    $values = array_column($overview['values'], null, 'metric');
+    return iah_energy_overview_answer(iah_energy_query($sources, ['operation'=>'overview'], 0));
+}
+
+function iah_energy_overview_answer(array $overview): array
+{
+    $values = array_column($overview['values'] ?? [], null, 'metric');
     $labels = [
         'PVPower'=>'PV-Leistung', 'DailyYield'=>'Ertrag heute', 'BatterySOC'=>'Akku-Ladestand',
         'HouseConsumption'=>'Hausverbrauch', 'GridPower'=>'Netzleistung', 'GridFeedIn'=>'Einspeisung',

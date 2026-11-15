@@ -1879,6 +1879,18 @@ PHP;
         if (is_file($template)) {
             $content = file_get_contents($template);
             if ($content !== false) {
+                if (str_contains($content, '// IAH_PV_STATUS_QUESTION_INSERT')) {
+                    $recognizer = file_get_contents(__DIR__ . '/resources/helpers/PvStatusQuestion.php');
+                    $recognizer = is_string($recognizer)
+                        ? preg_replace('/^<\?php\s*declare\(strict_types=1\);\s*/', '', $recognizer)
+                        : null;
+                    if (!is_string($recognizer) || !str_contains($recognizer, 'final class IAHPvStatusQuestion')) {
+                        IPS_LogMessage('Alexa', 'Sprachskript nicht erneuert: PV-Spracherkennung fehlt.');
+                        return (int)$id;
+                    }
+                    $content = str_replace('// IAH_PV_STATUS_QUESTION_INSERT',
+                        'if (!class_exists(\'IAHPvStatusQuestion\', false)) {' . "\n" . $recognizer . "\n}", $content);
+                }
                 if (str_contains($content, '// IAH_RENDERER_ACTION_DIAGNOSTICS_INSERT')) {
                     $helper = file_get_contents(__DIR__ . '/resources/helpers/RendererActionDiagnostics.php');
                     $helper = is_string($helper)
