@@ -1378,6 +1378,8 @@ trait IAHVoiceRuleEditorTrait
             $this->updateHouseQuestionContext($key,null);
             $question=IAHHouseQuestionContext::isNewQuestion($spoken)
                 ?(preg_replace('/^\s*und\s+/ui','',$spoken)??$spoken):$spoken;
+            require_once __DIR__.'/../resources/helpers/HeatingSystemQuery.php';
+            if (IAHHeatingSystemQuery::topic($question) !== null) return ['question'=>$question];
             require_once __DIR__.'/../resources/helpers/IrrigationQueryEngine.php';
             if (IAHIrrigationQuery::matchesQuestion($catalog,$question))return ['question'=>$question];
             $scope=$resolveInitial?IAHHouseQuestionContext::initialScope($question,$catalog):null;

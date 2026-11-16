@@ -191,6 +191,40 @@ fragt der Controller nach. Eine erfolgreich per KI gelesene PV-Übersicht
 liefert auf der Echo Show dieselbe Anzeige mit den tatsächlich gelesenen
 Messwerten.
 
+### Heizungsanlage
+
+Im **RoomsCatalogConfigurator → HEIZUNGSANLAGE** die Vorlage prüfen, nach EDIT
+übernehmen und den geprüften RoomsCatalog nach PROD veröffentlichen. Die
+Zuordnung basiert auf den vier IP-Symcon-Zweigen Heizung #59776/#22841,
+Danfoss Fernwärme #14246 und Solar Anlage #30381. Die Vorschau zeigt die IDs
+und die Zuordnungen, deren Objekt oder Datentyp sie nicht bestätigen konnte.
+
+Die Datenquelle läuft unter `heizung` mit Leserechten. Die Echo-Show-Übersicht
+„Wie geht es meiner Heizung?“ fasst Fernwärme, Warmwasser, Hausheizung,
+Solarthermie und Dachheizung zusammen. Für die einzelnen Bereiche funktionieren
+zum Beispiel „Status Fernwärme“, „Wie warm ist das Warmwasser?“, „Zeige alle
+Werte der Solarheizung“, „Welche Fußbodenventile sind offen?“ und „Wie viele
+Betriebsstunden hat die Dachflächenheizung Ost?“. Fußbodenventile werden
+anhand ihrer Stellgröße ausgewertet. Die Betriebszähler geben die gesamte
+erfasste Laufzeit an. „Rohrbegleitheizung am Dach“ bezeichnet die
+Heizungsanlage. „Rohrbegleitheizung“ allein verweist auf die Bewässerung.
+
+**Alle Heizungswerte als JSON ausgeben** liest die vier Zweige erneut und
+zeigt die erkannten und übrigen Variablen mit IDs, Pfaden, Einheiten,
+aktuellen numerischen/Bool-Werten, Wertedatum und Archivstatus. Für
+Textvariablen werden Metadaten exportiert. Der Bestand enthält unter
+anderem Kalender, Sollwerte, Schaltwerte und Diagnosevariablen.
+„Zeige alle Werte der Heizungsanlage“ zeigt die freigegebenen Werte im
+scrollbaren Alexa-Layout.
+
+| Offene Detailfrage | Noch benötigte Information |
+| --- | --- |
+| Momentane Fernwärmeleistung | Messwert-ID des Wärmezählers in kW oder W |
+| Aktueller Fußboden-Vorlauf | Gültige Quell-ID oder Zuordnung für #37039, der beim Abgleich 1.638,3 °C anzeigte |
+| Laufzeit und letzte Starts | Archivdaten des jeweiligen echten Status. Bei #51099 endet der vorliegende Verlauf im Juni 2025. Danfoss-Heizungs- und Boilerstatus haben im Auszug kein Archiv. |
+| Solarwärme heute oder seit Inbetriebnahme | Rücksetzverhalten der kWh-Variablen #52116. Der Tagesertrag #42475 ist in Euro. |
+| Heiz- und Warmwasser-Zeitplan | Für eine Kalender-Auswertung werden Zeitformat und Kennzeichnung deaktivierter Zeitfenster benötigt. Der Export enthält die Variablen. |
+
 **Fehlerbehebungen in V3.4.6:** Licht-Iststatus wird auch bei typisierten
 Boolean-/0/1-/Text-Rückmeldungen korrekt ausgewertet, bei Jalousien werden
 Positionen ohne Zu/Offen-Statusmapping nicht als Zustandsbestätigung

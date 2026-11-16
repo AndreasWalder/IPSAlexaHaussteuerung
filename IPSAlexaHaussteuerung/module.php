@@ -1891,6 +1891,17 @@ PHP;
                     $content = str_replace('// IAH_PV_STATUS_QUESTION_INSERT',
                         'if (!class_exists(\'IAHPvStatusQuestion\', false)) {' . "\n" . $recognizer . "\n}", $content);
                 }
+                if (str_contains($content, '// IAH_HEATING_SYSTEM_INSERT')) {
+                    $heating = file_get_contents(__DIR__ . '/resources/helpers/HeatingSystemQuery.php');
+                    $heating = is_string($heating)
+                        ? preg_replace('/^<\?php\s*declare\(strict_types=1\);\s*/', '', $heating) : null;
+                    if (!is_string($heating) || !str_contains($heating, 'final class IAHHeatingSystemQuery')) {
+                        IPS_LogMessage('Alexa', 'Sprachskript nicht erneuert: Heizungsabfrage fehlt.');
+                        return (int)$id;
+                    }
+                    $content = str_replace('// IAH_HEATING_SYSTEM_INSERT',
+                        "if (!class_exists('IAHHeatingSystemQuery', false)) {\n" . $heating . "\n}", $content);
+                }
                 if (str_contains($content, '// IAH_RENDERER_ACTION_DIAGNOSTICS_INSERT')) {
                     $helper = file_get_contents(__DIR__ . '/resources/helpers/RendererActionDiagnostics.php');
                     $helper = is_string($helper)

@@ -41,6 +41,11 @@ if (!class_exists('IAHIrrigationQuery', false)) {
     require_once __DIR__ . '/IrrigationQueryEngine.php';
 }
 
+// IAH_HEATING_SYSTEM_INSERT
+if (!class_exists('IAHHeatingSystemQuery', false)) {
+    require_once __DIR__ . '/HeatingSystemQuery.php';
+}
+
 /**
  * Alexa KI -> produktiver RoomsCatalog -> sichere IP-Symcon-Aktionen.
  * Keine Home-Agent-Installation, keine freien PHP-/Variablen-ID-Aufrufe.
@@ -983,6 +988,11 @@ function iah_rc_voice(
                     'handled'=>true, 'localHouseQuery'=>true, 'answerSource'=>'energy_overview',
                 ]);
             }
+        }
+        $heating = $scope === null ? IAHHeatingSystemQuery::query($catalog, $text) : null;
+        if ($heating !== null) {
+            $readDetails = [['tool' => $heating['answerSource'], 'result' => $heating['displayRows']]];
+            return $costFinish($heating);
         }
         $irrigation=IAHIrrigationQuery::query($catalog,$text,(string)($cfg['ui_context_domain']??''),
             $archiveId,min($deadline,microtime(true)+4));

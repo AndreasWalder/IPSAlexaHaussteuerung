@@ -6,6 +6,11 @@ if (!class_exists('IAHPvStatusQuestion', false)) {
     require_once __DIR__ . '/PvStatusQuestion.php';
 }
 
+// IAH_HEATING_SYSTEM_INSERT
+if (!class_exists('IAHHeatingSystemQuery', false)) {
+    require_once __DIR__ . '/HeatingSystemQuery.php';
+}
+
 /**
  * Deterministischer Alexa-Sprach-/UI-Router (kein OpenAI-Aufruf).
  * Datenschutz: nicht den Sprachtext, Device-ID, User-ID, Session-ID,
@@ -172,6 +177,8 @@ function iah_vir_classify(array $input,array $saved=[]): array
         if(isset($aliases[$target]))return array_replace($result,
             ['category'=>'navigation','route'=>$aliases[$target],'reason'=>'explicit_tile']);
     }
+    if (IAHHeatingSystemQuery::topic($text) !== null)
+        return array_replace($result,['category'=>'query','reason'=>'heating_question']);
     if (preg_match('/^(?:laeuft|laufen|wie viele|status|heizstarts)\b.*\b(?:bewaesserung|gartenpumpe|rohrbegleitheizung|kreise|kreis \d+)\b/',$text))
         return array_replace($result,['category'=>'query','reason'=>'irrigation_question']);
     if (IAHPvStatusQuestion::match($text)!=='')

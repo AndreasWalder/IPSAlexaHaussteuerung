@@ -115,6 +115,15 @@ $withoutScreen=$summary('Antwort','Beantwortet','Wie geht es meiner PV Anlage?')
 ck38($withoutScreen->apl===[] && $withoutScreen->card[0]==='PV-Anlage',
     'devices without APL keep the voice and standard app card');
 
+$heatingRows=[['label'=>'Warmwassertemperatur','value'=>'63,1 °C']];
+$heating=$summary('Warmwassertemperatur 63,1 °C.','Beantwortet','Wie warm ist das Warmwasser?',true,
+    'heating_warmwasser',$heatingRows);
+ck38($heating->apl['datasources']['summary']['title']==='Warmwasser'
+    && $heating->apl['datasources']['summary']['readings']===$heatingRows
+    && isset($heating->apl['document']['graphics']['radiator'])
+    && str_contains($heating->card[2],'Heizung.png'),
+    'heating renders the category and live readings in the responsive summary');
+
 $oldAction=str_replace($summaryBlock[0],"\$kiAlexaKeepOpen = static fn() => 'previous summary';",$action)
     ."\n// Custom Action retained\n";
 IPS_SetScriptContent(9191,$oldAction);

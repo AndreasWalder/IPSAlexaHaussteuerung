@@ -2101,7 +2101,17 @@ function Execute($request = null)
             $response = AskResponse::CreatePlainText($text)
                 ->SetRepromptPlainText('Noch eine Frage oder ein Schaltbefehl?');
 
+            $heatingTitle = match ($answerSource) {
+                'heating_anlage' => 'Heizungsanlage',
+                'heating_fernwaerme' => 'Fernwärme',
+                'heating_warmwasser' => 'Warmwasser',
+                'heating_solarheizung' => 'Solarheizung',
+                'heating_hausheizung' => 'Hausheizung',
+                'heating_dachrinnenheizung' => 'Dachrinnenheizung',
+                default => '',
+            };
             $title = match (true) {
+                $heatingTitle !== '' => $heatingTitle,
                 in_array($answerSource, ['energy_overview', 'ai_energy_overview'], true) => 'PV-Anlage',
                 preg_match('/\brohr[\s-]*(?:begleit[\s-]*)?heiz\w*|\bheizband\b/ui', $question) === 1
                     => 'Rohrbegleitheizung',
@@ -2120,8 +2130,11 @@ function Execute($request = null)
             }
 
             $solar = $title === 'PV-Anlage';
-            $iconFile = $solar ? 'Energie.png' : 'Bewaesserung.png';
-            $graphicName = $solar ? 'solarPanel' : 'waterDrop';
+            [$iconFile, $graphicName] = match (true) {
+                $heatingTitle !== '' => ['Heizung.png', 'radiator'],
+                $solar => ['Energie.png', 'solarPanel'],
+                default => ['Bewaesserung.png', 'waterDrop'],
+            };
             $image = rtrim((string)$baseUrl, '/') . '/hook/iah-alexa-icons?f=' . $iconFile . '&token=' . rawurlencode((string)$token);
             if (preg_match('~^https://[a-z0-9.-]+(?::\d{1,5})?(?:/[^\s]*)?$~iD', $image)) {
                 $response->SetStandardCard($title, $text, $image, $image);
@@ -2190,6 +2203,14 @@ function Execute($request = null)
             ] : [
                 ['type' => 'path', 'fill' => '#5BE3D2', 'pathData' => 'M18,7 C15,12 10,16 10,21 A8,8 0 1,0 26,21 C26,16 21,12 18,7 Z'],
             ];
+            if ($heatingTitle !== '') {
+                $iconPaths = [
+                    ['type' => 'path', 'fill' => '#FFC196', 'pathData' =>
+                        'M8,12 H28 V23 H25 V26 H22 V23 H14 V26 H11 V23 H8 Z'],
+                    ['type' => 'path', 'fill' => '#1A4352', 'pathData' =>
+                        'M12,14 H14 V21 H12 Z M17,14 H19 V21 H17 Z M22,14 H24 V21 H22 Z'],
+                ];
+            }
             $graphics = ['graphics' => [$graphicName => [
                 'type' => 'AVG', 'version' => '1.1', 'width' => 36, 'height' => 36,
                 'items' => [
