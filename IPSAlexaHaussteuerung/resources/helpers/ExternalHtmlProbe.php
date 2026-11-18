@@ -49,7 +49,10 @@ function iah_html_diag_http(string $url): array
     if(!function_exists('curl_init')){$result['reason']='curl_unavailable';return $result;}
     $ch=curl_init($url);
     if($ch===false){$result['reason']='curl_init_failed';return $result;}
-    $headers=[];$body='';$max=16384;
+    $headers=[];
+    $body='';
+    // Speichergrenze in Bytes für die HTML-Diagnose.
+    $maxBodyBytes=16 * 1024;
     $start=microtime(true);
     try{
         curl_setopt_array($ch,[
@@ -70,9 +73,9 @@ function iah_html_diag_http(string $url): array
                 }
                 return strlen($line);
             },
-            CURLOPT_WRITEFUNCTION=>static function($handle,string $chunk)use(&$body,$max):int{
+            CURLOPT_WRITEFUNCTION=>static function($handle,string $chunk)use(&$body,$maxBodyBytes):int{
                 $len=strlen($chunk);
-                $left=$max-strlen($body);
+                $left=$maxBodyBytes-strlen($body);
                 if($left>0)$body.=substr($chunk,0,$left);
                 // Alles lesen lassen, aber nur 16 KiB im Speicher behalten.
                 return $len;
@@ -85,7 +88,7 @@ function iah_html_diag_http(string $url): array
         $result['timeMs']=(int)round((microtime(true)-$start)*1000);
         $result['tlsVerified']=$ok!==false && $result['curlCode']===0;
         $result['bytesRead']=strlen($body);
-        $result['limitedRead']=strlen($body)===$max;
+        $result['limitedRead']=strlen($body)===$maxBodyBytes;
         $type=strtolower((string)($headers['content-type'][0]??''));
         $result['contentType']=str_contains($type,'text/html')?'text/html':
             (str_contains($type,'application/json')?'application/json':
