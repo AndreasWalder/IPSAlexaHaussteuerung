@@ -90,6 +90,10 @@ $receiver=file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/resources/h
 hd(str_contains($shell,"shell_boot") && str_contains($shell,"iframe_timeout"),'Browser bootstrap and timeout telemetry');
 hd(str_contains($shell,"'/hook/iah-alexa-html-debug'"),'Client reports to local WebHook');
 hd(str_contains($receiver,"hash_equals("),'Browser callback authenticates token');
+foreach (token_get_all($receiver) as $token) {
+    hd(!is_array($token) || $token[0] !== T_EXIT,
+        'WebHook returns normally so Symcon does not mark successful callbacks as failed');
+}
 $icons=file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/resources/helpers/WebHookIcons.php');
 hd(str_contains($icons,"ExternalHTML.shellDelivery"),'Shell request delivery is logged without URLs');
 hd(str_contains($receiver,'array_slice($rows, -100)'),'Browser event history bounded to 100');

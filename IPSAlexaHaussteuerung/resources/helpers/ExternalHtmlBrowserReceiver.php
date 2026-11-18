@@ -3,35 +3,35 @@ declare(strict_types=1);
 
 /**
  * Browserdiagnose fuer Kamera/Energie. Wird ausschliesslich vom Modul
- * automatisch als /hook/alexa-html-debug registriert.
+ * automatisch als /hook/iah-alexa-html-debug registriert.
  * Niemals URLs, Tokens, Cookies, DOM-Inhalte oder Browser-Fehlertexte speichern.
  */
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     http_response_code(405);
-    exit;
+    return;
 }
 $raw = file_get_contents('php://input', false, null, 0, 4097);
 if (!is_string($raw) || strlen($raw) > 4096) {
     http_response_code(413);
-    exit;
+    return;
 }
 $input = json_decode($raw, true);
 if (!is_array($input)) {
     http_response_code(400);
-    exit;
+    return;
 }
 $instanceId = (int)($input['instanceId'] ?? 0);
 $provided = (string)($input['token'] ?? '');
 if ($instanceId <= 0 || !IPS_InstanceExists($instanceId) || $provided === '' || strlen($provided) > 256) {
     http_response_code(403);
-    exit;
+    return;
 }
 $secret = (string)@IPS_GetProperty($instanceId, 'Token');
 if ($secret === '' || !hash_equals($secret, $provided)) {
     http_response_code(403);
-    exit;
+    return;
 }
 $allow = static function ($value, array $valid): string {
     $candidate = is_string($value) ? $value : '';
@@ -99,7 +99,7 @@ $diag = (int)@IPS_GetObjectIDByIdent('iahDiag', $instanceId);
 $category = $diag > 0 ? (int)@IPS_GetObjectIDByIdent('iahExternalHtmlDiag', $diag) : 0;
 if ($category <= 0) {
     http_response_code(503);
-    exit;
+    return;
 }
 // Heartbeat for the SAME Echo/Skill device. Store only a salted HMAC,
 // never a raw Alexa device ID or an authentication secret. The 100-second
@@ -135,7 +135,7 @@ if ($key === 'kacheltest' && $stage === 'tile_lifecycle') {
         }
     }
     http_response_code(204);
-    exit;
+    return;
 }
 $last = (int)@IPS_GetObjectIDByIdent('iahHtmlBrowserLast', $category);
 $history = (int)@IPS_GetObjectIDByIdent('iahHtmlBrowserHistory', $category);
@@ -190,4 +190,4 @@ if ($history > 0 && IPS_VariableExists($history)) {
 }
 IPS_LogMessage('Alexa', 'ExternalHTML.browser ' . $line);
 http_response_code(204);
-exit;
+return;
