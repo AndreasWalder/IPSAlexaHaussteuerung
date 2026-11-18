@@ -44,7 +44,7 @@ try{
         'targetUrl'=>'http://192.168.0.1/target'
     ],static function(string $url):array{return [
         'attempted'=>false,'status'=>0,'curlCode'=>0,
-        'xFrameOptions'=>'absent','cspFrameAncestors'=>'absent','contentType'=>'missing'
+        'xFrameOptions'=>'absent','cspFrameAncestors'=>'absent','cspFrameSrc'=>'absent','contentType'=>'missing'
     ];});
     hd(in_array('shell_requires_https',$noFile['warnings'],true),'HTTP shell flagged');
     hd(in_array('local_shell_file_not_found_at_user_icons',$noFile['warnings'],true),'Missing shell flagged');
@@ -98,4 +98,58 @@ $icons=file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/resources/help
 hd(str_contains($icons,"ExternalHTML.shellDelivery"),'Shell request delivery is logged without URLs');
 hd(str_contains($receiver,'array_slice($rows, -100)'),'Browser event history bounded to 100');
 hd(!str_contains($receiver, '$input[' . chr(39) . 'src' . chr(39) . ']'), 'Browser diagnostic cannot store iframe URL');
+// Run the installed registration block against the reported stale WebHook targets.
+function IPS_ObjectExists(int $id): bool
+{
+    return in_array($id, $GLOBALS['htmlHookLiveObjects'], true);
+}
+function IPS_SetProperty(int $id, string $property, string $value): void
+{
+    hd($id === 1 && $property === 'Hooks', 'Only WebHook Control hooks are written');
+    $GLOBALS['htmlHookWrite'] = json_decode($value, true, 512, JSON_THROW_ON_ERROR);
+}
+function IPS_ApplyChanges(int $id): void { $GLOBALS['htmlHookApplyCount']++; }
+function IPS_LogMessage(string $sender, string $message): void {}
+
+$setupStart = strpos($module, 'private function ensureExternalHtmlBrowserDiagnostics(');
+$registrationStart = strpos($module, '        $changed = false;', $setupStart);
+$registrationEnd = strpos($module, "\n    }\n\n    /**", $registrationStart);
+hd($setupStart !== false && $registrationStart !== false && $registrationEnd !== false,
+    'Actual module WebHook registration found');
+$registration = substr($module, $registrationStart, $registrationEnd - $registrationStart);
+$runRegistration = static function (array $hooks, array $live) use ($registration): array {
+    $control = 1;
+    $icons = 38595;
+    $receiver = 21437;
+    $tileCredential = 43370;
+    $GLOBALS['htmlHookLiveObjects'] = array_merge([$icons, $receiver, $tileCredential], $live);
+    $GLOBALS['htmlHookWrite'] = null;
+    $GLOBALS['htmlHookApplyCount'] = 0;
+    eval($registration);
+    return [$hooks, $GLOBALS['htmlHookApplyCount']];
+};
+$broken = [
+    ['Hook'=>'/hook/iah-alexa-icons', 'TargetID'=>18471],
+    ['Hook'=>'/hook/iah-alexa-shell', 'TargetID'=>18471],
+    ['Hook'=>'/hook/iah-alexa-html-debug', 'TargetID'=>21437],
+    ['Hook'=>'/hook/iah-alexa-tile-credential', 'TargetID'=>43370],
+    ['Hook'=>'/hook/icons', 'TargetID'=>18471],
+];
+[$fixed, $applied] = $runRegistration($broken, []);
+$targets = array_column($fixed, 'TargetID', 'Hook');
+hd($targets['/hook/iah-alexa-icons'] === 38595 && $targets['/hook/iah-alexa-shell'] === 38595
+    && $targets['/hook/icons'] === 18471 && count($fixed) === count($broken) && $applied === 1,
+    'Both deleted icon targets are repaired in place while the generic hook is preserved');
+[$again, $applied] = $runRegistration($fixed, []);
+hd($again === $fixed && $applied === 0, 'Repeated module apply does not duplicate or rewrite correct hooks');
+[$foreign, $applied] = $runRegistration($broken, [18471]);
+hd($foreign === $broken && $applied === 0, 'Existing targets owned by another handler are preserved');
+[$new, $applied] = $runRegistration([], []);
+hd(count($new) === 4 && $applied === 1, 'Fresh setup still registers all four dedicated hooks');
+$invalid = $fixed;
+$invalid[2]['TargetID'] = 0;
+$invalid[3]['TargetID'] = 12345;
+[$fixedInvalid, $applied] = $runRegistration($invalid, []);
+hd($fixedInvalid === $fixed && $applied === 1, 'Unset and deleted diagnostic and credential handlers are repaired too');
+
 echo "PASS: asynchronous HTML probes, HTTP/TLS/frame policy flags, missing shell, safe logs, Action migration\n";

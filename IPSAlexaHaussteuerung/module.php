@@ -1532,12 +1532,17 @@ class IPSAlexaHaussteuerung extends IPSModule
             '/hook/iah-alexa-tile-credential' => $tileCredential
         ] as $name => $target) {
             $present = false;
-            foreach ($hooks as $existing) {
+            foreach ($hooks as $index => $existing) {
                 if (($existing['Hook'] ?? '') !== $name) {
                     continue;
                 }
                 $present = true;
-                if ((int)($existing['TargetID'] ?? 0) !== (int)$target) {
+                $existingTarget = (int)($existing['TargetID'] ?? 0);
+                if ($existingTarget <= 0 || !IPS_ObjectExists($existingTarget)) {
+                    $hooks[$index]['TargetID'] = (int)$target;
+                    $changed = true;
+                    IPS_LogMessage('Alexa', 'ExternalHTML.setup dedicated_hook_repaired ' . $name);
+                } elseif ($existingTarget !== (int)$target) {
                     // Nichts von Fremdmodulen bzw. vom Benutzer ueberschreiben.
                     IPS_LogMessage('Alexa', 'ExternalHTML.setup hook_exists_external ' . $name);
                 }
