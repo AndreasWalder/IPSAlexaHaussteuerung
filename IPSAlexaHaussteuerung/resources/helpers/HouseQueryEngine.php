@@ -320,7 +320,7 @@ function iah_ai_query_house(array $devices, array $args, string $spoken = ''): a
                     $coverage['unknownTypes'][$role.':'.$kind]
                         =($coverage['unknownTypes'][$role.':'.$kind]??0)+1;
                     if ((is_int($raw)||is_float($raw)) && is_finite((float)$raw)
-                        && abs((float)$raw)<10000 && count($coverage['unrecognizedNumericStatus'])<8) {
+                        && abs((float)$raw)<(10 * 1000) && count($coverage['unrecognizedNumericStatus'])<8) {
                         $code=(string)$raw;
                         $coverage['unrecognizedNumericStatus'][$code]
                             =($coverage['unrecognizedNumericStatus'][$code]??0)+1;
