@@ -80,7 +80,7 @@ try {
     if ($ext === 'html' || $ext === 'htm') {
         header('Cache-Control: no-store, max-age=0');
     } else {
-        header('Cache-Control: public, max-age=31536000, immutable');
+        header('Cache-Control: public, max-age=' . (365 * 24 * 60 * 60) . ', immutable');
     }
     header('ETag: ' . $etag);
     header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');

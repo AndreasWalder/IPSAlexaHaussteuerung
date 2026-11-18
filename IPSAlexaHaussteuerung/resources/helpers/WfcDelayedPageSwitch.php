@@ -15,7 +15,7 @@ declare(strict_types=1);
  * Verwendung:
  *   IPS_RunScriptEx($scriptId, [
  *       'page' => 'pageId',   // z. B. "page.Shutdown"
- *       'wfc'  => 12345       // Instanz-ID deines WebFront Controllers
+ *       'wfc'  => $webFrontId // Instanz-ID deines WebFront Controllers
  *   ]);
  *
  * Änderungsverlauf

@@ -207,7 +207,7 @@ $payloadReport = static function(array $ds, bool $apl, string $speech) use ($cal
 };
 
 /* — Sanfter Limiter (Ziel ~200 kB, große Texte zuerst) — */
-$shrinkSoft = static function(array $ds, bool $apl, string $speech, int $targetBytes = 200000) use ($calcSize,$ellipsis) {
+$shrinkSoft = static function(array $ds, bool $apl, string $speech, int $targetBytes = (200 * 1000)) use ($calcSize,$ellipsis) {
     $trace = [];
     $size = $calcSize($ds,$apl,$speech);
     if ($size <= $targetBytes) return [$ds,$trace];
@@ -291,12 +291,12 @@ $payloadReport($ds,$apl,$speech);
 
 if ($apl) {
     $before = $calcSize($ds,$apl,$speech);
-    list($ds, $trace) = $shrinkSoft($ds,$apl,$speech, 200000); // Ziel bewusst < 256kB
+    list($ds, $trace) = $shrinkSoft($ds,$apl,$speech, (200 * 1000)); // Ziel bewusst < 256kB
     $after  = $calcSize($ds,$apl,$speech);
 
     @IPS_LogMessage('Alexa', 'Limiter: vorher='. $nf($before) .' Bytes, nachher='. $nf($after) .' Bytes');
     if (!empty($trace)) @IPS_LogMessage('Alexa', 'Limiter-Schritte: '.implode(' → ', $trace));
-    if ($after > 256000) @IPS_LogMessage('Alexa', 'WARNUNG: Payload weiterhin groß. Prüfe besonders Value2 (Status/Meldungen).');
+    if ($after > (256 * 1000)) @IPS_LogMessage('Alexa', 'WARNUNG: Payload weiterhin groß. Prüfe besonders Value2 (Status/Meldungen).');
 }
 
 $aplObj = $apl ? ['doc'=>['type'=>'Link','src'=>'doc://alexa/apl/documents/Hausvisualisierung_Main'], 'ds'=>$ds] : null;

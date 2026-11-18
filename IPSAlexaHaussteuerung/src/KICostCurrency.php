@@ -8,7 +8,7 @@ declare(strict_types=1);
  */
 function iah_ki_ecb_parse(string $xml): ?array
 {
-    if(strlen($xml)>2000000 || stripos($xml,'Cube')===false)return null;
+    if(strlen($xml)>(2000 * 1000) || stripos($xml,'Cube')===false)return null;
     if(!preg_match('~<[^>]*Cube\b[^>]*\bcurrency=["\x27]USD["\x27][^>]*>~i',$xml,$m)
         && !preg_match('~<[^>]*Cube\b[^>]*\brate=["\x27][^"\x27]+["\x27][^>]*\bcurrency=["\x27]USD["\x27][^>]*>~i',$xml,$m))return null;
     if(!preg_match('~\brate=["\x27]([0-9]+(?:\.[0-9]+)?)["\x27]~i',$m[0],$rate))return null;

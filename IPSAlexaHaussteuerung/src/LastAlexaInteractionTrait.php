@@ -64,7 +64,7 @@ trait IAHLastAlexaInteractionTrait
     /** Keep a coherent snapshot of one real request, never a mix of old slots. */
     public function RecordAlexaInteraction(string $payload): void
     {
-        if(strlen($payload)>32000)return;
+        if(strlen($payload)>(32 * 1000))return;
         $entry=json_decode($payload,true);
         if (!is_array($entry) || !in_array($entry['requestType']??'', [
             'IntentRequest','Alexa.Presentation.APL.UserEvent','LaunchRequest','SessionEndedRequest'

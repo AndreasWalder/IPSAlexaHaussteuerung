@@ -1386,7 +1386,7 @@ function iah_rc_voice(
                     if (array_key_exists($field,$result)) $diagnostic[$field]=$result[$field];
                 iah_rc_log('tool',$diagnostic);
                 $messages[]=['role'=>'tool','tool_call_id'=>(string)$call['id'],
-                    'content'=>mb_substr(json_encode($result,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE),0,12000,'UTF-8')];
+                    'content'=>mb_substr(json_encode($result,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE),0,(12 * 1000),'UTF-8')];
             }
         }
     }catch(Throwable $e){

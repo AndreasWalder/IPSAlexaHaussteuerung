@@ -7033,7 +7033,7 @@ class RoomsCatalogConfigurator extends IPSModule
         if (!is_int($v)) {
             return false;
         }
-        return ($v >= 10000 && $v <= 99999);
+        return ($v >= (10 * 1000) && $v <= (99 * 1000 + 999));
     }
 
     private function buildCompositeKey(array $row): ?string
@@ -7462,7 +7462,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 continue;
             }
             $number = is_int($value) ? $value : (ctype_digit(trim($value)) ? (int)trim($value) : 0);
-            if ($number <= 0 || $number > 99999) {
+            if ($number <= 0 || $number > (99 * 1000 + 999)) {
                 continue;
             }
             $objectIds[$number] = $number;

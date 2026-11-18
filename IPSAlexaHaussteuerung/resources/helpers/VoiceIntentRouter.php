@@ -236,7 +236,7 @@ function iah_vir_execute(array $input,array &$data,int $now): array
             'at'=>date('c',$now),'deviceHash'=>$deviceHash,
             'category'=>'ki_outcome','backend'=>$backend,
             'success'=>(bool)($input['success']??false),
-            'durationMs'=>max(0,min(60000,(int)($input['durationMs']??0))),
+            'durationMs'=>max(0,min((60 * 1000),(int)($input['durationMs']??0))),
             'model'=>substr(preg_replace('/[^a-zA-Z0-9_.-]/','',(string)($input['model']??''))??'',0,50)
         ];
         $data['last']=$entry;
@@ -297,7 +297,7 @@ function iah_vir_ip_symcon(array $input): array
         $result=iah_vir_execute($input,$data,$now);
         // Ablaufende Geräte-Kontexte beschränken; keine Rohkennungen speichern.
         foreach ((array)($data['devices']??[]) as $hash=>$device) {
-            if($now-(int)($device['updatedUnix']??0)>86400)unset($data['devices'][$hash]);
+            if($now-(int)($device['updatedUnix']??0)>(24 * 60 * 60))unset($data['devices'][$hash]);
         }
         if(count((array)($data['devices']??[]))>32) {
             uasort($data['devices'],static fn($a,$b)=>(int)($b['updatedUnix']??0)<=>(int)($a['updatedUnix']??0));

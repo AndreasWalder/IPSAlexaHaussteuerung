@@ -45,7 +45,7 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
   var timeOrigin=window.performance && performance.now ? performance.now() : Date.now();
   function elapsed(){
     var now=window.performance && performance.now ? performance.now() : Date.now();
-    return Math.max(0,Math.min(120000,Math.round(now-timeOrigin)));
+    return Math.max(0,Math.min(120 * 1000,Math.round(now-timeOrigin)));
   }
   function timing(code){
     if(timingsEnabled)emit('tile_performance','ok',code,{elapsedMs:elapsed()});
@@ -74,7 +74,7 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
     presence('active');
     presenceClock=setInterval(function(){
       if(document.visibilityState!=='hidden')presence('active');
-    },40000);
+    },40 * 1000);
   }
   var loaded = false;
   var sent = 0;
@@ -622,7 +622,7 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
       ?expectedHash:'';
     if(wanted){
       try{
-        // srcdoc verliert sonst das /tile/#12345 Fragment.
+        // srcdoc verliert sonst das /tile/#<Seiten-ID> Fragment.
         // Dies stellt nur den Hash wieder her; die Dokument-URL bleibt about:srcdoc.
         window.location.hash=wanted;
       }catch(e){}
@@ -736,7 +736,7 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
       if(mime.indexOf('text/html')===-1)throw Error('not_html');
       return response.text();
     }).then(function(html){
-      if(typeof html!=='string' || html.length>200000){
+      if(typeof html!=='string' || html.length>(200 * 1000)){
         emit('tile_compat','error','too_large');frame.src=src;return;
       }
       if(!/<head(?:\s[^>]*)?>/i.test(html)){
@@ -913,7 +913,7 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
       tileSnapshot('onload');
       setTimeout(function(){tileReport();tileSnapshot('after_3s');},3000);
       setTimeout(function(){tileReport();tileSnapshot('after_8s');},8000);
-      setTimeout(function(){tileSnapshot('after_15s');},15000);
+      setTimeout(function(){tileSnapshot('after_15s');},15 * 1000);
     }
     if(route==='kacheltest'){
       status.textContent='IP-Symcon lädt – Anmeldung wird vorbereitet …';
@@ -945,7 +945,7 @@ html,body{margin:0;width:100%;height:100%;background:#131722;color:#fff;font-fam
       status.textContent='Webseite lädt nicht – Diagnose wurde gespeichert.';
       emit('iframe_timeout','timeout');
     }
-  },10000);
+  },10 * 1000);
   if(compat && bootMode==='url')loadTileWithRealUrl();
   else if(compat)loadTileWithStorageCompatibility();
   else frame.src=src;

@@ -208,8 +208,8 @@ function iah_energy_period(string $name): array
     return match($name) {
         'today'=>[(int)strtotime('today'),$now],
         'yesterday'=>[(int)strtotime('yesterday'),(int)strtotime('today')-1],
-        '7d'=>[$now-7*86400,$now],
-        '30d'=>[$now-30*86400,$now],
+        '7d'=>[$now-7*(24 * 60 * 60),$now],
+        '30d'=>[$now-30*(24 * 60 * 60),$now],
         'this_month'=>[(int)strtotime('first day of this month 00:00'),$now],
         'last_month'=>[(int)strtotime('first day of last month 00:00'),
             (int)strtotime('first day of this month 00:00')-1],

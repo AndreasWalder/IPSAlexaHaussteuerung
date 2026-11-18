@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/src/Helpers.php';
+require_once __DIR__ . '/src/SymconScriptSource.php';
 require_once __DIR__ . '/src/LogTrait.php';
 require_once __DIR__ . '/src/KICostAccounting.php';
 require_once __DIR__ . '/src/KICostCurrency.php';
@@ -53,8 +54,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyString('Source', '');
         $this->RegisterPropertyString('Token', '');
         $this->RegisterPropertyString('Passwort', '');
-        $this->RegisterPropertyString('StartPage', '#45315');
-        $this->RegisterPropertyInteger('WfcId', 45315);
+        $this->RegisterPropertyString('StartPage', '#' . (45 * 1000 + 315));
+        $this->RegisterPropertyInteger('WfcId', (45 * 1000 + 315));
         $this->RegisterPropertyString('LOG_LEVEL', 'debug');
         $this->RegisterPropertyString(
             'RendererDomains',
@@ -117,8 +118,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterAttributeString('HouseQuestionContexts', '{}');
         $this->RegisterAttributeString('AlexaIntentSyncPreview', '');
         $this->RegisterTimer('DelayedPageSwitch', 0, 'IAH_HandleDelayedPageSwitch($_IPS["TARGET"]);');
-        $this->RegisterTimer('KICostRefresh', 60000, 'IAH_UpdateKICostExchangeRate($_IPS["TARGET"]); IAH_RefreshKICostDisplay($_IPS["TARGET"]);');
-        $this->RegisterTimer('AlexaLogRefresh', 15000, 'IAH_RefreshAlexaLogBuffer($_IPS["TARGET"]);');
+        $this->RegisterTimer('KICostRefresh', (60 * 1000), 'IAH_UpdateKICostExchangeRate($_IPS["TARGET"]); IAH_RefreshKICostDisplay($_IPS["TARGET"]);');
+        $this->RegisterTimer('AlexaLogRefresh', (15 * 1000), 'IAH_RefreshAlexaLogBuffer($_IPS["TARGET"]);');
 
         // Pages
         $this->RegisterPropertyString(
@@ -1175,6 +1176,12 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->patchActionScriptVoiceRules((int)$id);
         $this->patchActionScriptLastAlexaInteraction((int)$id);
 
+        $current = $this->getScriptContent((int)$id);
+        if (is_string($current)) {
+            $updated = IAHSymconScriptSource::normalize($current);
+            if ($updated !== $current) IPS_SetScriptContent($id, $updated);
+        }
+
         return (int) $id;
     }
 
@@ -1476,6 +1483,7 @@ class IPSAlexaHaussteuerung extends IPSModule
                 "\$SECRET = (string)@IPS_GetProperty(" . $this->InstanceID . ", 'Token');",
                 $iconsContent
             );
+            $updated = IAHSymconScriptSource::normalize($updated);
             if ($updated !== $iconsContent) {
                 IPS_SetScriptContent($icons, $updated);
             }
@@ -2007,6 +2015,7 @@ PHP;
                     $content=str_replace('// IAH_IRRIGATION_QUERY_ENGINE_INSERT',
                         "if (!class_exists('IAHIrrigationQuery', false)) {\n".$irrigation."\n}",$content);
                 }
+                $content = IAHSymconScriptSource::normalize($content);
                 IPS_SetScriptContent($id, $content);
             }
         }

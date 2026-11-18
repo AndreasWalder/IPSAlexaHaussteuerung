@@ -146,9 +146,9 @@ trait KICostTrait
         if(!is_array($parsed))return false;
         // Offiziellen Kurs niemals mit ungültiger Datumsangabe übernehmen.
         $dt=\DateTimeImmutable::createFromFormat('!Y-m-d',(string)$parsed['date']);
-        if(!$dt || $dt->getTimestamp()>$now+86400 || $dt->getTimestamp()<$now-14*86400)return false;
+        if(!$dt || $dt->getTimestamp()>$now+(24 * 60 * 60) || $dt->getTimestamp()<$now-14*(24 * 60 * 60))return false;
         $this->WriteAttributeString('KICostFxData',json_encode($parsed,JSON_THROW_ON_ERROR));
-        $this->WriteAttributeInteger('KICostNextRateUpdate',$now+43200); // 12 h
+        $this->WriteAttributeInteger('KICostNextRateUpdate',$now+(12 * 60 * 60)); // 12 h
         return true;
     }
 

@@ -5,7 +5,7 @@ require_once dirname(__DIR__, 2) . '/IPSAlexaHaussteuerung/resources/helpers/Hea
 
 trait RCCHeatingSystemEditorTrait
 {
-    private const HEATING_ROOTS = [59776 => 'Heizung', 22841 => 'Heizung', 14246 => 'Danfoss Fernwärme', 30381 => 'Solar Anlage'];
+    private const HEATING_ROOTS = [(59 * 1000 + 776) => 'Heizung', (22 * 1000 + 841) => 'Heizung', (14 * 1000 + 246) => 'Danfoss Fernwärme', (30 * 1000 + 381) => 'Solar Anlage'];
 
     private function heatingInventory(): array
     {

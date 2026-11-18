@@ -35,7 +35,7 @@ $verify(str_contains($receiver,"\$now + 100"),'Live state must automatically exp
 $verify(str_contains($receiver,"IPS_SemaphoreEnter(\$lock, 500)"),'Concurrent heartbeat locking missing');
 $verify(str_contains($receiver,"array_slice(\$states, 0, 24, true)"),'Active devices map must be bounded');
 $verify(str_contains($shell,"function presence(state)"),'Active page heartbeat missing');
-$verify(str_contains($shell,"},40000);"),'Live page renewal missing');
+$verify(str_contains($shell,"},40 * 1000);"),'Live page renewal missing');
 $verify(str_contains($shell,"if(pagePresent)presence('closed')"),'Page close cleanup missing');
 $verify(str_contains($shell,"sdk.async=true"),'Alexa SDK must load after Tile startup');
 $verify(str_contains($shell,"alexa.skill.onMessage"),'HTML.HandleMessage listener missing');

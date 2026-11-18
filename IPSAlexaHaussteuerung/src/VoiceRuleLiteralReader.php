@@ -11,8 +11,8 @@ declare(strict_types=1);
  */
 final class IAHVoiceRuleLiteralReader
 {
-    private const MAX_SOURCE_BYTES = 10485760;
-    private const MAX_TOKENS = 1200000;
+    private const MAX_SOURCE_BYTES = (10 * 1024 * 1024);
+    private const MAX_TOKENS = (1200 * 1000);
     private const MAX_DEPTH = 50;
 
     public static function read(?string $source): ?array

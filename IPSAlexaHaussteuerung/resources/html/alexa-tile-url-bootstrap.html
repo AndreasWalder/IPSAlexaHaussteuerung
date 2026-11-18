@@ -54,7 +54,7 @@
     }
     return response.text();
   }).then(function(html){
-    if(html.length>200000 || !/<head(?:\s[^>]*)?>/i.test(html)){
+    if(html.length>(200 * 1000) || !/<head(?:\s[^>]*)?>/i.test(html)){
       throw Error('html_invalid');
     }
     var wanted=target.hash;

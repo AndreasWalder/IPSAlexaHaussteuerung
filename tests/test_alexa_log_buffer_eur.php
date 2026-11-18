@@ -49,7 +49,7 @@ verifyLogEur($history[0]['costUsd']===0.02,'Historical USD untouched');
 $module=file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/module.php');
 $trait=file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/src/KICostTrait.php');
 $form=json_decode(file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/form.json'),true,512,JSON_THROW_ON_ERROR);
-verifyLogEur(str_contains($module,"RegisterTimer('AlexaLogRefresh', 15000"),'15-s Alexa refresh installed');
+verifyLogEur(str_contains($module,"RegisterTimer('AlexaLogRefresh', (15 * 1000)"),'15-s Alexa refresh installed');
 verifyLogEur(str_contains($module,"RegisterPropertyFloat('KICostMonthlyWarningEUR'"),'EUR warning property');
 verifyLogEur(str_contains($module,'IAH_UpdateKICostExchangeRate'),'Automatic ECB rate timer');
 verifyLogEur(str_contains($module,'EnsureAlexaLogInfrastructure'),'Copyable TextBox created');

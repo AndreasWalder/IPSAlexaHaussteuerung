@@ -689,7 +689,7 @@ $ds = [
 /* =========================
    Payload-Limiter
    ========================= */
-$shrinkApl = static function(array $doc, array $ds, int $limitBytes = 240000) {
+$shrinkApl = static function(array $doc, array $ds, int $limitBytes = (240 * 1000)) {
     $calc = static function(array $d, array $s): int {
         return strlen(json_encode(['apl'=>['doc'=>$d,'ds'=>$s,'token'=>'hv-jalousie']], JSON_UNESCAPED_UNICODE));
     };

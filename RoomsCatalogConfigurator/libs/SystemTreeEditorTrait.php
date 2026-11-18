@@ -411,30 +411,30 @@ trait RCCSystemTreeEditorTrait
 
     /** Installation-specific assignment, offered only on the matching controller. */
     private const GARDEN_52811_SENSORS=[
-        15690=>['stationTemperature','Pumpenschacht oben',0,'pumpenschacht oben'],
-        42306=>['stationTemperature','Pumpenschacht unten',0,'pumpenschacht unten'],
-        10516=>['stationTemperature','Verteilerkasten',0,'verteilerkasten'],
-        44047=>['outdoorTemperature','Außentemperatur',0,'aussensensor'],
-        44566=>['soilMoisture','Beet und Tröge',10,'beet und troege'],
-        21340=>['soilMoisture','Eckbeet Ost',2,'eckbeet ost'],
-        25030=>['soilMoisture','Hecke Ost',4,'hecke ost'],
-        47490=>['soilMoisture','Hecke Süd',0,'hecke sued'],
-        47887=>['soilMoisture','Rasen SüdWest Mitte',9,'rasen suedwest mitte'],
-        10737=>['soilMoisture','Rasen Ost',1,'rasen ost'],
-        49076=>['soilMoisture','Beet unten Ersatz',0,'beet unten ersatz'],
-        38644=>['soilMoisture','Bodenfeuchte Kanal 5',0,'bodenfeuchte 5',false],
-        31242=>['soilMoisture','Bodenfeuchte Kanal 6',0,'bodenfeuchte 6',false],
-        12898=>['rainSensor','Regensensor extern',0,'regensensor extern'],
-        56721=>['sensorBattery','Batterie Beet und Tröge',10,'beet und troege'],
-        47807=>['sensorBattery','Batterie Eckbeet Ost',2,'eckbeet ost'],
-        40021=>['sensorBattery','Batterie Hecke Ost',4,'hecke ost'],
-        16937=>['pumpPressure','Pumpendruck Bewässerung',0,'pumpendruck bewaesserung'],
-        16564=>['sensorBattery','Batterie Hecke Süd',0,'hecke sued'],
-        36149=>['sensorBattery','Batterie Kanal 6',0,'bodenfeuchtesensor 6',false],
-        38027=>['sensorBattery','Batterie Rasen SüdMitte',0,'rasen suedmitte'],
-        21053=>['sensorBattery','Batterie Rasen Ost',1,'rasen ost'],
-        50066=>['sensorBattery','Batterie Beet unten Ersatz',0,'beet unten ersatz'],
-        25140=>['sensorBattery','Batterie Regensensor',0,'regensensor extern'],
+        (15 * 1000 + 690)=>['stationTemperature','Pumpenschacht oben',0,'pumpenschacht oben'],
+        (42 * 1000 + 306)=>['stationTemperature','Pumpenschacht unten',0,'pumpenschacht unten'],
+        (10 * 1000 + 516)=>['stationTemperature','Verteilerkasten',0,'verteilerkasten'],
+        (44 * 1000 + 47)=>['outdoorTemperature','Außentemperatur',0,'aussensensor'],
+        (44 * 1000 + 566)=>['soilMoisture','Beet und Tröge',10,'beet und troege'],
+        (21 * 1000 + 340)=>['soilMoisture','Eckbeet Ost',2,'eckbeet ost'],
+        (25 * 1000 + 30)=>['soilMoisture','Hecke Ost',4,'hecke ost'],
+        (47 * 1000 + 490)=>['soilMoisture','Hecke Süd',0,'hecke sued'],
+        (47 * 1000 + 887)=>['soilMoisture','Rasen SüdWest Mitte',9,'rasen suedwest mitte'],
+        (10 * 1000 + 737)=>['soilMoisture','Rasen Ost',1,'rasen ost'],
+        (49 * 1000 + 76)=>['soilMoisture','Beet unten Ersatz',0,'beet unten ersatz'],
+        (38 * 1000 + 644)=>['soilMoisture','Bodenfeuchte Kanal 5',0,'bodenfeuchte 5',false],
+        (31 * 1000 + 242)=>['soilMoisture','Bodenfeuchte Kanal 6',0,'bodenfeuchte 6',false],
+        (12 * 1000 + 898)=>['rainSensor','Regensensor extern',0,'regensensor extern'],
+        (56 * 1000 + 721)=>['sensorBattery','Batterie Beet und Tröge',10,'beet und troege'],
+        (47 * 1000 + 807)=>['sensorBattery','Batterie Eckbeet Ost',2,'eckbeet ost'],
+        (40 * 1000 + 21)=>['sensorBattery','Batterie Hecke Ost',4,'hecke ost'],
+        (16 * 1000 + 937)=>['pumpPressure','Pumpendruck Bewässerung',0,'pumpendruck bewaesserung'],
+        (16 * 1000 + 564)=>['sensorBattery','Batterie Hecke Süd',0,'hecke sued'],
+        (36 * 1000 + 149)=>['sensorBattery','Batterie Kanal 6',0,'bodenfeuchtesensor 6',false],
+        (38 * 1000 + 27)=>['sensorBattery','Batterie Rasen SüdMitte',0,'rasen suedmitte'],
+        (21 * 1000 + 53)=>['sensorBattery','Batterie Rasen Ost',1,'rasen ost'],
+        (50 * 1000 + 66)=>['sensorBattery','Batterie Beet unten Ersatz',0,'beet unten ersatz'],
+        (25 * 1000 + 140)=>['sensorBattery','Batterie Regensensor',0,'regensensor extern'],
     ];
 
     public function ApplyGarden52811Sensors(string $key): void
@@ -442,11 +442,11 @@ trait RCCSystemTreeEditorTrait
         try {
             [$id,$old,$catalog]=$this->systemTreeEditContext();
             $source=&$catalog['dataSources'][$key];
-            if (($source['provider']??'')!=='ObjectTreeIrrigation' || !in_array(52811,(array)($source['controllers']??[]),true)
-                || !IPS_InstanceExists(52811)
-                || strtoupper((string)(IPS_GetInstance(52811)['ModuleInfo']['ModuleID']??''))!==RCCSystemTreeDiscovery::CONTROLLER)
+            if (($source['provider']??'')!=='ObjectTreeIrrigation' || !in_array((52 * 1000 + 811),(array)($source['controllers']??[]),true)
+                || !IPS_InstanceExists((52 * 1000 + 811))
+                || strtoupper((string)(IPS_GetInstance((52 * 1000 + 811))['ModuleInfo']['ModuleID']??''))!==RCCSystemTreeDiscovery::CONTROLLER)
                 throw new RuntimeException('Die Sensorzuordnung gehört zur Bewässerungsinstanz #52811.');
-            $configuration=json_decode((string)IPS_GetConfiguration(52811),true);
+            $configuration=json_decode((string)IPS_GetConfiguration((52 * 1000 + 811)),true);
             $zoneNames=[1=>'rasen ost',2=>'eckbeet ost',4=>'hecke ost',9=>'rasen suedwest mitte',10=>'beet und troege'];
             $missing=[];$count=0;
             foreach (self::GARDEN_52811_SENSORS as $pid=>$entry) {
@@ -474,7 +474,7 @@ trait RCCSystemTreeEditorTrait
                 $count++;
             }
             if ($count>0) {
-                foreach ([56338=>25030,42523=>47490,47297=>40021,49553=>16564] as $link=>$target) {
+                foreach ([(56 * 1000 + 338)=>(25 * 1000 + 30),(42 * 1000 + 523)=>(47 * 1000 + 490),(47 * 1000 + 297)=>(40 * 1000 + 21),(49 * 1000 + 553)=>(16 * 1000 + 564)] as $link=>$target) {
                     if (isset($source['points'][$target],$source['points'][$link]) && IPS_ObjectExists($link)
                         && (int)IPS_GetObject($link)['ObjectType']===6 && (int)IPS_GetLink($link)['TargetID']===$target) {
                         $source['excludedPoints'][$link]=$source['points'][$link]['label'];
@@ -500,12 +500,12 @@ trait RCCSystemTreeEditorTrait
         try {
             [$id,$old,$catalog]=$this->systemTreeEditContext();
             $source=&$catalog['dataSources'][$key];
-            if (($source['provider']??'')!=='ObjectTreeIrrigation' || !in_array(52811,(array)($source['controllers']??[]),true)
-                || !IPS_InstanceExists(52811)
-                || strtoupper((string)(IPS_GetInstance(52811)['ModuleInfo']['ModuleID']??''))!==RCCSystemTreeDiscovery::CONTROLLER)
+            if (($source['provider']??'')!=='ObjectTreeIrrigation' || !in_array((52 * 1000 + 811),(array)($source['controllers']??[]),true)
+                || !IPS_InstanceExists((52 * 1000 + 811))
+                || strtoupper((string)(IPS_GetInstance((52 * 1000 + 811))['ModuleInfo']['ModuleID']??''))!==RCCSystemTreeDiscovery::CONTROLLER)
                 throw new RuntimeException('Die Messwerte gehören zur Bewässerungsinstanz #52811.');
             $added=[];$unavailable=[];
-            foreach ([47232=>['leistung','W'],56599=>['stromstaerke','A'],16937=>['pumpendruck bewaesserung','bar']] as $pid=>[$name,$unit]) {
+            foreach ([(47 * 1000 + 232)=>['leistung','W'],(56 * 1000 + 599)=>['stromstaerke','A'],(16 * 1000 + 937)=>['pumpendruck bewaesserung','bar']] as $pid=>[$name,$unit]) {
                 if (isset($source['excludedPoints'][$pid]))continue;
                 if (($source['points'][$pid]['role']??'')==='heaterSignal')continue;
                 if (!IPS_VariableExists($pid) || RCCSystemTreeDiscovery::norm((string)IPS_GetObject($pid)['ObjectName'])!==$name

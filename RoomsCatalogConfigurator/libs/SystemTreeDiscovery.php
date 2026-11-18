@@ -245,7 +245,7 @@ final class RCCSystemTreeDiscovery
                 if ((int)($event['TriggerVariableID']??0)>0)
                     $queue[]=[(int)$event['TriggerVariableID'],$depth+1,$path,'',false,'event:'.$id,$hops];
                 $inline=$event['EventScript']??null;
-                if (is_string($inline)&&$inline!==''&&strlen($inline)<=131072) {
+                if (is_string($inline)&&$inline!==''&&strlen($inline)<=(128 * 1024)) {
                     if (!str_contains($inline,'<?'))$inline='<?php '.$inline;
                     foreach (array_slice(self::scriptRefs($inline),0,80,true) as $ref=>$ops)
                         $queue[]=[$ref,$depth+1,$name,'',false,'event_script:'.$id.':'.implode('+',array_keys($ops)),$hops+1];
@@ -255,8 +255,8 @@ final class RCCSystemTreeDiscovery
             if ($type===3 && !isset($scripts[$id]) && count($scripts)<30) {
                 if (!function_exists('IPS_GetScriptContent'))continue;
                 $code=@IPS_GetScriptContent($id);
-                $refs=is_string($code)&&strlen($code)<=131072?self::scriptRefs($code):[];
-                if (!is_string($code)||strlen($code)>131072)$notes[]='Skript #'.$id.' nicht lesbar oder über 128 KiB.';
+                $refs=is_string($code)&&strlen($code)<=(128 * 1024)?self::scriptRefs($code):[];
+                if (!is_string($code)||strlen($code)>(128 * 1024))$notes[]='Skript #'.$id.' nicht lesbar oder über 128 KiB.';
 
                 $scripts[$id]=['id'=>$id,'label'=>$name,'references'=>count($refs)];
                 foreach (array_slice($refs,0,80,true) as $ref=>$ops) {

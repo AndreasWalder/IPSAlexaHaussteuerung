@@ -130,8 +130,26 @@ foreach (['Licht','Jalousie','Heizung','Lueftung','Geraete','Bewaesserung'] as $
         dirname(__DIR__) . '/IPSAlexaHaussteuerung/resources/renderers/Render' . $domain . '.php');
     $installed = IPS_GetScriptContent($id);
     token_get_all($installed, TOKEN_PARSE);
+    foreach (token_get_all($installed) as $token) {
+        ck3812(!is_array($token) || $token[0] !== T_LNUMBER
+            || !preg_match('/^[1-9][0-9]{4,}$/D', $token[1]),
+            'generated renderer avoids object-like decimal constants: ' . $domain);
+    }
     ck3812(str_contains($installed, 'function iah_renderer_action_dispatch(')
         && !str_contains($installed, 'IAH_RENDERER_ACTION_DIAGNOSTICS_INSERT'), 'generated renderer embeds diagnostics: ' . $domain);
+}
+
+$numericTemplate = tempnam(sys_get_temp_dir(), 'iah-numeric-template-');
+ck3812($numericTemplate !== false, 'temporary template exists');
+try {
+    file_put_contents($numericTemplate, '<?php return [16159, 60000, 86400];');
+    $generated = $templates->invoke($module, 100, 'numericTemplate', 'numericTemplate', $numericTemplate);
+    $source = IPS_GetScriptContent($generated);
+    ck3812(!str_contains($source, '16159') && !str_contains($source, '60000') && !str_contains($source, '86400'),
+        'normal installation converts dynamically inserted object-like constants');
+    ck3812(eval(substr($source, 5)) === [16159, 60000, 86400], 'generated source retains exact runtime values');
+} finally {
+    unlink($numericTemplate);
 }
 
 // The installed V3.8.11 Action still has its two original APL writes.

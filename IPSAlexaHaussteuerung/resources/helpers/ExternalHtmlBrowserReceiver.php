@@ -167,7 +167,7 @@ if ($key === 'kacheltest' && $stage === 'tile_performance'
     foreach (['elapsedMs', 'fetchMs', 'bootMs', 'loginMs', 'displayMs']
         as $name) {
         $v = $input['metrics'][$name] ?? null;
-        if (is_int($v) && $v >= 0 && $v <= 120000) $metrics[$name] = $v;
+        if (is_int($v) && $v >= 0 && $v <= (120 * 1000)) $metrics[$name] = $v;
     }
     if ($metrics !== []) $event['metrics'] = $metrics;
 }

@@ -35,7 +35,7 @@ function iah_alexalog_is_alexa(string $line): bool
         return false;
     return preg_match('/(?<![a-z0-9])Alexa(?![a-z0-9])/iu',$line)===1;
 }
-function iah_alexalog_tail(string $file,int $limit=500,int $maxBytes=16777216): array
+function iah_alexalog_tail(string $file,int $limit=500,int $maxBytes=(16 * 1024 * 1024)): array
 {
     if ($limit<1 || $maxBytes<1 || !is_readable($file))return [];
     $h=@fopen($file,'rb');
@@ -48,7 +48,7 @@ function iah_alexalog_tail(string $file,int $limit=500,int $maxBytes=16777216): 
         $remaining=min((int)$pos,$maxBytes);
         $carry='';
         while($remaining>0 && count($hits)<$limit) {
-            $n=min(65536,$remaining);
+            $n=min((64 * 1024),$remaining);
             $pos-=$n;
             if(fseek($h,$pos,SEEK_SET)!==0)break;
             $part=fread($h,$n);

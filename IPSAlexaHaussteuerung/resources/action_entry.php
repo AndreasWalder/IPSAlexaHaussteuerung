@@ -4073,7 +4073,7 @@ function Execute($request = null)
                 'route'=>'Skill beenden', 'status'=>'Verarbeitet', 'logOnly'=>true];
         }
         if (isset($iahLastInteraction, $iahRuntimeStarted)) {
-            $iahLastInteraction['durationMs'] = (int)round((hrtime(true) - $iahRuntimeStarted) / 1000000);
+            $iahLastInteraction['durationMs'] = (int)round((hrtime(true) - $iahRuntimeStarted) / (1000 * 1000));
         }
         if (isset($iahLastInteraction) && $instanceId > 0 && function_exists('IAH_RecordAlexaInteraction')) {
             try {

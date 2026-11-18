@@ -95,9 +95,9 @@ function iah_archive_period(string $period): array
     $start=match($period){
         'today'=>(int)strtotime('today 00:00'),
         'yesterday'=>(int)strtotime('yesterday 00:00'),
-        '7d'=>$now-7*86400,
-        '30d'=>$now-30*86400,
-        '90d'=>$now-90*86400,
+        '7d'=>$now-7*(24 * 60 * 60),
+        '30d'=>$now-30*(24 * 60 * 60),
+        '90d'=>$now-90*(24 * 60 * 60),
         default=>0
     };
     $end=$period==='yesterday' ? ((int)strtotime('today 00:00')-1) : $now;
@@ -324,7 +324,7 @@ function iah_archive_query(array $devices,array $args,string $spoken,int $archiv
                 $entry['note']='Voraggregierte Tageswerte; keine Einzelereignisse.';
             } else {
                 $events=[];$endPage=$end;$scanLimit=$op==='history'?$maxResult:
-                    ($op==='count_active'?10000:250);
+                    ($op==='count_active'?(10 * 1000):250);
                 $pages=$op==='last_active'?4:1;
                 $sawMatch=false;$rowsScanned=0;
                 for ($page=0;$page<$pages;$page++) {
@@ -351,12 +351,12 @@ function iah_archive_query(array $devices,array $args,string $spoken,int $archiv
                     if ($earliest<=max(1,$start)||$earliest>=$endPage)break;
                     $endPage=$earliest-1;
                 }
-                if (($op==='count_active' && $rowsScanned>=10000)
+                if (($op==='count_active' && $rowsScanned>=(10 * 1000))
                     || ($op==='last_active' && !$sawMatch && $rowsScanned>=1000)) {
                     $entry['incomplete']=true;$partial=true;
                 }
                 if ($op==='count_active') {
-                    $entry['count']=$rowsScanned>=10000?null:count($events);
+                    $entry['count']=$rowsScanned>=(10 * 1000)?null:count($events);
                     $entry['countLowerBound']=count($events);
                 } else {
                     $entry['events']=array_slice($events,0,$maxResult);

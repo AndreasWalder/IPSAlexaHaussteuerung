@@ -370,11 +370,11 @@ final class IAHIrrigationQuery
     private static function heaterMeter(array $system,array $inventory): ?array
     {
         $points=(array)($system['points']??[]);
-        $garden=(int)($system['sourceRootId']??0)===41578 || in_array(52811,(array)($system['controllers']??[]),true);
+        $garden=(int)($system['sourceRootId']??0)===(41 * 1000 + 578) || in_array((52 * 1000 + 811),(array)($system['controllers']??[]),true);
         $namedArchive=[];
         if ($garden) {
             $namedArchive=self::heaterMeterLinks((int)($system['sourceRootId']??0));
-            $points+=[47232=>[]]+array_fill_keys(array_keys($namedArchive),[]);
+            $points+=[(47 * 1000 + 232)=>[]]+array_fill_keys(array_keys($namedArchive),[]);
             // An older catalog can omit the source or use a link caption rather than the variable name.
             if (function_exists('IPS_GetName')) {
                 foreach (array_slice(array_keys($inventory),0,2000) as $id) {
@@ -388,7 +388,7 @@ final class IAHIrrigationQuery
         $candidates=[];
         foreach ($points as $id=>$point) {
             $id=(int)$id;
-            $known=$garden && $id===47232;
+            $known=$garden && $id===(47 * 1000 + 232);
             $selected=!empty($point['enabled']) && ($point['role']??'')==='heaterSignal'
                 && ($system['historySignals']['heater'][$id]['mode']??'')==='heaterPower';
             $catalogPath=array_map([self::class,'norm'],explode('/',(string)($point['path']??'')));

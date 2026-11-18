@@ -43,7 +43,7 @@ function iah_ki_usage_row(array $response, array $prices): array
         'model'=>$model, 'measured'=>$measured, 'priced'=>$priced,
         'inputTokens'=>$input, 'cachedInputTokens'=>$cached, 'outputTokens'=>$output,
         'totalTokens'=>$input+$output,
-        'costUsd'=>$priced ? (($input-$cached)*$rates['input'] + $cached*$rates['cached'] + $output*$rates['output'])/1000000 : 0.0,
+        'costUsd'=>$priced ? (($input-$cached)*$rates['input'] + $cached*$rates['cached'] + $output*$rates['output'])/(1000 * 1000) : 0.0,
         'rates'=>$rates, // Preissnapshot wird beim Ereignis protokolliert.
     ];
 }

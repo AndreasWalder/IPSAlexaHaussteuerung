@@ -1253,7 +1253,7 @@ trait IAHVoiceRuleEditorTrait
     public function QueryAlexaHouseReadOnly(string $question,int $catalogId,string $scopeJson,string $domain=''): string
     {
         if (!$this->ReadPropertyBoolean('HomeAgentVoiceEnabled')
-            || trim($question)==='' || mb_strlen($question,'UTF-8')>500 || strlen($scopeJson)>32000)
+            || trim($question)==='' || mb_strlen($question,'UTF-8')>500 || strlen($scopeJson)>(32 * 1000))
             return '{"handled":false,"error":"house_query_not_available"}';
         try {
             $settings=$this->getObjectIDByIdentOrName($this->InstanceID,'iahSettings','Einstellungen');
