@@ -1569,4 +1569,6 @@ if(isset($_IPS)&&is_array($_IPS)&&array_key_exists('kiCatalogText',$_IPS)){
     $iahBridgeConfig=(string)($_IPS['kiCatalogConfigJson']??'{}');
     echo iah_rc_bridge_reply(static function () use ($iahBridgeText,$iahBridgeConfig): array {
         $cfg=json_decode($iahBridgeConfig,true);
-        return iah_rc_voice($iahBridg
+        return iah_rc_voice($iahBridgeText,is_array($cfg)?$cfg:[]);
+    });
+}
