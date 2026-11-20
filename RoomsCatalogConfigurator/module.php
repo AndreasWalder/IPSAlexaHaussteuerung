@@ -13,6 +13,7 @@ require_once __DIR__ . '/libs/DataSourceEditorTrait.php';
 require_once __DIR__ . '/libs/SystemTreeDiscovery.php';
 require_once __DIR__ . '/libs/SystemTreeEditorTrait.php';
 require_once __DIR__ . '/libs/HeatingSystemEditorTrait.php';
+require_once __DIR__ . '/libs/HomeConnectEditorTrait.php';
 require_once dirname(__DIR__) . '/IPSAlexaHaussteuerung/src/VoiceRuleLiteralReader.php';
 require_once __DIR__ . '/../IPSAlexaHaussteuerung/src/VoiceRulePreviewForm.php';
 
@@ -92,6 +93,7 @@ class RoomsCatalogConfigurator extends IPSModule
     use RCCDataSourceEditorTrait;
     use RCCSystemTreeEditorTrait;
     use RCCHeatingSystemEditorTrait;
+    use RCCHomeConnectEditorTrait;
     // V3.4.4: Typen, editierbare Eigenschaften und Rollen nur noch zentral
     // in libs/DeviceTypeRegistry.php pflegen, nicht in diesem Formular.
 
@@ -119,6 +121,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterPropertyInteger('DiscoveryAlexaInstanceId', 0);
         $this->RegisterPropertyInteger('HuaweiDataSourceInstanceId', 0);
         $this->RegisterPropertyInteger('SystemTreeRootId', 0);
+        $this->RegisterPropertyInteger('HomeConnectRootId', 0);
 
         $this->RegisterAttributeString('RuntimeEntries', '[]');
         $this->RegisterAttributeString('RuntimeEditHash', '');
@@ -6147,6 +6150,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $main[]=$this->buildVoiceTestPanel();
         $main[]=$this->buildSystemTreePanel();
         $main[]=$this->buildHeatingSystemPanel($editCatalog, $prodCatalog);
+        $main[]=$this->buildHomeConnectPanel();
         $huaweiId=$this->ReadPropertyInteger('HuaweiDataSourceInstanceId');
         $huaweiKey='huawei_'.$huaweiId;
         $huaweiEdit=$editCatalog['dataSources'][$huaweiKey]??null;

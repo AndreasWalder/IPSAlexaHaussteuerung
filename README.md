@@ -8,6 +8,47 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
 
 ## ✨ Features
 
+- **Home-Connect-Export und zentrale Echo-Remote-2-Ausgabe**
+  Im RoomsCatalogConfigurator unter **HOME CONNECT – Geräte als JSON exportieren**
+  die Hauptkategorie oder eine einzelne Home-Connect-Geräteinstanz wählen und
+  **Home-Connect-JSON erzeugen** anklicken. Der kopierbare Export gruppiert alle
+  gefundenen offiziellen Home-Connect-Geräte mit ihren Variablen, exakten aktuellen
+  Werten, Profil-Assoziationen, Aktionskennzeichen und Gerätetypen. Unbekannte
+  Variablen bleiben enthalten; Scan-Limits und Lesefehler werden ausgewiesen.
+  Zugangsdaten und vollständige Instanzkonfigurationen werden nicht exportiert.
+  Die Ausgabe benötigt keinen eingerichteten EDIT-Katalog und verändert keine Geräte.
+  Programmabhängige Optionen können erst nach einer Programmauswahl vorhanden sein.
+  Der Export bereitet die Zuordnung vor; Gerätebefehle und automatische
+  Fertig-/Alarmmeldungen sind damit noch nicht eingerichtet.
+
+  In **IPSAlexaHaussteuerung → ECHO REMOTE 2 – Zentrale Ansagen und Durchsagen**
+  die Ausgabe aktivieren und eine vorhandene **Echo-Remote-Geräteinstanz** wählen.
+  Für diese Instanz muss die Echo-Remote-Verbindung bereits funktionieren.
+  **Auf allen Geräten** ist vorausgewählt und verwendet die nativen Funktionen
+  `ECHOREMOTE_AnnouncementToAll` bzw. `ECHOREMOTE_TextToSpeechToAll` für das
+  verbundene Amazon-Konto. Nach Übernehmen der Einstellungen können die beiden
+  Testknöpfe verwendet werden. Bei ausgeschalteter Option wird nur das ausgewählte
+  Gerät angesprochen. Es sind keine offiziellen Home-Connect-Alexa-Skills nötig.
+  Die Ausgaben sind auch bei geschlossenem Custom Skill nutzbar.
+
+  Aus allen IP-Symcon-Skripten kann dieselbe konfigurierte Verbindung verwendet werden:
+
+  ```php
+  // $alexaInstanz: ID deiner IPSAlexaHaussteuerung, dynamisch ermittelt oder konfiguriert.
+  IAH_Announce($alexaInstanz, 'Die Wäsche ist fertig.', 0);
+  IAH_SpeakText($alexaInstanz, 'Die Bewässerung ist beendet.', 0);
+  // Optional gezielt auf einem Echo, unabhängig von der Alle-Geräte-Einstellung:
+  IAH_Announce($alexaInstanz, 'Hallo', $echoInstanz);
+  $status = json_decode(IAH_GetEchoRemoteStatus($alexaInstanz), true);
+  ```
+
+  Rückgabe `true` bedeutet, dass Echo Remote den Auftrag angenommen hat; sie
+  bestätigt keine tatsächliche Wiedergabe. Fehlende oder fremde Instanzen,
+  inaktive Verbindungen und abgelehnte Aufträge liefern `false`. Es werden nur
+  einfache Texte bis 1.000 Zeichen unterstützt. Der letzte Ergebniscode enthält
+  weder Nachrichtentext noch Anmeldeinformationen. Es werden keine Amazon-Zugangsdaten
+  in IPSAlexaHaussteuerung dupliziert.
+
 - **Letzte Alexa-Aktion (V3.8.4)**
   Unter **Diagnose** stehen der Name des anfragenden Echo in `alexa`,
   die erkannten Slots und die letzte Verarbeitung mit Antwort, Intent,

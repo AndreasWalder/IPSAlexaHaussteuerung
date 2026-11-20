@@ -21,6 +21,7 @@ require_once __DIR__ . '/src/LastAlexaInteractionTrait.php';
 require_once __DIR__ . '/src/AlexaIntentSyncTrait.php';
 require_once __DIR__ . '/src/SystemNavigationMigration.php';
 require_once __DIR__ . '/src/KICostTrait.php';
+require_once __DIR__ . '/src/EchoRemoteTrait.php';
 require_once __DIR__ . '/src/Router.php';
 require_once __DIR__ . '/src/Routes/RouteAll.php';
 require_once __DIR__ . '/src/Renderers/RenderMain.php';
@@ -41,6 +42,7 @@ class IPSAlexaHaussteuerung extends IPSModule
     use IAHVoiceRuleEditorTrait;
     use IAHLastAlexaInteractionTrait;
     use IAHAlexaIntentSyncTrait;
+    use IAHEchoRemoteTrait;
 
     /** @var bool */
     private $isApplyingChanges = false;
@@ -50,6 +52,10 @@ class IPSAlexaHaussteuerung extends IPSModule
         parent::Create();
 
         // Core settings
+        $this->RegisterPropertyBoolean('EchoRemoteEnabled', false);
+        $this->RegisterPropertyInteger('EchoRemoteDeviceId', 0);
+        $this->RegisterPropertyBoolean('EchoRemoteAllDevices', true);
+        $this->RegisterAttributeString('EchoRemoteLastResult', 'not_sent');
         $this->RegisterPropertyString('BaseUrl', '');
         $this->RegisterPropertyString('Source', '');
         $this->RegisterPropertyString('Token', '');
@@ -405,6 +411,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         // Navigation-Editor anzeigen; keine Einmal-Migrationsassistenten.
         $form['elements'][]=$this->buildSystemNavigationEditorForm();
         $form['elements'][]=$this->buildVoiceRuleEditorForm();
+        $form['elements'][]=$this->buildEchoRemotePanel();
         $form['actions'][]=$this->buildAlexaIntentSyncForm();
 
         return json_encode($form, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
