@@ -140,10 +140,11 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
   Der RoomsCatalog-Konfigurator kann einen ETS-Gruppenadress-XML-Export direkt
   auswählen und mit den KNX-Instanzen abgleichen. Geprüfte Gruppenadress-Namen lassen sich als
   Alexa-Synonyme nach EDIT übernehmen. Die Geräteinventur schlägt außerdem
-  Bodenfeuchtesensoren und Saug-/Mähroboter vor. Lesende Hausabfragen zeigen auf
-  Echo-Show-Geräten kompakte Statuskarten mit passenden Icons und den Messwerten
-  aus dem RoomsCatalog. Import und Gerätevorschläge ändern PROD nicht und
-  vergeben keine Alexa-Schaltfreigabe.
+  Bodenfeuchtesensoren und RoboHub-Roboter vor. Roboter können lesend für KI-
+  Hausabfragen aktiviert werden; eine Schreibfreigabe wird nicht erteilt. Nach
+  dem EDIT-Import zeigen Alexa-Show-Geräteseiten eigene Roboter-Tabs und lesende
+  Statusabfragen kompakte Karten mit Roboter-Icon. Import und Gerätevorschläge
+  ändern PROD nicht.
   [KNX-Abgleich einrichten](docs/KNX_Gruppenadressen_im_RoomsCatalog.md)
 
 - **Kompaktes Alexa-Protokoll und Ortsrückfrage (V3.8.15)**

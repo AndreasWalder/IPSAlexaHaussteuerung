@@ -401,6 +401,15 @@ function iah_rc_state(array $dev, bool $includeLastChange = false): array
                     break;
                 }
             }
+            if($dev['type']==='robot'&&$role==='status'&&is_numeric($raw)&&!is_bool($raw)){
+                $statusLabel=iah_ai_profile_label((int)$id,$raw)
+                    ??iah_ai_presentation_label((int)$id,$raw);
+                if($statusLabel!==null)$mapped=$statusLabel;
+            }
+            if($dev['type']==='robot'&&$role==='online'&&is_bool($raw))
+                $mapped=$raw?'online':'offline';
+            if($dev['type']==='robot'&&$role==='charging'&&is_bool($raw))
+                $mapped=$raw?'laedt':'laedt nicht';
             if (in_array($dev['type'],['window','door'],true) && in_array($role,['open','status'],true)
                 && !in_array($mapped,['offen','geschlossen'],true)) {
                 $hasMapping=array_key_exists('open',$dev['stateMapping'])
@@ -936,7 +945,7 @@ function iah_rc_house_status_display(array $result,array $filters=[]): array
         'alarm'=>'Alarm','rain'=>'Regen','online'=>'Verbindung','locked'=>'Schloss','armed'=>'Alarmanlage',
         'feedIn'=>'Einspeisung','selfConsumption'=>'Eigenverbrauch','chargePower'=>'Ladeleistung',
         'dischargePower'=>'Entladeleistung','volume'=>'Verbrauch','flowRate'=>'Durchfluss',
-        'charging'=>'Ladevorgang','position'=>'Position','brightness'=>'Helligkeit','status'=>'Status'];
+        'charging'=>'Ladevorgang','position'=>'Position','brightness'=>'Helligkeit','status'=>'Status','error'=>'Fehler'];
     $format=static function(mixed $value) use($units,$property):string{
         if(is_bool($value))$text=$value?'Ein':'Aus';
         elseif(is_int($value)||is_float($value)){

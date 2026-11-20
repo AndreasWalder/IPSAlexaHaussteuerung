@@ -2358,7 +2358,7 @@ class RoomsCatalogConfigurator extends IPSModule
             $entry = [
                 'selected'=>false,'roomKey'=>$roomKey,'roomLabel'=>(string)($rooms[$roomKey]['display'] ?? $roomKey),
                 'floor'=>(string)($rooms[$roomKey]['floor'] ?? ''),'domain'=>$domain,'group'=>$group,'key'=>$key,
-                'title'=>$title,'kiEnabled'=>false,'kiReadOnly'=>true,'aiType'=>$type,
+                'title'=>$title,'kiEnabled'=>$type==='robot','kiReadOnly'=>true,'aiType'=>$type,
                 'discoverySourceId'=>$sourceId,'discoverySourceType'=>(string)($candidate['sourceType'] ?? 'instance')
             ];
             $used = [];

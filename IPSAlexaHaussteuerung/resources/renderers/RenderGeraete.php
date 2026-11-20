@@ -1002,6 +1002,8 @@ function gr_collectRoomDeviceTabs(
                 $addTab($tabs, gr_normalize_tab_def((string)$title, $def));
             }
         }
+        foreach(gr_robot_instance_tabs((array)($global['domains'][$domainKey]??[])) as $robotTab)
+            $addTab($tabs,$robotTab);
 
         $domains = $global['domains'] ?? [];
         if (is_array($domains)) {
@@ -1037,6 +1039,8 @@ function gr_collectRoomDeviceTabs(
                 $addTab($tabs, gr_normalize_tab_def((string)$title, $def));
             }
         }
+        foreach(gr_robot_instance_tabs((array)($room['domains'][$domainKey]??[])) as $robotTab)
+            $addTab($tabs,$robotTab);
 
         $domains = $room['domains'] ?? [];
         if (is_array($domains)) {
@@ -1063,6 +1067,24 @@ function gr_collectRoomDeviceTabs(
         return strcasecmp((string)$a['title'], (string)$b['title']);
     });
 
+    return $tabs;
+}
+
+/** Expose reviewed RoboHub catalog entries as tabs on the existing device page. */
+function gr_robot_instance_tabs(array $domain): array
+{
+    $tabs=[];
+    foreach($domain as $group=>$entries){
+        if($group==='tabs'||!is_array($entries))continue;
+        foreach($entries as $key=>$entry){
+            if(!is_array($entry)||($entry['ai']['type']??'')!=='robot')continue;
+            $instanceId=(int)($entry['ai']['source']['instanceId']??0);
+            if($instanceId<=0||!function_exists('IPS_ObjectExists')||!IPS_ObjectExists($instanceId))continue;
+            $title=trim((string)($entry['title']??$entry['name']??$key));
+            if($title==='')$title='Roboter';
+            $tabs[]=['id'=>(string)$instanceId,'title'=>mb_substr($title,0,80)];
+        }
+    }
     return $tabs;
 }
 

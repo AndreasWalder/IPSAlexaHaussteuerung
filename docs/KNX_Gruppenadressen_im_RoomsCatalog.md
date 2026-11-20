@@ -28,13 +28,20 @@ IP-Symcon-Geräteinventur mit Typ, Raum und Variablen nach EDIT übernommen werd
 ## Erkannte Gerätetypen
 
 Die automatische Geräteinventur enthält zusätzlich Vorschläge für Bodenfeuchtesensoren
-und Saug-/Mähroboter. Beide werden zunächst nur lesend und mit ausgeschalteter
-KI-Schaltfreigabe in EDIT angelegt. Bodenfeuchte und Roboterstatus können danach
-über die normalen RoomsCatalog-Hausfragen abgefragt werden.
+und RoboHub-Roboter. RoboHub-Roboter werden in EDIT für lesende KI-Abfragen aktiviert;
+eine KI-Schreibfreigabe wird nicht angelegt. Status, Akku, Ladevorgang, Erreichbarkeit
+und Fehler werden den RoboHub-Variablen zugeordnet. Die Roboter erscheinen nach dem
+EDIT-Import als eigene Tabs in der Alexa-Show-Geräteseite und können über normale
+RoomsCatalog-Hausfragen abgefragt werden.
+
+Für die dauerhaft sichtbare native RoboHub-Kachel kann die RoboHub-Geräteinstanz direkt
+auf einem Symcon-Kachel-Dashboard platziert werden. Die Optionen **Live-Karte** und
+**Karte anzeigen** steuert das RoboHub-Modul selbst.
 
 ## Alexa Show
 
 Erfolgreiche lesende `query_house`-Abfragen können auf Geräten mit Bildschirm eine
-kompakte Statuskarte mit typabhängigem Vektor-Icon zeigen. Werte kommen aus derselben
-RoomsCatalog-Abfrage wie die Sprachantwort. Rückfragen und Schreibaktionen erzeugen
-keine Statuskarte.
+kompakte Statuskarte mit typabhängigem Vektor-Icon zeigen. RoboHub-Statuswerte werden
+mit ihren Symcon-Präsentationsbezeichnungen statt als rohe Enum-Zahlen ausgegeben.
+Werte kommen aus derselben RoomsCatalog-Abfrage wie die Sprachantwort. Rückfragen und
+Schreibaktionen erzeugen keine Statuskarte.

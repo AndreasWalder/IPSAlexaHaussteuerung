@@ -35,7 +35,7 @@ final class RCCDeviceTypeRegistry
             'water_leak'   => ['label'=>'Wassermelder','roles'=>['waterLeak','alarm','status'],'required'=>[['waterLeak','alarm','status']],'location'=>['sicherheit','wasser']],
             'weather'      => ['label'=>'Wetterstation','roles'=>['temperature','humidity','windSpeed','rain','illuminance'],'required'=>[['temperature','windSpeed','rain','illuminance']],'location'=>['information','wetter']],
             'soil_moisture'=>['label'=>'Bodenfeuchtesensor','roles'=>['soilMoisture','batteryLevel','status'],'required'=>[['soilMoisture']],'location'=>['garten','bodenfeuchte']],
-            'robot'        => ['label'=>'Saug-/Mähroboter','roles'=>['status','batteryLevel','charging','online','energy'],'required'=>[['status']],'location'=>['geraete','roboter']],
+            'robot'        => ['label'=>'RoboHub-Roboter','roles'=>['status','batteryLevel','charging','online','error','energy'],'required'=>[['status']],'location'=>['devices','roboter']],
             'camera'       => ['label'=>'Kamera','roles'=>['online','motion','status'],'required'=>[['online','status','motion']],'location'=>['sicherheit','kameras']],
             'irrigation'   => ['label'=>'Bewaesserung','roles'=>['power','status','control'],'required'=>[['power','status']],'location'=>['bewaesserung','ventile']],
             'lock'         => ['label'=>'Tuerschloss','roles'=>['locked','batteryLevel','status'],'required'=>[['locked','status']],'location'=>['sicherheit','schloesser']],
@@ -76,7 +76,7 @@ final class RCCDeviceTypeRegistry
             'open'=>'aiOpenId','powerWatts'=>'aiWattsId','energy'=>'aiEnergyId',
             'motion'=>'aiMotionId','illuminance'=>'aiIlluminanceId',
             'status'=>'aiStatusId','action'=>'aiActionId',
-            'humidity'=>'aiHumidityId','alarm'=>'aiAlarmId','batteryLevel'=>'aiBatteryLevelId',
+            'humidity'=>'aiHumidityId','alarm'=>'aiAlarmId','batteryLevel'=>'aiBatteryLevelId','error'=>'aiErrorId',
             'soilMoisture'=>'aiSoilMoistureId',
             'waterLeak'=>'aiWaterLeakId','windSpeed'=>'aiWindSpeedId','rain'=>'aiRainId',
             'online'=>'aiOnlineId','locked'=>'aiLockedId','armed'=>'aiArmedId',
@@ -101,7 +101,7 @@ final class RCCDeviceTypeRegistry
             'targetTemperature'=>'Solltemperatur','open'=>'Fenster-/Tuerstatus',
             'powerWatts'=>'Leistung (W)','energy'=>'Verbrauch / Energie (kWh)',
             'motion'=>'Bewegung','illuminance'=>'Beleuchtungsstaerke (Lux)',
-            'status'=>'Geraetestatus','action'=>'Aktion (z.B. Auf/Ab/Stop)',
+            'status'=>'Geraetestatus','action'=>'Aktion (z.B. Auf/Ab/Stop)','error'=>'Fehlertext',
             'humidity'=>'Luftfeuchtigkeit (%)','alarm'=>'Alarm aktiv',
             'soilMoisture'=>'Bodenfeuchte (%)',
             'batteryLevel'=>'Batteriestand (%)','waterLeak'=>'Wasser erkannt',
@@ -132,7 +132,7 @@ final class RCCDeviceTypeRegistry
             'water_leak'=>['wassermelder','wasserleck','leakdetector','waterleak'],
             'weather'=>['wetterstation','weatherstation','wetterdaten'],
             'soil_moisture'=>['bodenfeuchte','bodenfeuchtesensor','soilmoisture','soilhumidity','feuchtesensor'],
-            'robot'=>['robohub','saugroboter','maehroboter','rasenroboter','mower','vacuum'],
+            'robot'=>['robohubgeraet','robohub','saugroboter','maehroboter','rasenroboter','mower','vacuum'],
             'camera'=>['kamera','camera','videoueberwachung'],
             'irrigation'=>['bewaesserung','bewasserung','sprinkler','bewasserungsventil'],
             'lock'=>['tuerschloss','doorlock','smartlock'],
@@ -167,16 +167,16 @@ final class RCCDeviceTypeRegistry
             'energy'=>['energie','energieverbrauch','zaehlerstand','energy','consumption','kwh'],
             'motion'=>['bewegung','bewegungsmelder','motion'],
             'illuminance'=>['lux','helligkeit','beleuchtungsstaerke','illuminance'],
-            'status'=>['status','devicestatus','geraetestatus','rollladenstatus','shutterstatus','blindenstatus'],
+            'status'=>['status','devicestatus','geraetestatus','zustand','rollladenstatus','shutterstatus','blindenstatus'],
             'action'=>['aktion','fahrbefehl','fahraktion','action','direction','fahrtrichtung','befehl'],
             'humidity'=>['luftfeuchtigkeit','humidity','relativehumidity'],
             'soilMoisture'=>['bodenfeuchte','soilmoisture','soilhumidity','soilwatercontent'],
             'alarm'=>['alarm','alarmstatus','alarmstate','rauchalarm'],
-            'batteryLevel'=>['batteriestand','batterielevel','batterie','batterylevel','batterypercent','soc'],
+            'batteryLevel'=>['batteriestand','batterielevel','batterie','batterylevel','batterypercent','soc','akku'],
             'waterLeak'=>['wasseralarm','waterleak','wassererkannt','leakdetected','leak'],
             'windSpeed'=>['windgeschwindigkeit','windspeed','windvelocity'],
             'rain'=>['regen','rain','raining','regenstatus'],
-            'online'=>['online','is online','onlinestatus','erreichbarkeit','reachable','verbindung'],
+            'online'=>['online','is online','onlinestatus','erreichbarkeit','erreichbar','reachable','verbindung'],
             'locked'=>['verriegelt','locked','lockstate','schlossstatus'],
             'armed'=>['scharfgeschaltet','armed','alarmarmed','scharfstatus'],
             'feedIn'=>['einspeisung','feedin','gridfeedin'],
@@ -185,7 +185,8 @@ final class RCCDeviceTypeRegistry
             'dischargePower'=>['entladeleistung','dischargepower'],
             'volume'=>['wasserzaehlerstand','wassermenge','volume','verbrauchm3'],
             'flowRate'=>['durchfluss','flowrate','durchflussmenge'],
-            'charging'=>['ladenaktiv','charging','ladevorgang'],
+            'charging'=>['ladenaktiv','charging','ladevorgang','laedt'],
+            'error'=>['fehler','error','fault'],
         ];
     }
     /** IP-Symcon-Datentypen: 0=Bool, 1=Integer, 2=Float, 3=String. */
@@ -203,7 +204,7 @@ final class RCCDeviceTypeRegistry
             'online'=>[0,1],'locked'=>[0,1],'armed'=>[0,1],
             'feedIn'=>[1,2],'selfConsumption'=>[1,2],
             'chargePower'=>[1,2],'dischargePower'=>[1,2],
-            'volume'=>[1,2],'flowRate'=>[1,2],'charging'=>[0,1]
+            'volume'=>[1,2],'flowRate'=>[1,2],'charging'=>[0,1],'error'=>[3]
         ];
     }
 }

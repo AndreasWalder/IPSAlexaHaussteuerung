@@ -109,6 +109,30 @@ function iah_ai_profile_label(int $variableId,mixed $value): ?string
     return null;
 }
 
+/** Read a label from a numeric custom presentation, such as RoboHub status. */
+function iah_ai_presentation_label(int $variableId,mixed $value): ?string
+{
+    if($variableId<=0||!is_numeric($value)||is_bool($value)
+        ||!function_exists('IPS_GetVariablePresentation'))return null;
+    try{
+        $presentation=IPS_GetVariablePresentation($variableId);
+        $intervals=$presentation['INTERVALS']??[];
+        if(is_string($intervals))$intervals=json_decode($intervals,true);
+        if(!is_array($intervals))return null;
+        $number=(float)$value;
+        foreach($intervals as $interval){
+            if(!is_array($interval))continue;
+            $min=$interval['IntervalMinValue']??null;
+            $max=$interval['IntervalMaxValue']??null;
+            if(!is_numeric($min)||!is_numeric($max)||(float)$min>$number||(float)$max<$number)continue;
+            if(empty($interval['ConstantActive']))return null;
+            $label=trim((string)($interval['ConstantValue']??''));
+            return $label!==''?mb_substr(strip_tags($label),0,80):null;
+        }
+    }catch(Throwable $ignored){}
+    return null;
+}
+
 /** Nur explizite Endlagen-/Status-Rueckmeldungen koennen offen/zu bestaetigen. */
 function iah_ai_closure_label(string $label): ?string
 {
