@@ -1089,10 +1089,11 @@ trait IAHVoiceRuleEditorTrait
                 $catalogId=$settings>0?$this->getObjectIDByIdentOrName($settings,'roomsCatalog','RoomsCatalog'):0;
                 $catalog=IAHVoiceRuleLiteralReader::read($this->getScriptContent($catalogId));
                 $entry=$key!==''?($this->houseQuestionContexts()[$key]??[]):[];
-                if ($this->pendingHouseLocationScope($spoken,$catalog??[],$entry)!==null)
+                if ($this->pendingHouseDevicePlan($spoken,$entry)!==null
+                    || $this->pendingHouseLocationScope($spoken,$catalog??[],$entry)!==null)
                     return self::encodeAlexaVoiceTest(array_replace($result,
                         $this->previewAlexaHouseQuestion($spoken,$catalog,$key)));
-                if ((int)($entry['awaitingLocationUntil']??0)>time())
+                if ((int)($entry['awaitingLocationUntil']??0)>time() || (int)($entry['awaitingDeviceUntil']??0)>time())
                     $this->updateHouseQuestionContext($key,null);
                 // The existing rule tester preserves exact alias priority and
                 // the live allowlist for optional semantic FAQ recognition.
@@ -1214,7 +1215,7 @@ trait IAHVoiceRuleEditorTrait
         if($catalog===null)
             return $result+['error'=>'RoomsCatalog PROD ist kein lesbares statisches PHP-Array.'];
         if(isset($plan['answer']))return array_replace($result, array_intersect_key(
-            $plan, array_flip(['answer','answerSource','awaitingLocation','reason'])) + ['ok'=>true]);
+            $plan, array_flip(['answer','answerSource','awaitingLocation','awaitingDevice','deviceChoices','reason'])) + ['ok'=>true]);
         $spoken=$plan['question'];
         $scope=$plan['scope']??null;
         require_once __DIR__.'/../resources/helpers/KIHouseController.php';
@@ -1223,6 +1224,10 @@ trait IAHVoiceRuleEditorTrait
         $result['readQueries']=$query['readQueries']??[];
         if(isset($query['answerSource']))$result['answerSource']=$query['answerSource'];
         if(!empty($query['awaitingLocation']))$result['awaitingLocation']=true;
+        if(!empty($query['awaitingDevice'])) {
+            $result['awaitingDevice']=true;
+            $result['deviceChoices']=$query['deviceChoices'];
+        }
         $result['ok']=!empty($query['handled'])&&trim((string)($query['answer']??''))!=='';
         if($scope!==null)$result['questionScope']=$scope;
         if($result['ok']){
@@ -1359,10 +1364,29 @@ trait IAHVoiceRuleEditorTrait
         return IAHHouseQuestionContext::scope((string)$target,$catalog);
     }
 
+    private function pendingHouseDevicePlan(string $spoken,array $entry): ?array
+    {
+        if ((int)($entry['awaitingDeviceUntil']??0)<=time() || empty($entry['question'])) return null;
+        if (!class_exists('IAHHomeConnect',false)) require_once __DIR__.'/../resources/helpers/HomeConnect.php';
+        $choices=(array)($entry['deviceChoices']??[]);
+        $id=IAHHomeConnect::choiceReply($spoken,$choices);
+        if ($id===null) return null;
+        if ($id===0) return IAHHomeConnect::clarification($choices)+['reason'=>'unclear_household_selection'];
+        $choice=array_values(array_filter($choices,static fn($d):bool=>(int)$d['id']===$id))[0];
+        return ['question'=>$entry['question'],
+            'scope'=>['type'=>'household_device','name'=>$choice['name'],'deviceId'=>$id]];
+    }
+
     private function planHouseQuestion(string $spoken,array $catalog,string $key,bool $resolveInitial=true,
         bool $dedicatedFollowup=false): array
     {
         if (!class_exists('IAHHomeConnect', false)) require_once __DIR__.'/../resources/helpers/HomeConnect.php';
+        $entry=$key!==''?($this->houseQuestionContexts()[$key]??[]):[];
+        $devicePlan=$this->pendingHouseDevicePlan($spoken,$entry);
+        if ($devicePlan!==null) {
+            if (isset($devicePlan['question'])) $this->updateHouseQuestionContext($key,null);
+            return $devicePlan;
+        }
         if (IAHHomeConnect::recognizes($spoken)) {
             $this->updateHouseQuestionContext($key,null);
             return ['question'=>preg_replace('/^\s*und\s+/ui','',$spoken) ?? $spoken];
@@ -1435,12 +1459,22 @@ trait IAHVoiceRuleEditorTrait
     private function rememberHouseQuestion(string $key,array $plan,array $result): void
     {
         $awaiting=!empty($result['awaitingLocation']);
-        if(($awaiting||!empty($result['contextEligible']))&&is_string($plan['question']??null)
+        $choices=[];
+        if (!empty($result['awaitingDevice'])) {
+            foreach (array_slice((array)($result['deviceChoices']??[]),0,10) as $choice) {
+                if (!is_array($choice)||(int)($choice['id']??0)<=0||!is_string($choice['name']??null)) continue;
+                $choices[]=['id'=>(int)$choice['id'],'name'=>mb_substr($choice['name'],0,120),
+                    'aliases'=>array_slice(array_values(array_filter((array)($choice['aliases']??[]),'is_string')),0,30)];
+            }
+        }
+        $awaitingDevice=count($choices)>1;
+        if(($awaiting||$awaitingDevice||!empty($result['contextEligible']))&&is_string($plan['question']??null)
             && trim($plan['question'])!=='')
             $this->updateHouseQuestionContext($key,[
                 'question'=>mb_substr($plan['question'],0,500,'UTF-8'),
                 'awaitingLocationUntil'=>$awaiting?time()+90:0,
-                'expires'=>time()+($awaiting?90:600),
+                'awaitingDeviceUntil'=>$awaitingDevice?time()+90:0,'deviceChoices'=>$choices,
+                'expires'=>time()+($awaiting||$awaitingDevice?90:600),
             ]);
     }
 
@@ -1460,26 +1494,29 @@ trait IAHVoiceRuleEditorTrait
         return self::encodeAlexaVoiceTest($plan);
     }
 
-    /** Only a recognized location answering a pending prompt may bypass normal routing. */
+    /** Only a location or appliance selection answering a pending prompt may bypass normal routing. */
     public function IsAlexaHouseLocationReply(string $sessionId,string $deviceId,string $spoken,int $catalogId): bool
     {
         $key=$this->alexaHouseQuestionKey($sessionId,$deviceId);
         if ($key==='' || $deviceId==='') return false;
         $entry=$this->houseQuestionContexts()[$key]??[];
-        if ((int)($entry['awaitingLocationUntil']??0)<=time()) return false;
+        if ((int)($entry['awaitingLocationUntil']??0)<=time() && (int)($entry['awaitingDeviceUntil']??0)<=time()) return false;
+        if ($this->pendingHouseDevicePlan($spoken,$entry)!==null) return true;
         $catalog=IAHVoiceRuleLiteralReader::read($this->getScriptContent($catalogId))??[];
         if ($this->pendingHouseLocationScope($spoken,$catalog,$entry)!==null
-            || IAHHouseQuestionContext::isLocationFollowUp($spoken)) return true;
+            || ((int)($entry['awaitingLocationUntil']??0)>time() && IAHHouseQuestionContext::isLocationFollowUp($spoken))) return true;
         // A different command, navigation request, or full question ends the pending prompt.
         if (trim($spoken)!=='')$this->updateHouseQuestionContext($key,null);
         return false;
     }
 
     public function RememberAlexaHouseQuestion(string $sessionId,string $deviceId,string $question,
-        bool $awaitingLocation=false): void
+        bool $awaitingLocation=false,string $deviceChoicesJson=''): void
     {
+        $choices=strlen($deviceChoicesJson)<=12*1000?json_decode($deviceChoicesJson,true):null;
         $this->rememberHouseQuestion($this->alexaHouseQuestionKey($sessionId,$deviceId),
-            ['question'=>$question],['contextEligible'=>true,'awaitingLocation'=>$awaitingLocation]);
+            ['question'=>$question],['contextEligible'=>true,'awaitingLocation'=>$awaitingLocation,
+                'awaitingDevice'=>is_array($choices)&&count($choices)>1,'deviceChoices'=>$choices??[]]);
     }
 
     public function ResetAlexaHouseQuestion(string $sessionId,string $deviceId): void

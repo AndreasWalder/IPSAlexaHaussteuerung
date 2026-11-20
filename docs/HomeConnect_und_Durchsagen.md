@@ -62,6 +62,22 @@ Die vorhandenen Hausfragen-Intents und das Freitextfeld werden verwendet. Bei Be
 mit „Frage …“ beginnen, wenn Alexa einen Satz keinem Frage-Intent zuordnet. Die
 Textvorschau **Sprachbefehl testen** nutzt dieselben Fakten und schaltet keine Geräte.
 
+Zusammen- und Getrenntschreibung sowie Micro/Mikro werden bei Gerätenamen gleich
+behandelt, zum Beispiel „Mikrobackofen“, „Micro-Backofen“ und „Mikro Backofen“.
+Wenn „Backofen“ auf mehrere freigegebene Geräte passt, nennt und zeigt Alexa eine
+nummerierte Auswahl. Darauf funktionieren „erste“, „das erste“, „Nummer zwei“,
+„zweiter“ oder der konkrete Gerätename. Auch als „1. das“ bzw. „2. das“ übertragene
+Antworten werden zugeordnet. Die Reihenfolge stammt aus der gerade gestellten
+Rückfrage und ist nicht dauerhaft an bestimmte Geräte gebunden.
+
+Die Auswahl gilt 90 Sekunden und ausschließlich für dieselbe Echo-Sitzung. Sie
+beantwortet die ursprüngliche Frage mit frischen Werten des ausgewählten Geräts;
+zwischenzeitlich entzogene Freigaben werden berücksichtigt. Eine neue Frage,
+Navigation oder ein neuer Befehl beendet die Auswahl. Eine ungültige Nummer
+wiederholt die Auswahl. Ein zuvor mehrdeutiger Schaltbefehl wird durch diese
+Antwort nicht ausgeführt und muss anschließend vollständig und eindeutig genannt
+werden. Die Textvorschau verwendet dieselbe Auswahl- und Kontextlogik.
+
 Es gibt eigene Vektorsymbole für Waschen/Trocknen, Geschirrspüler, Kaffee, Backofen, Mikrowelle,
 Kochfeld und die Übersicht. Die Statuszeilen passen sich an die Bildschirmgröße an
 und sind bei langen Detailansichten scrollbar. Die Symbole brauchen keine

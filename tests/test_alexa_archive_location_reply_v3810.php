@@ -69,7 +69,7 @@ ck38($bad('Und welche Fenster sind offen?')['question']==='welche Fenster sind o
 $action=file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/resources/action_entry.php');
 ck38(strpos($action,'IAH_IsAlexaHouseLocationReply(')<strpos($action,'if (!$iahPendingHouseLocation &&')
     && str_contains($action,"'reason'=>'pending_house_location'")
-    && str_contains($action,"\$iahAwaitingLocation ? 'Rückfrage' : 'Beantwortet'"),
+    && str_contains($action,"\$iahAwaitingLocation || \$iahAwaitingDevice ? 'Rückfrage' : 'Beantwortet'"),
     'live Action prioritizes the read-only reply before voice rules and legacy navigation');
 
 echo "PASS V3.8.10: pending archive room replies stay in their own Alexa session and never run a scene\n";

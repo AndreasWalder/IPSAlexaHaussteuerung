@@ -15,7 +15,7 @@ final class IAHHomeConnect
     public static function recognizes(string $text): bool
     {
         return preg_match('/\b(?:home connect|hausgeraet\w*|haushaltsgeraet\w*|waschmaschine\w*|waschtrockner\w*|waesche|geschirrspuel\w*|spuelmaschine|'
-            . 'kaffee\w*|mikrowelle|mikro backofen|micro backofen|backofen|dampfbackofen|dampf backofen|dampfgarer|kochfeld)\b/', self::norm($text)) === 1;
+            . 'kaffee\w*|mikrowelle|mi[ck]ro ?back ?ofen|back ?ofen|dampf ?back ?ofen|dampfgarer|kochfeld)\b/', self::norm($text)) === 1;
     }
 
     public static function validDevice(int $id): bool
@@ -176,12 +176,17 @@ final class IAHHomeConnect
 
     public static function select(array $devices, string $q): array
     {
+        $q = self::nameForm($q);
         $matches = []; $best = 0;
         foreach ($devices as $d) {
             $score = 0;
-            foreach ((array)$d['aliases'] as $alias) {
-                $alias = self::norm((string)$alias);
-                if ($alias !== '' && preg_match('/\b' . preg_quote($alias, '/') . '\b/', $q)) $score = max($score, strlen($alias));
+            foreach (array_merge([$d['name']], (array)$d['aliases']) as $alias) {
+                $alias = self::nameForm((string)$alias);
+                $compact = str_replace(' ', '', $alias);
+                if ($compact === '') continue;
+                // ASR may join or split compound names, including Micro/Mikro.
+                $pattern = implode(' *', str_split($compact));
+                if (preg_match('/\b' . $pattern . '\b/', $q)) $score = max($score, strlen($compact));
             }
             if ($score > $best) { $best = $score; $matches = [$d]; }
             elseif ($score > 0 && $score === $best) $matches[] = $d;
@@ -190,8 +195,8 @@ final class IAHHomeConnect
         // Conservative spelling tolerance for questions only. Control needs an exact name.
         $words = explode(' ', $q);
         foreach ($devices as $d) {
-            foreach ((array)$d['aliases'] as $alias) {
-                $alias = self::norm((string)$alias);
+            foreach (array_merge([$d['name']], (array)$d['aliases']) as $alias) {
+                $alias = self::nameForm((string)$alias);
                 if (strlen($alias) < 7 || strlen($alias) > 60) continue;
                 $n = count(explode(' ', $alias));
                 for ($i=0; $i <= count($words)-$n; $i++) {
@@ -204,6 +209,53 @@ final class IAHHomeConnect
         return array_values($matches);
     }
 
+    private static function nameForm(string $text): string
+    {
+        return preg_replace('/\bmicro/', 'mikro', self::norm($text)) ?? '';
+    }
+
+    /** Stable numbered choices are carried as data, never parsed from spoken answers. */
+    public static function clarification(array $devices): array
+    {
+        $choices = []; $rows = []; $parts = [];
+        foreach (array_slice(array_values($devices), 0, 10) as $i=>$d) {
+            $choices[] = ['id'=>(int)$d['id'], 'name'=>(string)$d['name'], 'aliases'=>(array)$d['aliases']];
+            $rows[] = ['label'=>'Nummer ' . ($i+1), 'value'=>$d['name']];
+            $parts[] = ($i+1) . ': ' . $d['name'];
+        }
+        return self::response('Hausgeräteauswahl', 'all', $rows,
+            'Welches Gerät meinst du? ' . implode('. ', $parts) . '. Sage zum Beispiel das erste oder den Gerätenamen.')
+            + ['awaitingDevice'=>true, 'deviceChoices'=>$choices];
+    }
+
+    /** null means another topic; zero means a selection reply needing clarification. */
+    public static function choiceReply(string $spoken, array $choices): ?int
+    {
+        $q = self::norm($spoken);
+        if (preg_match('/^(?:(?:bitte|nummer|das|der|die|den|dem|geraet|backofen) )*(\d+|eins|ein[se]?|zwei|drei|vier|fuenf|sechs|sieben|acht|neun|zehn|erste[rsnm]?|zweite[rsnm]?|dritte[rsnm]?|vierte[rsnm]?|fuenfte[rsnm]?|sechste[rsnm]?|siebte[rsnm]?|achte[rsnm]?|neunte[rsnm]?|zehnte[rsnm]?)(?: (?:bitte|das|der|die|den|dem|geraet|backofen))*$/D', $q, $m)) {
+            $numbers = ['eins','zwei','drei','vier','fuenf','sechs','sieben','acht','neun','zehn'];
+            $stems = ['erst','zweit','dritt','viert','fuenft','sechst','siebt','acht','neunt','zehnt'];
+            $index = ctype_digit($m[1]) ? (int)$m[1] : (in_array($m[1],['ein','eine'],true)?1:0);
+            foreach ($numbers as $i=>$word) {
+                if ($m[1] === $word || str_starts_with($m[1], $stems[$i])) { $index=$i+1; break; }
+            }
+            return (int)($choices[$index-1]['id']??0);
+        }
+        if ($q === '' || strlen($q)>120 || preg_match('/\b(?:wie|was|wann|wo|welche\w*|ist|sind|schalte|starte|stoppe|stelle|oeffne|schliesse|zurueck|ende|abbrechen|einschalten|ausschalten|starten|stoppen|ein|aus)\b/', $q)) return null;
+        $selected = self::select($choices, $q);
+        $bare = preg_replace('/^(?:(?:bitte|und|das|der|die|den|dem|mein|meine|meinen|meinem|meiner) )+/', '', $q) ?? $q;
+        $bare = preg_replace('/ bitte$/D', '', $bare) ?? $bare;
+        $bare = str_replace(' ', '', self::nameForm($bare));
+        foreach ($selected as $d) {
+            foreach (array_merge([$d['name']], (array)$d['aliases']) as $alias) {
+                $alias = str_replace(' ', '', self::nameForm((string)$alias));
+                if ($alias === $bare || (strlen($alias)>=7 && levenshtein($alias,$bare)<=1))
+                    return count($selected)===1 ? (int)$selected[0]['id'] : 0;
+            }
+        }
+        return null;
+    }
+
     private static function response(string $title, string $kind, array $rows, ?string $answer = null): array
     {
         return ['handled'=>true, 'localHouseQuery'=>true, 'answerSource'=>'home_connect_' . $kind,
@@ -211,11 +263,16 @@ final class IAHHomeConnect
             'answer'=>$answer ?? $title . ': ' . implode('. ', array_map(static fn(array $r): string => $r['label'] . ' ' . $r['value'], array_slice($rows, 0, 4))) . '.'];
     }
 
-    public static function query(array $catalog, string $text, bool $allowWrites = false): ?array
+    public static function query(array $catalog, string $text, bool $allowWrites = false, int $selectedId = 0): ?array
     {
         $q = self::norm($text);
         $devices = self::devices($catalog);
         $selected = self::select($devices, $q);
+        if ($selectedId > 0) {
+            $selected = array_values(array_filter($devices, static fn($d):bool=>(int)$d['id']===$selectedId));
+            $allowWrites = false;
+            if ($selected === []) return self::response('Hausgeräte', 'all', [], 'Das ausgewählte Hausgerät ist nicht mehr für Alexa verfügbar.');
+        }
         if ($selected === [] && !self::recognizes($q)) return null;
         if ($devices === []) return self::response('Haushaltsgeräte', 'all', [], 'Es sind keine Home-Connect-Geräte für Alexa freigegeben.');
         if ($selected === []) {
@@ -229,7 +286,7 @@ final class IAHHomeConnect
             }
             return self::response('Haushaltsgeräte', 'all', [], 'Welches Gerät meinst du? ' . implode(', ', array_column($devices, 'name')) . '.');
         }
-        if (count($selected) > 1) return self::response('Haushaltsgeräte', 'all', [], 'Meinst du ' . implode(' oder ', array_column($selected, 'name')) . '?');
+        if (count($selected) > 1) return self::clarification($selected);
         $d = $selected[0]; $v = self::forDevice($d);
         $kind = match ($d['type']) { 'Washer','WasherDryer','Dryer'=>'laundry', 'Dishwasher'=>'dishwasher', 'CoffeeMaker'=>'coffee', 'Hob'=>'hob', 'Oven','Microwave'=>'oven', default=>'all' };
         if ($d['type'] === 'Microwave' || ($d['type'] === 'Oven' && preg_match('/micro|mikro|mikrowelle/i',$d['name']))) $kind='microwave';

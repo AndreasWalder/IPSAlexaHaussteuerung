@@ -63,7 +63,7 @@ final class IAHHouseholdDevices
         return ['provider'=>'HomeConnect','domain'=>'hausgeraete','kiEnabled'=>!empty($source['kiEnabled']),'devices'=>$devices];
     }
 
-    public static function query(array $catalog,string $text,bool $allowWrites=false): ?array
+    public static function query(array $catalog,string $text,bool $allowWrites=false,int $selectedId=0): ?array
     {
         $source=self::source($catalog);
         if ($source===null) return null;
@@ -73,17 +73,22 @@ final class IAHHouseholdDevices
             if (!empty($source['kiEnabled'])&&!empty($d['enabled'])) $all[]=$d;
         }
         $selected=IAHHomeConnect::select($all,$q);
+        if ($selectedId>0) {
+            $selected=array_values(array_filter($all,static fn($d):bool=>(int)$d['id']===$selectedId));
+            $allowWrites=false;
+            if ($selected===[]) return self::reply('Hausgeräte',[],'Das ausgewählte Hausgerät ist nicht mehr für Alexa verfügbar.');
+        }
         if ($selected===[]&&IAHHomeConnect::select(array_values((array)($source['devices']??[])),$q)!==[]) {
             return self::reply('Hausgeräte',[],'Dieses Hausgerät ist im veröffentlichten RoomsCatalog für Alexa gesperrt.');
         }
         $overview=preg_match('/\b(?:hausgeraet\w*|haushaltsgeraet\w*)\b/',$q)===1;
         if ($selected===[]&&!$overview) return null;
-        if (count($selected)>1) return self::reply('Hausgeräte',[], 'Meinst du '.implode(' oder ',array_column($selected,'name')).'?');
+        if (count($selected)>1) return IAHHomeConnect::clarification($selected);
         if ($selected!==[]) {
             $d=$selected[0];
             if (($d['provider']??'')==='HomeConnect') {
                 $single=$source; $single['devices']=[$d];
-                return IAHHomeConnect::query(['dataSources'=>['home_connect'=>self::homeSource($single)]],$text,$allowWrites);
+                return IAHHomeConnect::query(['dataSources'=>['home_connect'=>self::homeSource($single)]],$text,$allowWrites,$selectedId);
             }
             $rows=[]; $command=preg_match('/^(?:bitte )?(?:schalte|stelle|setze|starte|stoppe|pausiere)\b/',$q)===1;
             if ($command) {

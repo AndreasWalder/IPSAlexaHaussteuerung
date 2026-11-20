@@ -2479,6 +2479,11 @@ function Execute($request = null)
                     ->SetRepromptPlainText('Was möchtest du wissen?');
             }
         }
+        if (!empty($iahOwnCommandIntent) && $iahHouseSessionId !== ''
+            && function_exists('IAH_ResetAlexaHouseQuestion')) {
+            try { IAH_ResetAlexaHouseQuestion($instanceId,$iahHouseSessionId,$iahVoiceDeviceId); }
+            catch (Throwable $ignored) {}
+        }
         $iahPendingHouseLocation = false;
         if (empty($iahOwnCommandIntent) && !$IS_LAUNCH && !$IS_BACK && !$wantsExit && !$iahVoiceIsAplEvent && empty($APL['args'])
             && $iahVoiceRequestType === 'IntentRequest' && $iahHouseSessionId !== ''
@@ -3096,12 +3101,14 @@ function Execute($request = null)
                             if (is_array($homeAgentData) && ($homeAgentData['handled'] ?? false) === true
                                 && trim((string) ($homeAgentData['answer'] ?? '')) !== '') {
                                 $iahAwaitingLocation = !empty($homeAgentData['awaitingLocation']);
-                                if ((!empty($homeAgentData['contextEligible']) || $iahAwaitingLocation)
+                                $iahAwaitingDevice = !empty($homeAgentData['awaitingDevice']);
+                                if ((!empty($homeAgentData['contextEligible']) || $iahAwaitingLocation || $iahAwaitingDevice)
                                     && $iahHouseSessionId !== '' && function_exists('IAH_RememberAlexaHouseQuestion')) {
                                     try {
                                         IAH_RememberAlexaHouseQuestion(
                                             $instanceId, $iahHouseSessionId, $iahVoiceDeviceId, $houseQuestion,
-                                            $iahAwaitingLocation
+                                            $iahAwaitingLocation,
+                                            $iahAwaitingDevice ? json_encode($homeAgentData['deviceChoices']??[],JSON_THROW_ON_ERROR) : ''
                                         );
                                     } catch (Throwable $ignored) {}
                                 }
@@ -3120,7 +3127,7 @@ function Execute($request = null)
                                     'durationMs'=>(int)round($homeAgentElapsed*1000),
                                     'model'=>(string)($propsEarly['KIModelSelection']??'gpt-6-luna')]);
                                 return $kiAlexaKeepOpen($homeAgentAnswer,
-                                    $iahAwaitingLocation ? 'Rückfrage' : 'Beantwortet',
+                                    $iahAwaitingLocation || $iahAwaitingDevice ? 'Rückfrage' : 'Beantwortet',
                                     $houseQuestion,
                                     $iahVoiceHasScreen,
                                     (string)($homeAgentData['answerSource'] ?? ''),
