@@ -144,8 +144,10 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
   Hausabfragen aktiviert werden; eine Schreibfreigabe wird nicht erteilt. Nach
   dem EDIT-Import zeigen Alexa-Show-Geräteseiten je Roboter einen eigenen Tab
   mit allen RoboHub-Variablen; Zustand, Akku, Laden, Erreichbarkeit und Fehler
-  stehen zuerst. Die Seite bleibt schreibgeschützt. Lesende Hausabfragen zeigen
-  kompakte Karten mit Roboter-Icon. Import und Gerätevorschläge
+  stehen zuerst. Die Seite bleibt schreibgeschützt. Bei „Wie geht es meinem
+  Roborock?“ liest Alexa den Kernstatus vor und wechselt auf Echo-Show-Geräten
+  direkt zum passenden bestehenden Roboter-Tab. Allgemeine Roboterfragen klären
+  bei mehreren Treffern zuerst den Namen. Import und Gerätevorschläge
   ändern PROD nicht.
   [KNX-Abgleich einrichten](docs/KNX_Gruppenadressen_im_RoomsCatalog.md)
 

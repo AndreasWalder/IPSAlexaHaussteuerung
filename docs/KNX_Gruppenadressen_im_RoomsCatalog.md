@@ -37,6 +37,12 @@ Laden, Erreichbarkeit und Fehler, darunter folgen die weiteren Werte in ihrer
 Objektbaum-Reihenfolge. Die Statusseiten sind nur lesbar. Die Roboter können außerdem
 über normale RoomsCatalog-Hausfragen abgefragt werden.
 
+Bei einer eindeutig benannten Frage wie „Wie geht es meinem Roborock?“ liest
+Alexa einen kurzen Bericht aus Zustand, Akku, Ladevorgang, Erreichbarkeit und
+Fehler vor. Auf Echo-Show-Geräten wechselt die Anzeige direkt zum passenden
+Roboter-Tab der vorhandenen Geräteseite und zeigt dort alle aktuellen Werte.
+Eine allgemeine Roboterfrage fragt bei mehreren Geräten zuerst nach dem Namen.
+
 Für die dauerhaft sichtbare native RoboHub-Kachel kann die RoboHub-Geräteinstanz direkt
 auf einem Symcon-Kachel-Dashboard platziert werden. Die Optionen **Live-Karte** und
 **Karte anzeigen** steuert das RoboHub-Modul selbst.

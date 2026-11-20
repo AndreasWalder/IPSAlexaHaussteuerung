@@ -1000,6 +1000,125 @@ function iah_rc_house_status_display(array $result,array $filters=[]): array
     return ['answerSource'=>'house_status','displayRows'=>$rows,'displayTitle'=>$title,'displayIcon'=>$icon];
 }
 
+/** Read a matched RoboHub robot from its approved, read-only RoomsCatalog roles. */
+function iah_rc_robohub_status_query(array $catalog,string $text): ?array
+{
+    $q=iah_rc_norm($text);
+    if($q===''||preg_match('/\b(?:wie geht|wie ist|wie steht|wie laeuft|status|zustand|akku|batterie|fehler|erreichbar|laedt|was macht)\b/u',$q)!==1
+        ||preg_match('/\b(?:starte|stoppe|pausiere|fortsetzen|reinige|maehe|schalte|aktiviere)\b/u',$q)===1)return null;
+    $rooms=is_array($catalog['rooms']??null)?$catalog['rooms']:$catalog;
+    $robots=[];
+    foreach($rooms as $roomKey=>$room){
+        if(!is_array($room))continue;
+        $roomName=(string)($room['display']??($roomKey==='global'?'Alle':$roomKey));
+        foreach((array)($room['domains']??[]) as $domain=>$groups){
+            if(!is_array($groups))continue;
+            foreach($groups as $group=>$entries){
+                if(!is_array($entries))continue;
+                foreach($entries as $key=>$entry){
+                    if(!is_array($entry)||($entry['ai']['type']??'')!=='robot'
+                        ||(int)($entry['ai']['version']??0)!==1||empty($entry['kiEnabled']))continue;
+                    $ai=(array)$entry['ai'];$variables=(array)($ai['variables']??[]);
+                    $source=(array)($ai['source']??[]);
+                    $instanceId=(int)($source['instanceId']??$entry['discoverySourceId']??0);
+                    if($instanceId<=0||!function_exists('IPS_ObjectExists')||!IPS_ObjectExists($instanceId))continue;
+                    $title=trim((string)($entry['title']??$entry['name']??$key));
+                    if($title==='')$title=(string)$key;
+                    $choices=array_merge([$title,(string)$key],iah_rc_aliases($entry['synonyms']??''));
+                    $model='';$class='';
+                    if(function_exists('IPS_GetProperty')){
+                        try{$model=trim((string)IPS_GetProperty($instanceId,'Modell'));}catch(Throwable $ignored){}
+                        try{$class=iah_rc_norm((string)IPS_GetProperty($instanceId,'Klasse'));}catch(Throwable $ignored){}
+                    }
+                    if($model!=='')$choices[]=$model;
+                    if(preg_match('/\bv70\b/i',$title))$choices[]='MOVA';
+                    if(str_contains($class,'maeher'))$choices[]='Mähroboter';
+                    else $choices[]='Saugroboter';
+                    $specific=false;
+                    foreach($choices as $choice){
+                        $normalized=iah_rc_norm((string)$choice);
+                        if($normalized==='')continue;
+                        foreach(explode(' ',$normalized) as $token){
+                            if(strlen($token)<3)continue;
+                            if(preg_match('/(?<![a-z0-9])'.preg_quote($token,'/').'(?![a-z0-9])/u',$q)===1){$specific=true;break 2;}
+                        }
+                    }
+                    $generic=(bool)preg_match('/\b(?:roboter|rob[o]?rock|mova|saugroboter|staubsauger|maeherroboter|rasenmaeher)\b/u',$q);
+                    if(!$specific&&!$generic)continue;
+                    $roleIds=[];$roles=RCCDeviceTypeRegistry::roles()['robot']??[];
+                    foreach($roles as $role){
+                        if(in_array($role,['action','control'],true))continue;
+                        $id=(int)($variables[$role]??0);
+                        if($id<=0||!IPS_VariableExists($id))continue;
+                        $roleIds[$role]=$id;
+                    }
+                    $robots[]=['id'=>$instanceId,'title'=>$title,'room'=>$roomName,'choices'=>$choices,
+                        'roles'=>$roleIds,'stateMapping'=>(array)($ai['stateMapping']??[])];
+                }
+            }
+        }
+    }
+    if($robots===[])return null;
+    // A generic robot question is answered only if it points to one robot.
+    $matches=array_values(array_filter($robots,static function(array $robot)use($q):bool{
+        foreach($robot['choices'] as $choice){
+            $name=iah_rc_norm((string)$choice);
+            if($name!==''&&preg_match('/(?<![a-z0-9])'.preg_quote($name,'/').'(?![a-z0-9])/u',$q)===1)return true;
+            foreach(explode(' ',$name) as $token)if(strlen($token)>=3
+                &&preg_match('/(?<![a-z0-9])'.preg_quote($token,'/').'(?![a-z0-9])/u',$q)===1)return true;
+        }
+        if(preg_match('/\b(?:maeherroboter|rasenmaeher)\b/u',$q)===1)
+            return in_array('Mähroboter',$robot['choices'],true);
+        if(preg_match('/\b(?:saugroboter|staubsauger)\b/u',$q)===1)
+            return in_array('Saugroboter',$robot['choices'],true);
+        return false;
+    }));
+    $genericRequest=(bool)preg_match('/\b(?:roboter|rob[o]?rock|mova|saugroboter|staubsauger|maeherroboter|rasenmaeher)\b/u',$q);
+    if($matches===[]&&($genericRequest||count($robots)===1))$matches=$robots;
+    if(count($matches)>1){
+        $names=array_slice(array_map(static fn(array $r):string=>$r['title'],$matches),0,5);
+        return ['handled'=>true,'answer'=>'Welchen Roboter meinst du: '.implode(', ',$names).'?',
+            'awaitingDevice'=>true,'deviceChoices'=>$names,'answerSource'=>'clarification'];
+    }
+    if($matches===[])return null;
+    $robot=$matches[0];$values=[];
+    foreach($robot['roles'] as $role=>$id){
+        try{$raw=GetValue((int)$id);}catch(Throwable $ignored){continue;}
+        $value=$raw;
+        if($role==='status'){
+            $id=(int)$id;
+            $mapped=$robot['stateMapping']['status']??null;
+            if($mapped!==null&&get_debug_type($mapped)===get_debug_type($raw)&&$mapped===$raw)$value=(string)$mapped;
+            elseif(is_numeric($raw)&&!is_bool($raw))$value=iah_ai_profile_label($id,$raw)??iah_ai_presentation_label($id,$raw)??(string)$raw;
+        }elseif(in_array($role,['charging','online'],true)){
+            if(is_bool($raw))$value=$role==='charging'?($raw?'ja':'nein'):($raw?'erreichbar':'nicht erreichbar');
+            elseif(is_numeric($raw))$value=$role==='charging'?((float)$raw!==0.0?'ja':'nein'):((float)$raw!==0.0?'erreichbar':'nicht erreichbar');
+        }elseif($role==='batteryLevel'&&is_numeric($raw)&&!is_bool($raw)){
+            $value=rtrim(rtrim(number_format((float)$raw,1,',','.'),'0'),',').' %';
+        }elseif($role==='error'){
+            $value=trim((string)$raw);if($value==='')$value='kein Fehler gemeldet';
+        }elseif(is_bool($raw))$value=$raw?'ja':'nein';
+        $values[$role]=is_scalar($value)?trim((string)$value):'nicht verfügbar';
+    }
+    $roleLabels=['status'=>'Zustand','batteryLevel'=>'Akku','charging'=>'Lädt','online'=>'Erreichbarkeit','error'=>'Fehler'];
+    $ordered=['status','batteryLevel','charging','online','error'];$rows=[];$parts=[];
+    foreach($ordered as $role){
+        if(!array_key_exists($role,$values))continue;
+        $label=$roleLabels[$role];$value=$values[$role];
+        $rows[]=['label'=>$label,'value'=>$value];
+        if($role==='status')$parts[]='Status '.$value;
+        elseif($role==='batteryLevel')$parts[]='Akku '.$value;
+        elseif($role==='charging')$parts[]=$value==='ja'?'wird geladen':'lädt nicht';
+        elseif($role==='online')$parts[]=$value;
+        elseif($role==='error')$parts[]=$value==='kein Fehler gemeldet'?'kein Fehler gemeldet':'Fehler '.$value;
+    }
+    if($rows===[])return null;
+    $answer=$robot['title'].': '.implode(', ',$parts).'.';
+    return ['handled'=>true,'localHouseQuery'=>true,'answerSource'=>'robohub','displayTitle'=>$robot['title'],
+        'displayIcon'=>'robot','displayRows'=>$rows,'displayDeviceId'=>$robot['id'],'answer'=>$answer,
+        'readOnly'=>true,'contextEligible'=>true];
+}
+
 function iah_rc_voice(
     string $text,array $cfg,?array $previewCatalog=null,?callable $http=null
 ): array
@@ -1067,6 +1186,13 @@ function iah_rc_voice(
         }
         $homeAllowed=!$preview && $scope===null && (bool)($cfg['allow_writes']??false);
         $selectedHouseholdId=($scope['type']??'')==='household_device' ? (int)($scope['deviceId']??0) : 0;
+        $robotStatus=iah_rc_robohub_status_query($catalog,$text);
+        if($robotStatus!==null){
+            if(empty($robotStatus['awaitingDevice'])){
+                $readSucceeded=true;$readDetails=[['tool'=>'robohub_status','result'=>$robotStatus['displayRows']??[]]];
+            }
+            return $costFinish($robotStatus);
+        }
         $home = IAHHouseholdDevices::query($catalog,$text,$homeAllowed,$selectedHouseholdId)
             ?? IAHHomeConnect::query($catalog,$text,$homeAllowed,$selectedHouseholdId);
         if ($home !== null) {

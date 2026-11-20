@@ -2095,8 +2095,9 @@ function Execute($request = null)
         // IAH_HOUSE_SUMMARY_BEGIN
         $kiAlexaKeepOpen = static function (
             string $text, string $status = 'Hinweis', string $question = '', bool $aplSupported = false,
-            string $answerSource = '', array $readings = [], string $displayTitle = '', string $displayIcon = ''
-        ) use ($iahLastOutcome, $applyApl, $baseUrl, $token) {
+            string $answerSource = '', array $readings = [], string $displayTitle = '', string $displayIcon = '',
+            int $displayDeviceId = 0
+        ) use ($iahLastOutcome, $applyApl, $baseUrl, $token, $S, $V, $ROOMS, $CFG, $ACTIONS_ENABLED) {
             $isDialog = $status === 'Rückfrage' || in_array($answerSource, ['clarification', 'archive_clarification'], true);
             $text=trim(preg_replace('/(?:^|(?<=[.!?])\s+)(?:bitte\s+)?(?:sage|sag|antworte|frag|frage)\b[^\r\n]*?(?:zum\s+beispiel|z\.?\s*b\.?).*$/isu','',$text)??$text);
             if ($isDialog) {
@@ -2137,6 +2138,7 @@ function Execute($request = null)
             if ($isDialog && $homeKind === '') $homeKind = 'all';
             $title = match (true) {
                 $isDialog => $displayTitle !== '' ? $displayTitle : ($readings !== [] ? 'Auswahl' : 'Rückfrage'),
+                $answerSource === 'robohub' => $displayTitle !== '' ? $displayTitle : 'Roboterstatus',
                 $homeKind !== '' => $displayTitle !== '' ? $displayTitle : 'Haushaltsgeräte',
                 $houseStatus => $displayTitle !== '' ? $displayTitle : 'Hausstatus',
                 $heatingTitle !== '' => $heatingTitle,
@@ -2166,6 +2168,7 @@ function Execute($request = null)
                 'robot'=>'statusRobot','device'=>'statusDevice'
             ];
             [$iconFile, $graphicName] = match (true) {
+                $answerSource === 'robohub' => ['Geraete.png', 'statusRobot'],
                 $homeKind !== '' => ['Geraete.png', 'homeConnectDevice'],
                 $houseStatus => ['Geraete.png', $houseGraphics[$displayIcon] ?? 'statusDevice'],
                 $heatingTitle !== '' => ['Heizung.png', 'radiator'],
@@ -2178,6 +2181,33 @@ function Execute($request = null)
             }
             if (!$aplSupported) {
                 return $response;
+            }
+
+            // A robot status question opens the existing device renderer on the
+            // matched RoboHub tab, so the Echo Show presents every live value.
+            if ($answerSource === 'robohub' && $displayDeviceId > 0
+                && (int)($S['RENDER_GERAETE'] ?? 0) > 0 && function_exists('IPS_RunScriptWaitEx')) {
+                try {
+                    $pageJson=IPS_RunScriptWaitEx((int)$S['RENDER_GERAETE'],[
+                        'payload'=>json_encode([
+                            'route'=>'geraete','aplSupported'=>true,'roomsCatalog'=>$ROOMS,'roomMap'=>[],
+                            'args1'=>'geraete.tab','args2'=>(string)$displayDeviceId,'action'=>'tab',
+                            'device'=>'','room'=>'','object'=>'','alles'=>'','number'=>null,'value'=>null,
+                            'CFG'=>$CFG,'ACTIONS_ENABLED'=>$ACTIONS_ENABLED,
+                        ],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)
+                    ]);
+                    $page=is_string($pageJson)?json_decode($pageJson,true):null;
+                    if(is_array($page)&&is_array($page['apl']??null)
+                        &&!empty($page['apl']['doc'])&&!empty($page['apl']['ds'])){
+                        $applyApl($response,$page['apl'],'hv-geraete');
+                        $domainFlag=(int)($V['DOMAIN_FLAG']??0);
+                        if($domainFlag>0&&IPS_VariableExists($domainFlag))SetValueString($domainFlag,'geraete');
+                        return $response;
+                    }
+                    IPS_LogMessage('Alexa','RoboHub status page renderer returned no APL document.');
+                } catch (Throwable $ignored) {
+                    IPS_LogMessage('Alexa','RoboHub status page renderer failed: '.get_class($ignored));
+                }
             }
 
             // APL Text interprets markup, so escape measured or model-supplied text.
@@ -3083,7 +3113,14 @@ function Execute($request = null)
                             // Use the actual Alexa session envelope, not a shared
                             // device fallback. A new session cannot reuse an old topic.
                             $housePlan = [];
-                            if (function_exists('IAH_PrepareAlexaHouseQuestion')) {
+                            $iahRobotQuestion=mb_strtolower($homeAgentSpokenQuestion,'UTF-8');
+                            $iahRobotQuestion=str_replace(['ä','ö','ü','ß'],['ae','oe','ue','ss'],$iahRobotQuestion);
+                            $iahRoboHubStatusQuestion=preg_match('/\b(?:rob[o]?rock|mova|v70|vision|roboter|saugroboter|staubsauger|maeherroboter|rasenmaeher)\b/u',$iahRobotQuestion)===1
+                                && preg_match('/\b(?:wie geht|wie ist|wie laeuft|wie steht|status|zustand|akku|batterie|fehler|erreichbar|laedt|was macht)\b/u',$iahRobotQuestion)===1;
+                            if($iahRoboHubStatusQuestion){
+                                // Keep the named robot question intact for the deterministic RoboHub reader.
+                                $housePlan=['question'=>$homeAgentSpokenQuestion];
+                            } elseif (function_exists('IAH_PrepareAlexaHouseQuestion')) {
                                 $housePlan = json_decode(IAH_PrepareAlexaHouseQuestion(
                                     $instanceId, $iahHouseSessionId, $iahVoiceDeviceId, $homeAgentSpokenQuestion,
                                     (int)($S['ROOMS_CATALOG'] ?? 0), $iahDedicatedFollowup
@@ -3101,7 +3138,9 @@ function Execute($request = null)
                                     (bool)($iahVoiceHasScreen ?? false),
                                     (string)($housePlan['answerSource'] ?? ''),
                                     (array)($housePlan['displayRows'] ?? []),
-                                    (string)($housePlan['displayTitle'] ?? ''));
+                                    (string)($housePlan['displayTitle'] ?? ''),
+                                    (string)($housePlan['displayIcon'] ?? ''),
+                                    (int)($housePlan['displayDeviceId'] ?? 0));
                             }
                             if ($iahPossibleFollowup && !isset($housePlan['question'])) {
                                 if (isset($iahLastInteraction)) {
@@ -3201,7 +3240,8 @@ function Execute($request = null)
                                     (string)($homeAgentData['answerSource'] ?? ''),
                                     (array)($homeAgentData['displayRows'] ?? $homeAgentData['energyOverview'] ?? []),
                                     (string)($homeAgentData['displayTitle'] ?? ''),
-                                    (string)($homeAgentData['displayIcon'] ?? ''));
+                                    (string)($homeAgentData['displayIcon'] ?? ''),
+                                    (int)($homeAgentData['displayDeviceId'] ?? 0));
                             }
                             if (isset($iahLastInteraction))
                                 $iahLastInteraction['detail']=is_array($homeAgentData) ? 'backend_unhandled' : 'invalid_backend_reply';
