@@ -102,7 +102,8 @@ final class RCCHomeConnectExport
         return $device;
     }
 
-    private static function variable(int $id): array
+    /** Shared read-only variable snapshot; independent of the device provider. */
+    public static function variable(int $id): array
     {
         $var = IPS_GetVariable($id);
         $row = self::object($id) + ['type' => (int)$var['VariableType'],

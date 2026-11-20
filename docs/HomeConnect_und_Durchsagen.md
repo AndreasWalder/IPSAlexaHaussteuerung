@@ -28,6 +28,22 @@ in ihrem eigenen Bereich.
 
 ## Weitere Hausgeräte hinzufügen
 
+Für neue Geräte anderer Hersteller zuerst im Bereich **HAUSGERÄTE – Vorhandene und
+weitere Geräte verknüpfen** die einzelne Geräteinstanz auswählen und **Ausgewähltes
+Hausgerät als JSON exportieren** drücken. Den Inhalt aus **Hausgerät – JSON für die
+Analyse** kopieren. Für das nächste Gerät die Auswahl wechseln und erneut
+exportieren. Die Geräte dürfen in unterschiedlichen Kategorien liegen; ein
+gemeinsamer Hauptordner ist nicht erforderlich. Dieser Export funktioniert auch
+vor dem Verknüpfen und ohne EDIT-/PROD-Änderung.
+
+Der herstellerunabhängige Export enthält IDs, Namen, Idents, Modulkennungen,
+Unterobjekt-Beziehungen, alle gefundenen Variablen mit Roh- und Anzeigewerten,
+Zeitstempeln, Profilen einschließlich Auswahllisten und vorhandenen Aktionen.
+Unbekannte oder auffällige Werte bleiben für die spätere Gerätezuordnung erhalten.
+Instanzkonfigurationen und Skriptinhalte werden nicht ausgegeben. Die vorhandene
+Erkennung sensibler Variablenwerte gilt auch hier. Schaltfreigaben und Zustände
+werden durch den Export nicht verändert.
+
 Im RoomsCatalogConfigurator **HAUSGERÄTE – Vorhandene und weitere Geräte verknüpfen**
 öffnen. Eine Geräteinstanz, Kategorie oder einzelne Variable auswählen und **Als
 Hausgerät verknüpfen** drücken. Die darunterliegenden Variablen werden gemeinsam

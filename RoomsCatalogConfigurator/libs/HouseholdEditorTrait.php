@@ -1,9 +1,32 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__.'/HouseholdCatalog.php';
+require_once __DIR__.'/HouseholdExport.php';
 
 trait RCCHouseholdEditorTrait
 {
+    /** Does not require linking the device or publishing a catalog first. */
+    public function GetHouseholdJson(int $root): string
+    {
+        return json_encode(RCCHouseholdExport::scan($root),JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE
+            |JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE|JSON_THROW_ON_ERROR);
+    }
+
+    public function ExportHouseholdJson(int $root): void
+    {
+        $json='';
+        try {
+            $json=$this->GetHouseholdJson($root);
+            $report=json_decode($json,true,512,JSON_THROW_ON_ERROR);
+            $notice=$report['root']['name'].': '.$report['variableCount'].' Variablen. '
+                .($report['complete']?'':'Teilexport – Hinweise im JSON beachten. ')
+                .'JSON unten kopieren. Für weitere Geräte die jeweilige Instanz auswählen und erneut exportieren.';
+        } catch (Throwable $e) { $notice=$e->getMessage(); }
+        $this->UpdateFormField('HouseholdExportJson','value',$json);
+        $this->UpdateFormField('HouseholdExportNotice','caption',$notice);
+        echo $notice;
+    }
+
     private function householdAlexaInstance(): int
     {
         if (!function_exists('IPS_GetInstanceListByModuleID')) return 0;
@@ -205,6 +228,10 @@ trait RCCHouseholdEditorTrait
                 ['type'=>'ValidationTextBox','name'=>'HouseholdNewTitle','caption'=>'Name des Hausgeräts','value'=>''],
                 ['type'=>'Button','caption'=>'Als Hausgerät verknüpfen','onClick'=>'RCC_AddHouseholdDevice($id, (int)$HouseholdNewRoot, (string)$HouseholdNewTitle);'],
             ]],
+            ['type'=>'Label','caption'=>'Geräte beliebiger Hersteller können an verschiedenen Stellen im Objektbaum liegen. Für die Analyse jede Geräteinstanz einzeln auswählen und exportieren. Alle Untervariablen, Werte, Profile, Aktionen und Modulkennungen werden erfasst; Verknüpfen oder PROD-Übernahme ist dafür nicht erforderlich.'],
+            ['type'=>'Button','caption'=>'Ausgewähltes Hausgerät als JSON exportieren','onClick'=>'RCC_ExportHouseholdJson($id, (int)$HouseholdNewRoot);'],
+            ['type'=>'Label','name'=>'HouseholdExportNotice','caption'=>''],
+            ['type'=>'ValidationTextBox','name'=>'HouseholdExportJson','caption'=>'Hausgerät – JSON für die Analyse','multiline'=>true,'width'=>'100%','value'=>''],
         ]];
     }
 }
