@@ -410,6 +410,19 @@ $logV("[$RID][{$rendererLogName}] activeTab=$activeId title=$activeTitle");
 if (($action === 'tab' && $tabIdArg !== '') || $activeIdFromSpokenTab) {
     gr_store_active_tab_state($activeTabStateVarId, $activeTabState, (string)$rendererRouteKey, (string)$activeId);
 }
+$activeRobotTab=false;
+foreach($tabs as $tab){
+    if((string)($tab['id']??'')===(string)$activeId){
+        $activeRobotTab=!empty($tab['roboHub']);
+        break;
+    }
+}
+// RoboHub status tabs are deliberately read-only, independent of the generic
+// device route's action setting.
+if($activeRobotTab){
+    $CAN_TOGGLE=false;
+    $ACTIONS_ENABLED[$rendererRouteKey]['toggle']=false;
+}
 
 /* =========================
    ACTIONS (APL)
@@ -491,6 +504,17 @@ if ($didAction) IPS_Sleep(GR_DELAY_MS);
 
 $rows = gr_buildRowsFromNode((int)$activeId, $CAN_TOGGLE);
 $rows = gr_maybe_sort_rows_uniform_type($rows);
+if($activeRobotTab){
+    $rows=gr_robot_status_rows_first($rows);
+    foreach($rows as &$robotRow){
+        $robotRow['canToggle']=false;
+        $robotRow['canSetNumber']=false;
+        $robotRow['canSet']=false;
+        if(array_key_exists('readOnly',$robotRow))$robotRow['readOnly']=true;
+    }
+    unset($robotRow);
+    $rendererSubtitle='RoboHub · Status und alle Variablen';
+}
 if ($rendererRouteKey === 'szene') {
     $rows = gr_ensure_scene_enum_contains_aus($rows);
 }
@@ -1082,10 +1106,33 @@ function gr_robot_instance_tabs(array $domain): array
             if($instanceId<=0||!function_exists('IPS_ObjectExists')||!IPS_ObjectExists($instanceId))continue;
             $title=trim((string)($entry['title']??$entry['name']??$key));
             if($title==='')$title='Roboter';
-            $tabs[]=['id'=>(string)$instanceId,'title'=>mb_substr($title,0,80)];
+            $tabs[]=['id'=>(string)$instanceId,'title'=>mb_substr($title,0,80),'roboHub'=>true];
         }
     }
     return $tabs;
+}
+
+/** Keep core status values at the top while retaining every other variable row. */
+function gr_robot_status_rows_first(array $rows): array
+{
+    $rank=static function(array $row):int{
+        // Keep remaining section labels in place with their variables.
+        if(!empty($row['isSection']))return 50;
+        $name=gr_norm((string)($row['name']??''));
+        $name=strtr($name,['ä'=>'ae','ö'=>'oe','ü'=>'ue','ß'=>'ss']);
+        $compact=preg_replace('/[^a-z0-9]/','',$name)??'';
+        if(in_array($compact,['zustand','status','roboterstatus','geraetestatus'],true))return 0;
+        if(in_array($compact,['akku','batterie','battery','akkustand','batteriestand','batterylevel'],true))return 1;
+        if(in_array($compact,['laedt','laden','charging','ladevorgang'],true))return 2;
+        if(in_array($compact,['erreichbar','online','verbindung','onlinestatus'],true))return 3;
+        if(in_array($compact,['fehler','error','fault','fehlercode'],true))return 4;
+        if(in_array($compact,['zustandhersteller','herstellerzustand','herstellerstatus'],true))return 5;
+        return 50;
+    };
+    $indexed=[];
+    foreach($rows as $index=>$row)$indexed[]=['index'=>$index,'rank'=>$rank($row),'row'=>$row];
+    usort($indexed,static fn(array $a,array $b):int=>($a['rank']<=>$b['rank'])?:($a['index']<=>$b['index']));
+    return array_values(array_map(static fn(array $item):array=>$item['row'],$indexed));
 }
 
 

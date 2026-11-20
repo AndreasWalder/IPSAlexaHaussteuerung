@@ -142,8 +142,10 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
   Alexa-Synonyme nach EDIT übernehmen. Die Geräteinventur schlägt außerdem
   Bodenfeuchtesensoren und RoboHub-Roboter vor. Roboter können lesend für KI-
   Hausabfragen aktiviert werden; eine Schreibfreigabe wird nicht erteilt. Nach
-  dem EDIT-Import zeigen Alexa-Show-Geräteseiten eigene Roboter-Tabs und lesende
-  Statusabfragen kompakte Karten mit Roboter-Icon. Import und Gerätevorschläge
+  dem EDIT-Import zeigen Alexa-Show-Geräteseiten je Roboter einen eigenen Tab
+  mit allen RoboHub-Variablen; Zustand, Akku, Laden, Erreichbarkeit und Fehler
+  stehen zuerst. Die Seite bleibt schreibgeschützt. Lesende Hausabfragen zeigen
+  kompakte Karten mit Roboter-Icon. Import und Gerätevorschläge
   ändern PROD nicht.
   [KNX-Abgleich einrichten](docs/KNX_Gruppenadressen_im_RoomsCatalog.md)
 

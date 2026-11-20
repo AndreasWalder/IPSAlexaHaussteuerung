@@ -31,8 +31,11 @@ Die automatische Geräteinventur enthält zusätzlich Vorschläge für Bodenfeuc
 und RoboHub-Roboter. RoboHub-Roboter werden in EDIT für lesende KI-Abfragen aktiviert;
 eine KI-Schreibfreigabe wird nicht angelegt. Status, Akku, Ladevorgang, Erreichbarkeit
 und Fehler werden den RoboHub-Variablen zugeordnet. Die Roboter erscheinen nach dem
-EDIT-Import als eigene Tabs in der Alexa-Show-Geräteseite und können über normale
-RoomsCatalog-Hausfragen abgefragt werden.
+EDIT-Import als eigene Tabs in der Alexa-Show-Geräteseite. Jede Roboterseite listet
+alle Variablen rekursiv aus dem RoboHub-Instanzbaum; zuerst stehen Zustand, Akku,
+Laden, Erreichbarkeit und Fehler, darunter folgen die weiteren Werte in ihrer
+Objektbaum-Reihenfolge. Die Statusseiten sind nur lesbar. Die Roboter können außerdem
+über normale RoomsCatalog-Hausfragen abgefragt werden.
 
 Für die dauerhaft sichtbare native RoboHub-Kachel kann die RoboHub-Geräteinstanz direkt
 auf einem Symcon-Kachel-Dashboard platziert werden. Die Optionen **Live-Karte** und
