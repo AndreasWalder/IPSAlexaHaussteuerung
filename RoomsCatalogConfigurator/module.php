@@ -6208,7 +6208,7 @@ class RoomsCatalogConfigurator extends IPSModule
                             ['type'=>'Button','caption'=>'EINDEUTIGE MARKIEREN','onClick'=>'RCC_SelectDiscoveredDevices($id, true);'],
                             ['type'=>'Button','caption'=>'ALLE MARKIERUNGEN AUFHEBEN','onClick'=>'RCC_SelectDiscoveredDevices($id, false);'],
                             ['type'=>'Button','caption'=>'MARKIERTE GERAETE NACH EDIT UEBERNEHMEN',
-                                'confirm'=>'Markierte neue Geraete ausschliesslich nach RoomsCatalogEdit importieren? KI bleibt deaktiviert und PROD unveraendert.',
+                                'confirm'=>'Markierte neue Geraete nach RoomsCatalogEdit importieren? RoboHub-Roboter werden fuer lesende KI-Abfragen freigeschaltet, aber nicht steuerbar. Andere Geraete bleiben KI-deaktiviert; PROD bleibt unveraendert.',
                                 'onClick'=>'RCC_ApplyDiscoveredDevices($id);']
                         ]],
                         ['type'=>'Label','caption'=>'Alle Typen werden geprueft. Neue Geraete werden erst nach '
