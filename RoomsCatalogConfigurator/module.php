@@ -6378,6 +6378,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $everyday=['Raeume & Etagen','RoomsCatalog Scripts',
             'Geraete bearbeiten (RoomsCatalog EDIT)',
             'Geraete erkennen, inventarisieren und reparieren',
+            'KNX-GRUPPENADRESSEN – ETS-Namen mit Geraeten verknuepfen',
             'Gemeinsame Felder aller markierten Geraete aendern'];
         $main=[];
         foreach ($form['elements'] as $index=>$element) {
