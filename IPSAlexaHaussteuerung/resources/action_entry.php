@@ -2101,6 +2101,23 @@ function Execute($request = null)
             $response = AskResponse::CreatePlainText($text)
                 ->SetRepromptPlainText('Noch eine Frage oder ein Schaltbefehl?');
 
+            // Common display policy for all clarification/selection dialogs.
+            // Spoken instructions stay in speech; cards and APL show only the question/options.
+            $isDialog = $status === 'Rückfrage' || in_array($answerSource, ['clarification', 'archive_clarification'], true);
+            $visualText = $text;
+            if ($isDialog) {
+                foreach ($readings as &$reading) {
+                    $reading['label'] = preg_replace('/^Nummer\s+(\d+)\s*$/ui', '$1', (string)$reading['label']) ?? $reading['label'];
+                }
+                unset($reading);
+                $visualText = $readings !== [] ? '' : trim(preg_replace(
+                    '/(?:^|(?<=[.!?])\s+)(?:bitte\s+)?(?:sage|sag|antworte)\b.*$/isu', '', $text
+                ) ?? $text);
+            }
+            $cardText = $isDialog && $readings !== []
+                ? implode("\n", array_map(static fn(array $row): string => $row['label'] . '  ' . $row['value'], $readings))
+                : $visualText;
+
             $heatingTitle = match ($answerSource) {
                 'heating_anlage' => 'Heizungsanlage',
                 'heating_fernwaerme' => 'Fernwärme',
@@ -2111,7 +2128,9 @@ function Execute($request = null)
                 default => '',
             };
             $homeKind = str_starts_with($answerSource, 'home_connect_') ? substr($answerSource, strlen('home_connect_')) : '';
+            if ($isDialog && $homeKind === '') $homeKind = 'all';
             $title = match (true) {
+                $isDialog => $displayTitle !== '' ? $displayTitle : ($readings !== [] ? 'Auswahl' : 'Rückfrage'),
                 $homeKind !== '' => $displayTitle !== '' ? $displayTitle : 'Haushaltsgeräte',
                 $heatingTitle !== '' => $heatingTitle,
                 in_array($answerSource, ['energy_overview', 'ai_energy_overview'], true) => 'PV-Anlage',
@@ -2140,7 +2159,7 @@ function Execute($request = null)
             };
             $image = rtrim((string)$baseUrl, '/') . '/hook/iah-alexa-icons?f=' . $iconFile . '&token=' . rawurlencode((string)$token);
             if (preg_match('~^https://[a-z0-9.-]+(?::\d{1,5})?(?:/[^\s]*)?$~iD', $image)) {
-                $response->SetStandardCard($title, $text, $image, $image);
+                $response->SetStandardCard($title, $cardText, $image, $image);
             }
             if (!$aplSupported) {
                 return $response;
@@ -2280,7 +2299,7 @@ function Execute($request = null)
                 'ds' => [
                     'summary' => [
                         'title' => $title,
-                        'text' => str_replace(["\r\n", "\r", "\n"], '<br>', $escape($text)),
+                        'text' => str_replace(["\r\n", "\r", "\n"], '<br>', $escape($visualText)),
                         'rowCount' => count($readings),
                         'readings' => array_map(static fn(array $row): array => [
                             'label' => $escape($row['label']),
@@ -3033,7 +3052,10 @@ function Execute($request = null)
                                 return $kiAlexaKeepOpen((string)$housePlan['answer'],
                                     !empty($housePlan['reason']) ? 'Rückfrage' : 'Hinweis',
                                     $homeAgentSpokenQuestion,
-                                    (bool)($iahVoiceHasScreen ?? false));
+                                    (bool)($iahVoiceHasScreen ?? false),
+                                    (string)($housePlan['answerSource'] ?? ''),
+                                    (array)($housePlan['displayRows'] ?? []),
+                                    (string)($housePlan['displayTitle'] ?? ''));
                             }
                             if ($iahPossibleFollowup && !isset($housePlan['question'])) {
                                 if (isset($iahLastInteraction)) {

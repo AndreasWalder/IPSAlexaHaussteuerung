@@ -220,7 +220,7 @@ final class IAHHomeConnect
         $choices = []; $rows = []; $parts = [];
         foreach (array_slice(array_values($devices), 0, 10) as $i=>$d) {
             $choices[] = ['id'=>(int)$d['id'], 'name'=>(string)$d['name'], 'aliases'=>(array)$d['aliases']];
-            $rows[] = ['label'=>'Nummer ' . ($i+1), 'value'=>$d['name']];
+            $rows[] = ['label'=>(string)($i+1), 'value'=>$d['name']];
             $parts[] = ($i+1) . ': ' . $d['name'];
         }
         return self::response('Hausgeräteauswahl', 'all', $rows,

@@ -17,6 +17,7 @@ foreach ([$catalog,$legacy] as $data) {
         hcAssert(iah_rc_voice('Wie geht es meinem '.$name.'?',[],$data)['displayTitle']==='Dampf-Backofen','Steam oven specificity: '.$name);
     $prompt=iah_rc_voice('Wie warm ist mein Backofen?',[],$data);
     hcAssert($prompt['awaitingDevice']&&count($prompt['deviceChoices'])===2&&count($prompt['displayRows'])===2,'Both catalogs return real numbered choice data');
+    hcAssert(array_column($prompt['displayRows'],'label')===['1','2'],'Choice display uses plain digits for both providers');
 }
 $choices=$prompt['deviceChoices'];
 $aiCalls=0;

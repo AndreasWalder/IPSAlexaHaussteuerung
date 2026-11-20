@@ -69,6 +69,10 @@ nummerierte Auswahl. Darauf funktionieren „erste“, „das erste“, „Numme
 „zweiter“ oder der konkrete Gerätename. Auch als „1. das“ bzw. „2. das“ übertragene
 Antworten werden zugeordnet. Die Reihenfolge stammt aus der gerade gestellten
 Rückfrage und ist nicht dauerhaft an bestimmte Geräte gebunden.
+Auf dem Display und in Alexa-Karten stehen dabei nur „1“, „2“, … und die Namen.
+Antwortanweisungen wie „Sage zum Beispiel das erste oder den Gerätenamen“ werden
+gesprochen, aber nicht eingeblendet. Die gemeinsame Dialogdarstellung verwendet
+dieses Schema auch für andere Rückfragen und Auswahlmenüs.
 
 Die Auswahl gilt 90 Sekunden und ausschließlich für dieselbe Echo-Sitzung. Sie
 beantwortet die ursprüngliche Frage mit frischen Werten des ausgewählten Geräts;
