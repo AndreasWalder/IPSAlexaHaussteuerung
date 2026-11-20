@@ -921,6 +921,76 @@ function iah_rc_limit_voice_answer(string $answer,int $maxWords): string
     return rtrim($bounded,',;: ').'…';
 }
 
+/** Turn verified RoomsCatalog read results into compact Echo Show status rows. */
+function iah_rc_house_status_display(array $result,array $filters=[]): array
+{
+    if(($result['ok']??false)!==true || !is_array($result['rows']??null))return [];
+    $property=(string)($filters['property']??$result['property']??'');
+    $type=(string)($filters['type']??$result['type']??'');
+    $units=['temperature'=>'°C','humidity'=>'%','soilMoisture'=>'%','illuminance'=>'lx','powerWatts'=>'W','energy'=>'kWh',
+        'batteryLevel'=>'%','windSpeed'=>'m/s','feedIn'=>'W','selfConsumption'=>'W','chargePower'=>'W',
+        'dischargePower'=>'W','volume'=>'m³','flowRate'=>'l/min'];
+    $labels=['temperature'=>'Temperatur','humidity'=>'Luftfeuchtigkeit','soilMoisture'=>'Bodenfeuchte','illuminance'=>'Helligkeit',
+        'powerWatts'=>'Leistung','energy'=>'Energie','batteryLevel'=>'Batterie','windSpeed'=>'Wind',
+        'activity'=>'Schaltzustand','closure'=>'Fensterstatus','open'=>'Status','motion'=>'Bewegung',
+        'alarm'=>'Alarm','rain'=>'Regen','online'=>'Verbindung','locked'=>'Schloss','armed'=>'Alarmanlage',
+        'feedIn'=>'Einspeisung','selfConsumption'=>'Eigenverbrauch','chargePower'=>'Ladeleistung',
+        'dischargePower'=>'Entladeleistung','volume'=>'Verbrauch','flowRate'=>'Durchfluss',
+        'charging'=>'Ladevorgang','position'=>'Position','brightness'=>'Helligkeit','status'=>'Status'];
+    $format=static function(mixed $value) use($units,$property):string{
+        if(is_bool($value))$text=$value?'Ein':'Aus';
+        elseif(is_int($value)||is_float($value)){
+            $number=(float)$value;
+            $text=rtrim(rtrim(number_format($number,2,',','.'),'0'),',');
+            $unit=$units[$property]??'';
+            if($unit!=='')$text.=' '.$unit;
+        }elseif(is_string($value))$text=trim(strip_tags($value));
+        else $text='Unbekannt';
+        return mb_substr($text!==''?$text:'Unbekannt',0,90);
+    };
+    $rows=[];
+    foreach(array_slice($result['rows'],0,18) as $row){
+        if(!is_array($row))continue;
+        $devices=is_array($row['devices']??null)?$row['devices']:[];
+        if($devices!==[]){
+            foreach(array_slice($devices,0,18-count($rows)) as $device){
+                if(!is_array($device))continue;
+                $name=trim((string)($device['name']??$row['name']??''));
+                $room=trim((string)($device['room']??''));
+                $label=mb_substr($name.($room!==''?' · '.$room:''),0,90);
+                $rows[]=['label'=>$label!==''?$label:($labels[$property]??'Wert'),
+                    'value'=>$format($device['value']??null)];
+            }
+            continue;
+        }
+        $value=$row['value']??null;
+        if($value===null && isset($row['count']))$value=(int)$row['count'].' Geraete';
+        if($value===null)continue;
+        $label=trim((string)($row['name']??''));
+        if($label==='')$label=$labels[$property]??'Wert';
+        $rows[]=['label'=>mb_substr($label,0,90),'value'=>$format($value)];
+    }
+    if($rows===[])return [];
+    $title=trim((string)($filters['name']??''));
+    if($title===''&&count($result['rows'])===1)$title=trim((string)($result['rows'][0]['name']??''));
+    if($title==='')$title=$labels[$property]??'Hausstatus';
+    $icons=[
+        'light'=>'light','dimmer'=>'light','switch'=>'light','window'=>'window','door'=>'door',
+        'blind'=>'blind','heating'=>'temperature','temperature'=>'temperature','motion'=>'motion',
+        'illuminance'=>'light','weather'=>'weather','smoke'=>'alarm','water_leak'=>'water',
+        'alarm'=>'alarm','lock'=>'lock','solar'=>'energy','battery'=>'energy','energy'=>'energy',
+        'ev_charger'=>'energy','irrigation'=>'water','media'=>'media','fan'=>'fan','camera'=>'camera',
+        'network'=>'network','robot'=>'robot','soil_moisture'=>'water'
+    ];
+    $icon=$icons[$type]??match($property){
+        'temperature'=>'temperature','humidity','windSpeed','rain'=>'weather','soilMoisture'=>'water','activity','brightness'=>'light',
+        'closure','open'=>'window','motion'=>'motion','alarm','armed'=>'alarm','waterLeak','flowRate','volume'=>'water',
+        'powerWatts','energy','feedIn','selfConsumption','chargePower','dischargePower','batteryLevel'=>'energy',
+        default=>'device'
+    };
+    return ['answerSource'=>'house_status','displayRows'=>$rows,'displayTitle'=>$title,'displayIcon'=>$icon];
+}
+
 function iah_rc_voice(
     string $text,array $cfg,?array $previewCatalog=null,?callable $http=null
 ): array
@@ -949,14 +1019,19 @@ function iah_rc_voice(
             iah_rc_log('cost.warning',['stage'=>$type,'reason'=>'Statistikfehler']);
         }
     };
-    $readDetails=[];$readSucceeded=false;$wrote=false;$pvOverview=null;
-    $costFinish=static function (array $result) use($costReport,$preview,&$readDetails,&$readSucceeded,&$wrote,&$costStarted,&$pvOverview):array {
+    $readDetails=[];$readSucceeded=false;$wrote=false;$pvOverview=null;$lastReadResult=null;$lastReadArgs=[];
+    $costFinish=static function (array $result) use($costReport,$preview,&$readDetails,&$readSucceeded,&$wrote,&$costStarted,&$pvOverview,&$lastReadResult,&$lastReadArgs):array {
         if($costStarted)$costReport('finish',['success'=>(bool)($result['handled']??false)]);
         if($preview)$result['readQueries']=$readDetails;
         if($readSucceeded&&!$wrote&&!empty($result['handled']))$result['contextEligible']=true;
         if ($pvOverview!==null && !$wrote && !empty($result['handled']) && empty($result['awaitingLocation'])) {
             $result['energyOverview']=$pvOverview['energyOverview'];
             $result['answerSource']=$result['answerSource']??'ai_energy_overview';
+        }
+        if(!$wrote&&!empty($result['handled'])&&empty($result['awaitingLocation'])
+            && !isset($result['displayRows'])&&is_array($lastReadResult)){
+            $display=iah_rc_house_status_display($lastReadResult,$lastReadArgs);
+            if($display!==[])$result=array_replace($result,$display);
         }
         return $result;
     };
@@ -967,7 +1042,6 @@ function iah_rc_voice(
     $scope=is_array($cfg['question_scope']??null)?$cfg['question_scope']:null;
     // Keep Alexa summaries long enough to finish a sentence and include their key values.
     $maxWords=max(28,min(45,(int)($cfg['max_words']??32)));
-    $lastReadResult=null;
     $archiveNeedsLocation=false;
     $archiveReadSucceeded=false;
     $locationPrompt=['handled'=>true,'answer'=>'Welchen Raum soll ich im Archiv prüfen?',
@@ -1083,6 +1157,12 @@ function iah_rc_voice(
             ??iah_rc_latest_motion($localText,$catalog,$scope,$archiveId,min($deadline,microtime(true)+2));
         if($local!==null){
             $readDetails=$local['readQueries'];
+            foreach((array)$readDetails as $detail){
+                if(($detail['tool']??'')!=='query_house'||!is_array($detail['result']??null))continue;
+                $display=iah_rc_house_status_display($detail['result']);
+                if($display!==[])$local=array_replace($local,$display);
+                break;
+            }
             $requiredWordingNames=(array)($local['requiredWordingNames']??[]);
             $archiveWordingEvent=$local['archiveWordingEvent']??null;
             $archivePartial=is_array($archiveWordingEvent) && !empty($readDetails[0]['result']['partial']);
@@ -1223,7 +1303,7 @@ function iah_rc_voice(
             'indoor_only'=>['type'=>'boolean']
         ];
         $tools=[
-            $make('query_house','Allgemeine KI-Datenabfrage fuer BELIEBIGE reale Geraete-Eigenschaften: lesen, listen, zaehlen, sortieren, max/min, Mittelwert, Summe, nach Raum gruppieren. Immer property=kanonische Eigenschaft statt type=Temperatur. Beispiel: waermster Raum = property=temperature, operation=max, group_by=room, indoor_only=true; eingeschaltete Lichter = property=activity, operation=list, condition=active, domain=licht; offene Jalousien = property=closure, type=blind, condition=eq, value=offen (nie aus Position groesser null!); geoeffnete Fenster = property=open, condition=eq, value=offen, type=window. Keine Schaltereignisse.',
+            $make('query_house','Allgemeine KI-Datenabfrage fuer BELIEBIGE reale Geraete-Eigenschaften: lesen, listen, zaehlen, sortieren, max/min, Mittelwert, Summe, nach Raum gruppieren. Immer property=kanonische Eigenschaft statt type=Temperatur. Beispiele: waermster Raum = property=temperature, operation=max, group_by=room, indoor_only=true; eingeschaltete Lichter = property=activity, operation=list, condition=active, domain=licht; offene Jalousien = property=closure, type=blind, condition=eq, value=offen (nie aus Position groesser null!); geoeffnete Fenster = property=open, condition=eq, value=offen, type=window; Bodenfeuchte = property=soilMoisture; Status eines Saug- oder Mähroboters = property=status, type=robot. Nutze nur in der dynamischen RoomsCatalog-Faehigkeitsliste vorhandene Eigenschaften und Geraetetypen. Keine Schaltereignisse.',
                 $queryProperties),
             $make('get_states','Alternative Rohdatenabfrage fuer wenige spezifische Geraete; wenn Filter unbekannt lieber query_house verwenden. Keinen beliebigen Eigenschaftsnamen als Geraetetyp oder Domain ausgeben.',
                 $props+['only_active'=>['type'=>'boolean']]),
@@ -1428,8 +1508,10 @@ function iah_rc_voice(
                     iah_ai_log_device_diagnostics($devices,$name,$args,$result);
                 // Nur lesende, erfolgreich ausgefuehrte Resultate fuer die
                 // ausfallsichere Alexa-Antwort verwenden.
-                if ($name==='query_house' && ($result['ok']??false)===true)
+                if ($name==='query_house' && ($result['ok']??false)===true) {
                     $lastReadResult=$result;
+                    $lastReadArgs=$args;
+                }
                 if ($name==='query_energy' && ($result['ok']??false)===true && ($result['operation']??'')==='overview')
                     $pvOverview=iah_energy_overview_answer($result);
                 $diagnostic=['name'=>$name,'ok'=>$result['ok']??true];

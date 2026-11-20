@@ -2095,7 +2095,7 @@ function Execute($request = null)
         // IAH_HOUSE_SUMMARY_BEGIN
         $kiAlexaKeepOpen = static function (
             string $text, string $status = 'Hinweis', string $question = '', bool $aplSupported = false,
-            string $answerSource = '', array $readings = [], string $displayTitle = ''
+            string $answerSource = '', array $readings = [], string $displayTitle = '', string $displayIcon = ''
         ) use ($iahLastOutcome, $applyApl, $baseUrl, $token) {
             $isDialog = $status === 'Rückfrage' || in_array($answerSource, ['clarification', 'archive_clarification'], true);
             $text=trim(preg_replace('/(?:^|(?<=[.!?])\s+)(?:bitte\s+)?(?:sage|sag|antworte|frag|frage)\b[^\r\n]*?(?:zum\s+beispiel|z\.?\s*b\.?).*$/isu','',$text)??$text);
@@ -2133,10 +2133,12 @@ function Execute($request = null)
                 default => '',
             };
             $homeKind = str_starts_with($answerSource, 'home_connect_') ? substr($answerSource, strlen('home_connect_')) : '';
+            $houseStatus = $answerSource === 'house_status';
             if ($isDialog && $homeKind === '') $homeKind = 'all';
             $title = match (true) {
                 $isDialog => $displayTitle !== '' ? $displayTitle : ($readings !== [] ? 'Auswahl' : 'Rückfrage'),
                 $homeKind !== '' => $displayTitle !== '' ? $displayTitle : 'Haushaltsgeräte',
+                $houseStatus => $displayTitle !== '' ? $displayTitle : 'Hausstatus',
                 $heatingTitle !== '' => $heatingTitle,
                 in_array($answerSource, ['energy_overview', 'ai_energy_overview'], true) => 'PV-Anlage',
                 preg_match('/\brohr[\s-]*(?:begleit[\s-]*)?heiz\w*|\bheizband\b/ui', $question) === 1
@@ -2156,8 +2158,16 @@ function Execute($request = null)
             }
 
             $solar = $title === 'PV-Anlage';
+            $houseGraphics = [
+                'light'=>'statusLight','window'=>'statusWindow','door'=>'statusDoor','blind'=>'statusBlind',
+                'temperature'=>'statusTemperature','motion'=>'statusMotion','weather'=>'statusWeather',
+                'alarm'=>'statusAlarm','water'=>'statusWater','energy'=>'statusEnergy','lock'=>'statusLock',
+                'fan'=>'statusFan','camera'=>'statusCamera','media'=>'statusMedia','network'=>'statusNetwork',
+                'robot'=>'statusRobot','device'=>'statusDevice'
+            ];
             [$iconFile, $graphicName] = match (true) {
                 $homeKind !== '' => ['Geraete.png', 'homeConnectDevice'],
+                $houseStatus => ['Geraete.png', $houseGraphics[$displayIcon] ?? 'statusDevice'],
                 $heatingTitle !== '' => ['Heizung.png', 'radiator'],
                 $solar => ['Energie.png', 'solarPanel'],
                 default => ['Bewaesserung.png', 'waterDrop'],
@@ -2262,6 +2272,34 @@ function Execute($request = null)
                 if ($detail !== '') $iconPaths[] = ['type'=>'path','fill'=>'#0B1D28','pathData'=>$detail];
                 if ($homeKind === 'microwave') $iconPaths[] = ['type'=>'path','fill'=>'#75E4D0',
                     'pathData'=>'M9,15 L12,13 L16,16 L20,13 L22,15 L18,19 L13,16 L9,18 Z M9,21 L12,19 L16,22 L20,19 L22,21 L18,25 L13,22 L9,24 Z'];
+                $heading['items'][1]['grow'] = 1;
+                $heading['items'][1]['shrink'] = 1;
+                $heading['items'][1]['maxLines'] = 2;
+                $heading['items'][0]['width'] = '${headingFont + 25}';
+                $heading['items'][0]['height'] = '${headingFont + 25}';
+            }
+            if ($houseStatus) {
+                $iconFill = '#75E4D0';
+                $iconShape = match ($displayIcon) {
+                    'light' => 'M18,5 A8,8 0 0,0 13,20 V24 H23 V20 A8,8 0 0,0 18,5 Z M13,27 H23 V29 H13 Z M15,32 H21 V34 H15 Z',
+                    'window' => 'M7,6 H29 V30 H7 Z M17,7 H19 V29 H17 Z M8,17 H28 V19 H8 Z',
+                    'door' => 'M9,4 H27 V32 H9 Z M23,18 A1.5,1.5 0 1,0 23,21 A1.5,1.5 0 1,0 23,18 Z',
+                    'blind' => 'M7,6 H29 V10 H7 Z M8,13 H28 V16 H8 Z M9,19 H27 V22 H9 Z M10,25 H26 V28 H10 Z M17,29 H19 V33 H17 Z',
+                    'temperature' => 'M15,5 A3,3 0 0,1 21,5 V20 A8,8 0 1,1 15,20 Z M17,9 H19 V24 H17 Z',
+                    'motion' => 'M18,15 A3,3 0 1,0 18,21 A3,3 0 1,0 18,15 Z M11,10 A11,11 0 0,0 11,26 L13,24 A8,8 0 0,1 13,12 Z M25,10 L23,12 A8,8 0 0,1 23,24 L25,26 A11,11 0 0,0 25,10 Z',
+                    'weather' => 'M9,21 A6,6 0 0,1 11,9 A8,8 0 0,1 26,12 A5,5 0 1,1 27,22 Z M12,25 L10,30 H12 L14,25 Z M21,25 L19,30 H21 L23,25 Z',
+                    'alarm' => 'M18,5 L32,30 H4 Z M17,14 H19 V22 H17 Z M17,25 H19 V27 H17 Z',
+                    'water' => 'M18,5 C14,12 8,17 8,23 A10,10 0 1,0 28,23 C28,17 22,12 18,5 Z',
+                    'energy' => 'M20,4 L8,21 H16 L14,33 L28,15 H20 Z',
+                    'lock' => 'M10,16 H26 V31 H10 Z M13,16 V12 A5,5 0 0,1 23,12 V16 H21 V12 A3,3 0 0,0 15,12 V16 Z M17,21 H19 V27 H17 Z',
+                    'fan' => 'M18,16 A3,3 0 1,0 18,22 A3,3 0 1,0 18,16 Z M18,15 C11,3 7,12 15,17 Z M21,19 C34,15 28,8 20,16 Z M17,22 C17,36 27,31 20,21 Z',
+                    'camera' => 'M6,12 H12 L15,8 H23 L26,12 H30 V29 H6 Z M18,15 A5,5 0 1,0 18,25 A5,5 0 1,0 18,15 Z',
+                    'media' => 'M9,6 H27 V31 H9 Z M14,11 H22 V13 H14 Z M18,20 A5,5 0 1,0 18,30 A5,5 0 1,0 18,20 Z',
+                    'network' => 'M16,7 H20 V11 H16 Z M7,25 H11 V29 H7 Z M25,25 H29 V29 H25 Z M17,12 H19 V20 H17 Z M9,21 H27 V23 H9 Z M9,21 H11 V25 H9 Z M25,21 H27 V25 H25 Z',
+                    'robot' => 'M8,10 H28 V26 H8 Z M12,6 H14 V10 H12 Z M22,6 H24 V10 H22 Z M12,15 A2,2 0 1,0 12,19 A2,2 0 1,0 12,15 Z M22,15 A2,2 0 1,0 22,19 A2,2 0 1,0 22,15 Z M13,22 H23 V24 H13 Z M5,15 H8 V21 H5 Z M28,15 H31 V21 H28 Z',
+                    default => 'M7,7 H29 V29 H7 Z M11,11 H25 V13 H11 Z M11,17 H25 V19 H11 Z M11,23 H21 V25 H11 Z',
+                };
+                $iconPaths = [['type'=>'path','fill'=>$iconFill,'pathData'=>$iconShape]];
                 $heading['items'][1]['grow'] = 1;
                 $heading['items'][1]['shrink'] = 1;
                 $heading['items'][1]['maxLines'] = 2;
@@ -3162,7 +3200,8 @@ function Execute($request = null)
                                     $iahVoiceHasScreen,
                                     (string)($homeAgentData['answerSource'] ?? ''),
                                     (array)($homeAgentData['displayRows'] ?? $homeAgentData['energyOverview'] ?? []),
-                                    (string)($homeAgentData['displayTitle'] ?? ''));
+                                    (string)($homeAgentData['displayTitle'] ?? ''),
+                                    (string)($homeAgentData['displayIcon'] ?? ''));
                             }
                             if (isset($iahLastInteraction))
                                 $iahLastInteraction['detail']=is_array($homeAgentData) ? 'backend_unhandled' : 'invalid_backend_reply';

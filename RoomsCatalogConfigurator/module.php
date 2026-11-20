@@ -7,6 +7,8 @@ require_once __DIR__ . '/libs/SafeAutoRepair.php';
 require_once __DIR__ . '/libs/DeviceTypeRegistry.php';
 require_once __DIR__ . '/libs/DeviceCapabilities.php';
 require_once __DIR__ . '/libs/GuidedDiscovery.php';
+require_once __DIR__ . '/libs/KnxGroupAddressDiscovery.php';
+require_once __DIR__ . '/../IPSAlexaHaussteuerung/src/SymconScriptSource.php';
 require_once __DIR__ . '/libs/ModuleDataSources.php';
 require_once __DIR__ . '/libs/DataSourceEditor.php';
 require_once __DIR__ . '/libs/DataSourceEditorTrait.php';
@@ -111,6 +113,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterPropertyInteger('RoomsCatalogEditScriptID', 0);
         $this->RegisterPropertyInteger('DiscoveryRootId', 0);
         $this->RegisterPropertyString('DiscoveryExtraRootIds', '');
+        $this->RegisterPropertyString('KnxGroupAddressExportPath', '');
         // V3.4.9: Ein IP-Symcon-Knoten als gefuehrter Importscope.
         // Leer = den vom zentralen Typregister vorgeschlagenen Pfad nutzen.
         $this->RegisterPropertyString('DiscoveryDomainOverride', '');
@@ -134,6 +137,8 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('FilterAI', 'all');
         $this->RegisterAttributeString('SuggestionPreview', '{}');
         $this->RegisterAttributeString('DiscoveryCandidates', '{}');
+        $this->RegisterAttributeString('KnxAddressPreview', '{}');
+        $this->RegisterAttributeString('KnxAddressStatus', 'Noch kein KNX-Export abgeglichen.');
         $this->RegisterAttributeString('DiscoveryInventory', '{}');
         $this->RegisterAttributeString('DiscoveryAuditReport', 'Noch keine Vollstaendigkeitspruefung.');
         $this->RegisterAttributeString('DiscoveryAIReport', 'Keine KI-Unterstuetzung bei der letzten Geraetesuche.');
@@ -1899,6 +1904,147 @@ class RoomsCatalogConfigurator extends IPSModule
             return;
         }
         echo json_encode($snapshot,JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    }
+
+    /** Match an ETS export to live KNX instances and propose voice aliases in EDIT only. */
+    public function ImportKnxGroupAddresses(): void
+    {
+        try {
+            $result=RCCKnxGroupAddressDiscovery::scan($this->ReadPropertyString('KnxGroupAddressExportPath'));
+            $edit=$this->loadConfiguredCatalog('RoomsCatalogEditScriptID','EDIT');
+            if($edit===[])throw new RuntimeException('Bitte zuerst RoomsCatalogEdit konfigurieren.');
+            $byVariable=[];
+            foreach($this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($edit)) as $entry){
+                $ids=[];
+                foreach(RCCDeviceTypeRegistry::fields() as $role=>$field){
+                    $id=(int)($entry[$field]??0);
+                    if($id>0)$ids[$id]=true;
+                }
+                foreach(['state','toggle','value','set','ist','soll','eingestellt','wert','statusId','controlId','tiltId'] as $field){
+                    $id=(int)($entry[$field]??0);
+                    if($id>0)$ids[$id]=true;
+                }
+                foreach((array)($entry['ai']['variables']??[]) as $id){
+                    $id=(int)$id;
+                    if($id>0)$ids[$id]=true;
+                }
+                foreach(array_keys($ids) as $id){
+                    $byVariable[$id]=[
+                        'device'=>(string)($entry['title']??$entry['key']??''),
+                        'room'=>(string)($entry['roomLabel']??$entry['roomKey']??''),
+                    ];
+                }
+            }
+            $linked=0;
+            foreach($result['rows'] as &$row){
+                $mapping=$byVariable[(int)$row['variableId']]??null;
+                $row['catalogDevice']=$mapping['device']??'Noch nicht im RoomsCatalog';
+                $row['catalogRoom']=$mapping['room']??'';
+                $row['linked']=$mapping!==null;
+                $ga=$this->normalizeSuggestionText((string)$row['groupName']);
+                $device=$this->normalizeSuggestionText((string)($mapping['device']??''));
+                $instance=$this->normalizeSuggestionText((string)$row['instanceName']);
+                $row['selected']=$mapping!==null && $ga!=='' && (
+                    ($device!=='' && ($ga===$device || str_contains($ga,$device) || str_contains($device,$ga)))
+                    || ($instance!=='' && (str_contains($ga,$instance)||str_contains($instance,$ga)))
+                );
+                if($mapping!==null)$linked++;
+            }
+            unset($row);
+            $preview=['time'=>time(),'editHash'=>hash('sha256',IPS_GetScriptContent(
+                $this->ReadPropertyInteger('RoomsCatalogEditScriptID'))),'rows'=>$result['rows']];
+            $this->WriteAttributeString('KnxAddressPreview',json_encode($preview,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE));
+            $status=sprintf('ETS-Export: %d Gruppenadressen, %d Treffer auf KNX-Variablen, %d Variablen bereits im RoomsCatalog. Vorschlaege pruefen und danach nur ausgewaehlte Namen nach EDIT uebernehmen.',
+                (int)$result['addressCount'],count($result['rows']),$linked);
+            $this->WriteAttributeString('KnxAddressStatus',$status);
+            $this->UpdateFormField('KnxAddressStatus','caption',$status);
+            $this->UpdateFormField('KnxAddressMatches','values',json_encode($result['rows'],JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE));
+            echo $status;
+        }catch(Throwable $error){
+            $this->WriteAttributeString('KnxAddressStatus',$error->getMessage());
+            $this->UpdateFormField('KnxAddressStatus','caption',$error->getMessage());
+            echo $error->getMessage();
+        }
+    }
+
+    public function UpdateKnxAliasRow(int $variableId,string $address,bool $selected): void
+    {
+        $preview=json_decode($this->ReadAttributeString('KnxAddressPreview'),true);
+        if(!is_array($preview)||!is_array($preview['rows']??null))return;
+        foreach($preview['rows'] as &$row){
+            if((int)($row['variableId']??0)===$variableId && (string)($row['address']??'')===$address)
+                $row['selected']=$selected && !empty($row['linked']);
+        }
+        unset($row);
+        $this->WriteAttributeString('KnxAddressPreview',json_encode($preview,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->UpdateFormField('KnxAddressMatches','values',json_encode($preview['rows'],JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE));
+    }
+
+    public function ApplyKnxGroupAddressAliases(): void
+    {
+        $preview=json_decode($this->ReadAttributeString('KnxAddressPreview'),true);
+        $editId=$this->ReadPropertyInteger('RoomsCatalogEditScriptID');
+        if(!is_array($preview)||!is_array($preview['rows']??null)||$editId<=0||!IPS_ScriptExists($editId)
+            ||time()-(int)($preview['time']??0)>600
+            ||($preview['editHash']??'')!==hash('sha256',IPS_GetScriptContent($editId))){
+            echo 'KNX-Vorschau veraltet oder EDIT geaendert. Bitte erneut abgleichen.';return;
+        }
+        $originalSource=(string)IPS_GetScriptContent($editId);
+        $aliasesByVariable=[];
+        foreach($preview['rows'] as $row){
+            if(empty($row['selected'])||empty($row['linked']))continue;
+            $id=(int)($row['variableId']??0);
+            $alias=trim(str_replace([',',"\r","\n"],' ',(string)($row['groupName']??'')));
+            if($id>0&&$alias!=='')$aliasesByVariable[$id][$alias]=true;
+        }
+        if($aliasesByVariable===[]){echo 'Keine verknuepften KNX-Namen ausgewaehlt.';return;}
+        $original=$this->loadRoomsCatalog($editId,'EDIT');
+        $entries=$this->buildFlatEntriesFromRooms($this->extractRoomsFromCatalog($original));
+        $changed=0;$added=0;
+        foreach($entries as &$entry){
+            $ids=[];
+            foreach(RCCDeviceTypeRegistry::fields() as $field)$ids[(int)($entry[$field]??0)]=true;
+            foreach(['state','toggle','value','set','ist','soll','eingestellt','wert','statusId','controlId','tiltId'] as $field)
+                $ids[(int)($entry[$field]??0)]=true;
+            foreach((array)($entry['ai']['variables']??[]) as $id)$ids[(int)$id]=true;
+            $found=[];
+            foreach(array_keys($ids) as $id)if($id>0&&isset($aliasesByVariable[$id]))$found+=$aliasesByVariable[$id];
+            if($found===[])continue;
+            $current=$entry['synonyms']??'';
+            $synonyms=is_array($current)?$current:preg_split('/[,;\r\n]+/',(string)$current);
+            $synonyms=array_values(array_filter(array_map('trim',$synonyms?:[]),static fn(string $s):bool=>$s!==''));
+            $normalized=array_fill_keys(array_map(fn(string $s)=>$this->normalizeSuggestionText($s),$synonyms),true);
+            foreach(array_keys($found) as $alias){
+                $key=$this->normalizeSuggestionText($alias);
+                if($key===''||isset($normalized[$key]))continue;
+                $synonyms[]=$alias;$normalized[$key]=true;$added++;
+            }
+            if(count($synonyms)>80)$synonyms=array_slice($synonyms,0,80);
+            $entry['synonyms']=implode(', ',$synonyms);$changed++;
+        }
+        unset($entry);
+        if($changed===0){echo 'Die ausgewaehlten KNX-Adressen gehoeren zu keinem vorhandenen EDIT-Geraet.';return;}
+        $updated=$this->rebuildRoomsCatalogFromEntries($entries,$original);
+        $loss=[];$this->findLostCatalogFields($original,$updated,'RoomsCatalogEdit',$loss);
+        if($loss!==[]){echo 'Uebernahme abgebrochen: '.implode('; ',array_slice($loss,0,3));return;}
+        $next=IAHSymconScriptSource::normalize("<?php\nreturn ".var_export($updated,true).";\n");
+        if(IPS_GetScriptContent($editId)!==$originalSource){
+            echo 'EDIT wurde waehrend der KNX-Uebernahme geaendert.';return;
+        }
+        $backup=$this->catalogBackupCurrentEdit($editId,$originalSource,'before_knx_alias_import');
+        try{
+            IPS_SetScriptContent($editId,$next);
+            if(IPS_GetScriptContent($editId)!==$next)throw new RuntimeException('EDIT-Schreibverifikation fehlgeschlagen.');
+        }catch(Throwable $error){
+            IPS_SetScriptContent($editId,$originalSource);
+            if(IPS_GetScriptContent($editId)!==$originalSource)
+                throw new RuntimeException('Ruecknahme unklar; EDIT-Sicherheitskopie #'.$backup.' pruefen.');
+            throw $error;
+        }
+        $this->WriteAttributeString('KnxAddressPreview','{}');
+        $this->UpdateFormField('KnxAddressMatches','values','[]');
+        $this->reloadAllFromCatalog();$this->RefreshVisibleLists();
+        echo sprintf('%d KNX-Synonyme fuer %d Geraete nach EDIT uebernommen. EDIT-Sicherung #%d. PROD und Schaltfreigaben unveraendert.',$added,$changed,$backup);
     }
 
     /** Alte Eintraege kontrolliert typisieren: Analyse schreibt keine Katalogdaten. */
@@ -5431,6 +5577,8 @@ class RoomsCatalogConfigurator extends IPSModule
         $discoveryPreview = json_decode($this->ReadAttributeString('DiscoveryCandidates'), true);
         $discoveryRows = is_array($discoveryPreview) && is_array($discoveryPreview['rows'] ?? null)
             ? $discoveryPreview['rows'] : [];
+        $knxPreview=json_decode($this->ReadAttributeString('KnxAddressPreview'),true);
+        $knxRows=is_array($knxPreview)&&is_array($knxPreview['rows']??null)?$knxPreview['rows']:[];
         $inventoryPreview = json_decode($this->ReadAttributeString('DiscoveryInventory'),true);
         $discoverySummary = is_array($inventoryPreview) && isset($inventoryPreview['items'])
             ? $this->discoveryInventorySummary($inventoryPreview) : 'Noch keine Geraeteinventur gestartet.';
@@ -5904,6 +6052,32 @@ class RoomsCatalogConfigurator extends IPSModule
                             'values'=>$suggestionRows
                         ],
                         ['type'=>'Label','caption'=>'Nur eindeutige Treffer werden uebernommen. Unklare Treffer bitte im V3.0-Geraeteeditor manuell auswaehlen. Offen/Geschlossen-Statuswerte werden nie geraten.']
+                    ]
+                ],
+                [
+                    'type'=>'ExpansionPanel',
+                    'caption'=>'KNX-GRUPPENADRESSEN – ETS-Namen mit Geraeten verknuepfen',
+                    'expanded'=>false,
+                    'items'=>[
+                        ['type'=>'Label','caption'=>'Der Export wird nur gelesen. Gruppenadressen werden ueber die KNX-Instanzkonfiguration abgeglichen. Ausgewaehlte ETS-Namen werden als zusaetzliche Sprachsynonyme ausschliesslich in RoomsCatalogEdit gespeichert.'],
+                        ['type'=>'ValidationTextBox','name'=>'KnxGroupAddressExportPath','caption'=>'Vollstaendiger Pfad zur ETS-Gruppenadress-XML'],
+                        ['type'=>'Button','caption'=>'ETS-Export mit KNX-Variablen abgleichen','onClick'=>'RCC_ImportKnxGroupAddresses($id);'],
+                        ['type'=>'Label','name'=>'KnxAddressStatus','caption'=>$this->ReadAttributeString('KnxAddressStatus')],
+                        ['type'=>'List','name'=>'KnxAddressMatches','caption'=>'KNX-Treffer und Alexa-Synonyme zur Pruefung','rowCount'=>14,'loadValuesFromConfiguration'=>false,'add'=>false,'delete'=>false,
+                            'columns'=>[
+                                ['caption'=>'Alexa-Name uebernehmen','name'=>'selected','width'=>'130px','edit'=>['type'=>'CheckBox']],
+                                ['caption'=>'Objekt im Katalog','name'=>'catalogDevice','width'=>'180px','save'=>false,'quickFilter'=>true],
+                                ['caption'=>'Raum','name'=>'catalogRoom','width'=>'100px','save'=>false,'quickFilter'=>true],
+                                ['caption'=>'ETS-Gruppenname','name'=>'groupName','width'=>'230px','save'=>false,'quickFilter'=>true],
+                                ['caption'=>'Adresse','name'=>'address','width'=>'95px','save'=>false],
+                                ['caption'=>'DPT','name'=>'dpt','width'=>'90px','save'=>false],
+                                ['caption'=>'KNX-Variable','name'=>'variableName','width'=>'150px','save'=>false],
+                                ['caption'=>'Objekt-ID','name'=>'variableId','width'=>'85px','save'=>false]
+                            ],
+                            'values'=>$knxRows,
+                            'onEdit'=>'RCC_UpdateKnxAliasRow($id, (int)($KnxAddressMatches["variableId"] ?? 0), (string)($KnxAddressMatches["address"] ?? ""), (bool)($KnxAddressMatches["selected"] ?? false));'
+                        ],
+                        ['type'=>'Button','caption'=>'Ausgewaehlte Namen als Alexa-Synonyme nach EDIT uebernehmen','confirm'=>'Nur Synonyme im RoomsCatalogEdit ergaenzen? PROD und Schaltfreigaben bleiben unveraendert.','onClick'=>'RCC_ApplyKnxGroupAddressAliases($id);']
                     ]
                 ],
                 [

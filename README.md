@@ -136,6 +136,16 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
   Rohrbegleitheizung zählen und das letzte Pumpen-Einschaltdatum nennen.
   [Einrichtung und Beispiele](docs/Bewaesserung_Objektbaum_V3816.md)
 
+- **KNX-Gruppenadressen, Geräteinventur und Alexa-Show-Statuskarten**
+  Der RoomsCatalog-Konfigurator kann einen ETS-Gruppenadress-XML-Export mit den
+  KNX-Instanzen abgleichen. Geprüfte Gruppenadress-Namen lassen sich als
+  Alexa-Synonyme nach EDIT übernehmen. Die Geräteinventur schlägt außerdem
+  Bodenfeuchtesensoren und Saug-/Mähroboter vor. Lesende Hausabfragen zeigen auf
+  Echo-Show-Geräten kompakte Statuskarten mit passenden Icons und den Messwerten
+  aus dem RoomsCatalog. Import und Gerätevorschläge ändern PROD nicht und
+  vergeben keine Alexa-Schaltfreigabe.
+  [KNX-Abgleich einrichten](docs/KNX_Gruppenadressen_im_RoomsCatalog.md)
+
 - **Kompaktes Alexa-Protokoll und Ortsrückfrage (V3.8.15)**
   Die bestehende Variable **Alexa-Meldungen (letzte 500)** enthält jetzt
   kompakte `IAH.Request`-Zeilen mit Intent, erkanntem Wortlaut (bei aktiver
