@@ -146,8 +146,9 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
   mit allen RoboHub-Variablen; Zustand, Akku, Laden, Erreichbarkeit und Fehler
   stehen zuerst. Die Seite bleibt schreibgeschützt. Bei „Wie geht es meinem
   Roborock?“ liest Alexa den Kernstatus vor und wechselt auf Echo-Show-Geräten
-  direkt zum passenden bestehenden Roboter-Tab. Allgemeine Roboterfragen klären
-  bei mehreren Treffern zuerst den Namen. Import und Gerätevorschläge
+  direkt zum passenden bestehenden Roboter-Tab. Bei mehreren Treffern zeigt
+  Alexa eine nummerierte Geräteauswahl; die Antwort „1“, „2“ oder „3“ wählt
+  den Roboter derselben Sitzung aus. Import und Gerätevorschläge
   ändern PROD nicht.
   [KNX-Abgleich einrichten](docs/KNX_Gruppenadressen_im_RoomsCatalog.md)
 
