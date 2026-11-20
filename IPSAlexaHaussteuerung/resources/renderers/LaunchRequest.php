@@ -37,7 +37,7 @@ $catalogDefaults = (static function () {
     return [
         'title' => 'HAUS VISUALISIERUNG',
         'subtitleTemplate' => 'Raumname: {{alexa}}',
-        'footerText' => 'Tipp eine Kachel an – oder sage z. B. „Jalousie“.',
+        'footerText' => 'Wähle eine Kachel.',
         'logo' => 'Logo.png',
         'homeIcon' => 'HomeIcon.png',
         'headerIcon' => 'Icon.png',
@@ -57,6 +57,7 @@ $subtitleTpl = $resolve(
     (string) ($catalogDefaults['subtitleTemplate'] ?? 'Raumname: {{alexa}}')
 );
 $footerText = $resolve($catalog['footerText'] ?? null, (string) ($catalogDefaults['footerText'] ?? ''));
+$footerText = trim(preg_replace('/\s*[–—-]?\s*(?:oder\s+)?(?:bitte\s+)?sag(?:e)?\b.*?(?:zum\s+beispiel|z\.?\s*b\.?).*$/iu', '', $footerText) ?? $footerText);
 $logoFile = $resolve($catalog['logo'] ?? null, (string) ($catalogDefaults['logo'] ?? 'Logo.png'));
 $homeIconFile = $resolve($catalog['homeIcon'] ?? null, (string) ($catalogDefaults['homeIcon'] ?? 'HomeIcon.png'));
 $headerIconFile = $resolve($catalog['headerIcon'] ?? null, (string) ($catalogDefaults['headerIcon'] ?? 'Icon.png'));

@@ -465,7 +465,7 @@
       "name": "LaunchFooterText",
       "type": "ValidationTextBox",
       "caption": "Footer-Text",
-      "value": "Tipp eine Kachel an – oder sage z. B. „Jalousie“."
+      "value": "Wähle eine Kachel."
     },
     {
       "name": "LaunchLogo",

@@ -18,6 +18,7 @@ foreach ([$catalog,$legacy] as $data) {
     $prompt=iah_rc_voice('Wie warm ist mein Backofen?',[],$data);
     hcAssert($prompt['awaitingDevice']&&count($prompt['deviceChoices'])===2&&count($prompt['displayRows'])===2,'Both catalogs return real numbered choice data');
     hcAssert(array_column($prompt['displayRows'],'label')===['1','2'],'Choice display uses plain digits for both providers');
+    hcAssert(!str_contains($prompt['answer'],'Sage zum Beispiel'),'Selection speech has no response example');
 }
 $choices=$prompt['deviceChoices'];
 $aiCalls=0;

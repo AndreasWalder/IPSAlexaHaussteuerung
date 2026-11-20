@@ -17,7 +17,7 @@ foreach (['Wie geht es meiner Waschmaschine?','Wie lange braucht meine Wäsche n
 hcAssert(str_contains($read('Wie lange braucht meine Wäsche noch?')['answer'], 'kein laufendes Programm'), 'Old 100% progress is not a current running program');
 hcAssert(str_contains($read('Ist die Waschmaschine fertig?')['answer'], 'nicht durch eine Fertigmeldung'), 'Ready is not a proven successful finish');
 hcAssert(str_contains($read('Wie geht es meiner Mikrowelle?')['answer'], 'Mikrowelle Max'), 'Untried microwave program is retained and readable');
-hcAssert(str_contains($read('Wie geht es meinem Backofen?')['answer'], 'oder'), 'Two ovens require clarification');
+hcAssert(!empty($read('Wie geht es meinem Backofen?')['awaitingDevice']), 'Two ovens require clarification');
 hcAssert($read('Wie geht es meiner Waschmaschiene?')['displayTitle'] === 'Waschtrockner', 'Minor ASR spelling error is understood for questions');
 hcAssert(count($read('Wie geht es meinen Haushaltsgeräten?')['displayRows']) === 6, 'Overview shows all appliances');
 $GLOBALS['hcValues'][57024] = 'BSH.Common.EnumType.OperationState.Run';

@@ -451,7 +451,7 @@ function iah_launch_catalog_defaults(): array
             $defaults = [
                 'title' => 'HAUS VISUALISIERUNG',
                 'subtitleTemplate' => 'Raumname: {{alexa}}',
-                'footerText' => 'Tipp eine Kachel an – oder sage z. B. „Jalousie“.',
+                'footerText' => 'Wähle eine Kachel.',
                 'logo' => 'Logo.png',
                 'homeIcon' => 'HomeIcon.png',
                 'headerIcon' => 'Icon.png',
@@ -2097,13 +2097,18 @@ function Execute($request = null)
             string $text, string $status = 'Hinweis', string $question = '', bool $aplSupported = false,
             string $answerSource = '', array $readings = [], string $displayTitle = ''
         ) use ($iahLastOutcome, $applyApl, $baseUrl, $token) {
+            $isDialog = $status === 'Rückfrage' || in_array($answerSource, ['clarification', 'archive_clarification'], true);
+            $text=trim(preg_replace('/(?:^|(?<=[.!?])\s+)(?:bitte\s+)?(?:sage|sag|antworte|frag|frage)\b[^\r\n]*?(?:zum\s+beispiel|z\.?\s*b\.?).*$/isu','',$text)??$text);
+            if ($isDialog) {
+                $text=trim(preg_replace('/(?:^|(?<=[.!?])\s+)(?:bitte\s+)?(?:sage|sag|antworte|frag|frage)\b.*$/isu','',$text)??$text);
+            }
+            if ($text==='') $text=$isDialog?'Was möchtest du auswählen?':'Was möchtest du wissen?';
             $iahLastOutcome('Hausabfrage', $text, $status);
             $response = AskResponse::CreatePlainText($text)
                 ->SetRepromptPlainText('Noch eine Frage oder ein Schaltbefehl?');
 
             // Common display policy for all clarification/selection dialogs.
-            // Spoken instructions stay in speech; cards and APL show only the question/options.
-            $isDialog = $status === 'Rückfrage' || in_array($answerSource, ['clarification', 'archive_clarification'], true);
+            // Speech, cards and APL show only the question/options, without response examples.
             $visualText = $text;
             if ($isDialog) {
                 foreach ($readings as &$reading) {
@@ -2494,8 +2499,8 @@ function Execute($request = null)
             }
             if (in_array($iahBuiltIn, ['amazon.helpintent', 'amazon.fallbackintent'], true)) {
                 $iahBuiltInText = $iahBuiltIn === 'amazon.helpintent'
-                    ? 'Frag zum Beispiel: Welche Fenster sind offen? Für eigene Regeln sage Befehl und den Namen deiner Regel.'
-                    : 'Das habe ich nicht verstanden. Sage zum Beispiel: Welche Fenster sind offen?';
+                    ? 'Du kannst Geräte abfragen, Kacheln öffnen und eigene Befehle ausführen.'
+                    : 'Das habe ich nicht verstanden.';
                 $iahLastOutcome('Skill-Hilfe', $iahBuiltInText, 'Hinweis');
                 return AskResponse::CreatePlainText($iahBuiltInText)
                     ->SetRepromptPlainText('Was möchtest du wissen?');
@@ -3213,7 +3218,7 @@ function Execute($request = null)
                 'intent'=>$intentName,
                 'category'=>$iahVoiceCategory
             ]);
-            return $kiAlexaKeepOpen('Alexa hat keinen Fragetext übermittelt. Bitte sage zum Beispiel: Frage, welche Fenster offen sind.');
+            return $kiAlexaKeepOpen('Alexa hat keinen Fragetext übermittelt. Was möchtest du wissen?');
         }
         if (strcasecmp((string)$intentName,'GetHaus') === 0
             && !$IS_LAUNCH && !$IS_BACK && !$wantsExit
@@ -3222,7 +3227,7 @@ function Execute($request = null)
             && $iahVoiceCategory === 'passthrough'
             && gr_norm_text($iahVoiceSpoken) === 'frage') {
             $log('info', 'KIVoice.prompt_question', ['reason'=>'question_carrier_without_text']);
-            return $kiAlexaKeepOpen('Welche Hausfrage möchtest du stellen? Sage zum Beispiel: Frage, welche Fenster offen sind.');
+            return $kiAlexaKeepOpen('Welche Hausfrage möchtest du stellen?');
         }
         // HOME_AGENT_VOICE_HOOK_END
 
@@ -3605,7 +3610,7 @@ function Execute($request = null)
             SetValueString($V['PENDING_DEVICE'], (string)$deviceId);
             SetValueString($V['PENDING_STAGE'], $STAGE_AWAIT_NAME);
             $msg = 'Neues Gerät erkannt. Wie soll ich das Gerät nennen?';
-            return AskResponse::CreatePlainText($msg)->SetRepromptPlainText('Sag mir einen Namen, zum Beispiel Küche oder Wohnzimmer.');
+            return AskResponse::CreatePlainText($msg)->SetRepromptPlainText('Wie soll ich das Gerät nennen?');
         }
 
         $alexaKey = $roomSpokenCH($ROOMS, $alexa, $token_norm) ?? $normalizeRoom($alexa);

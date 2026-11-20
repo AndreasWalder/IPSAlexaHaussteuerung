@@ -224,7 +224,7 @@ final class IAHHomeConnect
             $parts[] = ($i+1) . ': ' . $d['name'];
         }
         return self::response('Hausgeräteauswahl', 'all', $rows,
-            'Welches Gerät meinst du? ' . implode('. ', $parts) . '. Sage zum Beispiel das erste oder den Gerätenamen.')
+            'Welches Gerät meinst du? ' . implode('. ', $parts) . '.')
             + ['awaitingDevice'=>true, 'deviceChoices'=>$choices];
     }
 

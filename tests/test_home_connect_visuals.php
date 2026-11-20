@@ -18,11 +18,11 @@ $instruction='Sage zum Beispiel das erste oder den Gerätenamen.';
 $speech='Welches Gerät meinst du? 1: Micro-Backofen. 2: Dampf-Backofen. '.$instruction;
 $choices=[['label'=>'1','value'=>'Micro-Backofen'],['label'=>'2','value'=>'Dampf-Backofen']];
 $choice=$summary($speech,'Rückfrage','Backofen',true,'home_connect_all',$choices,'Hausgeräteauswahl');
-ck38($choice->speech===$speech && $choice->apl['datasources']['summary']['readings']===$choices
+ck38($choice->speech==='Welches Gerät meinst du? 1: Micro-Backofen. 2: Dampf-Backofen.' && $choice->apl['datasources']['summary']['readings']===$choices
     && $choice->apl['datasources']['summary']['text']===''
     && $choice->card[1]==="1  Micro-Backofen\n2  Dampf-Backofen"
     && !str_contains(json_encode([$choice->apl,$choice->card]),$instruction),
-    'appliance choice keeps spoken help separate from digit-only cards and APL');
+    'appliance choice omits response examples from speech, digit-only cards and APL');
 $generic=$summary('Welchen Eintrag meinst du? '.$instruction,'Rückfrage','',true,'',[
     ['label'=>'Nummer 1','value'=>'Erster Eintrag'],['label'=>'Nummer 2','value'=>'Zweiter Eintrag']
 ]);
@@ -33,6 +33,10 @@ ck38($generic->apl['datasources']['summary']['title']==='Auswahl'
 $question=$summary('Welchen Raum meinst du? Bitte sage zum Beispiel Wohnzimmer.','Rückfrage','',true);
 ck38($question->apl['datasources']['summary']['text']==='Welchen Raum meinst du?'
     && $question->card[1]==='Welchen Raum meinst du?'
-    && str_contains($question->speech,'Bitte sage'),
-    'plain clarification shows its question while spoken response hints stay out of cards and APL');
+    && $question->speech==='Welchen Raum meinst du?',
+    'plain clarification contains only its question in speech, cards and APL');
+foreach (['Sag z. B. Wohnzimmer.','Sage zum Beispiel das erste.','Antworte mit dem Gerätenamen.'] as $hint) {
+    ck38($summary('Welchen Eintrag meinst du? '.$hint,'Rückfrage')->speech==='Welchen Eintrag meinst du?',
+        'Shared dialog policy suppresses response instructions even without a screen');
+}
 echo "PASS household device APL titles, live rows, seven built-in graphics and screen-free response\n";

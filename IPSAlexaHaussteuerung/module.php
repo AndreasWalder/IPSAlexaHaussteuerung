@@ -94,7 +94,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         );
         $this->RegisterPropertyString(
             'LaunchFooterText',
-            (string) ($launchDefaults['footerText'] ?? 'Tipp eine Kachel an – oder sage z. B. „Jalousie“.')
+            (string) ($launchDefaults['footerText'] ?? 'Wähle eine Kachel.')
         );
         $this->RegisterPropertyString('LaunchLogo', (string) ($launchDefaults['logo'] ?? 'Logo.png'));
         $this->RegisterPropertyString('LaunchHomeIcon', (string) ($launchDefaults['homeIcon'] ?? 'HomeIcon.png'));
@@ -2527,6 +2527,8 @@ PHP;
             $at = $line === false ? $pos : $line + 1;
             $updated = substr_replace($content, $hook . "\n\n", $at, 0);
         }
+        $updated = str_replace('Sag mir einen Namen, zum Beispiel Küche oder Wohnzimmer.',
+            'Wie soll ich das Gerät nennen?', $updated);
         if ($updated !== $content) {
             IPS_SetScriptContent($scriptId, $updated);
         }
@@ -3009,7 +3011,7 @@ PHP;
         return [
             'title' => 'HAUS VISUALISIERUNG',
             'subtitleTemplate' => 'Raumname: {{alexa}}',
-            'footerText' => 'Tipp eine Kachel an – oder sage z. B. „Jalousie“.',
+            'footerText' => 'Wähle eine Kachel.',
             'logo' => 'Logo.png',
             'homeIcon' => 'HomeIcon.png',
             'headerIcon' => 'Icon.png',

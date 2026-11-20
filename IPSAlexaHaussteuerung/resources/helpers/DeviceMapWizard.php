@@ -227,7 +227,7 @@ $handle_wizard = static function(
             return [
                 'type'     => 'ask',
                 'text'     => 'Wie soll ich das Gerät nennen?',
-                'reprompt' => 'Sag z. B. Küche, Wohnzimmer oder Büro.',
+                'reprompt' => 'Wie soll ich das Gerät nennen?',
             ];
         }
 

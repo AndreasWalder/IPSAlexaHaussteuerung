@@ -2,7 +2,7 @@
 return [
     'title' => 'HAUS VISUALISIERUNG',
     'subtitleTemplate' => 'Raumname: {{alexa}}',
-    'footerText' => 'Tipp eine Kachel an – oder sage z. B. „Jalousie“.',
+    'footerText' => 'Wähle eine Kachel.',
     'logo' => 'Logo.png',
     'homeIcon' => 'HomeIcon.png',
     'headerIcon' => 'Icon.png',

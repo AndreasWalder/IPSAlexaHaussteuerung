@@ -651,7 +651,7 @@ try {
             echo json_encode([
                 'ok' => true, 'route' => 'kacheltest',
                 'data' => ['speech' => 'Der Kachelvisualisierung-Testmodus ist deaktiviert.',
-                    'reprompt' => 'Sage zum Beispiel Kamera oder Energie.'],
+                    'reprompt' => 'Welche Ansicht möchtest du öffnen?'],
                 'flags' => $flags, 'aplToken' => 'hv-tile-test'
             ], $JSON);
             return;
