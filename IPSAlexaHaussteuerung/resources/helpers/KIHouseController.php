@@ -1168,7 +1168,7 @@ function iah_rc_voice(
             $archivePartial=is_array($archiveWordingEvent) && !empty($readDetails[0]['result']['partial']);
             unset($local['readQueries'],$local['requiredWordingNames'],$local['archiveWordingEvent']);
             $local['localHouseQuery']=true;
-            $local['answerSource']='local';
+            $local['answerSource']=isset($local['displayRows'])?'house_status':'local';
             if($key==='' || empty($cfg['prefer_ai']) || !empty($local['awaitingLocation']) || $archivePartial)
                 return $costFinish($local);
             $costStarted=true;
@@ -1569,6 +1569,4 @@ if(isset($_IPS)&&is_array($_IPS)&&array_key_exists('kiCatalogText',$_IPS)){
     $iahBridgeConfig=(string)($_IPS['kiCatalogConfigJson']??'{}');
     echo iah_rc_bridge_reply(static function () use ($iahBridgeText,$iahBridgeConfig): array {
         $cfg=json_decode($iahBridgeConfig,true);
-        return iah_rc_voice($iahBridgeText,is_array($cfg)?$cfg:[]);
-    });
-}
+        return iah_rc_voice($iahBridg
