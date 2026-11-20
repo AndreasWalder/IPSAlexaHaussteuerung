@@ -186,7 +186,7 @@ final class IAHHomeConnect
                 if ($compact === '') continue;
                 // ASR may join or split compound names, including Micro/Mikro.
                 $pattern = implode(' *', str_split($compact));
-                if (preg_match('/\b' . $pattern . '\b/', $q)) $score = max($score, strlen($compact));
+                if (preg_match('/\b' . $pattern . '(?:s|es)?\b/', $q)) $score = max($score, strlen($compact));
             }
             if ($score > $best) { $best = $score; $matches = [$d]; }
             elseif ($score > 0 && $score === $best) $matches[] = $d;

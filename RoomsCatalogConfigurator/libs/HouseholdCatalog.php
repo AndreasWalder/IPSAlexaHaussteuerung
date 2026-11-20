@@ -21,6 +21,30 @@ final class RCCHouseholdCatalog
             }
             $source['devices'][$key]=$entry;
         }
+        foreach (IAHHomeAssistantAppliances::discover() as $device) {
+            $key='object_'.$device['id'];
+            foreach ($source['devices'] as $existingKey=>$existing) if ((int)$existing['id']===$device['id']) { $key=$existingKey; break; }
+            if (!isset($source['devices'][$key])) { $source['devices'][$key]=$device; continue; }
+            $old=$source['devices'][$key];
+            if (!in_array($old['provider']??'',['ObjectTree','HomeAssistant'],true)) continue;
+            foreach ($device['variables'] as $metricKey=>$m) {
+                $matched=null;
+                foreach ((array)$old['variables'] as $oldKey=>$oldMetric) if ((int)$oldMetric['id']===(int)$m['id']) { $matched=$oldKey; break; }
+                if ($matched===null) { $old['variables'][$metricKey]=$m; continue; }
+                $prior=&$old['variables'][$matched];
+                if (($old['provider']??'')==='ObjectTree') {
+                    if ($prior['title']===(string)IPS_GetObject($m['id'])['ObjectName']) $prior['title']=$m['title'];
+                    if (($prior['role']??'other')==='other') $prior['role']=$m['role'];
+                }
+                unset($prior);
+            }
+            $old['provider']='HomeAssistant'; $old['type']=$device['type']; $old['moduleId']=$device['moduleId'];
+            if (($source['devices'][$key]['provider']??'')==='ObjectTree') {
+                if ($old['name']===(string)IPS_GetObject($device['id'])['ObjectName']) $old['name']=$device['name'];
+                $old['aliases']=array_values(array_unique(array_merge((array)$old['aliases'],$device['aliases'])));
+            }
+            $source['devices'][$key]=$old;
+        }
         if ($source['devices']!==[]||IAHHouseholdDevices::source($catalog)!==null) $catalog['dataSources'][IAHHouseholdDevices::KEY]=$source;
         return $catalog;
     }

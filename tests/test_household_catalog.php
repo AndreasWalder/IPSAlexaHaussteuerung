@@ -144,6 +144,7 @@ preg_match('/\$sourceRowSaveCallback=(.*?);\R\s*\$columnsEdit/s',$module,$match)
 $saveCallback=eval('return '.$match[1].';');
 token_get_all('<?php '.$saveCallback,TOKEN_PARSE);
 function RCC_SaveHouseholdOverview(...$args):void{$GLOBALS['householdSaved']=$args;}
+function RCC_UpdateOverviewSelection(int $id,string $json):bool{return false;}
 $Entries=$rows[0];eval($saveCallback);
 hcAssert($GLOBALS['householdSaved'][3]===$rows[0]['synonyms'],'Editing the main table does not clear alternate names');
 echo "PASS household catalog migration, all variables, EDIT-only editing, provider-neutral linking, permissions and normal filter/gear dispatch\n";

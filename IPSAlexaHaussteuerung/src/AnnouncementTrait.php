@@ -36,6 +36,16 @@ trait IAHAnnouncementTrait
                 }
                 return false;
             }
+            if (($r['origin']??'')==='household') {
+                $catalog=json_decode($this->GetHomeConnectCatalog(),true)?:[];
+                $source=IAHHouseholdDevices::source($catalog);
+                if (empty($source['kiEnabled'])) return false;
+                foreach ((array)$source['devices'] as $d) {
+                    if ((int)$d['id']!==(int)($r['deviceId']??0)||empty($d['enabled'])||($d['provider']??'')!=='HomeAssistant') continue;
+                    foreach (IAHHomeAssistantAppliances::readings($d) as $v) if ($v['id']===(int)$r['variableId']) return true;
+                }
+                return false;
+            }
             return true;
         } catch (Throwable $e) { return false; }
     }
@@ -91,6 +101,29 @@ trait IAHAnnouncementTrait
                     'deviceId'=>$d['id'], 'variableId'=>$v['Event']['id'], 'binding'=>$this->announcementBinding($v['Event']['id']),
                     'operator'=>'event', 'expected'=>json_encode($values, JSON_THROW_ON_ERROR), 'text'=>$text,
                     'cooldown'=>120, 'echoDeviceId'=>0, 'mode'=>'announcement', 'quietStart'=>0, 'quietEnd'=>0];
+            }
+        }
+        if (method_exists($this,'GetHomeConnectCatalog')) {
+            $catalog=json_decode($this->GetHomeConnectCatalog(),true)?:[];
+            $source=IAHHouseholdDevices::source($catalog);
+            foreach ((array)($source['devices']??[]) as $d) {
+                if (empty($source['kiEnabled'])||empty($d['enabled'])||($d['provider']??'')!=='HomeAssistant') continue;
+                $values=IAHHomeAssistantAppliances::readings($d); $templates=[];
+                if ($d['type']==='ha_laundry') {
+                    $templates['connection']=['sensor_connectivitystate','equals','Disconnected','Die Geräteverbindung ist unterbrochen.'];
+                    $templates['alerts']=['sensor_alerts','above',0,'Das Gerät meldet einen Fehlercode: {value}.'];
+                } else $templates['connection']=['reachable','equals',false,'Das Gerät ist über Home Assistant nicht erreichbar.'];
+                foreach ($templates as $suffix=>[$ident,$operator,$expected,$text]) {
+                    if (!isset($values[$ident])) continue;
+                    $key='household_'.$d['id'].'_'.$suffix;
+                    if (in_array($key,$seen,true)) continue;
+                    $seen[]=$key; if (isset($rules[$key])) continue;
+                    $v=$values[$ident]; $text=$d['name'].': '.$text;
+                    $rules[$key]=['key'=>$key,'title'=>$text,'enabled'=>true,'origin'=>'household','deviceId'=>$d['id'],
+                        'variableId'=>$v['id'],'binding'=>$this->announcementBinding($v['id']),
+                        'operator'=>$operator,'expected'=>json_encode($expected,JSON_THROW_ON_ERROR),'text'=>$text,
+                        'cooldown'=>120,'echoDeviceId'=>0,'mode'=>'announcement','quietStart'=>0,'quietEnd'=>0];
+                }
             }
         }
         $this->announcementWrite('AnnouncementTemplatesSeen', $seen);

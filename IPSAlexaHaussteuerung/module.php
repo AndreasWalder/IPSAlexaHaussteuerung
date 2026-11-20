@@ -1948,10 +1948,14 @@ PHP;
                     $content = str_replace('// IAH_HOME_CONNECT_INSERT', "if (!class_exists('IAHHomeConnect', false)) {\n" . $home . "\n}", $content);
                 }
                 if (str_contains($content, '// IAH_HOUSEHOLD_DEVICES_INSERT')) {
+                    $adapter=file_get_contents(__DIR__.'/resources/helpers/HomeAssistantAppliances.php');
+                    $adapter=is_string($adapter)?preg_replace('/^<\?php\s*declare\(strict_types=1\);\s*/','',$adapter):null;
+                    if (!is_string($adapter)||!str_contains($adapter,'final class IAHHomeAssistantAppliances')) return (int)$id;
                     $household=file_get_contents(__DIR__.'/resources/helpers/HouseholdDevices.php');
                     $household=is_string($household)?preg_replace('/^<\?php\s*declare\(strict_types=1\);\s*/','',$household):null;
                     if (!is_string($household)||!str_contains($household,'final class IAHHouseholdDevices')) return (int)$id;
-                    $content=str_replace('// IAH_HOUSEHOLD_DEVICES_INSERT',"if (!class_exists('IAHHouseholdDevices', false)) {\n".$household."\n}",$content);
+                    $content=str_replace('// IAH_HOUSEHOLD_DEVICES_INSERT',"if (!class_exists('IAHHomeAssistantAppliances', false)) {\n".$adapter."\n}\n"
+                        ."if (!class_exists('IAHHouseholdDevices', false)) {\n".$household."\n}",$content);
                 }
                 if (str_contains($content, '// IAH_RENDERER_ACTION_DIAGNOSTICS_INSERT')) {
                     $helper = file_get_contents(__DIR__ . '/resources/helpers/RendererActionDiagnostics.php');

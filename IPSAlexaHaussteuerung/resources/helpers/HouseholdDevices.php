@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 if (!class_exists('IAHHomeConnect', false)) require_once __DIR__ . '/HomeConnect.php';
+if (!class_exists('IAHHomeAssistantAppliances',false)) require_once __DIR__.'/HomeAssistantAppliances.php';
 
 /** Provider-independent household catalog, shared by EDIT UI and the Alexa runtime. */
 final class IAHHouseholdDevices
@@ -90,6 +91,7 @@ final class IAHHouseholdDevices
                 $single=$source; $single['devices']=[$d];
                 return IAHHomeConnect::query(['dataSources'=>['home_connect'=>self::homeSource($single)]],$text,$allowWrites,$selectedId);
             }
+            if (($d['provider']??'')==='HomeAssistant') return IAHHomeAssistantAppliances::query($d,$text,$allowWrites);
             $rows=[]; $command=preg_match('/^(?:bitte )?(?:schalte|stelle|setze|starte|stoppe|pausiere)\b/',$q)===1;
             if ($command) {
                 $result='Für diesen Befehl ist keine eindeutige freigegebene Hausgerätefunktion hinterlegt.';
@@ -122,6 +124,11 @@ final class IAHHouseholdDevices
         $rows=[];
         foreach ($all as $d) {
             $status='Keine Statusvariable zugeordnet';
+            if (($d['provider']??'')==='HomeAssistant') {
+                $overview=IAHHomeAssistantAppliances::query($d,'Status',false);
+                $rows[]=['label'=>$d['name'],'value'=>$overview['displayRows'][0]['value']??'Wert nicht verfügbar'];
+                continue;
+            }
             foreach ((array)$d['variables'] as $m) {
                 if (empty($m['enabled'])||!in_array($m['role']??'',['status','power'],true)) continue;
                 $r=self::reading($m); $status=$r!==null?IAHHomeConnect::display($r):'Wert nicht verfügbar'; break;

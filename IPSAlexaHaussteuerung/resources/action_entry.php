@@ -2240,6 +2240,7 @@ function Execute($request = null)
                     'hob' => 'M5,6 H31 V31 H5 Z',
                     'oven' => 'M6,5 H30 V31 H6 Z',
                     'microwave' => 'M4,8 H32 V29 H4 Z',
+                    'fridge', 'freezer' => 'M8,3 H28 V33 H8 Z',
                     default => 'M7,7 H29 V31 H7 Z M11,3 H25 V10 H11 Z M11,15 H25 V18 H11 Z M11,22 H25 V25 H11 Z',
                 };
                 $iconPaths = [['type'=>'path','fill'=>'#75E4D0','pathData'=>$path]];
@@ -2249,6 +2250,8 @@ function Execute($request = null)
                     'hob' => 'M12,10 A4,4 0 1,1 12,18 A4,4 0 1,1 12,10 Z M24,9 A3,3 0 1,1 24,15 A3,3 0 1,1 24,9 Z M22,20 A4,4 0 1,1 22,28 A4,4 0 1,1 22,20 Z',
                     'oven' => 'M10,8 H13 V11 H10 Z M22,8 H25 V11 H22 Z M9,15 H27 V27 H9 Z',
                     'microwave' => 'M7,11 H24 V26 H7 Z M27,12 H29 V15 H27 Z M27,19 H29 V22 H27 Z',
+                    'fridge' => 'M10,14 H26 V16 H10 Z M11,7 H13 V11 H11 Z M11,20 H13 V25 H11 Z',
+                    'freezer' => 'M17,9 H19 V25 H17 Z M11,16 H25 V18 H11 Z M12,11 L24,23 L23,24 L11,12 Z M23,11 L12,24 L11,23 L22,10 Z',
                     default => '',
                 };
                 if ($detail !== '') $iconPaths[] = ['type'=>'path','fill'=>'#0B1D28','pathData'=>$detail];

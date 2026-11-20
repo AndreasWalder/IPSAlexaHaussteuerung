@@ -1,0 +1,981 @@
+[
+  {
+    "id": 42146,
+    "name": "Waschtrockner",
+    "parentId": 26513,
+    "ident": "",
+    "objectType": 1,
+    "moduleId": "{72D6A284-1870-4E11-92D8-0402C8233C29}",
+    "moduleName": "Home Assistant Device",
+    "instanceStatus": 102,
+    "variables": [
+      {
+        "id": 10051,
+        "name": "Wet mode",
+        "parentId": 42146,
+        "ident": "switch_userselections_wetmode",
+        "type": 0,
+        "updatedAt": 1795200757,
+        "changedAt": 1793298336,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": true,
+        "formattedValue": "An",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 11198,
+        "name": "Ui lock mode",
+        "parentId": 42146,
+        "ident": "switch_uilockmode",
+        "type": 0,
+        "updatedAt": 1795200757,
+        "changedAt": 0,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": false,
+        "formattedValue": "Aus",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 13689,
+        "name": "Start time",
+        "parentId": 42146,
+        "ident": "number_starttime",
+        "type": 1,
+        "updatedAt": 1795200757,
+        "changedAt": 0,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": 0,
+        "formattedValue": "0 min",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 14088,
+        "name": "Remote control",
+        "parentId": 42146,
+        "ident": "sensor_remotecontrol",
+        "type": 3,
+        "updatedAt": 1795200757,
+        "changedAt": 1793301045,
+        "actionId": 0,
+        "hasAction": false,
+        "actionDisabled": false,
+        "groupHint": "status",
+        "valueRedacted": false,
+        "rawValue": "Not Safety Relevant Enabled",
+        "formattedValue": "Not Safety Relevant Enabled",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 16225,
+        "name": "Pre wash phase",
+        "parentId": 42146,
+        "ident": "switch_userselections_prewashphase",
+        "type": 0,
+        "updatedAt": 1795200757,
+        "changedAt": 0,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": false,
+        "formattedValue": "Aus",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 17425,
+        "name": "Default extra rinse",
+        "parentId": 42146,
+        "ident": "select_defaultextrarinse",
+        "type": 3,
+        "updatedAt": 1795200757,
+        "changedAt": 1793298336,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": "Extra Rinse Off",
+        "formattedValue": "Extra Rinse Off",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 17432,
+        "name": "OFF START",
+        "parentId": 42146,
+        "ident": "button_executecommand_5",
+        "type": 1,
+        "updatedAt": 1793298336,
+        "changedAt": 1793298336,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": -1,
+        "formattedValue": "-",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 18130,
+        "name": "OFF RESUME",
+        "parentId": 42146,
+        "ident": "button_executecommand_4",
+        "type": 1,
+        "updatedAt": 1793298336,
+        "changedAt": 1793298336,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": -1,
+        "formattedValue": "-",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 18288,
+        "name": "Program uid",
+        "parentId": 42146,
+        "ident": "select_userselections_programuid",
+        "type": 3,
+        "updatedAt": 1795200757,
+        "changedAt": 1793298336,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": "Drum Clean Pr Machineclean",
+        "formattedValue": "Drum Clean Pr Machineclean",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 20259,
+        "name": "Measured load weight",
+        "parentId": 42146,
+        "ident": "sensor_measuredloadweight",
+        "type": 3,
+        "updatedAt": 1795200757,
+        "changedAt": 1793298336,
+        "actionId": 0,
+        "hasAction": false,
+        "actionDisabled": false,
+        "groupHint": "status",
+        "valueRedacted": false,
+        "rawValue": "65535",
+        "formattedValue": "65535",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 21064,
+        "name": "Total dry cycles count",
+        "parentId": 42146,
+        "ident": "sensor_totaldrycyclescount",
+        "type": 3,
+        "updatedAt": 1795200757,
+        "changedAt": 1793298336,
+        "actionId": 0,
+        "hasAction": false,
+        "actionDisabled": false,
+        "groupHint": "status",
+        "valueRedacted": false,
+        "rawValue": "0",
+        "formattedValue": "0",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 21582,
+        "name": "Steam value",
+        "parentId": 42146,
+        "ident": "select_userselections_steamvalue",
+        "type": 3,
+        "updatedAt": 1795200757,
+        "changedAt": 1793298336,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": "Steam Off",
+        "formattedValue": "Steam Off",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 27159,
+        "name": "Total drying time",
+        "parentId": 42146,
+        "ident": "sensor_totaldryingtime",
+        "type": 3,
+        "updatedAt": 1795200757,
+        "changedAt": 1793298336,
+        "actionId": 0,
+        "hasAction": false,
+        "actionDisabled": false,
+        "groupHint": "status",
+        "valueRedacted": false,
+        "rawValue": "0",
+        "formattedValue": "0",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 27835,
+        "name": "Dry mode",
+        "parentId": 42146,
+        "ident": "switch_userselections_drymode",
+        "type": 0,
+        "updatedAt": 1795200757,
+        "changedAt": 0,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": false,
+        "formattedValue": "Aus",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 28895,
+        "name": "Drying nominal load weight",
+        "parentId": 42146,
+        "ident": "sensor_dryingnominalloadweight",
+        "type": 3,
+        "updatedAt": 1795200757,
+        "changedAt": 1793298336,
+        "actionId": 0,
+        "hasAction": false,
+        "actionDisabled": false,
+        "groupHint": "status",
+        "valueRedacted": false,
+        "rawValue": "65535",
+        "formattedValue": "65535",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 31421,
+        "name": "Total cycle counter",
+        "parentId": 42146,
+        "ident": "sensor_totalcyclecounter",
+        "type": 3,
+        "updatedAt": 1795200757,
+        "changedAt": 1793300910,
+        "actionId": 0,
+        "hasAction": false,
+        "actionDisabled": false,
+        "groupHint": "status",
+        "valueRedacted": false,
+        "rawValue": "1",
+        "formattedValue": "1",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 31755,
+        "name": "End of cycle sound",
+        "parentId": 42146,
+        "ident": "select_endofcyclesound",
+        "type": 3,
+        "updatedAt": 1795200757,
+        "changedAt": 1793298336,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": "Short Sound",
+        "formattedValue": "Short Sound",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 32359,
+        "name": "Cycle phase",
+        "parentId": 42146,
+        "ident": "sensor_cyclephase",
+        "type": 3,
+        "updatedAt": 1793300548,
+        "changedAt": 1793300548,
+        "actionId": 0,
+        "hasAction": false,
+        "actionDisabled": false,
+        "groupHint": "status",
+        "valueRedacted": false,
+        "rawValue": "Spin",
+        "formattedValue": "Spin",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 34003,
+        "name": "OFF PAUSE",
+        "parentId": 42146,
+        "ident": "button_executecommand_3",
+        "type": 1,
+        "updatedAt": 1793298336,
+        "changedAt": 1793298336,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": -1,
+        "formattedValue": "-",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 34074,
+        "name": "Night cycle",
+        "parentId": 42146,
+        "ident": "switch_userselections_nightcycle",
+        "type": 0,
+        "updatedAt": 1795200757,
+        "changedAt": 0,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": false,
+        "formattedValue": "Aus",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 34941,
+        "name": "OFF STOPRESET",
+        "parentId": 42146,
+        "ident": "button_executecommand_6",
+        "type": 1,
+        "updatedAt": 1793298336,
+        "changedAt": 1793298336,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": -1,
+        "formattedValue": "-",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 36612,
+        "name": "Alerts",
+        "parentId": 42146,
+        "ident": "sensor_alerts",
+        "type": 3,
+        "updatedAt": 1795200757,
+        "changedAt": 1793298336,
+        "actionId": 0,
+        "hasAction": false,
+        "actionDisabled": false,
+        "groupHint": "status",
+        "valueRedacted": false,
+        "rawValue": "0",
+        "formattedValue": "0",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 37270,
+        "name": "Wm economy",
+        "parentId": 42146,
+        "ident": "switch_userselections_wmeconomy",
+        "type": 0,
+        "updatedAt": 1795200757,
+        "changedAt": 0,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": false,
+        "formattedValue": "Aus",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 37604,
+        "name": "Total wash dry cycles count",
+        "parentId": 42146,
+        "ident": "sensor_totalwashdrycyclescount",
+        "type": 3,
+        "updatedAt": 1795200757,
+        "changedAt": 1793298336,
+        "actionId": 0,
+        "hasAction": false,
+        "actionDisabled": false,
+        "groupHint": "status",
+        "valueRedacted": false,
+        "rawValue": "0",
+        "formattedValue": "0",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 39016,
+        "name": "Analog spin speed",
+        "parentId": 42146,
+        "ident": "select_userselections_analogspinspeed",
+        "type": 3,
+        "updatedAt": 1795200757,
+        "changedAt": 1793298336,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": "1200 Rpm",
+        "formattedValue": "1200 Rpm",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 41845,
+        "name": "Cycle sub phase",
+        "parentId": 42146,
+        "ident": "sensor_cyclesubphase",
+        "type": 3,
+        "updatedAt": 1795200757,
+        "changedAt": 1793298336,
+        "actionId": 0,
+        "hasAction": false,
+        "actionDisabled": false,
+        "groupHint": "status",
+        "valueRedacted": false,
+        "rawValue": "Not Available",
+        "formattedValue": "Not Available",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 42101,
+        "name": "OFF",
+        "parentId": 42146,
+        "ident": "button_executecommand",
+        "type": 1,
+        "updatedAt": 1793298336,
+        "changedAt": 1793298336,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": -1,
+        "formattedValue": "-",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 42606,
+        "name": "Appliance total working time",
+        "parentId": 42146,
+        "ident": "sensor_appliancetotalworkingtime",
+        "type": 1,
+        "updatedAt": 1795200757,
+        "changedAt": 1793300016,
+        "actionId": 0,
+        "hasAction": false,
+        "actionDisabled": false,
+        "groupHint": "status",
+        "valueRedacted": false,
+        "rawValue": 3600,
+        "formattedValue": "1:00",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 42780,
+        "name": "Washing nominal load weight",
+        "parentId": 42146,
+        "ident": "sensor_washingnominalloadweight",
+        "type": 3,
+        "updatedAt": 1795200757,
+        "changedAt": 1793298336,
+        "actionId": 0,
+        "hasAction": false,
+        "actionDisabled": false,
+        "groupHint": "status",
+        "valueRedacted": false,
+        "rawValue": "65535",
+        "formattedValue": "65535",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 43524,
+        "name": "Time manager level",
+        "parentId": 42146,
+        "ident": "select_userselections_timemanagerlevel",
+        "type": 3,
+        "updatedAt": 1795200757,
+        "changedAt": 1793298336,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": "Normal",
+        "formattedValue": "Normal",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 46322,
+        "name": "Total washing time",
+        "parentId": 42146,
+        "ident": "sensor_totalwashingtime",
+        "type": 1,
+        "updatedAt": 1795200757,
+        "changedAt": 1793300017,
+        "actionId": 0,
+        "hasAction": false,
+        "actionDisabled": false,
+        "groupHint": "status",
+        "valueRedacted": false,
+        "rawValue": 3600,
+        "formattedValue": "1:00",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 46874,
+        "name": "Rinse hold",
+        "parentId": 42146,
+        "ident": "switch_userselections_rinsehold",
+        "type": 0,
+        "updatedAt": 1795200757,
+        "changedAt": 0,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": false,
+        "formattedValue": "Aus",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 47872,
+        "name": "Door state",
+        "parentId": 42146,
+        "ident": "binary_sensor_doorstate",
+        "type": 0,
+        "updatedAt": 1795200757,
+        "changedAt": 0,
+        "actionId": 0,
+        "hasAction": false,
+        "actionDisabled": false,
+        "groupHint": "status",
+        "valueRedacted": false,
+        "rawValue": false,
+        "formattedValue": "Geschlossen",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 48497,
+        "name": "Humidity target",
+        "parentId": 42146,
+        "ident": "select_userselections_humiditytarget",
+        "type": 3,
+        "updatedAt": 1795200757,
+        "changedAt": 1793298336,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": "Cupboard",
+        "formattedValue": "Cupboard",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 48920,
+        "name": "OFF ON",
+        "parentId": 42146,
+        "ident": "button_executecommand_2",
+        "type": 1,
+        "updatedAt": 1793298336,
+        "changedAt": 1793298336,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": -1,
+        "formattedValue": "-",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 48948,
+        "name": "Anticrease no steam",
+        "parentId": 42146,
+        "ident": "switch_userselections_anticreasenosteam",
+        "type": 0,
+        "updatedAt": 1795200757,
+        "changedAt": 0,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": false,
+        "formattedValue": "Aus",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 49081,
+        "name": "Drying time",
+        "parentId": 42146,
+        "ident": "number_userselections_dryingtime",
+        "type": 1,
+        "updatedAt": 1795200757,
+        "changedAt": 1793298336,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": 65535,
+        "formattedValue": "65535",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 49311,
+        "name": "Time to end",
+        "parentId": 42146,
+        "ident": "sensor_timetoend",
+        "type": 1,
+        "updatedAt": 1795200757,
+        "changedAt": 1793300909,
+        "actionId": 0,
+        "hasAction": false,
+        "actionDisabled": false,
+        "groupHint": "status",
+        "valueRedacted": false,
+        "rawValue": 0,
+        "formattedValue": "0:00",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 53827,
+        "name": "Total wash cycles count",
+        "parentId": 42146,
+        "ident": "sensor_totalwashcyclescount",
+        "type": 3,
+        "updatedAt": 1795200757,
+        "changedAt": 1793300910,
+        "actionId": 0,
+        "hasAction": false,
+        "actionDisabled": false,
+        "groupHint": "status",
+        "valueRedacted": false,
+        "rawValue": "1",
+        "formattedValue": "1",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 54479,
+        "name": "Erreichbar",
+        "parentId": 42146,
+        "ident": "reachable",
+        "type": 0,
+        "updatedAt": 1793298325,
+        "changedAt": 1793298325,
+        "actionId": 0,
+        "hasAction": false,
+        "actionDisabled": false,
+        "groupHint": "status",
+        "valueRedacted": false,
+        "rawValue": true,
+        "formattedValue": "Erreichbar",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 54876,
+        "name": "Analog temperature",
+        "parentId": 42146,
+        "ident": "select_userselections_analogtemperature",
+        "type": 3,
+        "updatedAt": 1795200757,
+        "changedAt": 1793298336,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": "60 Celsius",
+        "formattedValue": "60 Celsius",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 57349,
+        "name": "Stain",
+        "parentId": 42146,
+        "ident": "switch_userselections_stain",
+        "type": 0,
+        "updatedAt": 1795200757,
+        "changedAt": 0,
+        "actionId": 42146,
+        "hasAction": true,
+        "actionDisabled": false,
+        "groupHint": "setting",
+        "valueRedacted": false,
+        "rawValue": false,
+        "formattedValue": "Aus",
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 58424,
+        "name": "Connectivity state",
+        "parentId": 42146,
+        "ident": "sensor_connectivitystate",
+        "type": 3,
+        "updatedAt": 1795200757,
+        "changedAt": 1793301331,
+        "actionId": 0,
+        "hasAction": false,
+        "actionDisabled": false,
+        "groupHint": "status",
+        "valueRedacted": false,
+        "rawValue": "Disconnected",
+        "formattedValue": "Disconnected",
+        "profile": {
+          "name": ""
+        }
+      }
+    ]
+  },
+  {
+    "id": 35524,
+    "name": "Gefrierschrank",
+    "parentId": 15484,
+    "moduleId": "{72D6A284-1870-4E11-92D8-0402C8233C29}",
+    "moduleName": "Home Assistant Device",
+    "variables": [
+      {
+        "id": 13156,
+        "name": "Gefrierschrank",
+        "ident": "sensor_status",
+        "type": 2,
+        "rawValue": -18,
+        "hasAction": false,
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 18281,
+        "name": "Partymodus",
+        "ident": "switch_partymodus",
+        "type": 0,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 29449,
+        "name": "Erreichbar",
+        "ident": "reachable",
+        "type": 0,
+        "rawValue": true,
+        "hasAction": false,
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 31161,
+        "name": "SuperFrost",
+        "ident": "switch_superfrost",
+        "type": 0,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 49959,
+        "name": "Sollwert",
+        "ident": "number_sollwert",
+        "type": 1,
+        "rawValue": -18,
+        "hasAction": true,
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 54880,
+        "name": "Eiswürfelbereiter",
+        "ident": "select_eiswurfelbereiter",
+        "type": 3,
+        "rawValue": "off",
+        "hasAction": true,
+        "profile": {
+          "name": ""
+        }
+      }
+    ]
+  },
+  {
+    "id": 58614,
+    "name": "Kühlschrank",
+    "parentId": 15484,
+    "moduleId": "{72D6A284-1870-4E11-92D8-0402C8233C29}",
+    "moduleName": "Home Assistant Device",
+    "variables": [
+      {
+        "id": 25701,
+        "name": "Nachtmodus",
+        "ident": "switch_nachtmodus",
+        "type": 0,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 30034,
+        "name": "Partymodus",
+        "ident": "switch_partymodus",
+        "type": 0,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 32666,
+        "name": "Sollwert",
+        "ident": "number_sollwert",
+        "type": 1,
+        "rawValue": 5,
+        "hasAction": true,
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 33211,
+        "name": "Kühlschrank",
+        "ident": "sensor_status",
+        "type": 2,
+        "rawValue": 5,
+        "hasAction": false,
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 41088,
+        "name": "SuperCool",
+        "ident": "switch_supercool",
+        "type": 0,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 52706,
+        "name": "Erreichbar",
+        "ident": "reachable",
+        "type": 0,
+        "rawValue": true,
+        "hasAction": false,
+        "profile": {
+          "name": ""
+        }
+      }
+    ]
+  }
+]

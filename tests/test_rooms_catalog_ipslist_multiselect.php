@@ -37,6 +37,10 @@ function RCC_SaveToEdit(int $id,string $json):void {
     testAssert($id===123,'Callback instance ID');
     $GLOBALS['rccTestInstance']->SaveToEdit($json);
 }
+function RCC_UpdateOverviewSelection(int $id,string $json):bool {
+    testAssert($id===123,'Selection callback uses current instance');
+    return $GLOBALS['rccTestInstance']->UpdateOverviewSelection($json);
+}
 $rows=[
     ['selected'=>false,'roomKey'=>'raum1','roomLabel'=>'Raum 1','floor'=>'EG','domain'=>'licht',
      'group'=>'switches','key'=>'decke','title'=>'Licht Decke','state'=>91001,'toggle'=>91002,
@@ -91,3 +95,29 @@ $inst->SetVisibleSelection(false);
 $result=json_decode($inst->ReadAttributeString('RuntimeEntries'),true);
 testAssert(count(array_filter($result,static fn($r)=>!empty($r['selected'])))===0,'Unmark all');
 echo "PASS: IPSList callbacks, multiple mark/unmark, custom fields and filtered bulk checkbox selection\n";
+
+// Source rows are intentionally outside RuntimeEntries, but their checkboxes must behave identically.
+if (!function_exists('IPS_GetScriptContent')) {
+    function IPS_GetScriptContent(int $id):string{return $GLOBALS['selectionCatalogSource']??'<?php return [];';}
+}
+$source=['provider'=>'HouseholdDevices','schemaVersion'=>1,'domain'=>'hausgeraete','kiEnabled'=>true,'devices'=>[]];
+foreach ([201=>'Erstes Hausgerät',202=>'Zweites Hausgerät'] as $root=>$name) {
+    $source['devices']['object_'.$root]=['id'=>$root,'name'=>$name,'aliases'=>[$name],'provider'=>'ObjectTree',
+        'enabled'=>true,'allowControl'=>false,'roomKey'=>'__household__','roomLabel'=>'Haus','floor'=>'—','group'=>'hausgeraete','variables'=>[]];
+}
+$GLOBALS['selectionCatalogSource']='<?php return '.var_export(['dataSources'=>['household_devices'=>$source]],true).';';
+$sources=(new ReflectionMethod($inst,'overviewSourceRows'))->invoke($inst,['dataSources'=>['household_devices'=>$source]]);
+foreach ($sources as $sourceRow) {
+    $sourceRow['selected']=true;$Entries=new IPSList($sourceRow);
+    ob_start();eval($list['onEdit']);$output=ob_get_clean();
+    testAssert($output==='','A marked source row never emits a save confirmation popup');
+}
+$selectedSources=(new ReflectionMethod($inst,'overviewSourceRows'))->invoke($inst,['dataSources'=>['household_devices'=>$source]]);
+testAssert(count(array_filter($selectedSources,static fn($r)=>$r['selected']))===2,'Both source marks survive a fresh row render');
+$selectedSources[0]['selected']=false;$Entries=new IPSList($selectedSources[0]);eval($list['onEdit']);
+$selectedSources=(new ReflectionMethod($inst,'overviewSourceRows'))->invoke($inst,['dataSources'=>['household_devices'=>$source]]);
+testAssert(!$selectedSources[0]['selected']&&$selectedSources[1]['selected'],'Unmark one source without resetting another');
+testAssert(IPS_GetScriptContent(42)===$GLOBALS['selectionCatalogSource'],'Selection never writes or changes catalog data');
+$changed=$selectedSources[1];$changed['title']='Bearbeiteter Name';
+testAssert(!$inst->UpdateOverviewSelection(json_encode($changed)),'A real overview edit still reaches the ordinary save path');
+echo "PASS: source-row checkboxes persist quietly and genuine gear edits keep their save path\n";

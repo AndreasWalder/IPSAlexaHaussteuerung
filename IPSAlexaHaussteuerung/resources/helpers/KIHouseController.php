@@ -988,7 +988,7 @@ function iah_rc_voice(
             ?? IAHHomeConnect::query($catalog,$text,$homeAllowed,$selectedHouseholdId);
         if ($home !== null) {
             $readDetails = [['tool'=>'home_connect', 'result'=>$home['displayRows']]];
-            if (empty($home['isCommand']) && empty($home['awaitingDevice']) && $home['displayRows'] !== [] && $key !== '' && !empty($cfg['prefer_ai'])) {
+            if (empty($home['isCommand']) && empty($home['awaitingDevice']) && empty($home['preserveLocalAnswer']) && $home['displayRows'] !== [] && $key !== '' && !empty($cfg['prefer_ai'])) {
                 try {
                     $model = (string)($cfg['model'] ?? 'gpt-6-luna');
                     $costStarted = true; $costReport('start', ['model'=>$model]);

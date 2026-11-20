@@ -126,6 +126,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterPropertyInteger('HomeConnectRootId', 0);
 
         $this->RegisterAttributeString('RuntimeEntries', '[]');
+        $this->RegisterAttributeString('OverviewSourceSelections', '{}');
         $this->RegisterAttributeString('RuntimeEditHash', '');
         $this->RegisterAttributeString('FilterRoom', '');
         $this->RegisterAttributeString('FilterDomain', '');
@@ -617,7 +618,7 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         $this->WriteAttributeString('FilterRoom', $roomKey);
         $this->normalizeCurrentFilters(
-            array_merge($this->getRuntimeEntries(),RCCDataSourceEditor::sourceRows(
+            array_merge($this->getRuntimeEntries(),$this->overviewSourceRows(
                 $this->loadConfiguredCatalog('RoomsCatalogEditScriptID','EDIT'))),
             $this->getProdEntries());
         $this->logDebug('SetRoomFilter: roomKey="' . $roomKey . '"');
@@ -628,7 +629,7 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         $this->WriteAttributeString('FilterDomain', $domainKey);
         $this->normalizeCurrentFilters(
-            array_merge($this->getRuntimeEntries(),RCCDataSourceEditor::sourceRows(
+            array_merge($this->getRuntimeEntries(),$this->overviewSourceRows(
                 $this->loadConfiguredCatalog('RoomsCatalogEditScriptID','EDIT'))),
             $this->getProdEntries());
                $this->logDebug('SetDomainFilter: domainKey="' . $domainKey . '"');
@@ -639,7 +640,7 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         $this->WriteAttributeString('FilterGroup', $groupKey);
         $this->normalizeCurrentFilters(
-            array_merge($this->getRuntimeEntries(),RCCDataSourceEditor::sourceRows(
+            array_merge($this->getRuntimeEntries(),$this->overviewSourceRows(
                 $this->loadConfiguredCatalog('RoomsCatalogEditScriptID','EDIT'))),
             $this->getProdEntries());
         $this->logDebug('SetGroupFilter: groupKey="' . $groupKey . '"');
@@ -684,6 +685,14 @@ class RoomsCatalogConfigurator extends IPSModule
             $row['selected'] = $selected && $key !== null && isset($visibleKeys[$key]);
         }
         unset($row);
+        $sourceSelection=[];
+        if ($selected) {
+            $sourceRows=$this->overviewSourceRows($this->loadConfiguredCatalog('RoomsCatalogEditScriptID','EDIT'));
+            $sourceRows=$this->filterByAI($this->applyFilters($sourceRows,$this->ReadAttributeString('FilterRoom'),
+                $this->ReadAttributeString('FilterDomain'),$this->ReadAttributeString('FilterGroup')),$this->ReadAttributeString('FilterAI'));
+            foreach ($sourceRows as $sourceRow) $sourceSelection[$this->buildCompositeKey($sourceRow)]=true;
+        }
+        $this->WriteAttributeString('OverviewSourceSelections',json_encode($sourceSelection));
         $this->WriteAttributeString('RuntimeEntries', json_encode($rows, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
         $this->WriteAttributeString('BulkPreview','{}');
         $this->RefreshVisibleLists();
@@ -695,6 +704,10 @@ class RoomsCatalogConfigurator extends IPSModule
         $rows = $this->getRuntimeEntries();
         foreach ($rows as &$row) if (is_array($row)) $row['selected'] = $selected;
         unset($row);
+        $sourceSelection=[];
+        if ($selected) foreach ($this->overviewSourceRows($this->loadConfiguredCatalog('RoomsCatalogEditScriptID','EDIT')) as $sourceRow)
+            $sourceSelection[$this->buildCompositeKey($sourceRow)]=true;
+        $this->WriteAttributeString('OverviewSourceSelections',json_encode($sourceSelection));
         $this->WriteAttributeString('RuntimeEntries',json_encode($rows,JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
         $this->WriteAttributeString('BulkPreview','{}');
         $this->RefreshVisibleLists();
@@ -2327,6 +2340,45 @@ class RoomsCatalogConfigurator extends IPSModule
         return 'RCC_SaveToEdit($id, json_encode(array_filter(['
             . implode(', ', $parts)
             . '], static fn($v) => $v !== null), JSON_INVALID_UTF8_SUBSTITUTE));';
+    }
+
+    /** Checkbox edits are UI state only, never a catalog save or a popup. */
+    public function UpdateOverviewSelection(string $rowJson): bool
+    {
+        $row=json_decode($rowJson,true);
+        if (!is_array($row)) return false;
+        $runtime=$this->getRuntimeEntries();
+        $key=$this->buildCompositeKey($row);
+        $all=$runtime;
+        if (!array_filter($runtime,fn($r):bool=>$this->buildCompositeKey($r)===$key))
+            $all=array_merge($runtime,$this->overviewSourceRows($this->loadConfiguredCatalog('RoomsCatalogEditScriptID','EDIT')));
+        foreach ($all as $current) {
+            if ($key===null||$this->buildCompositeKey($current)!==$key) continue;
+            if (!empty($current['isDataSource'])) {
+                $selection=json_decode($this->ReadAttributeString('OverviewSourceSelections'),true)?:[];
+                if (!empty($row['selected'])) $selection[$key]=true; else unset($selection[$key]);
+                $this->WriteAttributeString('OverviewSourceSelections',json_encode($selection));
+            } else {
+                foreach ($runtime as &$entry) if ($this->buildCompositeKey($entry)===$key) $entry['selected']=!empty($row['selected']);
+                unset($entry);
+                $this->WriteAttributeString('RuntimeEntries',json_encode($runtime,JSON_INVALID_UTF8_SUBSTITUTE));
+            }
+            $this->WriteAttributeString('BulkPreview','{}');
+            foreach (['title','kiEnabled','kiReadOnly'] as $field)
+                if (($row[$field]??null)!==($current[$field]??null)) return false;
+            // Dialog-only fields indicate an intentional gear save, even if its overview looks unchanged.
+            return empty($row['dialogSave']);
+        }
+        return false;
+    }
+
+    private function overviewSourceRows(array $catalog): array
+    {
+        $selection=json_decode($this->ReadAttributeString('OverviewSourceSelections'),true)?:[];
+        $rows=RCCDataSourceEditor::sourceRows($catalog);
+        foreach ($rows as &$row) $row['selected']=!empty($selection[$this->buildCompositeKey($row)??'']);
+        unset($row);
+        return $rows;
     }
 
     /** Markierte Zeilen erhalten die KI-Freigaben ausschließlich im EDIT-Katalog. */
@@ -5359,9 +5411,9 @@ class RoomsCatalogConfigurator extends IPSModule
         $filterAI = $this->ReadAttributeString('FilterAI');
         // Virtual Huawei source rows are visible ONLY in the table, never
         // in RuntimeEntries or the generic device bulk-edit pipeline.
-        $tableEdit=array_merge($entriesEdit,RCCDataSourceEditor::sourceRows(
+        $tableEdit=array_merge($entriesEdit,$this->overviewSourceRows(
             $this->loadConfiguredCatalog('RoomsCatalogEditScriptID','EDIT')));
-        $tableProd=array_merge($entriesProd,RCCDataSourceEditor::sourceRows(
+        $tableProd=array_merge($entriesProd,$this->overviewSourceRows(
             $this->loadConfiguredCatalog('RoomsCatalogScriptID','PROD')));
         $filters = $this->normalizeCurrentFilters($tableEdit,$tableProd);
         $filterRoom = $filters['room'];
@@ -5419,7 +5471,11 @@ class RoomsCatalogConfigurator extends IPSModule
         // das gesamte Objekt direkt an array_filter() übergeben.
         $saveSelectedRowCallback = $this->buildListRowSaveCallback($entriesEdit);
         // Irrigation dialog buttons persist EDIT immediately. Closing the dialog must not resave the old row.
-        $sourceRowSaveCallback='if (!empty($Entries["isDataSource"]) && ($Entries["domain"] ?? "") === "hausgeraete") { '
+        $sourceRowSaveCallback='if (RCC_UpdateOverviewSelection($id, json_encode(['
+            .'"roomKey"=>$Entries["roomKey"],"domain"=>$Entries["domain"],"group"=>$Entries["group"],"key"=>$Entries["key"],'
+            .'"selected"=>(bool)$Entries["selected"],"title"=>$Entries["title"],"kiEnabled"=>(bool)$Entries["kiEnabled"],"kiReadOnly"=>(bool)$Entries["kiReadOnly"],'
+            .'"dialogSave"=>isset($Entries["HouseholdAliases"]) || isset($Entries["SystemReadEnabled"]) || isset($Entries["editorOriginalKey"])]))) { } '
+            .'elseif (!empty($Entries["isDataSource"]) && ($Entries["domain"] ?? "") === "hausgeraete") { '
             .'RCC_SaveHouseholdOverview($id, (string)$Entries["key"], (string)$Entries["title"], '
             .'(string)($Entries["HouseholdAliases"] ?? $Entries["synonyms"] ?? ""), (bool)$Entries["kiEnabled"], '
             .'isset($Entries["HouseholdAllowControl"]) ? (bool)$Entries["HouseholdAllowControl"] : !(bool)$Entries["kiReadOnly"], '
@@ -7347,9 +7403,9 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->ensureRuntimeCatalogCurrent();
         $edit = $this->getRuntimeEntries();
         $prod = $this->getProdEntries();
-        $tableEdit=array_merge($edit,RCCDataSourceEditor::sourceRows(
+        $tableEdit=array_merge($edit,$this->overviewSourceRows(
             $this->loadConfiguredCatalog('RoomsCatalogEditScriptID','EDIT')));
-        $tableProd=array_merge($prod,RCCDataSourceEditor::sourceRows(
+        $tableProd=array_merge($prod,$this->overviewSourceRows(
             $this->loadConfiguredCatalog('RoomsCatalogScriptID','PROD')));
         $filters = $this->normalizeCurrentFilters($tableEdit,$tableProd);
         $room = $filters['room'];

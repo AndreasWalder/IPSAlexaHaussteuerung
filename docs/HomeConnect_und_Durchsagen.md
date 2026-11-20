@@ -28,6 +28,49 @@ in ihrem eigenen Bereich.
 
 ## Weitere Hausgeräte hinzufügen
 
+Häkchen unter **Markiert** sind reine Auswahlzustände. Sie schreiben keine
+Gerätekonfiguration, erzeugen keine Speicherbestätigung und bleiben auch beim
+Filtern von Datenquellen erhalten. Die eigentliche Bearbeitung erfolgt über das
+Zahnrad; ihre Bestätigung speichert weiterhin nach EDIT.
+
+AEG-Waschtrockner sowie Liebherr-Kühl- und Gefrierschränke über **Home Assistant
+Device** werden anhand ihrer Modulkennung und bekannten Variablen automatisch
+unter Hausgeräte nach EDIT ergänzt. Bereits allgemein verknüpfte Geräte werden
+ohne Duplikat ergänzt; eigene Namen, Zuordnungen und Sperren bleiben erhalten.
+**RoomsCatalog neu laden**, die Hausgeräte prüfen und anschließend nach PROD
+übernehmen. Die Unterbringung im Objektbaum bleibt unverändert.
+
+Die Statusansichten zeigen deutsche Bezeichnungen, Ist-/Solltemperaturen,
+Geräteverbindung, Programmphase, ausgewähltes Programm und weitere verfügbare
+Werte. Kühl- und Gefrierschrank haben eigene Symbole. Beispiele sind „Wie geht es
+meinem Gefrierschrank?“, „Wie warm ist der Kühlschrank?“, „Wie geht es meiner AEG
+Waschmaschine?“ und „Zeige alle Werte des AEG Waschtrockners“. Ohne Herstellername
+kann bei mehreren Waschgeräten die vorhandene nummerierte Auswahl erscheinen.
+„Home Assistant erreichbar“ ist von der Verbindung zum eigentlichen Gerät getrennt.
+Ein nicht verbundenes AEG-Gerät meldet die letzte gespeicherte Phase; Restzeit null
+gilt nicht als erfolgreicher Abschluss. Bekannte Platzhalter für Beladung und
+Trockenzeit werden als nicht verfügbar dargestellt.
+
+Explizit freigegebene Boolean-Funktionen wie SuperFrost, SuperCool, Partymodus,
+Nachtmodus und Waschoptionen können per „Schalte den Partymodus am Gefrierschrank
+ein“ bedient werden. Dazu sind Gerätefreigabe, Variablen-Schaltfreigabe, native
+IPS-Aktion und globale KI-Kommandofreigabe erforderlich. Neue Geräte erhalten
+zunächst Leserechte. Ganze Kühlgeräte werden durch einen solchen Befehl nicht
+abgeschaltet. AEG-Befehlstasten mit ungeklärtem Auslösewert, Programm-/Optionsauswahl
+ohne gültige Werteliste und Solltemperaturen ohne bestätigte Grenzen werden noch
+nicht per Sprache geschrieben. Die verbleibende AEG-Restzeit wird bis zur Klärung
+der Einheit als Rohwert gekennzeichnet. Für eine Fertigdurchsage fehlt ein
+bestätigter Fertigstatus; Start/Pause/Weiter/Stopp benötigen die tatsächlichen
+Aktionswerte und Freigaben.
+
+Unter den zentralen automatischen Durchsagen erscheinen nach der PROD-Übernahme
+und Aktualisierung vier neue Vorlagen: Geräteverbindung des AEG unterbrochen,
+AEG-Meldungscode größer null sowie jeweils Home-Assistant-Erreichbarkeit des
+Kühl- und Gefrierschranks verloren. Vorhandene Ruhezeiten, Ausgabegeräte,
+Abklingzeiten und globale Durchsagenfreigabe gelten weiter. Die Erstanmeldung
+führt nicht zur Ausgabe einer bereits bestehenden Störung. Die Geräte- und
+Variablenfreigaben des veröffentlichten Katalogs werden auch hier geprüft.
+
 Für neue Geräte anderer Hersteller zuerst im Bereich **HAUSGERÄTE – Vorhandene und
 weitere Geräte verknüpfen** die einzelne Geräteinstanz auswählen und **Ausgewähltes
 Hausgerät als JSON exportieren** drücken. Den Inhalt aus **Hausgerät – JSON für die

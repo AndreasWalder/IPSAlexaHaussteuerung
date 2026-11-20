@@ -38,13 +38,14 @@ trait RCCHouseholdEditorTrait
     /** Add metadata to EDIT only, retaining every existing link, label and permission. */
     private function syncHouseholdToEdit(): string
     {
-        if (!function_exists('IAH_GetHomeConnectDiscoveryCatalog')) return 'Bitte auch IPSAlexaHaussteuerung aktualisieren und die Einstellungen übernehmen.';
         try {
-            $alexa=$this->householdAlexaInstance(); if ($alexa<=0) return 'Bitte die zuständige Alexa-Instanz im Konfigurator auswählen; die Verknüpfung ist nicht eindeutig.';
             [$id,$old,$catalog]=$this->systemTreeEditContext();
-            $found=json_decode(IAH_GetHomeConnectDiscoveryCatalog($alexa),true,512,JSON_THROW_ON_ERROR);
-            $source=$found['dataSources']['home_connect']??[];
-            if (($source['provider']??'')!=='HomeConnect') return 'Keine Home-Connect-Erkennung verfügbar. Freigabe und Wurzelauswahl in IPSAlexaHaussteuerung prüfen.';
+            $source=[];
+            $alexa=$this->householdAlexaInstance();
+            if ($alexa>0 && function_exists('IAH_GetHomeConnectDiscoveryCatalog')) {
+                $found=json_decode(IAH_GetHomeConnectDiscoveryCatalog($alexa),true,512,JSON_THROW_ON_ERROR);
+                $source=$found['dataSources']['home_connect']??[];
+            }
             $next=RCCHouseholdCatalog::merge($catalog,$source);
             if ($next!==$catalog) $this->saveSystemTreeEdit($id,$old,$next);
             return count(IAHHouseholdDevices::source($next)['devices']??[]).' Hausgeräte in EDIT abgeglichen. Domain Hausgeräte wählen; anschließend EDIT nach PROD übernehmen.';
@@ -101,7 +102,8 @@ trait RCCHouseholdEditorTrait
         $rows=[];
         foreach ((array)$device['variables'] as $key=>$m) {
             try { $read=IAHHouseholdDevices::reading($m); } catch (Throwable $e) { $read=null; }
-            $rows[]=$m+['key'=>(string)$key,'value'=>$read!==null?IAHHomeConnect::display($read):'Wert nicht verfügbar',
+            $rows[]=$m+['key'=>(string)$key,'value'=>$read!==null?(($device['provider']??'')==='HomeAssistant'
+                ?IAHHomeAssistantAppliances::format($read):IAHHomeConnect::display($read)):'Wert nicht verfügbar',
                 'action'=>$read!==null&&$read['action']?'Ja':'Nein','bindingStatus'=>$read!==null?'OK':'Zuordnung prüfen'];
         }
         return $rows;
@@ -165,6 +167,7 @@ trait RCCHouseholdEditorTrait
                     $live=IAHHomeConnect::variables((int)$d['id']);
                     if (!isset($live[$m['ident']])||$live[$m['ident']]['id']!==$id) throw new RuntimeException('Home-Connect-Zuordnung muss zu diesem Gerät gehören.');
                 }
+                if (($d['provider']??'')==='HomeAssistant' && (int)$m['parent']!==(int)$d['id']) throw new RuntimeException('Die Variable muss zu diesem Home-Assistant-Gerät gehören.');
                 $d['variables'][$key]=$m;
             });
             [, $d]=$this->householdDevice($rowKey);
@@ -184,6 +187,7 @@ trait RCCHouseholdEditorTrait
                     if (!isset($live[$m['ident']])||$live[$m['ident']]['id']!==$m['id']) throw new RuntimeException('Home-Connect-Zuordnung muss zu diesem Gerät gehören.');
                 }
                 $key=($d['provider']??'')==='HomeConnect'?$m['ident']:'var_'.$m['id'];
+                if (($d['provider']??'')==='HomeAssistant' && (int)$m['parent']!==(int)$d['id']) throw new RuntimeException('Die Variable muss zu diesem Home-Assistant-Gerät gehören.');
                 if ($key===''||isset($d['variables'][$key])) throw new RuntimeException('Die Kennung ist bereits belegt.');
                 $d['variables'][$key]=$m;
             });
@@ -222,7 +226,7 @@ trait RCCHouseholdEditorTrait
     {
         return ['type'=>'ExpansionPanel','caption'=>'HAUSGERÄTE – Vorhandene und weitere Geräte verknüpfen','expanded'=>false,'items'=>[
             ['type'=>'Label','caption'=>'Zentrale Verwaltung im normalen Geräteeditor: Domain-Filter Hausgeräte. Pro Gerät öffnet das Zahnrad alle verknüpften Variablen, aktuelle Werte, Namen, Rollen und Freigaben. Änderungen gehen nach EDIT und werden mit der normalen PROD-Übernahme veröffentlicht.'],
-            ['type'=>'Button','caption'=>'Home-Connect-Geräte und neue Variablen nach EDIT abgleichen','onClick'=>'RCC_SyncHouseholdDevices($id);'],
+            ['type'=>'Button','caption'=>'Bekannte Hausgeräte und neue Variablen nach EDIT abgleichen','onClick'=>'RCC_SyncHouseholdDevices($id);'],
             ['type'=>'RowLayout','items'=>[
                 ['type'=>'SelectObject','name'=>'HouseholdNewRoot','caption'=>'Weiteres Hausgerät (Instanz, Kategorie oder Variable)','objectTypes'=>[0,1,2],'value'=>0],
                 ['type'=>'ValidationTextBox','name'=>'HouseholdNewTitle','caption'=>'Name des Hausgeräts','value'=>''],
