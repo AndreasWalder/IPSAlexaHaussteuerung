@@ -22,6 +22,8 @@ require_once __DIR__ . '/src/AlexaIntentSyncTrait.php';
 require_once __DIR__ . '/src/SystemNavigationMigration.php';
 require_once __DIR__ . '/src/KICostTrait.php';
 require_once __DIR__ . '/src/EchoRemoteTrait.php';
+require_once __DIR__ . '/src/HomeConnectTrait.php';
+require_once __DIR__ . '/src/AnnouncementTrait.php';
 require_once __DIR__ . '/src/Router.php';
 require_once __DIR__ . '/src/Routes/RouteAll.php';
 require_once __DIR__ . '/src/Renderers/RenderMain.php';
@@ -43,6 +45,8 @@ class IPSAlexaHaussteuerung extends IPSModule
     use IAHLastAlexaInteractionTrait;
     use IAHAlexaIntentSyncTrait;
     use IAHEchoRemoteTrait;
+    use IAHHomeConnectTrait;
+    use IAHAnnouncementTrait;
 
     /** @var bool */
     private $isApplyingChanges = false;
@@ -56,6 +60,16 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyInteger('EchoRemoteDeviceId', 0);
         $this->RegisterPropertyBoolean('EchoRemoteAllDevices', true);
         $this->RegisterAttributeString('EchoRemoteLastResult', 'not_sent');
+        $this->RegisterPropertyBoolean('HomeConnectEnabled', true);
+        $this->RegisterPropertyInteger('HomeConnectRootId', 0);
+        $this->RegisterAttributeString('HomeConnectDeviceSettings', '{}');
+        $this->RegisterPropertyBoolean('AnnouncementsEnabled', true);
+        foreach (['AnnouncementRules'=>'{}', 'AnnouncementState'=>'{}', 'AnnouncementQueue'=>'[]',
+            'AnnouncementHistory'=>'[]', 'AnnouncementTemplatesSeen'=>'[]', 'AnnouncementSubscriptions'=>'[]'] as $name=>$value) {
+            $this->RegisterAttributeString($name, $value);
+        }
+        $this->RegisterTimer('AnnouncementDispatch', 0, 'IAH_ProcessAnnouncements($_IPS["TARGET"]);');
+        $this->RegisterTimer('AnnouncementRefresh', 60 * 1000, 'IAH_RefreshAnnouncements($_IPS["TARGET"]);');
         $this->RegisterPropertyString('BaseUrl', '');
         $this->RegisterPropertyString('Source', '');
         $this->RegisterPropertyString('Token', '');
@@ -186,6 +200,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         parent::ApplyChanges();
 
         $this->EnsureInfrastructure();
+
+        $this->RefreshAnnouncements();
 
         $this->isApplyingChanges = false;
     }
@@ -412,6 +428,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         $form['elements'][]=$this->buildSystemNavigationEditorForm();
         $form['elements'][]=$this->buildVoiceRuleEditorForm();
         $form['elements'][]=$this->buildEchoRemotePanel();
+        $form['elements'][]=$this->buildHomeConnectPanel();
+        $form['elements'][]=$this->buildAnnouncementPanel();
         $form['actions'][]=$this->buildAlexaIntentSyncForm();
 
         return json_encode($form, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -1921,6 +1939,12 @@ PHP;
                     }
                     $content = str_replace('// IAH_HEATING_SYSTEM_INSERT',
                         "if (!class_exists('IAHHeatingSystemQuery', false)) {\n" . $heating . "\n}", $content);
+                }
+                if (str_contains($content, '// IAH_HOME_CONNECT_INSERT')) {
+                    $home = file_get_contents(__DIR__ . '/resources/helpers/HomeConnect.php');
+                    $home = is_string($home) ? preg_replace('/^<\?php\s*declare\(strict_types=1\);\s*/', '', $home) : null;
+                    if (!is_string($home) || !str_contains($home, 'final class IAHHomeConnect')) return (int)$id;
+                    $content = str_replace('// IAH_HOME_CONNECT_INSERT', "if (!class_exists('IAHHomeConnect', false)) {\n" . $home . "\n}", $content);
                 }
                 if (str_contains($content, '// IAH_RENDERER_ACTION_DIAGNOSTICS_INSERT')) {
                     $helper = file_get_contents(__DIR__ . '/resources/helpers/RendererActionDiagnostics.php');

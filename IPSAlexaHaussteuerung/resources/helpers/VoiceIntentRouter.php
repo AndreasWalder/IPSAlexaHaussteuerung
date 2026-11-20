@@ -1,6 +1,11 @@
 <?php
 declare(strict_types=1);
 
+// IAH_HOME_CONNECT_INSERT
+if (!class_exists('IAHHomeConnect', false)) {
+    require_once __DIR__ . '/HomeConnect.php';
+}
+
 // IAH_PV_STATUS_QUESTION_INSERT
 if (!class_exists('IAHPvStatusQuestion', false)) {
     require_once __DIR__ . '/PvStatusQuestion.php';
@@ -177,6 +182,8 @@ function iah_vir_classify(array $input,array $saved=[]): array
         if(isset($aliases[$target]))return array_replace($result,
             ['category'=>'navigation','route'=>$aliases[$target],'reason'=>'explicit_tile']);
     }
+    if (IAHHomeConnect::recognizes($text))
+        return array_replace($result,['category'=>'query','reason'=>'home_connect_question']);
     if (IAHHeatingSystemQuery::topic($text) !== null)
         return array_replace($result,['category'=>'query','reason'=>'heating_question']);
     if (preg_match('/^(?:laeuft|laufen|wie viele|status|heizstarts)\b.*\b(?:bewaesserung|gartenpumpe|rohrbegleitheizung|kreise|kreis \d+)\b/',$text))

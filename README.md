@@ -8,6 +8,31 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
 
 ## ✨ Features
 
+- **Home Connect: Gerätefragen, Alexa-Show-Status und automatische Durchsagen**
+  Unter **IPSAlexaHaussteuerung → HOME CONNECT – Haushaltsgeräte** werden die
+  vorhandenen offiziellen Home-Connect-Instanzen automatisch erkannt. Optional
+  lässt sich der Scan auf eine Hauptkategorie begrenzen. Pro Gerät sind Alexa,
+  Steuerfreigabe und zusätzliche Namen einstellbar. Laufzeit, Programme, Temperatur,
+  Türzustand, Optionen und Zähler werden live eingelesen; neue Variablen kommen
+  automatisch dazu. Ein bisher unbenutztes Programm ist kein Fehler.
+  Fragen wie „Wie lange läuft die Waschmaschine noch?“ und „Wie warm ist der
+  Dampfbackofen?“ nutzen dieselbe Hausfragen-KI und erhalten auf der Show eine
+  responsive Statusansicht mit passendem eingebauten Gerätesymbol. Die Grafik
+  funktioniert ohne externe Bilddateien. Bei mehreren passenden Geräten wird
+  nachgefragt; unbekannte Zustände und alte Laufzeitwerte werden nicht als aktueller
+  Programmlauf ausgegeben.
+
+  Der eigene Bereich **AUTOMATISCHE DURCHSAGEN** enthält alle Regeln in einer Liste:
+  automatisch ergänzte Home-Connect-Vorlagen sowie frei verknüpfte eigene Regeln.
+  Variable, Vergleich, Text, Echo-Ziel, Mindestabstand und Ruhezeiten sind über das
+  Zahnrad editierbar. Bei den sechs Ausgangsgeräten entstehen zwölf Vorlagen für
+  Programmende, Abbruch, Vorheizen, Timer und die drei Kaffeemaschinenmeldungen.
+  Die Regeln reagieren auf neue Ereignisse und verwenden die zentrale Echo-Ausgabe
+  auch bei geschlossenem Skill. Gelöschte Vorlagen bleiben gelöscht, eigene Texte
+  bleiben bei Updates erhalten. Ein Test je Regel und ein JSON-Export mit Verlauf
+  stehen im selben Bereich bereit.
+  Einrichtung, Beispiele und Grenzen: [Home Connect und Durchsagen](docs/HomeConnect_und_Durchsagen.md).
+
 - **Home-Connect-Export und zentrale Echo-Remote-2-Ausgabe**
   Im RoomsCatalogConfigurator unter **HOME CONNECT – Geräte als JSON exportieren**
   die Hauptkategorie oder eine einzelne Home-Connect-Geräteinstanz wählen und
@@ -18,8 +43,8 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
   Zugangsdaten und vollständige Instanzkonfigurationen werden nicht exportiert.
   Die Ausgabe benötigt keinen eingerichteten EDIT-Katalog und verändert keine Geräte.
   Programmabhängige Optionen können erst nach einer Programmauswahl vorhanden sein.
-  Der Export bereitet die Zuordnung vor; Gerätebefehle und automatische
-  Fertig-/Alarmmeldungen sind damit noch nicht eingerichtet.
+  Der Export bleibt als Diagnose für zusätzliche Geräte und neu angelegte Optionen
+  verfügbar. Die laufende Integration wird direkt in IPSAlexaHaussteuerung verwaltet.
 
   In **IPSAlexaHaussteuerung → ECHO REMOTE 2 – Zentrale Ansagen und Durchsagen**
   die Ausgabe aktivieren und eine vorhandene **Echo-Remote-Geräteinstanz** wählen.

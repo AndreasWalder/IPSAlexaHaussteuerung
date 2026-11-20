@@ -13,7 +13,8 @@ final class IAHVoiceRulePreviewForm
             ['type'=>'Label','caption'=>'Satz wie zu Alexa eingeben, z. B. „Welche Lichter sind eingeschaltet?“. '
                 .'Eigene Regeln, Hausfragen und Navigation werden automatisch unterschieden. '
                 .'Danach kannst du „Und im Obergeschoss?“ fragen. Eine neue vollständige Hausfrage startet ein neues Thema. '
-                .'Nichts wird geschaltet.']
+                .'Home Connect: „Wie lange läuft die Waschmaschine noch?“, „Ist der Geschirrspüler fertig?“ '
+                .'oder „Wie warm ist der Dampfbackofen?“. Nichts wird geschaltet.']
         ];
         if($instances!==null)
             $items[]=['type'=>'Select','name'=>'VoiceTestInstance','caption'=>'Alexa-Instanz',

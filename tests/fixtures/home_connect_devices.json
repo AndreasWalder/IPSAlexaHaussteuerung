@@ -1,0 +1,3894 @@
+[
+  {
+    "id": 15080,
+    "name": "Micro-Backofen",
+    "parentId": 50710,
+    "deviceType": "Oven",
+    "variables": [
+      {
+        "id": 11006,
+        "ident": "DoorState",
+        "name": "Tür",
+        "type": 3,
+        "updatedAt": 1794768759,
+        "rawValue": "BSH.Common.EnumType.DoorState.Closed",
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Status.DoorState",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "BSH.Common.EnumType.DoorState.Open",
+              "Name": "Offen"
+            },
+            {
+              "Value": "BSH.Common.EnumType.DoorState.Closed",
+              "Name": "Geschlossen"
+            },
+            {
+              "Value": "BSH.Common.EnumType.DoorState.Locked",
+              "Name": "Verriegelt"
+            }
+          ]
+        }
+      },
+      {
+        "id": 15517,
+        "ident": "ElapsedProgramTime",
+        "name": "Vergangene Laufzeit",
+        "type": 1,
+        "updatedAt": 1784392320,
+        "rawValue": 4260,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Option.ElapsedProgramTime",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "Sekunden",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 19530,
+        "ident": "RemoteControlActive",
+        "name": "Fernbedienung",
+        "type": 0,
+        "updatedAt": 1794768759,
+        "rawValue": true,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 22475,
+        "ident": "OptionDuration",
+        "name": "Dauer anpassen",
+        "type": 1,
+        "updatedAt": 1784388004,
+        "rawValue": 60,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.Oven.Option.Duration",
+          "ProfileType": 1,
+          "MinValue": 1,
+          "MaxValue": 1800,
+          "StepSize": 1,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "seconds",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 25409,
+        "ident": "SelectedProgram",
+        "name": "Programm",
+        "type": 3,
+        "updatedAt": 1766664053,
+        "rawValue": "Cooking.Oven.Program.Microwave.Max",
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.Oven.Programs",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.SlowCook",
+              "Name": "Sanftgaren"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.HotAir",
+              "Name": "4D Heißluft"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.TopBottomHeating",
+              "Name": "Ober-/Unterhitze"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.HotAirEco",
+              "Name": "Heißluft sanft"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.TopBottomHeatingEco",
+              "Name": "Sanfte Ober-/Unterhitze"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.HotAirGrilling",
+              "Name": "Umluftgrillen"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.PizzaSetting",
+              "Name": "Pizzastufe"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.IntensiveHeat",
+              "Name": "Intensivhitze"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.BottomHeating",
+              "Name": "Unterhitze"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.Desiccation",
+              "Name": "Dörren"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.PreheatOvenware",
+              "Name": "Geschirr vorwärmen"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.SabbathProgramme",
+              "Name": "Sabbateinstellung"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.KeepWarm",
+              "Name": "Warmhalten"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.FrozenHeatupSpecial",
+              "Name": "coolStart-Funktion"
+            },
+            {
+              "Value": "Cooking.Oven.Program.SteamModes.Steam",
+              "Name": "fullSteam Plus"
+            }
+          ]
+        }
+      },
+      {
+        "id": 25771,
+        "ident": "PowerState",
+        "name": "Energiezustand",
+        "type": 3,
+        "updatedAt": 1794768759,
+        "rawValue": "BSH.Common.EnumType.PowerState.Standby",
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.Common.Setting.PowerState.Oven",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "BSH.Common.EnumType.PowerState.On",
+              "Name": "An"
+            },
+            {
+              "Value": "BSH.Common.EnumType.PowerState.Standby",
+              "Name": "Standby"
+            }
+          ]
+        }
+      },
+      {
+        "id": 34037,
+        "ident": "LocalControlActive",
+        "name": "Lokale Bedienung aktiv",
+        "type": 0,
+        "updatedAt": 1794768759,
+        "rawValue": false,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 35787,
+        "ident": "RemainingProgramTime",
+        "name": "Verbleibende Laufzeit",
+        "type": 1,
+        "updatedAt": 1766664192,
+        "rawValue": 60,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Option.RemainingProgramTime",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "Sekunden",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 35789,
+        "ident": "ProgramProgress",
+        "name": "Programmfortschritt",
+        "type": 1,
+        "updatedAt": 1784388004,
+        "rawValue": 100,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Option.ProgramProgress",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "%",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 37532,
+        "ident": "Control",
+        "name": "Steuern",
+        "type": 3,
+        "updatedAt": 1737198619,
+        "rawValue": "Start",
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.Control.Oven",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "Start",
+              "Name": "Starten"
+            },
+            {
+              "Value": "Stop",
+              "Name": "Stoppen"
+            },
+            {
+              "Value": "Pause",
+              "Name": "Pausieren"
+            },
+            {
+              "Value": "Resume",
+              "Name": "Fortsetzen"
+            }
+          ]
+        }
+      },
+      {
+        "id": 38587,
+        "ident": "EventDescription",
+        "name": "Ereignis Beschreibung",
+        "type": 3,
+        "updatedAt": 1766664193,
+        "rawValue": "",
+        "hasAction": false,
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 38722,
+        "ident": "Event",
+        "name": "Ereignis",
+        "type": 3,
+        "updatedAt": 1766664193,
+        "rawValue": "",
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Event.Oven",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "BSH.Common.Event.ProgramFinished",
+              "Name": "Program fertig"
+            },
+            {
+              "Value": "BSH.Common.Event.AlarmClockElapsed",
+              "Name": "Alarm abgelaufen"
+            },
+            {
+              "Value": "BSH.Common.Event.PreheatFinished",
+              "Name": "Vorheizen fertig"
+            }
+          ]
+        }
+      },
+      {
+        "id": 39428,
+        "ident": "OperationState",
+        "name": "Betriebsstatus",
+        "type": 3,
+        "updatedAt": 1794768759,
+        "rawValue": "BSH.Common.EnumType.OperationState.Inactive",
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Status.OperationState",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Inactive",
+              "Name": "Inaktiv"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Ready",
+              "Name": "Bereit"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.DelayedStart",
+              "Name": "Verzögerter Start"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Run",
+              "Name": "Läuft"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.ActionRequired",
+              "Name": "Aktion erforderlich"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Finished",
+              "Name": "Fertig"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Error",
+              "Name": "Fehler"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Aborting",
+              "Name": "Abbrechen"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Pause",
+              "Name": "Pausieren"
+            }
+          ]
+        }
+      },
+      {
+        "id": 40231,
+        "ident": "CurrentCavityTemperature",
+        "name": "Aktuelle Temperatur",
+        "type": 2,
+        "updatedAt": 1794768759,
+        "rawValue": 24,
+        "hasAction": false,
+        "profile": {
+          "name": "Cooking.Oven.Status.CurrentCavityTemperature.f",
+          "ProfileType": 2,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 2,
+          "Prefix": "",
+          "Suffix": "°C",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 42718,
+        "ident": "SabbathMode",
+        "name": "Sabbat Modus",
+        "type": 0,
+        "updatedAt": 1794768759,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 43064,
+        "ident": "RemoteControlStartAllowed",
+        "name": "Fernstart",
+        "type": 0,
+        "updatedAt": 1794768759,
+        "rawValue": false,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 46312,
+        "ident": "AlarmClock",
+        "name": "Alarm",
+        "type": 1,
+        "updatedAt": 1794768759,
+        "rawValue": 0,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.Common.Setting.AlarmClock",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 86340,
+          "StepSize": 1,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "seconds",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 50663,
+        "ident": "InteriorIlluminationActive",
+        "name": "Interior Illumination Active",
+        "type": 0,
+        "updatedAt": 1794768759,
+        "rawValue": false,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Status.InteriorIlluminationActive",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 59593,
+        "ident": "ChildLock",
+        "name": "Kindersicherung",
+        "type": 0,
+        "updatedAt": 1794768759,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": 16021,
+    "name": "Geschirrspüler",
+    "parentId": 50710,
+    "deviceType": "Dishwasher",
+    "variables": [
+      {
+        "id": 23501,
+        "ident": "OptionStartInRelative",
+        "name": "Startzeit",
+        "type": 1,
+        "updatedAt": 1794834191,
+        "rawValue": 0,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.Dishwasher.Option.StartInRelative",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 86400,
+          "StepSize": 1,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "seconds",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 25496,
+        "ident": "EventDescription",
+        "name": "Ereignis Beschreibung",
+        "type": 3,
+        "updatedAt": 1788466044,
+        "rawValue": "",
+        "hasAction": false,
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 31297,
+        "ident": "OperationState",
+        "name": "Betriebsstatus",
+        "type": 3,
+        "updatedAt": 1794834191,
+        "rawValue": "BSH.Common.EnumType.OperationState.Ready",
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Status.OperationState",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Inactive",
+              "Name": "Inaktiv"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Ready",
+              "Name": "Bereit"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.DelayedStart",
+              "Name": "Verzögerter Start"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Run",
+              "Name": "Läuft"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.ActionRequired",
+              "Name": "Aktion erforderlich"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Finished",
+              "Name": "Fertig"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Error",
+              "Name": "Fehler"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Aborting",
+              "Name": "Abbrechen"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Pause",
+              "Name": "Pausieren"
+            }
+          ]
+        }
+      },
+      {
+        "id": 34550,
+        "ident": "UseDuration",
+        "name": "Option Dauer verwenden",
+        "type": 0,
+        "updatedAt": 1784608013,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 35250,
+        "ident": "RemoteControlActive",
+        "name": "Fernbedienung",
+        "type": 0,
+        "updatedAt": 1794834191,
+        "rawValue": true,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 36632,
+        "ident": "RemainingProgramTime",
+        "name": "Verbleibende Laufzeit",
+        "type": 1,
+        "updatedAt": 1788466944,
+        "rawValue": 18600,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Option.RemainingProgramTime",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "Sekunden",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 36746,
+        "ident": "PowerState",
+        "name": "Energiezustand",
+        "type": 3,
+        "updatedAt": 1794834191,
+        "rawValue": "BSH.Common.EnumType.PowerState.Off",
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.Common.Setting.PowerState.Dishwasher",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "BSH.Common.EnumType.PowerState.Off",
+              "Name": "Aus"
+            },
+            {
+              "Value": "BSH.Common.EnumType.PowerState.On",
+              "Name": "An"
+            }
+          ]
+        }
+      },
+      {
+        "id": 38425,
+        "ident": "Control",
+        "name": "Steuern",
+        "type": 3,
+        "updatedAt": 1762380102,
+        "rawValue": "Stop",
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.Control.Dishwasher",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "Start",
+              "Name": "Starten"
+            },
+            {
+              "Value": "Stop",
+              "Name": "Stoppen"
+            },
+            {
+              "Value": "Resume",
+              "Name": "Fortsetzen"
+            }
+          ]
+        }
+      },
+      {
+        "id": 39112,
+        "ident": "InteriorIlluminationActive",
+        "name": "Innenbeleuchtung",
+        "type": 0,
+        "updatedAt": 1794834191,
+        "rawValue": true,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Status.InteriorIlluminationActive",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 41774,
+        "ident": "DoorState",
+        "name": "Tür",
+        "type": 3,
+        "updatedAt": 1794834191,
+        "rawValue": "BSH.Common.EnumType.DoorState.Closed",
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Status.DoorState",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "BSH.Common.EnumType.DoorState.Open",
+              "Name": "Offen"
+            },
+            {
+              "Value": "BSH.Common.EnumType.DoorState.Closed",
+              "Name": "Geschlossen"
+            },
+            {
+              "Value": "BSH.Common.EnumType.DoorState.Locked",
+              "Name": "Verriegelt"
+            }
+          ]
+        }
+      },
+      {
+        "id": 42668,
+        "ident": "OptionBrillianceDry",
+        "name": "Glanztrocknen",
+        "type": 0,
+        "updatedAt": 1794834191,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 44861,
+        "ident": "OptionSilenceOnDemand",
+        "name": "Jetzt Leise",
+        "type": 0,
+        "updatedAt": 1762377824,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 50480,
+        "ident": "RemoteControlStartAllowed",
+        "name": "Remote Start",
+        "type": 0,
+        "updatedAt": 1794834191,
+        "rawValue": true,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 50639,
+        "ident": "ProgramProgress",
+        "name": "Programmfortschritt",
+        "type": 1,
+        "updatedAt": 1788466944,
+        "rawValue": 0,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Option.ProgramProgress",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "%",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 51242,
+        "ident": "OptionIntensivZone",
+        "name": "IntensivZone",
+        "type": 0,
+        "updatedAt": 1794834191,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 55677,
+        "ident": "SelectedProgram",
+        "name": "Programm",
+        "type": 3,
+        "updatedAt": 1794834191,
+        "rawValue": "Dishcare.Dishwasher.Program.Eco50",
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.Dishwasher.Programs",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "Dishcare.Dishwasher.Program.Intensiv70",
+              "Name": "Intensiv 70°"
+            },
+            {
+              "Value": "Dishcare.Dishwasher.Program.Auto2",
+              "Name": "Auto 45-65°"
+            },
+            {
+              "Value": "Dishcare.Dishwasher.Program.Eco50",
+              "Name": "Eco 50°"
+            },
+            {
+              "Value": "Dishcare.Dishwasher.Program.Quick45",
+              "Name": "Speed 45°"
+            },
+            {
+              "Value": "Dishcare.Dishwasher.Program.PreRinse",
+              "Name": "Vorspülen"
+            },
+            {
+              "Value": "Dishcare.Dishwasher.Program.NightWash",
+              "Name": "Leise 50°C"
+            },
+            {
+              "Value": "Dishcare.Dishwasher.Program.Kurz60",
+              "Name": "Speed 60°"
+            },
+            {
+              "Value": "Dishcare.Dishwasher.Program.MachineCare",
+              "Name": "Maschinenpflege"
+            }
+          ]
+        }
+      },
+      {
+        "id": 56931,
+        "ident": "Event",
+        "name": "Ereignis",
+        "type": 3,
+        "updatedAt": 1788466044,
+        "rawValue": "",
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Event.Dishwasher",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "BSH.Common.Event.ProgramAborted",
+              "Name": "Program abgebrochen"
+            },
+            {
+              "Value": "BSH.Common.Event.ProgramFinished",
+              "Name": "Program fertig"
+            }
+          ]
+        }
+      },
+      {
+        "id": 58454,
+        "ident": "OptionVarioSpeedPlus",
+        "name": "VarioSpeedPlus",
+        "type": 0,
+        "updatedAt": 1794834191,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": 21810,
+    "name": "Kochfeld",
+    "parentId": 50710,
+    "deviceType": "Hob",
+    "variables": [
+      {
+        "id": 12545,
+        "ident": "ProgramProgress",
+        "name": "Programmfortschritt",
+        "type": 1,
+        "updatedAt": 1784735061,
+        "rawValue": 0,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Option.ProgramProgress",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "%",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 14792,
+        "ident": "EventDescription",
+        "name": "Ereignis Beschreibung",
+        "type": 3,
+        "updatedAt": 1738947107,
+        "rawValue": "",
+        "hasAction": false,
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 21813,
+        "ident": "Event",
+        "name": "Ereignis",
+        "type": 3,
+        "updatedAt": 1738947107,
+        "rawValue": "",
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Event.Hob",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 26144,
+        "ident": "ElapsedProgramTime",
+        "name": "Vergangene Laufzeit",
+        "type": 1,
+        "updatedAt": 1784735065,
+        "rawValue": 0,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Option.ElapsedProgramTime",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "Sekunden",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 29495,
+        "ident": "ChildLock",
+        "name": "Kindersicherung",
+        "type": 0,
+        "updatedAt": 1794768759,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 31325,
+        "ident": "AlarmClock",
+        "name": "Alarm",
+        "type": 1,
+        "updatedAt": 1794768759,
+        "rawValue": 0,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.Common.Setting.AlarmClock",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 86340,
+          "StepSize": 1,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "seconds",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 39633,
+        "ident": "RemoteControlActive",
+        "name": "Einstellungen über App",
+        "type": 0,
+        "updatedAt": 1723799192,
+        "rawValue": true,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 40179,
+        "ident": "TemperatureUnit",
+        "name": "Temperaturformat",
+        "type": 3,
+        "updatedAt": 1794768759,
+        "rawValue": "BSH.Common.EnumType.TemperatureUnit.Celsius",
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Setting.TemperatureUnit",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "BSH.Common.EnumType.TemperatureUnit.Celsius",
+              "Name": "°C"
+            }
+          ]
+        }
+      },
+      {
+        "id": 43014,
+        "ident": "OperationState",
+        "name": "Betriebsstatus",
+        "type": 3,
+        "updatedAt": 1794768759,
+        "rawValue": "BSH.Common.EnumType.OperationState.Inactive",
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Status.OperationState",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Inactive",
+              "Name": "Inaktiv"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Ready",
+              "Name": "Bereit"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.DelayedStart",
+              "Name": "Verzögerter Start"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Run",
+              "Name": "Läuft"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.ActionRequired",
+              "Name": "Aktion erforderlich"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Finished",
+              "Name": "Fertig"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Error",
+              "Name": "Fehler"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Aborting",
+              "Name": "Abbrechen"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Pause",
+              "Name": "Pausieren"
+            }
+          ]
+        }
+      },
+      {
+        "id": 44372,
+        "ident": "PowerState",
+        "name": "Energiezustand",
+        "type": 3,
+        "updatedAt": 1794768759,
+        "rawValue": "BSH.Common.EnumType.PowerState.Off",
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Setting.PowerState.Hob",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "BSH.Common.EnumType.PowerState.Off",
+              "Name": "Aus"
+            },
+            {
+              "Value": "BSH.Common.EnumType.PowerState.On",
+              "Name": "An"
+            }
+          ]
+        }
+      },
+      {
+        "id": 48560,
+        "ident": "LocalControlActive",
+        "name": "Lokale Bedienung aktiv",
+        "type": 0,
+        "updatedAt": 1794768759,
+        "rawValue": false,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 52994,
+        "ident": "Control",
+        "name": "Steuern",
+        "type": 3,
+        "updatedAt": 0,
+        "rawValue": "",
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.Control.Hob",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "Start",
+              "Name": "Starten"
+            },
+            {
+              "Value": "Stop",
+              "Name": "Stoppen"
+            }
+          ]
+        }
+      },
+      {
+        "id": 54313,
+        "ident": "RemainingProgramTime",
+        "name": "Verbleibende Laufzeit",
+        "type": 1,
+        "updatedAt": 1784735061,
+        "rawValue": 0,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Option.RemainingProgramTime",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "Sekunden",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 56787,
+        "ident": "SelectedProgram",
+        "name": "Programm",
+        "type": 3,
+        "updatedAt": 1762010565,
+        "rawValue": "Cooking.Hob.Program.PowerLevelMode",
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.Hob.Programs",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": []
+        }
+      }
+    ]
+  },
+  {
+    "id": 32701,
+    "name": "Dampf-Backofen",
+    "parentId": 50710,
+    "deviceType": "Oven",
+    "variables": [
+      {
+        "id": 15051,
+        "ident": "SabbathMode",
+        "name": "Sabbat Modus",
+        "type": 0,
+        "updatedAt": 1794768759,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 16281,
+        "ident": "CurrentCavityTemperature",
+        "name": "Aktuelle Temperatur",
+        "type": 2,
+        "updatedAt": 1794768759,
+        "rawValue": 22.000000000000004,
+        "hasAction": false,
+        "profile": {
+          "name": "Cooking.Oven.Status.CurrentCavityTemperature.f",
+          "ProfileType": 2,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 2,
+          "Prefix": "",
+          "Suffix": "°C",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 19319,
+        "ident": "EventDescription",
+        "name": "Ereignis Beschreibung",
+        "type": 3,
+        "updatedAt": 1784739072,
+        "rawValue": "",
+        "hasAction": false,
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 23331,
+        "ident": "LocalControlActive",
+        "name": "Lokale Bedienung aktiv",
+        "type": 0,
+        "updatedAt": 1794768759,
+        "rawValue": false,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 25972,
+        "ident": "InteriorIlluminationActive",
+        "name": "Interior Illumination Active",
+        "type": 0,
+        "updatedAt": 1794768759,
+        "rawValue": false,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Status.InteriorIlluminationActive",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 26906,
+        "ident": "SelectedProgram",
+        "name": "Programm",
+        "type": 3,
+        "updatedAt": 0,
+        "rawValue": "",
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.Oven.Programs",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.SlowCook",
+              "Name": "Sanftgaren"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.HotAir",
+              "Name": "4D Heißluft"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.TopBottomHeating",
+              "Name": "Ober-/Unterhitze"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.HotAirEco",
+              "Name": "Heißluft sanft"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.TopBottomHeatingEco",
+              "Name": "Sanfte Ober-/Unterhitze"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.HotAirGrilling",
+              "Name": "Umluftgrillen"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.PizzaSetting",
+              "Name": "Pizzastufe"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.IntensiveHeat",
+              "Name": "Intensivhitze"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.BottomHeating",
+              "Name": "Unterhitze"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.Desiccation",
+              "Name": "Dörren"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.PreheatOvenware",
+              "Name": "Geschirr vorwärmen"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.SabbathProgramme",
+              "Name": "Sabbateinstellung"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.KeepWarm",
+              "Name": "Warmhalten"
+            },
+            {
+              "Value": "Cooking.Oven.Program.HeatingMode.FrozenHeatupSpecial",
+              "Name": "coolStart-Funktion"
+            },
+            {
+              "Value": "Cooking.Oven.Program.SteamModes.Steam",
+              "Name": "fullSteam Plus"
+            }
+          ]
+        }
+      },
+      {
+        "id": 27542,
+        "ident": "DoorState",
+        "name": "Tür",
+        "type": 3,
+        "updatedAt": 1794768759,
+        "rawValue": "BSH.Common.EnumType.DoorState.Closed",
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Status.DoorState",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "BSH.Common.EnumType.DoorState.Open",
+              "Name": "Offen"
+            },
+            {
+              "Value": "BSH.Common.EnumType.DoorState.Closed",
+              "Name": "Geschlossen"
+            },
+            {
+              "Value": "BSH.Common.EnumType.DoorState.Locked",
+              "Name": "Verriegelt"
+            }
+          ]
+        }
+      },
+      {
+        "id": 27816,
+        "ident": "RemoteControlStartAllowed",
+        "name": "Fernstart",
+        "type": 0,
+        "updatedAt": 1794768759,
+        "rawValue": false,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 28265,
+        "ident": "ElapsedProgramTime",
+        "name": "Vergangene Laufzeit",
+        "type": 1,
+        "updatedAt": 1784737325,
+        "rawValue": 0,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Option.ElapsedProgramTime",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "Sekunden",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 29293,
+        "ident": "OperationState",
+        "name": "Betriebsstatus",
+        "type": 3,
+        "updatedAt": 1794768759,
+        "rawValue": "BSH.Common.EnumType.OperationState.Inactive",
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Status.OperationState",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Inactive",
+              "Name": "Inaktiv"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Ready",
+              "Name": "Bereit"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.DelayedStart",
+              "Name": "Verzögerter Start"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Run",
+              "Name": "Läuft"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.ActionRequired",
+              "Name": "Aktion erforderlich"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Finished",
+              "Name": "Fertig"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Error",
+              "Name": "Fehler"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Aborting",
+              "Name": "Abbrechen"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Pause",
+              "Name": "Pausieren"
+            }
+          ]
+        }
+      },
+      {
+        "id": 30279,
+        "ident": "ProgramProgress",
+        "name": "Programmfortschritt",
+        "type": 1,
+        "updatedAt": 1784737322,
+        "rawValue": 100,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Option.ProgramProgress",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "%",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 33402,
+        "ident": "ChildLock",
+        "name": "Kindersicherung",
+        "type": 0,
+        "updatedAt": 1794768759,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 33424,
+        "ident": "RemainingProgramTime",
+        "name": "Verbleibende Laufzeit",
+        "type": 1,
+        "updatedAt": 1784737325,
+        "rawValue": 0,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Option.RemainingProgramTime",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "Sekunden",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 34258,
+        "ident": "PowerState",
+        "name": "Energiezustand",
+        "type": 3,
+        "updatedAt": 1794768759,
+        "rawValue": "BSH.Common.EnumType.PowerState.Standby",
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.Common.Setting.PowerState.Oven",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "BSH.Common.EnumType.PowerState.On",
+              "Name": "An"
+            },
+            {
+              "Value": "BSH.Common.EnumType.PowerState.Standby",
+              "Name": "Standby"
+            }
+          ]
+        }
+      },
+      {
+        "id": 35161,
+        "ident": "Event",
+        "name": "Ereignis",
+        "type": 3,
+        "updatedAt": 1784739072,
+        "rawValue": "",
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Event.Oven",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "BSH.Common.Event.ProgramFinished",
+              "Name": "Program fertig"
+            },
+            {
+              "Value": "BSH.Common.Event.AlarmClockElapsed",
+              "Name": "Alarm abgelaufen"
+            },
+            {
+              "Value": "BSH.Common.Event.PreheatFinished",
+              "Name": "Vorheizen fertig"
+            }
+          ]
+        }
+      },
+      {
+        "id": 39336,
+        "ident": "Control",
+        "name": "Steuern",
+        "type": 3,
+        "updatedAt": 0,
+        "rawValue": "",
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.Control.Oven",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "Start",
+              "Name": "Starten"
+            },
+            {
+              "Value": "Stop",
+              "Name": "Stoppen"
+            },
+            {
+              "Value": "Pause",
+              "Name": "Pausieren"
+            },
+            {
+              "Value": "Resume",
+              "Name": "Fortsetzen"
+            }
+          ]
+        }
+      },
+      {
+        "id": 39994,
+        "ident": "RemoteControlActive",
+        "name": "Fernbedienung",
+        "type": 0,
+        "updatedAt": 1794768759,
+        "rawValue": true,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 45824,
+        "ident": "AlarmClock",
+        "name": "Alarm",
+        "type": 1,
+        "updatedAt": 1794768759,
+        "rawValue": 0,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.Common.Setting.AlarmClock",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 86340,
+          "StepSize": 1,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "seconds",
+          "Icon": "",
+          "Associations": []
+        }
+      }
+    ]
+  },
+  {
+    "id": 33267,
+    "name": "Kaffeevollautomat",
+    "parentId": 50710,
+    "deviceType": "CoffeeMaker",
+    "variables": [
+      {
+        "id": 10588,
+        "ident": "ProgramProgress",
+        "name": "Programmfortschritt",
+        "type": 1,
+        "updatedAt": 1784876294,
+        "rawValue": 0,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Option.ProgramProgress",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "%",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 13508,
+        "ident": "ChildLock",
+        "name": "Kindersicherung",
+        "type": 0,
+        "updatedAt": 1795176879,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 14971,
+        "ident": "Event",
+        "name": "Ereignis",
+        "type": 3,
+        "updatedAt": 1784876238,
+        "rawValue": "",
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Event.CoffeeMaker",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Event.BeanContainerEmpty",
+              "Name": "Bohnenbehälter leer"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Event.WaterTankEmpty",
+              "Name": "Wassertank leer"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Event.DripTrayFull",
+              "Name": "Tropfschale voll"
+            }
+          ]
+        }
+      },
+      {
+        "id": 18233,
+        "ident": "RemoteControlStartAllowed",
+        "name": "Fernstart",
+        "type": 0,
+        "updatedAt": 1795176878,
+        "rawValue": true,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 19895,
+        "ident": "BeverageCounterHotWater",
+        "name": "Menge Heißwasser",
+        "type": 1,
+        "updatedAt": 1795176878,
+        "rawValue": 4080,
+        "hasAction": false,
+        "profile": {
+          "name": "ConsumerProducts.CoffeeMaker.Status.BeverageCounterHotWater",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "ml",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 21694,
+        "ident": "OptionBeanAmount",
+        "name": "Stärke",
+        "type": 3,
+        "updatedAt": 1784876294,
+        "rawValue": "ConsumerProducts.CoffeeMaker.EnumType.BeanAmount.Strong",
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.CoffeeMaker.Option.BeanAmount",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.EnumType.BeanAmount.VeryMild",
+              "Name": "Sehr mild"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.EnumType.BeanAmount.Mild",
+              "Name": "Mild"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.EnumType.BeanAmount.Normal",
+              "Name": "Normal"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.EnumType.BeanAmount.Strong",
+              "Name": "Stark"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.EnumType.BeanAmount.VeryStrong",
+              "Name": "Sehr stark"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.EnumType.BeanAmount.DoubleShot",
+              "Name": "DoubleShot"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.EnumType.BeanAmount.DoubleShotPlus",
+              "Name": "DoubleShot +"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.EnumType.BeanAmount.DoubleShotPlusPlus",
+              "Name": "DoubleShot ++"
+            }
+          ]
+        }
+      },
+      {
+        "id": 22221,
+        "ident": "InteriorIlluminationActive",
+        "name": "Innenbeleuchung",
+        "type": 0,
+        "updatedAt": 1795176878,
+        "rawValue": false,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Status.InteriorIlluminationActive",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 24061,
+        "ident": "UseDuration",
+        "name": "Option Dauer verwenden",
+        "type": 0,
+        "updatedAt": 1784349490,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 24527,
+        "ident": "OptionCoffeeTemperature",
+        "name": "Temperatur",
+        "type": 3,
+        "updatedAt": 1784876294,
+        "rawValue": "ConsumerProducts.CoffeeMaker.EnumType.CoffeeTemperature.94C",
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.CoffeeMaker.Option.CoffeeTemperature",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.EnumType.CoffeeTemperature.90C",
+              "Name": "Normal"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.EnumType.CoffeeTemperature.94C",
+              "Name": "Hoch"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.EnumType.CoffeeTemperature.95C",
+              "Name": "Sehr Hoch"
+            }
+          ]
+        }
+      },
+      {
+        "id": 24559,
+        "ident": "BeverageCounterCoffeeAndMilk",
+        "name": "Anzahl Kaffee-Milch-Spezialitäten",
+        "type": 1,
+        "updatedAt": 1795176878,
+        "rawValue": 178,
+        "hasAction": false,
+        "profile": {
+          "name": "ConsumerProducts.CoffeeMaker.Status.BeverageCounterCoffeeAndMilk",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 29832,
+        "ident": "OperationState",
+        "name": "Betriebsstatus",
+        "type": 3,
+        "updatedAt": 1795176878,
+        "rawValue": "BSH.Common.EnumType.OperationState.Inactive",
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Status.OperationState",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Inactive",
+              "Name": "Inaktiv"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Ready",
+              "Name": "Bereit"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.DelayedStart",
+              "Name": "Verzögerter Start"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Run",
+              "Name": "Läuft"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.ActionRequired",
+              "Name": "Aktion erforderlich"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Finished",
+              "Name": "Fertig"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Error",
+              "Name": "Fehler"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Aborting",
+              "Name": "Abbrechen"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Pause",
+              "Name": "Pausieren"
+            }
+          ]
+        }
+      },
+      {
+        "id": 29929,
+        "ident": "EventDescription",
+        "name": "Ereignis Beschreibung",
+        "type": 3,
+        "updatedAt": 1784876238,
+        "rawValue": "",
+        "hasAction": false,
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 34425,
+        "ident": "BeverageCounterPowderCoffee",
+        "name": "Anzahl Getränke mit Kaffeepulver",
+        "type": 1,
+        "updatedAt": 1795176878,
+        "rawValue": 2,
+        "hasAction": false,
+        "profile": {
+          "name": "ConsumerProducts.CoffeeMaker.Status.BeverageCounterPowderCoffee",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 35350,
+        "ident": "Control",
+        "name": "Steuern",
+        "type": 3,
+        "updatedAt": 1762380117,
+        "rawValue": "Stop",
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.Control.CoffeeMaker",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "Start",
+              "Name": "Starten"
+            },
+            {
+              "Value": "Stop",
+              "Name": "Stoppen"
+            }
+          ]
+        }
+      },
+      {
+        "id": 35607,
+        "ident": "OptionHotWaterTemperature",
+        "name": "Temperatur",
+        "type": 3,
+        "updatedAt": 1784451695,
+        "rawValue": "ConsumerProducts.CoffeeMaker.EnumType.HotWaterTemperature.Max",
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.CoffeeMaker.Option.HotWaterTemperature",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.EnumType.HotWaterTemperature.70C",
+              "Name": "70°C"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.EnumType.HotWaterTemperature.80C",
+              "Name": "80 °C"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.EnumType.HotWaterTemperature.90C",
+              "Name": "90°C"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.EnumType.HotWaterTemperature.Max",
+              "Name": "Max. (Früchtetee)"
+            }
+          ]
+        }
+      },
+      {
+        "id": 36626,
+        "ident": "DoorState",
+        "name": "Tür",
+        "type": 3,
+        "updatedAt": 1795176878,
+        "rawValue": "BSH.Common.EnumType.DoorState.Closed",
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Status.DoorState",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "BSH.Common.EnumType.DoorState.Open",
+              "Name": "Offen"
+            },
+            {
+              "Value": "BSH.Common.EnumType.DoorState.Closed",
+              "Name": "Geschlossen"
+            },
+            {
+              "Value": "BSH.Common.EnumType.DoorState.Locked",
+              "Name": "Verriegelt"
+            }
+          ]
+        }
+      },
+      {
+        "id": 39562,
+        "ident": "PowerState",
+        "name": "Energiezustand",
+        "type": 3,
+        "updatedAt": 1795176879,
+        "rawValue": "BSH.Common.EnumType.PowerState.Standby",
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.Common.Setting.PowerState.CoffeeMaker",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "BSH.Common.EnumType.PowerState.On",
+              "Name": "An"
+            },
+            {
+              "Value": "BSH.Common.EnumType.PowerState.Standby",
+              "Name": "Standby"
+            }
+          ]
+        }
+      },
+      {
+        "id": 44539,
+        "ident": "BeverageCounterRistrettoEspresso",
+        "name": "Anzahl Ristretto & Espresso",
+        "type": 1,
+        "updatedAt": 1795176878,
+        "rawValue": 10,
+        "hasAction": false,
+        "profile": {
+          "name": "ConsumerProducts.CoffeeMaker.Status.BeverageCounterRistrettoEspresso",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 45835,
+        "ident": "SelectedProgram",
+        "name": "Programm",
+        "type": 3,
+        "updatedAt": 1784876365,
+        "rawValue": "",
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.CoffeeMaker.Programs",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.Beverage.Ristretto",
+              "Name": "Ristretto"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.Beverage.Espresso",
+              "Name": "Espresso"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.Beverage.EspressoMacchiato",
+              "Name": "Espresso Macchiato"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.Beverage.Coffee",
+              "Name": "Caffè Crema"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.Beverage.Cappuccino",
+              "Name": "Cappuccino"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.Beverage.LatteMacchiato",
+              "Name": "Latte Macchiato"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.Beverage.CaffeLatte",
+              "Name": "Milchkaffee"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.Beverage.MilkFroth",
+              "Name": "Milchschaum"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.Beverage.WarmMilk",
+              "Name": "Warme Milch"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.Beverage.HotWater",
+              "Name": "Heißwasser"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.CoffeeWorld.KleinerBrauner",
+              "Name": "Kleiner Brauner"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.CoffeeWorld.GrosserBrauner",
+              "Name": "Großer Brauner"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.CoffeeWorld.Verlaengerter",
+              "Name": "Verlängerter"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.CoffeeWorld.VerlaengerterBraun",
+              "Name": "Verlängerter braun"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.CoffeeWorld.WienerMelange",
+              "Name": "Wiener Melange"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.CoffeeWorld.FlatWhite",
+              "Name": "Flat White"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.CoffeeWorld.Cortado",
+              "Name": "Cortado"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.CoffeeWorld.CafeCortado",
+              "Name": "Café cortado"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.CoffeeWorld.CafeConLeche",
+              "Name": "Café con leche"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.CoffeeWorld.CafeAuLait",
+              "Name": "Café au lait"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.CoffeeWorld.Doppio",
+              "Name": "Doppio"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.CoffeeWorld.Kaapi",
+              "Name": "Kaapi"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.CoffeeWorld.KoffieVerkeerd",
+              "Name": "Koffie verkeerd"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.CoffeeWorld.Galao",
+              "Name": "Galão"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.CoffeeWorld.Garoto",
+              "Name": "Garoto"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.CoffeeWorld.Americano",
+              "Name": "Americano"
+            },
+            {
+              "Value": "ConsumerProducts.CoffeeMaker.Program.CoffeeWorld.RedEye",
+              "Name": "Red Eye"
+            }
+          ]
+        }
+      },
+      {
+        "id": 48526,
+        "ident": "LocalControlActive",
+        "name": "Lokale Bedienung aktiv",
+        "type": 0,
+        "updatedAt": 1795176878,
+        "rawValue": false,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 50747,
+        "ident": "BeverageCounterHotMilk",
+        "name": "Anzahl warme Milch",
+        "type": 1,
+        "updatedAt": 1795176878,
+        "rawValue": 0,
+        "hasAction": false,
+        "profile": {
+          "name": "ConsumerProducts.CoffeeMaker.Status.BeverageCounterHotMilk",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 51816,
+        "ident": "OptionFillQuantity",
+        "name": "Menge",
+        "type": 1,
+        "updatedAt": 1784876294,
+        "rawValue": 160,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.CoffeeMaker.Option.FillQuantity",
+          "ProfileType": 1,
+          "MinValue": 100,
+          "MaxValue": 300,
+          "StepSize": 20,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "ml",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 54368,
+        "ident": "OptionMultipleBeverages",
+        "name": "Doppelbezug",
+        "type": 0,
+        "updatedAt": 1784876294,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 56797,
+        "ident": "BeverageCounterCoffee",
+        "name": "Anzahl Kaffeegetränke",
+        "type": 1,
+        "updatedAt": 1795176878,
+        "rawValue": 70,
+        "hasAction": false,
+        "profile": {
+          "name": "ConsumerProducts.CoffeeMaker.Status.BeverageCounterCoffee",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 57158,
+        "ident": "BeverageCounterFrothyMilk",
+        "name": "Anzahl Milchschaum",
+        "type": 1,
+        "updatedAt": 1795176878,
+        "rawValue": 0,
+        "hasAction": false,
+        "profile": {
+          "name": "ConsumerProducts.CoffeeMaker.Status.BeverageCounterFrothyMilk",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": []
+        }
+      }
+    ]
+  },
+  {
+    "id": 58379,
+    "name": "Waschtrockner",
+    "parentId": 50710,
+    "deviceType": "WasherDryer",
+    "variables": [
+      {
+        "id": 10641,
+        "ident": "DoorState",
+        "name": "Tür",
+        "type": 3,
+        "updatedAt": 1795162425,
+        "rawValue": "BSH.Common.EnumType.DoorState.Open",
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Status.DoorState",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "BSH.Common.EnumType.DoorState.Open",
+              "Name": "Offen"
+            },
+            {
+              "Value": "BSH.Common.EnumType.DoorState.Closed",
+              "Name": "Geschlossen"
+            },
+            {
+              "Value": "BSH.Common.EnumType.DoorState.Locked",
+              "Name": "Verriegelt"
+            }
+          ]
+        }
+      },
+      {
+        "id": 11287,
+        "ident": "Control",
+        "name": "Steuern",
+        "type": 3,
+        "updatedAt": 1723150252,
+        "rawValue": "Start",
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.Control.WasherDryer",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "Start",
+              "Name": "Starten"
+            },
+            {
+              "Value": "Stop",
+              "Name": "Stoppen"
+            }
+          ]
+        }
+      },
+      {
+        "id": 17605,
+        "ident": "Event",
+        "name": "Ereignis",
+        "type": 3,
+        "updatedAt": 1784717251,
+        "rawValue": "",
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Event.WasherDryer",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "BSH.Common.Event.ProgramFinished",
+              "Name": "Program fertig"
+            }
+          ]
+        }
+      },
+      {
+        "id": 25907,
+        "ident": "ProgramProgress",
+        "name": "Programmfortschritt",
+        "type": 1,
+        "updatedAt": 1784713640,
+        "rawValue": 100,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Option.ProgramProgress",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "%",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 27035,
+        "ident": "OptionSpeedPerfect",
+        "name": "varioSpeed",
+        "type": 0,
+        "updatedAt": 1784839473,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 33367,
+        "ident": "OptionDryingTarget",
+        "name": "Trockenziel",
+        "type": 3,
+        "updatedAt": 1795162527,
+        "rawValue": "LaundryCare.Dryer.EnumType.DryingTarget.CupboardDry",
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.WasherDryer.Option.DryingTarget",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "LaundryCare.Dryer.EnumType.DryingTarget.IronDry",
+              "Name": "Bügeltrocken"
+            },
+            {
+              "Value": "LaundryCare.Dryer.EnumType.DryingTarget.CupboardDry",
+              "Name": "Schranktrocken"
+            },
+            {
+              "Value": "LaundryCare.Dryer.EnumType.DryingTarget.CupboardDryPlus",
+              "Name": "Schranktrocken Plus"
+            }
+          ]
+        }
+      },
+      {
+        "id": 34468,
+        "ident": "UseDuration",
+        "name": "Option Dauer verwenden",
+        "type": 0,
+        "updatedAt": 1783181695,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 34558,
+        "ident": "OptionLessIroning",
+        "name": "Bügelleicht",
+        "type": 0,
+        "updatedAt": 1791976901,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 34822,
+        "ident": "OptionSpinSpeed",
+        "name": "Drehzahl",
+        "type": 3,
+        "updatedAt": 1795162527,
+        "rawValue": "LaundryCare.Washer.EnumType.SpinSpeed.RPM1400",
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.WasherDryer.Option.SpinSpeed",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "LaundryCare.Washer.EnumType.SpinSpeed.RPM1200",
+              "Name": "1200 U/min"
+            },
+            {
+              "Value": "LaundryCare.Washer.EnumType.SpinSpeed.RPM1400",
+              "Name": "1400 U/min"
+            }
+          ]
+        }
+      },
+      {
+        "id": 35960,
+        "ident": "RemoteControlActive",
+        "name": "Fernbedienung",
+        "type": 0,
+        "updatedAt": 1795162574,
+        "rawValue": true,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 40830,
+        "ident": "PowerState",
+        "name": "Energiezustand",
+        "type": 3,
+        "updatedAt": 1795163664,
+        "rawValue": "BSH.Common.EnumType.PowerState.Standby",
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.Common.Setting.PowerState.WasherDryer",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "BSH.Common.EnumType.PowerState.MainsOff",
+              "Name": "Aus"
+            },
+            {
+              "Value": "BSH.Common.EnumType.PowerState.On",
+              "Name": "An"
+            },
+            {
+              "Value": "BSH.Common.EnumType.PowerState.Standby",
+              "Name": "Standby"
+            }
+          ]
+        }
+      },
+      {
+        "id": 41754,
+        "ident": "OptionLoadRecommendation",
+        "name": "Beladungsempfehlung",
+        "type": 1,
+        "updatedAt": 1793288528,
+        "rawValue": 2000,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.WasherDryer.Option.LoadRecommendation",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 86340,
+          "StepSize": 1,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "gram",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 43002,
+        "ident": "ChildLock",
+        "name": "Kindersicherung",
+        "type": 0,
+        "updatedAt": 1795162426,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 44200,
+        "ident": "OptionRinsePlus1",
+        "name": "Extra Spülen",
+        "type": 0,
+        "updatedAt": 1791976811,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 44414,
+        "ident": "RemainingProgramTime",
+        "name": "Verbleibende Laufzeit",
+        "type": 1,
+        "updatedAt": 1784713640,
+        "rawValue": 0,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Option.RemainingProgramTime",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "Sekunden",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 46484,
+        "ident": "OptionDuration",
+        "name": "Dauer anpassen",
+        "type": 1,
+        "updatedAt": 1784839800,
+        "rawValue": 1200,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.WasherDryer.Option.Duration",
+          "ProfileType": 1,
+          "MinValue": 1200,
+          "MaxValue": 3600,
+          "StepSize": 600,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "seconds",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 48207,
+        "ident": "EventDescription",
+        "name": "Ereignis Beschreibung",
+        "type": 3,
+        "updatedAt": 1784717251,
+        "rawValue": "",
+        "hasAction": false,
+        "profile": {
+          "name": ""
+        }
+      },
+      {
+        "id": 48877,
+        "ident": "RemoteControlStartAllowed",
+        "name": "Fernstart",
+        "type": 0,
+        "updatedAt": 1795162425,
+        "rawValue": false,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 49587,
+        "ident": "OptionPrewash",
+        "name": "Vorwäsche",
+        "type": 0,
+        "updatedAt": 1784839473,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 51341,
+        "ident": "LocalControlActive",
+        "name": "Lokale Bedienung aktiv",
+        "type": 0,
+        "updatedAt": 1795162574,
+        "rawValue": false,
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 52757,
+        "ident": "OptionRemainingProgramTimeIsEstimated",
+        "name": "Geschätzte Restprogrammlaufzeit",
+        "type": 0,
+        "updatedAt": 1793288528,
+        "rawValue": true,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 54484,
+        "ident": "OptionTemperature",
+        "name": "Temperatur",
+        "type": 3,
+        "updatedAt": 1793288528,
+        "rawValue": "LaundryCare.Washer.EnumType.Temperature.GC30",
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.WasherDryer.Option.Temperature",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 54720,
+        "ident": "OptionSilentMode",
+        "name": "Leiser waschen",
+        "type": 0,
+        "updatedAt": 1793288528,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 56041,
+        "ident": "OptionWaterPlus",
+        "name": "Wasser Plus",
+        "type": 0,
+        "updatedAt": 1791976811,
+        "rawValue": false,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.YesNo",
+          "ProfileType": 0,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": false,
+              "Name": "Nein"
+            },
+            {
+              "Value": true,
+              "Name": "Ja"
+            }
+          ]
+        }
+      },
+      {
+        "id": 57024,
+        "ident": "OperationState",
+        "name": "Betriebsstatus",
+        "type": 3,
+        "updatedAt": 1795162425,
+        "rawValue": "BSH.Common.EnumType.OperationState.Ready",
+        "hasAction": false,
+        "profile": {
+          "name": "HomeConnect.Common.Status.OperationState",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Inactive",
+              "Name": "Inaktiv"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Ready",
+              "Name": "Bereit"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.DelayedStart",
+              "Name": "Verzögerter Start"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Run",
+              "Name": "Läuft"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.ActionRequired",
+              "Name": "Aktion erforderlich"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Finished",
+              "Name": "Fertig"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Error",
+              "Name": "Fehler"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Aborting",
+              "Name": "Abbrechen"
+            },
+            {
+              "Value": "BSH.Common.EnumType.OperationState.Pause",
+              "Name": "Pausieren"
+            }
+          ]
+        }
+      },
+      {
+        "id": 58569,
+        "ident": "OptionEstimatedTotalProgramTime",
+        "name": "Geschätzte Gesamtprogrammlaufzeit",
+        "type": 1,
+        "updatedAt": 1795162528,
+        "rawValue": 27120,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.WasherDryer.Option.EstimatedTotalProgramTime",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 86340,
+          "StepSize": 1,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "seconds",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 59703,
+        "ident": "OptionFinishInRelative",
+        "name": "Zeitversetzter Betrieb",
+        "type": 1,
+        "updatedAt": 1795162528,
+        "rawValue": 27120,
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.WasherDryer.Option.FinishInRelative",
+          "ProfileType": 1,
+          "MinValue": 0,
+          "MaxValue": 86340,
+          "StepSize": 1,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "seconds",
+          "Icon": "",
+          "Associations": []
+        }
+      },
+      {
+        "id": 59855,
+        "ident": "SelectedProgram",
+        "name": "Programm",
+        "type": 3,
+        "updatedAt": 1795162527,
+        "rawValue": "LaundryCare.WasherDryer.Program.Cotton.Eco4060",
+        "hasAction": true,
+        "profile": {
+          "name": "HomeConnect.WasherDryer.Programs",
+          "ProfileType": 3,
+          "MinValue": 0,
+          "MaxValue": 0,
+          "StepSize": 0,
+          "Digits": 0,
+          "Prefix": "",
+          "Suffix": "",
+          "Icon": "",
+          "Associations": [
+            {
+              "Value": "LaundryCare.Dryer.Program.Cotton",
+              "Name": "Baumwolle"
+            },
+            {
+              "Value": "LaundryCare.Dryer.Program.Mix",
+              "Name": "Schnell/Mix"
+            },
+            {
+              "Value": "LaundryCare.Dryer.Program.MyTime.MyDryingTime",
+              "Name": "myTime"
+            },
+            {
+              "Value": "LaundryCare.Dryer.Program.Towels",
+              "Name": "Handtücher"
+            },
+            {
+              "Value": "LaundryCare.Dryer.Program.Outdoor",
+              "Name": "Outdoor"
+            },
+            {
+              "Value": "LaundryCare.Dryer.Program.Synthetic",
+              "Name": "Pflegeleicht"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.Cotton.Eco4060",
+              "Name": "Eco 40-60"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.Cotton",
+              "Name": "Baumwolle"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.EasyCare",
+              "Name": "Pflegeleicht"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.Mix",
+              "Name": "Schnell/Mix"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.DelicatesSilk",
+              "Name": "Fein/Seide"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.Wool",
+              "Name": "Wolle"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.DrumClean",
+              "Name": "Trommel reinigen"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.WaterProof",
+              "Name": "Outdoor/Imprägnieren"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.MyTime",
+              "Name": "myTime"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.Towels",
+              "Name": "Handtücher"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.Curtains",
+              "Name": "Gardinen"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.ShirtsBlouses",
+              "Name": "Blusen/Hemden"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.Auto30",
+              "Name": "Auto 30°"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.Auto40",
+              "Name": "Auto 40°"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.Auto60",
+              "Name": "Auto 60°"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.Chiffon",
+              "Name": "Chiffon"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.Cotton.Colour",
+              "Name": "Baumwolle bunt"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.Cotton.CottonEco",
+              "Name": "Baumwolle Eco"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.DarkWash",
+              "Name": "Jeans/Dunkle Wäsche"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.Dessous",
+              "Name": "Dessous"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.DownDuvet.Duvet",
+              "Name": "Steppdecken"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.Mix.NightWash",
+              "Name": "Nacht Waschen Mix"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.Monsoon",
+              "Name": "Monsun"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.Outdoor",
+              "Name": "Outdoor"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.PlushToy",
+              "Name": "Kuscheltiere"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.PowerSpeed59",
+              "Name": "powerSpeed 59‘"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.Rinse.RinseSpinDrain",
+              "Name": "Rinse/Spin/Drain"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.Sensitive",
+              "Name": "AllergiePlus"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.SportFitness",
+              "Name": "Sportswear"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.SportShoes",
+              "Name": "Sportschuhe"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.Super153045.Super15",
+              "Name": "Super 15"
+            },
+            {
+              "Value": "LaundryCare.Washer.Program.Super153045.Super1530",
+              "Name": "Super 15/30"
+            },
+            {
+              "Value": "LaundryCare.WasherDryer.Program.Cotton.Eco4060",
+              "Name": "Eco 40-60"
+            },
+            {
+              "Value": "LaundryCare.WasherDryer.Program.Cotton",
+              "Name": "Baumwolle"
+            },
+            {
+              "Value": "LaundryCare.WasherDryer.Program.EasyCare",
+              "Name": "Pflegeleicht"
+            },
+            {
+              "Value": "LaundryCare.WasherDryer.Program.Mix",
+              "Name": "Mix"
+            },
+            {
+              "Value": "LaundryCare.WasherDryer.Program.WashAndDry.60",
+              "Name": "Waschen&Trocknen 60'"
+            },
+            {
+              "Value": "LaundryCare.WasherDryer.Program.WashAndDry.90",
+              "Name": "Waschen&Trocknen 90'"
+            }
+          ]
+        }
+      }
+    ]
+  }
+]

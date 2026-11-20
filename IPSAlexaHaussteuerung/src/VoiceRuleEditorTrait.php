@@ -1362,6 +1362,11 @@ trait IAHVoiceRuleEditorTrait
     private function planHouseQuestion(string $spoken,array $catalog,string $key,bool $resolveInitial=true,
         bool $dedicatedFollowup=false): array
     {
+        if (!class_exists('IAHHomeConnect', false)) require_once __DIR__.'/../resources/helpers/HomeConnect.php';
+        if (IAHHomeConnect::recognizes($spoken)) {
+            $this->updateHouseQuestionContext($key,null);
+            return ['question'=>preg_replace('/^\s*und\s+/ui','',$spoken) ?? $spoken];
+        }
         $entry=$key!==''?($this->houseQuestionContexts()[$key]??[]):[];
         $pendingScope=$this->pendingHouseLocationScope($spoken,$catalog,$entry);
         if ($pendingScope!==null && !empty($entry['question'])) {
@@ -1378,6 +1383,8 @@ trait IAHVoiceRuleEditorTrait
             $this->updateHouseQuestionContext($key,null);
             $question=IAHHouseQuestionContext::isNewQuestion($spoken)
                 ?(preg_replace('/^\s*und\s+/ui','',$spoken)??$spoken):$spoken;
+            if (!class_exists('IAHHomeConnect', false)) require_once __DIR__.'/../resources/helpers/HomeConnect.php';
+            if (IAHHomeConnect::recognizes($question)) return ['question'=>$question];
             require_once __DIR__.'/../resources/helpers/HeatingSystemQuery.php';
             if (IAHHeatingSystemQuery::topic($question) !== null) return ['question'=>$question];
             require_once __DIR__.'/../resources/helpers/IrrigationQueryEngine.php';

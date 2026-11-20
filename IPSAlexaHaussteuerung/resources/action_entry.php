@@ -2095,7 +2095,7 @@ function Execute($request = null)
         // IAH_HOUSE_SUMMARY_BEGIN
         $kiAlexaKeepOpen = static function (
             string $text, string $status = 'Hinweis', string $question = '', bool $aplSupported = false,
-            string $answerSource = '', array $readings = []
+            string $answerSource = '', array $readings = [], string $displayTitle = ''
         ) use ($iahLastOutcome, $applyApl, $baseUrl, $token) {
             $iahLastOutcome('Hausabfrage', $text, $status);
             $response = AskResponse::CreatePlainText($text)
@@ -2110,7 +2110,9 @@ function Execute($request = null)
                 'heating_dachrinnenheizung' => 'Dachrinnenheizung',
                 default => '',
             };
+            $homeKind = str_starts_with($answerSource, 'home_connect_') ? substr($answerSource, strlen('home_connect_')) : '';
             $title = match (true) {
+                $homeKind !== '' => $displayTitle !== '' ? $displayTitle : 'Haushaltsgeräte',
                 $heatingTitle !== '' => $heatingTitle,
                 in_array($answerSource, ['energy_overview', 'ai_energy_overview'], true) => 'PV-Anlage',
                 preg_match('/\brohr[\s-]*(?:begleit[\s-]*)?heiz\w*|\bheizband\b/ui', $question) === 1
@@ -2131,6 +2133,7 @@ function Execute($request = null)
 
             $solar = $title === 'PV-Anlage';
             [$iconFile, $graphicName] = match (true) {
+                $homeKind !== '' => ['Geraete.png', 'homeConnectDevice'],
                 $heatingTitle !== '' => ['Heizung.png', 'radiator'],
                 $solar => ['Energie.png', 'solarPanel'],
                 default => ['Bewaesserung.png', 'waterDrop'],
@@ -2210,6 +2213,33 @@ function Execute($request = null)
                     ['type' => 'path', 'fill' => '#1A4352', 'pathData' =>
                         'M12,14 H14 V21 H12 Z M17,14 H19 V21 H17 Z M22,14 H24 V21 H22 Z'],
                 ];
+            }
+            if ($homeKind !== '') {
+                $path = match ($homeKind) {
+                    'laundry', 'dishwasher' => 'M8,5 H28 V31 H8 Z',
+                    'coffee' => 'M8,12 H24 V23 C24,30 8,30 8,23 Z M24,14 H29 V21 H24 V18 H27 V16 H24 Z M8,30 H28 V32 H8 Z M12,5 H14 V10 H12 Z M18,3 H20 V10 H18 Z',
+                    'hob' => 'M5,6 H31 V31 H5 Z',
+                    'oven' => 'M6,5 H30 V31 H6 Z',
+                    'microwave' => 'M4,8 H32 V29 H4 Z',
+                    default => 'M7,7 H29 V31 H7 Z M11,3 H25 V10 H11 Z M11,15 H25 V18 H11 Z M11,22 H25 V25 H11 Z',
+                };
+                $iconPaths = [['type'=>'path','fill'=>'#75E4D0','pathData'=>$path]];
+                $detail = match ($homeKind) {
+                    'laundry' => 'M11,8 H14 V10 H11 Z M22,8 H25 V10 H22 Z M18,14 A7,7 0 1,1 18,28 A7,7 0 1,1 18,14 Z',
+                    'dishwasher' => 'M10,11 H26 V13 H10 Z M11,18 H13 V27 H11 Z M17,16 H19 V27 H17 Z M23,18 H25 V27 H23 Z',
+                    'hob' => 'M12,10 A4,4 0 1,1 12,18 A4,4 0 1,1 12,10 Z M24,9 A3,3 0 1,1 24,15 A3,3 0 1,1 24,9 Z M22,20 A4,4 0 1,1 22,28 A4,4 0 1,1 22,20 Z',
+                    'oven' => 'M10,8 H13 V11 H10 Z M22,8 H25 V11 H22 Z M9,15 H27 V27 H9 Z',
+                    'microwave' => 'M7,11 H24 V26 H7 Z M27,12 H29 V15 H27 Z M27,19 H29 V22 H27 Z',
+                    default => '',
+                };
+                if ($detail !== '') $iconPaths[] = ['type'=>'path','fill'=>'#0B1D28','pathData'=>$detail];
+                if ($homeKind === 'microwave') $iconPaths[] = ['type'=>'path','fill'=>'#75E4D0',
+                    'pathData'=>'M9,15 L12,13 L16,16 L20,13 L22,15 L18,19 L13,16 L9,18 Z M9,21 L12,19 L16,22 L20,19 L22,21 L18,25 L13,22 L9,24 Z'];
+                $heading['items'][1]['grow'] = 1;
+                $heading['items'][1]['shrink'] = 1;
+                $heading['items'][1]['maxLines'] = 2;
+                $heading['items'][0]['width'] = '${headingFont + 25}';
+                $heading['items'][0]['height'] = '${headingFont + 25}';
             }
             $graphics = ['graphics' => [$graphicName => [
                 'type' => 'AVG', 'version' => '1.1', 'width' => 36, 'height' => 36,
@@ -2923,6 +2953,10 @@ function Execute($request = null)
                 || preg_match('/^(?:wer|was|wann|wo|wie|wieviel|wie\s+viel|welche[rsn]?|ist|sind|hat|haben|gibt|kannst\s+du|prüfe|überprüfe|kontrolliere|zeige|sag(?:e)?\s+mir|vergleiche|zähl(?:e)?|warum)\b/ui', $homeAgentSpokenQuestion) === 1
                 || str_contains($homeAgentSpokenQuestion, '?');
             $homeAgentSimpleCommand = preg_match('/^(?:schalte|mach|stelle|fahre|öffne|schließe|starte|stoppe|dimme)\b/ui', $homeAgentSpokenQuestion) === 1;
+            if (($iahVoiceDecision['reason'] ?? '') === 'home_connect_question'
+                && preg_match('/^(?:bitte\s+)?(?:pausiere|beende|setze|wähle|waehle|fortsetzen|schalte|starte|stoppe)\b/ui', $homeAgentSpokenQuestion)) {
+                $homeAgentSimpleCommand = true;
+            }
             $homeAgentAllowCommands = (bool) ($propsEarly['HomeAgentVoiceRouteCommands'] ?? false);
             // Bestehende GetHaus-Befehle niemals nur wegen des aktivierten
             // "KI-Kommandos"-Schalters an OpenAI senden. Ein Legacy-Intent
@@ -3084,7 +3118,8 @@ function Execute($request = null)
                                     $houseQuestion,
                                     $iahVoiceHasScreen,
                                     (string)($homeAgentData['answerSource'] ?? ''),
-                                    (array)($homeAgentData['displayRows'] ?? $homeAgentData['energyOverview'] ?? []));
+                                    (array)($homeAgentData['displayRows'] ?? $homeAgentData['energyOverview'] ?? []),
+                                    (string)($homeAgentData['displayTitle'] ?? ''));
                             }
                             if (isset($iahLastInteraction))
                                 $iahLastInteraction['detail']=is_array($homeAgentData) ? 'backend_unhandled' : 'invalid_backend_reply';

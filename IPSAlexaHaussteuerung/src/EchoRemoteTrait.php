@@ -109,7 +109,7 @@ trait IAHEchoRemoteTrait
                     ['type' => 'Button', 'caption' => 'Test-Sprachausgabe senden', 'onClick' => 'IAH_TestEchoRemote($id, false);'],
                 ]],
                 ['type' => 'Label', 'name' => 'EchoRemoteNotice', 'caption' => 'Letztes Sendeergebnis: ' . $this->ReadAttributeString('EchoRemoteLastResult')],
-                ['type' => 'Label', 'caption' => 'Zentral aus Skripten: IAH_Announce($alexaInstanz, "Hallo", 0); oder IAH_SpeakText($alexaInstanz, "Die Wäsche ist fertig.", 0); Ein konkretes Echo kann als letzter Parameter übergeben werden. Automatische Geräteereignisse werden separat zugeordnet.'],
+                ['type' => 'Label', 'caption' => 'Zentral aus Skripten: IAH_Announce($alexaInstanz, "Hallo", 0); oder IAH_SpeakText($alexaInstanz, "Die Wäsche ist fertig.", 0); Ein konkretes Echo kann als letzter Parameter übergeben werden. Automatische Meldungen und eigene Verknüpfungen stehen im Bereich AUTOMATISCHE DURCHSAGEN.'],
             ]];
     }
 }
