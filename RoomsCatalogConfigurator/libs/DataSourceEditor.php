@@ -1,8 +1,9 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/HouseholdCatalog.php';
 
 /**
- * V3.6.1 – Virtual table rows and read-only diagnostics for module data sources.
+ * Virtual owner rows for module sources and provider-independent household devices.
  *
  * A source is deliberately NOT expanded into normal RoomsCatalog device rows:
  * the existing mass-editor and SaveToEdit would otherwise treat metric IDs as
@@ -29,7 +30,7 @@ final class RCCDataSourceEditor
 
     public static function sourceRows(array $catalog): array
     {
-        $rows=[];
+        $rows=RCCHouseholdCatalog::rows($catalog);
         foreach ((array)($catalog['dataSources']??[]) as $key=>$source) {
             if (!is_string($key)||!is_array($source))continue;
             if (($source['provider']??'')==='ObjectTreeIrrigation') {

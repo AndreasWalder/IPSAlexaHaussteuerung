@@ -2958,12 +2958,18 @@ function Execute($request = null)
                 $homeAgentSimpleCommand = true;
             }
             $homeAgentAllowCommands = (bool) ($propsEarly['HomeAgentVoiceRouteCommands'] ?? false);
+            $homeAgentHouseholdCommand=false;
+            if ($homeAgentAllowCommands&&function_exists('IAH_IsHouseholdCommand')) {
+                try { $homeAgentHouseholdCommand=IAH_IsHouseholdCommand($instanceId,$homeAgentSpokenQuestion); }
+                catch (Throwable $ignored) {}
+                if ($homeAgentHouseholdCommand) $homeAgentSimpleCommand=true;
+            }
             // Bestehende GetHaus-Befehle niemals nur wegen des aktivierten
             // "KI-Kommandos"-Schalters an OpenAI senden. Ein Legacy-Intent
             // darf nur mit einer expliziten Frage zur KI gelangen; einfache
             // Schaltbefehle verarbeitet weiterhin die klassische Steuerung.
             $homeAgentShouldRoute = $homeAgentDedicatedIntent || $iahVoiceCategory === 'query'
-                || ($homeAgentSpokenQuestion !== '' && $isHomeAgentQuestion);
+                || ($homeAgentSpokenQuestion !== '' && $isHomeAgentQuestion) || $homeAgentHouseholdCommand;
             if ($homeAgentShouldRoute) {
                 $log('info', 'KIVoice.received', [
                     'intent' => $intentName, 'source' => $homeAgentDedicatedIntent ? 'Frage' : 'legacy',

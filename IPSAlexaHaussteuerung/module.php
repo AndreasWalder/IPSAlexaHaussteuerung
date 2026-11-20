@@ -63,6 +63,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyBoolean('HomeConnectEnabled', true);
         $this->RegisterPropertyInteger('HomeConnectRootId', 0);
         $this->RegisterAttributeString('HomeConnectDeviceSettings', '{}');
+        $this->RegisterAttributeString('HouseholdCatalogManaged', '0');
         $this->RegisterPropertyBoolean('AnnouncementsEnabled', true);
         foreach (['AnnouncementRules'=>'{}', 'AnnouncementState'=>'{}', 'AnnouncementQueue'=>'[]',
             'AnnouncementHistory'=>'[]', 'AnnouncementTemplatesSeen'=>'[]', 'AnnouncementSubscriptions'=>'[]'] as $name=>$value) {
@@ -1945,6 +1946,12 @@ PHP;
                     $home = is_string($home) ? preg_replace('/^<\?php\s*declare\(strict_types=1\);\s*/', '', $home) : null;
                     if (!is_string($home) || !str_contains($home, 'final class IAHHomeConnect')) return (int)$id;
                     $content = str_replace('// IAH_HOME_CONNECT_INSERT', "if (!class_exists('IAHHomeConnect', false)) {\n" . $home . "\n}", $content);
+                }
+                if (str_contains($content, '// IAH_HOUSEHOLD_DEVICES_INSERT')) {
+                    $household=file_get_contents(__DIR__.'/resources/helpers/HouseholdDevices.php');
+                    $household=is_string($household)?preg_replace('/^<\?php\s*declare\(strict_types=1\);\s*/','',$household):null;
+                    if (!is_string($household)||!str_contains($household,'final class IAHHouseholdDevices')) return (int)$id;
+                    $content=str_replace('// IAH_HOUSEHOLD_DEVICES_INSERT',"if (!class_exists('IAHHouseholdDevices', false)) {\n".$household."\n}",$content);
                 }
                 if (str_contains($content, '// IAH_RENDERER_ACTION_DIAGNOSTICS_INSERT')) {
                     $helper = file_get_contents(__DIR__ . '/resources/helpers/RendererActionDiagnostics.php');

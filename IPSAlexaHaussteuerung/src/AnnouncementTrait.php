@@ -29,7 +29,9 @@ trait IAHAnnouncementTrait
             if (($r['origin'] ?? '') === 'home_connect') {
                 $owner = (int)($r['deviceId'] ?? 0);
                 foreach ($this->homeConnectDevices() as $d) {
-                    if ($d['id'] === $owner) return (int)IPS_GetObject($r['variableId'])['ParentID'] === $owner
+                    if ($d['id'] === $owner) return isset(IAHHomeConnect::forDevice($d)['Event'])
+                        && IAHHomeConnect::forDevice($d)['Event']['id']===(int)$r['variableId']
+                        && (int)IPS_GetObject($r['variableId'])['ParentID'] === $owner
                         && (int)(IPS_GetInstance($owner)['InstanceStatus'] ?? 0) === 102;
                 }
                 return false;
@@ -64,7 +66,7 @@ trait IAHAnnouncementTrait
     {
         $seen = $this->announcementRead('AnnouncementTemplatesSeen');
         foreach ($this->homeConnectDevices() as $d) {
-            $v = IAHHomeConnect::variables($d['id']);
+            $v = IAHHomeConnect::forDevice($d);
             if (!isset($v['Event'])) continue;
             $templates = [];
             if (in_array($d['type'], ['Washer','WasherDryer','Dryer','Dishwasher','Oven'], true)) {

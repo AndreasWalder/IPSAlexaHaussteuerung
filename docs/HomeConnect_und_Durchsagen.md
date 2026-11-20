@@ -4,19 +4,43 @@
 
 1. IPSAlexaHaussteuerung öffnen und die Einstellungen übernehmen. Die bestehende
    Echo-Remote-Verknüpfung bleibt erhalten.
-2. Unter **HOME CONNECT – Haushaltsgeräte** stehen die vorhandenen offiziellen
-   Home-Connect-Geräte. Ohne Wurzelauswahl werden alle entsprechenden Instanzen
-   eingebunden; optional die eigene Hauptkategorie wählen und übernehmen.
-3. Pro Gerät im Zahnrad **Alexa**, **Steuern** und zusätzliche Namen einstellen.
-   Namen durch Komma trennen. Änderungen an der Geräteliste werden direkt gespeichert.
+2. RoomsCatalogConfigurator öffnen oder **RoomsCatalog neu laden** drücken.
+   Die erkannten Home-Connect-Geräte werden mit Backup in EDIT ergänzt.
+3. Im normalen Geräteeditor den **Domain-Filter Hausgeräte** wählen. Das Zahnrad
+   eines Geräts zeigt sämtliche verknüpften Variablen mit aktuellen Werten,
+   bearbeitbaren IDs, Namen, Bedeutungen und Lese-/Schaltfreigaben. Name, Raum,
+   Gruppe und alternative Gerätenamen werden im selben Dialog bearbeitet.
+   Anschließend **EDIT nach PROD übernehmen**, damit Alexa die Zuordnungen nutzt.
 4. Unter **AUTOMATISCHE DURCHSAGEN** stehen die erkannten Vorlagen und eigene Regeln.
    Die globalen Schalter werden mit der Modulkonfiguration übernommen.
 
 Die Erkennung basiert auf der Home-Connect-Modulkennung und aktuellen Variablen,
 nicht auf festen Objekt-IDs. Variablen und Profile werden bei jeder Frage neu
 gelesen. Der vorhandene JSON-Export im RoomsCatalogConfigurator bleibt verfügbar.
-Die Home-Connect-Datenquelle wird der bestehenden Hausabfrage zur Laufzeit ergänzt;
-ein manuelles Eintragen der einzelnen Variablen im RoomsCatalog ist nicht nötig.
+Die zentrale Quelle steht in `RoomsCatalogEdit.dataSources.household_devices`.
+Beim Abgleichen bleiben eigene Namen, Verknüpfungen und Freigaben erhalten. Neue
+Variablen werden nach EDIT ergänzt und mit der normalen PROD-Übernahme freigegeben.
+Die alte Home-Connect-Konfiguration liefert vor dieser ersten Veröffentlichung
+weiterhin den bisherigen Betrieb; danach ist der veröffentlichte Katalog maßgeblich.
+Die Übersicht in IPSAlexaHaussteuerung ist eine Verbindungsanzeige. Die Bearbeitung
+der Hausgeräte erfolgt zentral im RoomsCatalog, automatische Durchsagen weiterhin
+in ihrem eigenen Bereich.
+
+## Weitere Hausgeräte hinzufügen
+
+Im RoomsCatalogConfigurator **HAUSGERÄTE – Vorhandene und weitere Geräte verknüpfen**
+öffnen. Eine Geräteinstanz, Kategorie oder einzelne Variable auswählen und **Als
+Hausgerät verknüpfen** drücken. Die darunterliegenden Variablen werden gemeinsam
+aufgenommen. Diese Verknüpfung ist herstellerunabhängig; Home Connect ist einer der
+unterstützten Anbieter und keine eigene Domain.
+
+Danach im normalen Hausgeräte-Zahnrad die Namen und Bedeutungen zuordnen. Weitere
+Variablen lassen sich dort einzeln verknüpfen. Für allgemeine Geräte gibt es
+Statusfragen, die Alexa-Show-Statusansicht und Ein/Aus über eine ausdrücklich
+freigegebene Boolean-Variable mit Bedeutung **Ein/Aus** und vorhandener IPS-Aktion.
+Andere Programmabläufe benötigen eine passende Geräteanbindung. Neue allgemeine
+Geräte erhalten zunächst Leserechte; ihre Schaltfreigabe muss gezielt gesetzt
+werden. Home-Connect-Befehle verwenden weiterhin die gerätespezifischen Prüfungen.
 
 ## Fragen und Anzeige auf der Alexa Show
 
@@ -54,7 +78,8 @@ beweisen keinen erfolgreichen Abschluss. Dafür wird das Fertig-Ereignis verwend
 
 ## Eindeutige Gerätebefehle
 
-Zusätzlich zu **Steuern** beim Gerät müssen die bestehenden **KI-Kommandos**
+Zusätzlich zu **Freigegebene Gerätefunktionen steuern** im RoomsCatalog-Zahnrad und
+der Schaltfreigabe der betreffenden Variablen müssen die bestehenden **KI-Kommandos**
 (`HomeAgentVoiceRouteCommands`) aktiviert sein. Beispiele:
 
 - „Schalte die Kaffeemaschine ein.“

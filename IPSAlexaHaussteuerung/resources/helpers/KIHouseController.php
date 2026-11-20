@@ -6,6 +6,10 @@ declare(strict_types=1);
 if (!class_exists('IAHHomeConnect', false)) {
     require_once __DIR__ . '/HomeConnect.php';
 }
+// IAH_HOUSEHOLD_DEVICES_INSERT
+if (!class_exists('IAHHouseholdDevices', false)) {
+    require_once __DIR__.'/HouseholdDevices.php';
+}
 
 // IAH_PV_STATUS_QUESTION_INSERT
 if (!class_exists('IAHPvStatusQuestion', false)) {
@@ -974,12 +978,12 @@ function iah_rc_voice(
             try {
                 $homeCatalog = json_decode(IAH_GetHomeConnectCatalog($costInstanceId), true, 512, JSON_THROW_ON_ERROR);
                 foreach ((array)($homeCatalog['dataSources'] ?? []) as $sourceKey=>$source) {
-                    if (($source['provider'] ?? '') === 'HomeConnect') $catalog['dataSources'][$sourceKey] = $source;
+                    if (in_array($source['provider']??'',['HomeConnect','HouseholdDevices'],true)) $catalog['dataSources'][$sourceKey] = $source;
                 }
             } catch (Throwable $ignored) {}
         }
-        $home = IAHHomeConnect::query($catalog, $text,
-            !$preview && $scope === null && (bool)($cfg['allow_writes'] ?? false));
+        $homeAllowed=!$preview && $scope===null && (bool)($cfg['allow_writes']??false);
+        $home = IAHHouseholdDevices::query($catalog,$text,$homeAllowed) ?? IAHHomeConnect::query($catalog,$text,$homeAllowed);
         if ($home !== null) {
             $readDetails = [['tool'=>'home_connect', 'result'=>$home['displayRows']]];
             if (empty($home['isCommand']) && $home['displayRows'] !== [] && $key !== '' && !empty($cfg['prefer_ai'])) {

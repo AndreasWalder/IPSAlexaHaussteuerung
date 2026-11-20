@@ -14,7 +14,7 @@ final class IAHHomeConnect
 
     public static function recognizes(string $text): bool
     {
-        return preg_match('/\b(?:home connect|haushaltsgeraet\w*|waschmaschine\w*|waschtrockner\w*|waesche|geschirrspuel\w*|spuelmaschine|'
+        return preg_match('/\b(?:home connect|hausgeraet\w*|haushaltsgeraet\w*|waschmaschine\w*|waschtrockner\w*|waesche|geschirrspuel\w*|spuelmaschine|'
             . 'kaffee\w*|mikrowelle|mikro backofen|micro backofen|backofen|dampfbackofen|dampf backofen|dampfgarer|kochfeld)\b/', self::norm($text)) === 1;
     }
 
@@ -115,6 +115,21 @@ final class IAHHomeConnect
         return mb_substr(trim(preg_replace('/[\x00-\x1f\x7f]/', ' ', strip_tags($text)) ?? ''), 0, 240);
     }
 
+    public static function forDevice(array $device): array
+    {
+        $live=self::variables((int)$device['id']);
+        if (!array_key_exists('variables',$device)) return $live;
+        $rows=[];
+        foreach ((array)$device['variables'] as $semantic=>$m) {
+            if (empty($m['enabled'])) continue;
+            $actual=$live[(string)($m['ident']??'')]??null;
+            if ($actual===null||$actual['id']!==($m['id']??null)||$actual['parent']!==($m['parent']??null)||$actual['type']!==($m['type']??null)) continue;
+            $actual['name']=(string)$m['title']; $actual['action']=$actual['action']&&!empty($m['writable']);
+            $rows[(string)$semantic]=$actual;
+        }
+        return $rows;
+    }
+
     public static function display(array $v): string
     {
         $raw = $v['raw'] ?? null;
@@ -159,7 +174,7 @@ final class IAHHomeConnect
         return array_values($devices);
     }
 
-    private static function select(array $devices, string $q): array
+    public static function select(array $devices, string $q): array
     {
         $matches = []; $best = 0;
         foreach ($devices as $d) {
@@ -207,7 +222,7 @@ final class IAHHomeConnect
             if (preg_match('/\b(?:haushaltsgeraet\w*|home connect)\b/', $q)) {
                 $rows = [];
                 foreach ($devices as $d) {
-                    $vars = self::variables($d['id']);
+                    $vars = self::forDevice($d);
                     $rows[] = ['label'=>$d['name'], 'value'=>isset($vars['OperationState']) ? self::display($vars['OperationState']) : 'Status fehlt'];
                 }
                 return self::response('Haushaltsgeräte', 'all', $rows);
@@ -215,7 +230,7 @@ final class IAHHomeConnect
             return self::response('Haushaltsgeräte', 'all', [], 'Welches Gerät meinst du? ' . implode(', ', array_column($devices, 'name')) . '.');
         }
         if (count($selected) > 1) return self::response('Haushaltsgeräte', 'all', [], 'Meinst du ' . implode(' oder ', array_column($selected, 'name')) . '?');
-        $d = $selected[0]; $v = self::variables($d['id']);
+        $d = $selected[0]; $v = self::forDevice($d);
         $kind = match ($d['type']) { 'Washer','WasherDryer','Dryer'=>'laundry', 'Dishwasher'=>'dishwasher', 'CoffeeMaker'=>'coffee', 'Hob'=>'hob', 'Oven','Microwave'=>'oven', default=>'all' };
         if ($d['type'] === 'Microwave' || ($d['type'] === 'Oven' && preg_match('/micro|mikro|mikrowelle/i',$d['name']))) $kind='microwave';
         $command = preg_match('/^(?:bitte )?(?:schalte|schalt|mach|mache|stelle|stell|setze|waehle|starte|start|stoppe|stopp|beende|pausiere|fortsetzen)\b/', $q) === 1;

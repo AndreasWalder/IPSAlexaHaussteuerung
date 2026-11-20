@@ -14,6 +14,7 @@ require_once __DIR__ . '/libs/SystemTreeDiscovery.php';
 require_once __DIR__ . '/libs/SystemTreeEditorTrait.php';
 require_once __DIR__ . '/libs/HeatingSystemEditorTrait.php';
 require_once __DIR__ . '/libs/HomeConnectEditorTrait.php';
+require_once __DIR__ . '/libs/HouseholdEditorTrait.php';
 require_once dirname(__DIR__) . '/IPSAlexaHaussteuerung/src/VoiceRuleLiteralReader.php';
 require_once __DIR__ . '/../IPSAlexaHaussteuerung/src/VoiceRulePreviewForm.php';
 
@@ -94,6 +95,7 @@ class RoomsCatalogConfigurator extends IPSModule
     use RCCSystemTreeEditorTrait;
     use RCCHeatingSystemEditorTrait;
     use RCCHomeConnectEditorTrait;
+    use RCCHouseholdEditorTrait;
     // V3.4.4: Typen, editierbare Eigenschaften und Rollen nur noch zentral
     // in libs/DeviceTypeRegistry.php pflegen, nicht in diesem Formular.
 
@@ -605,6 +607,7 @@ class RoomsCatalogConfigurator extends IPSModule
     public function ReloadCatalog()
     {
         $this->logDebug('ReloadCatalog: Button gedrückt');
+        $this->syncHouseholdToEdit();
         $this->reloadAllFromCatalog();
         $this->clearSuggestionPreview();
         $this->RefreshVisibleLists();
@@ -5349,6 +5352,7 @@ class RoomsCatalogConfigurator extends IPSModule
 
     public function GetConfigurationForm()
     {
+        $this->syncHouseholdToEdit();
         $this->ensureRuntimeCatalogCurrent();
         $entriesProd  = $this->getProdEntries();
         $entriesEdit  = $this->getRuntimeEntries();
@@ -5415,7 +5419,12 @@ class RoomsCatalogConfigurator extends IPSModule
         // das gesamte Objekt direkt an array_filter() übergeben.
         $saveSelectedRowCallback = $this->buildListRowSaveCallback($entriesEdit);
         // Irrigation dialog buttons persist EDIT immediately. Closing the dialog must not resave the old row.
-        $sourceRowSaveCallback='if (!empty($Entries["isDataSource"]) && str_starts_with((string)($Entries["key"] ?? ""), "irrigation_")) { '
+        $sourceRowSaveCallback='if (!empty($Entries["isDataSource"]) && ($Entries["domain"] ?? "") === "hausgeraete") { '
+            .'RCC_SaveHouseholdOverview($id, (string)$Entries["key"], (string)$Entries["title"], '
+            .'(string)($Entries["HouseholdAliases"] ?? $Entries["synonyms"] ?? ""), (bool)$Entries["kiEnabled"], '
+            .'isset($Entries["HouseholdAllowControl"]) ? (bool)$Entries["HouseholdAllowControl"] : !(bool)$Entries["kiReadOnly"], '
+            .'(string)($Entries["HouseholdRoom"] ?? $Entries["roomKey"]), (string)($Entries["HouseholdGroup"] ?? $Entries["group"])); '
+            .'} elseif (!empty($Entries["isDataSource"]) && str_starts_with((string)($Entries["key"] ?? ""), "irrigation_")) { '
             .'if (isset($Entries["SystemReadEnabled"])) { RCC_ReloadCatalog($id); } '
             .'else { RCC_SaveSystemTreeOverview($id, (string)$Entries["key"], (string)($Entries["title"] ?? ""), '
             .'(bool)($Entries["kiEnabled"] ?? false)); } '
@@ -5697,13 +5706,14 @@ class RoomsCatalogConfigurator extends IPSModule
                             'caption'  => 'Geraete und KI-Freigaben',
                             'rowCount' => 20,
                             'loadValuesFromConfiguration' => false,
-                            'form' => 'return json_decode(str_starts_with((string)($Entries["key"] ?? ""), "irrigation_") && !empty($Entries["isDataSource"]) '
+                            'form' => 'return json_decode(!empty($Entries["isDataSource"]) && ($Entries["domain"] ?? "") === "hausgeraete" '
+                                .'? RCC_GetHouseholdEditForm($id, (string)$Entries["key"]) : (str_starts_with((string)($Entries["key"] ?? ""), "irrigation_") && !empty($Entries["isDataSource"]) '
                                 .'? RCC_GetSystemTreeEditForm($id, (string)($Entries["key"] ?? "")) '
                                 .': (!empty($Entries["isDataSource"]) '
                                 .'? RCC_GetHuaweiDataSourceEditForm($id, (string)($Entries["key"] ?? "")) '
                                 .': RCC_GetEntryEditForm($id, (string)($Entries["roomKey"] ?? ""), '
                                 .'(string)($Entries["domain"] ?? ""), (string)($Entries["group"] ?? ""), '
-                                .'(string)($Entries["key"] ?? ""))), true);',
+                                .'(string)($Entries["key"] ?? "")))), true);',
                             'add'      => true,
                             'delete'   => false,
                             'sort'     => ['column' => 'roomLabel', 'direction' => 'ascending'],
@@ -6151,6 +6161,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $main[]=$this->buildSystemTreePanel();
         $main[]=$this->buildHeatingSystemPanel($editCatalog, $prodCatalog);
         $main[]=$this->buildHomeConnectPanel();
+        $main[]=$this->buildHouseholdPanel();
         $huaweiId=$this->ReadPropertyInteger('HuaweiDataSourceInstanceId');
         $huaweiKey='huawei_'.$huaweiId;
         $huaweiEdit=$editCatalog['dataSources'][$huaweiKey]??null;
@@ -6225,7 +6236,7 @@ class RoomsCatalogConfigurator extends IPSModule
         // not the last technical audit or resettable snapshot.
         $pending=$this->catalogPendingChanges($entriesProd,$entriesEdit,$editCatalog,$prodCatalog);
         $pendingSaveCallback=str_replace('$Entries[','$PendingChanges[',
-            $saveSelectedRowCallback);
+            $sourceRowSaveCallback);
         $main[]=[
             'type'=>'ExpansionPanel',
             'caption'=>'Aenderungen in EDIT vor PROD ('.count($pending).' Geraete)',
@@ -6241,7 +6252,8 @@ class RoomsCatalogConfigurator extends IPSModule
                     'rowCount'=>12,'loadValuesFromConfiguration'=>false,
                     'add'=>false,'delete'=>false,'rowColor'=>'rowColor',
                     'sort'=>['column'=>'roomLabel','direction'=>'ascending'],
-                    'form'=>'return json_decode(RCC_GetEntryEditForm($id, '
+                    'form'=>'return json_decode(($PendingChanges["domain"] ?? "") === "hausgeraete" '
+                        .'? RCC_GetHouseholdEditForm($id, (string)$PendingChanges["key"]) : RCC_GetEntryEditForm($id, '
                         .'(string)($PendingChanges["roomKey"] ?? ""), '
                         .'(string)($PendingChanges["domain"] ?? ""), '
                         .'(string)($PendingChanges["group"] ?? ""), '
@@ -6252,7 +6264,13 @@ class RoomsCatalogConfigurator extends IPSModule
                         ['caption'=>'Geraet','name'=>'title','width'=>'180px','save'=>true,'quickFilter'=>true,'add'=>''],
                         ['caption'=>'Aenderung','name'=>'changeKind','width'=>'105px','save'=>false,'quickFilter'=>true,'add'=>''],
                         ['caption'=>'Geaenderte Felder','name'=>'changeDetails','width'=>'auto','save'=>false,'quickFilter'=>true,'add'=>''],
-                        ['caption'=>'Key','name'=>'key','width'=>'110px','save'=>true,'add'=>'']
+                        ['caption'=>'Key','name'=>'key','width'=>'110px','save'=>true,'add'=>''],
+                        ['name'=>'isDataSource','visible'=>false,'add'=>false],
+                        ['name'=>'kiEnabled','visible'=>false,'add'=>false],
+                        ['name'=>'kiReadOnly','visible'=>false,'add'=>true],
+                        ['name'=>'roomKey','visible'=>false,'add'=>''],
+                        ['name'=>'group','visible'=>false,'add'=>''],
+                        ['name'=>'synonyms','visible'=>false,'add'=>'']
                     ],
                     'values'=>$pending,
                     'onEdit'=>$pendingSaveCallback
@@ -6368,6 +6386,11 @@ class RoomsCatalogConfigurator extends IPSModule
 
     private function loadRoomsCatalog(int $scriptId, string $mode): array
     {
+        // Read the same current bytes that EDIT saves, even if a PHP worker still caches the old include.
+        if (function_exists('IPS_GetScriptContent')&&IPS_ScriptExists($scriptId)) {
+            $literal=IAHVoiceRuleLiteralReader::read((string)IPS_GetScriptContent($scriptId));
+            if (is_array($literal)) return $literal;
+        }
         $path = $this->resolveScriptPath($scriptId);
 
         if ($path === null) {
@@ -6785,7 +6808,7 @@ class RoomsCatalogConfigurator extends IPSModule
             $row['rowColor']=$removed?'#FFCCCC':($new?'#DDFFDD':'#FFF1C4');
             $rows[]=$this->decorateIpsIds($row);
         }
-        return $rows;
+        return array_merge($rows,RCCHouseholdCatalog::pendingRows($editCatalog,$prodCatalog));
     }
 
     private function buildDiffEntries(array $prodEntries, array $editEntries): array
@@ -6910,7 +6933,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $domainOptions = [['caption' => 'Alle', 'value' => '']];
         foreach (array_keys($domains) as $domainKey) {
             $domainOptions[] = [
-                'caption' => $domainKey==='bewaesserung'?'Bewässerung':$domainKey,
+                'caption' => match($domainKey){'bewaesserung'=>'Bewässerung','hausgeraete'=>'Hausgeräte',default=>$domainKey},
                 'value'   => $domainKey
             ];
         }

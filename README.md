@@ -8,13 +8,22 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
 
 ## ✨ Features
 
-- **Home Connect: Gerätefragen, Alexa-Show-Status und automatische Durchsagen**
-  Unter **IPSAlexaHaussteuerung → HOME CONNECT – Haushaltsgeräte** werden die
-  vorhandenen offiziellen Home-Connect-Instanzen automatisch erkannt. Optional
-  lässt sich der Scan auf eine Hauptkategorie begrenzen. Pro Gerät sind Alexa,
-  Steuerfreigabe und zusätzliche Namen einstellbar. Laufzeit, Programme, Temperatur,
-  Türzustand, Optionen und Zähler werden live eingelesen; neue Variablen kommen
-  automatisch dazu. Ein bisher unbenutztes Programm ist kein Fehler.
+- **Hausgeräte zentral im RoomsCatalog – Home Connect und weitere Hersteller**
+  Im **RoomsCatalogConfigurator → Geräte bearbeiten → Domain-Filter Hausgeräte**
+  stehen die vorhandenen Home-Connect-Geräte mit allen verknüpften Variablen.
+  Beim Öffnen oder Neuladen werden erkannte Geräte und neue Variablen mit Backup
+  nach EDIT ergänzt. Das Zahnrad zeigt alle aktuellen Werte, Variablen-IDs,
+  Namen, Bedeutungen und individuellen Lese-/Schaltfreigaben. Gerätename,
+  alternative Namen, Raum, Gruppe und Gesamtfreigaben sind dort ebenfalls editierbar.
+  Der Bereich **HAUSGERÄTE – Vorhandene und weitere Geräte verknüpfen** nimmt
+  auch Instanzen, Kategorien oder einzelne Variablen anderer Hersteller auf.
+  Nach der normalen EDIT→PROD-Übernahme verwendet Alexa diese veröffentlichten
+  Zuordnungen. Gesperrte Variablen werden aus den Abfragen ausgeschlossen;
+  der alte Home-Connect-Datenbestand überschreibt keine Katalogfreigaben.
+  Die Home-Connect-Übersicht in IPSAlexaHaussteuerung zeigt die Verbindung;
+  die Bearbeitung erfolgt zentral im RoomsCatalog.
+  Laufzeit, Programme, Temperatur, Türzustand, Optionen und Zähler werden live
+  eingelesen. Ein bisher unbenutztes Programm ist kein Fehler.
   Fragen wie „Wie lange läuft die Waschmaschine noch?“ und „Wie warm ist der
   Dampfbackofen?“ nutzen dieselbe Hausfragen-KI und erhalten auf der Show eine
   responsive Statusansicht mit passendem eingebauten Gerätesymbol. Die Grafik
@@ -44,7 +53,7 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
   Die Ausgabe benötigt keinen eingerichteten EDIT-Katalog und verändert keine Geräte.
   Programmabhängige Optionen können erst nach einer Programmauswahl vorhanden sein.
   Der Export bleibt als Diagnose für zusätzliche Geräte und neu angelegte Optionen
-  verfügbar. Die laufende Integration wird direkt in IPSAlexaHaussteuerung verwaltet.
+  verfügbar. Die laufende Integration wird im RoomsCatalog unter Hausgeräte verwaltet.
 
   In **IPSAlexaHaussteuerung → ECHO REMOTE 2 – Zentrale Ansagen und Durchsagen**
   die Ausgabe aktivieren und eine vorhandene **Echo-Remote-Geräteinstanz** wählen.
