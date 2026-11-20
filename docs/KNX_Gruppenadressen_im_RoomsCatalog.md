@@ -7,10 +7,13 @@ nicht im Repository oder im RoomsCatalog gespeichert.
 ## Einrichtung
 
 1. ETS als Gruppenadress-XML exportieren. Der Export muss Namen, Gruppenadressen
-   und DPT enthalten.
-2. Die XML auf dem IP-Symcon-Rechner ablegen und im Konfigurator den vollständigen
-   lokalen Dateipfad eintragen. Der Symcon-Dienst muss die Datei lesen können.
-3. **ETS-Export mit KNX-Variablen abgleichen** ausführen.
+   und DPT enthalten. Eine `.knxproj`-Datei ist ein ETS-Projektarchiv und wird
+   nicht direkt importiert; IP-Symcon benötigt dafür den Gruppenadress-XML-Export.
+2. Im Konfigurator **ETS-Gruppenadress-XML auswählen** anklicken und die XML-Datei
+   auswählen. Der XML-Export darf höchstens 10 MB groß sein. Symcon speichert die
+   ausgewählte Datei Base64-kodiert in der Eigenschaft der Konfigurator-Instanz.
+3. Die geänderten Formulareinstellungen übernehmen und danach **ETS-Export mit
+   KNX-Variablen abgleichen** ausführen.
 4. Treffer prüfen und nur gewünschte Namen markieren. Hohe Namensähnlichkeit zu
    bereits verknüpften Geräten wird vorausgewählt; die Liste zeigt auch Treffer,
    die noch keinem Kataloggerät zugeordnet sind.

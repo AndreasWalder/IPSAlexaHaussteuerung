@@ -137,8 +137,8 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
   [Einrichtung und Beispiele](docs/Bewaesserung_Objektbaum_V3816.md)
 
 - **KNX-Gruppenadressen, Geräteinventur und Alexa-Show-Statuskarten**
-  Der RoomsCatalog-Konfigurator kann einen ETS-Gruppenadress-XML-Export mit den
-  KNX-Instanzen abgleichen. Geprüfte Gruppenadress-Namen lassen sich als
+  Der RoomsCatalog-Konfigurator kann einen ETS-Gruppenadress-XML-Export direkt
+  auswählen und mit den KNX-Instanzen abgleichen. Geprüfte Gruppenadress-Namen lassen sich als
   Alexa-Synonyme nach EDIT übernehmen. Die Geräteinventur schlägt außerdem
   Bodenfeuchtesensoren und Saug-/Mähroboter vor. Lesende Hausabfragen zeigen auf
   Echo-Show-Geräten kompakte Statuskarten mit passenden Icons und den Messwerten

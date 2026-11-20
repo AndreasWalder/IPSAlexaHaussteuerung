@@ -114,6 +114,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterPropertyInteger('DiscoveryRootId', 0);
         $this->RegisterPropertyString('DiscoveryExtraRootIds', '');
         $this->RegisterPropertyString('KnxGroupAddressExportPath', '');
+        $this->RegisterPropertyString('KnxGroupAddressExportFile', '');
         // V3.4.9: Ein IP-Symcon-Knoten als gefuehrter Importscope.
         // Leer = den vom zentralen Typregister vorgeschlagenen Pfad nutzen.
         $this->RegisterPropertyString('DiscoveryDomainOverride', '');
@@ -1910,7 +1911,14 @@ class RoomsCatalogConfigurator extends IPSModule
     public function ImportKnxGroupAddresses(): void
     {
         try {
-            $result=RCCKnxGroupAddressDiscovery::scan($this->ReadPropertyString('KnxGroupAddressExportPath'));
+            $encoded=trim($this->ReadPropertyString('KnxGroupAddressExportFile'));
+            if($encoded!==''){
+                $xml=base64_decode($encoded,true);
+                if(!is_string($xml))throw new RuntimeException('Die ausgewaehlte Datei konnte nicht dekodiert werden.');
+                $result=RCCKnxGroupAddressDiscovery::scanXml($xml);
+            }else{
+                $result=RCCKnxGroupAddressDiscovery::scan($this->ReadPropertyString('KnxGroupAddressExportPath'));
+            }
             $edit=$this->loadConfiguredCatalog('RoomsCatalogEditScriptID','EDIT');
             if($edit===[])throw new RuntimeException('Bitte zuerst RoomsCatalogEdit konfigurieren.');
             $byVariable=[];
@@ -6059,8 +6067,8 @@ class RoomsCatalogConfigurator extends IPSModule
                     'caption'=>'KNX-GRUPPENADRESSEN – ETS-Namen mit Geraeten verknuepfen',
                     'expanded'=>false,
                     'items'=>[
-                        ['type'=>'Label','caption'=>'Der Export wird nur gelesen. Gruppenadressen werden ueber die KNX-Instanzkonfiguration abgeglichen. Ausgewaehlte ETS-Namen werden als zusaetzliche Sprachsynonyme ausschliesslich in RoomsCatalogEdit gespeichert.'],
-                        ['type'=>'ValidationTextBox','name'=>'KnxGroupAddressExportPath','caption'=>'Vollstaendiger Pfad zur ETS-Gruppenadress-XML'],
+                        ['type'=>'Label','caption'=>'ETS-Gruppenadress-XML direkt auswaehlen (maximal 10 MB); Datei auswaehlen und Aenderungen uebernehmen, dann abgleichen. Symcon speichert die Auswahl als Base64-Eigenschaft dieser Konfigurator-Instanz. Eine .knxproj ist ein Projektarchiv und wird nicht importiert; bitte in ETS die Gruppenadressen als XML exportieren.'],
+                        ['type'=>'SelectFile','name'=>'KnxGroupAddressExportFile','caption'=>'ETS-Gruppenadress-XML auswaehlen','extensions'=>'.xml'],
                         ['type'=>'Button','caption'=>'ETS-Export mit KNX-Variablen abgleichen','onClick'=>'RCC_ImportKnxGroupAddresses($id);'],
                         ['type'=>'Label','name'=>'KnxAddressStatus','caption'=>$this->ReadAttributeString('KnxAddressStatus')],
                         ['type'=>'List','name'=>'KnxAddressMatches','caption'=>'KNX-Treffer und Alexa-Synonyme zur Pruefung','rowCount'=>14,'loadValuesFromConfiguration'=>false,'add'=>false,'delete'=>false,

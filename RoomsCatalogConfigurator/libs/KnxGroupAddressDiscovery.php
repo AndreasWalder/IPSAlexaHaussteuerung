@@ -15,11 +15,21 @@ final class RCCKnxGroupAddressDiscovery
         $size = @filesize($path);
         if (!is_int($size) || $size <= 0 || $size > self::MAX_EXPORT_BYTES)
             throw new RuntimeException('Der XML-Export ist leer oder groesser als 10 MB.');
+        $xml = @file_get_contents($path);
+        if (!is_string($xml))
+            throw new RuntimeException('Der ETS-Export konnte nicht gelesen werden.');
+        return self::scanXml($xml);
+    }
+
+    public static function scanXml(string $xml): array
+    {
+        if (strlen($xml) <= 0 || strlen($xml) > self::MAX_EXPORT_BYTES)
+            throw new RuntimeException('Der ETS-XML-Export ist leer oder groesser als 10 MB.');
         if (!class_exists(XMLReader::class))
             throw new RuntimeException('Die PHP-XMLReader-Erweiterung ist nicht verfuegbar.');
 
         $reader = new XMLReader();
-        if (!$reader->open($path, null, LIBXML_NONET | LIBXML_NOBLANKS))
+        if (!$reader->XML($xml, null, LIBXML_NONET | LIBXML_NOBLANKS))
             throw new RuntimeException('Der ETS-Export konnte nicht gelesen werden.');
         $addresses = [];
         $rootSeen = false;
