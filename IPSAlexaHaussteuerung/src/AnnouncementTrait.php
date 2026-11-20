@@ -363,8 +363,10 @@ trait IAHAnnouncementTrait
 
     public function ReloadAnnouncementList(): void
     {
-        $this->UpdateFormField('AnnouncementRules', 'values', $this->announcementRows());
-        $this->UpdateFormField('AnnouncementTestKey', 'options', $this->announcementTestOptions());
+        $this->UpdateFormField('AnnouncementRules', 'values', json_encode($this->announcementRows(),
+            JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR));
+        $this->UpdateFormField('AnnouncementTestKey', 'options', json_encode($this->announcementTestOptions(),
+            JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR));
     }
 
     private function announcementTestOptions(): array

@@ -51,7 +51,8 @@ trait IAHHomeConnectTrait
                 'aliases'=>IAHHomeConnect::clean((string)($row['aliases'] ?? ''))];
             $this->WriteAttributeString('HomeConnectDeviceSettings', json_encode($settings, JSON_THROW_ON_ERROR));
             $this->RefreshAnnouncements();
-            $this->UpdateFormField('HomeConnectDevices', 'values', $this->homeConnectRows());
+            $this->UpdateFormField('HomeConnectDevices', 'values', json_encode($this->homeConnectRows(),
+                JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR));
             echo 'Home-Connect-Gerät gespeichert.';
         } catch (Throwable $e) { echo $e->getMessage(); }
     }
@@ -59,7 +60,8 @@ trait IAHHomeConnectTrait
     public function RefreshHomeConnectDevices(): void
     {
         $this->RefreshAnnouncements();
-        $this->UpdateFormField('HomeConnectDevices', 'values', $this->homeConnectRows());
+        $this->UpdateFormField('HomeConnectDevices', 'values', json_encode($this->homeConnectRows(),
+            JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR));
         echo 'Geräte und Durchsagenvorlagen aktualisiert.';
     }
 

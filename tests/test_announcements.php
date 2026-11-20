@@ -22,7 +22,14 @@ final class AnnouncementFixture
     public function RegisterMessage($id,$m): void { $this->messages[$id]=$m; }
     public function UnregisterMessage($id,$m): void { unset($this->messages[$id]); }
     public function SetTimerInterval($name,$ms): void { $this->timers[$name]=$ms; }
-    public function UpdateFormField($name,$field,$value): void { $this->updates[$name][$field]=$value; }
+    public function UpdateFormField($name,$field,string|int|float|bool $value): void {
+        // The native Symcon boundary accepts complex form parameters only as JSON strings.
+        if (in_array($field,['values','options'],true)) {
+            hcAssert(is_string($value) && is_array(json_decode($value,true,512,JSON_THROW_ON_ERROR)),
+                'List values and Select options must be JSON encoded');
+        }
+        $this->updates[$name][$field]=$value;
+    }
     public function Announce(string $text,int $target=0): bool { $this->sent[]=[$text,$target,'announcement']; return true; }
     public function SpeakText(string $text,int $target=0): bool { $this->sent[]=[$text,$target,'speech']; return true; }
     public function rules(): array { return json_decode($this->attributes['AnnouncementRules'],true); }
@@ -34,9 +41,27 @@ final class AnnouncementFixture
     }
 }
 $a=new AnnouncementFixture();
+$a->ReloadAnnouncementList();
+hcAssert(json_decode($a->updates['AnnouncementRules']['values'],true,512,JSON_THROW_ON_ERROR)===[],
+    'Empty announcement list updates use a JSON array');
 $a->RefreshAnnouncements();
 hcAssert(count($a->rules())===12 && count($a->messages)===5, 'Twelve templates watch the five relevant devices');
 hcAssert($a->queue()===[] && $a->sent===[], 'Installation never speaks old snapshot events');
+ob_start();$a->RefreshHomeConnectDevices();$refreshed=ob_get_clean();
+$deviceRows=json_decode($a->updates['HomeConnectDevices']['values'],true,512,JSON_THROW_ON_ERROR);
+hcAssert(count($deviceRows)===6 && str_contains($refreshed,'aktualisiert'),
+    'Device refresh sends all six rows as JSON');
+$coffee=array_values(array_filter($deviceRows,static fn(array $row):bool=>$row['name']==='Kaffeevollautomat'))[0];
+$coffee['aliases']='Kaffee Küche';
+ob_start();$a->SetHomeConnectDevice(json_encode($coffee));$saved=ob_get_clean();
+$deviceRows=json_decode($a->updates['HomeConnectDevices']['values'],true,512,JSON_THROW_ON_ERROR);
+hcAssert(str_contains($saved,'gespeichert') && count($deviceRows)===6
+    && in_array('Kaffee Küche',array_column($deviceRows,'aliases'),true),
+    'Saving a device refreshes JSON rows and preserves Unicode aliases');
+$a->ReloadAnnouncementList();
+hcAssert(count(json_decode($a->updates['AnnouncementRules']['values'],true,512,JSON_THROW_ON_ERROR))===12
+    && count(json_decode($a->updates['AnnouncementTestKey']['options'],true,512,JSON_THROW_ON_ERROR))===13,
+    'Announcement list and test selector update through the native scalar boundary');
 $a->RefreshAnnouncements();
 hcAssert(count($a->rules())===12, 'Refresh is idempotent');
 $a->MessageSink(1,17605,VM_UPDATE,['BSH.Common.Event.ProgramFinished',true]);
