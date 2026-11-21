@@ -45,8 +45,8 @@ $noArchive=iah_rc_voice('Wo wurde zuletzt das Licht eingeschaltet?',[],$rooms,$n
 ck353(str_contains($noArchive['answer'],'Archivverbindung'),'missing archive is explicit');
 $partial=iah_archive_latest_light_on(iah_rc_index_catalog($rooms),17597,microtime(true)-1);
 ck353($partial['partial'] && $partial['mostRecent']===null,'bounded scan reports incomplete coverage');
-// A free-form archive query can still hit the general limit. It must then
-// request a room explicitly, even if the model would return a generic reply.
+// Explicit property/domain archive queries scan all eligible logged feedback
+// under the deadline instead of rejecting the whole house before reading.
 $round=0;
 $archiveModel=static function()use(&$round):array {
     $message=$round++===0?['tool_calls'=>[['id'=>'archive','function'=>[
@@ -56,8 +56,9 @@ $archiveModel=static function()use(&$round):array {
 };
 $clarify=iah_rc_voice('Wann war die letzte Änderung am Licht?',
     ['api_key'=>'mock','archive_control_id'=>17597],$rooms,$archiveModel);
-ck353($clarify['awaitingLocation']===true && $clarify['answer']==='Welchen Raum soll ich im Archiv prüfen?'
-    && ($clarify['readQueries'][0]['result']['error']??'')==='too_many_devices',
-    'archive scope rejection creates a structured room prompt');
+ck353(($clarify['readQueries'][0]['result']['ok']??false)===true
+    && ($clarify['readQueries'][0]['result']['matchedDevices']??0)>30
+    && empty($clarify['awaitingLocation']),
+    'explicit archive property searches eligible lights beyond the former broadness cap');
 
 echo "PASS V3.8.9: Alexa Wo/Wie disambiguation and latest archived light across all rooms\n";

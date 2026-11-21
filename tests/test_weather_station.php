@@ -94,7 +94,7 @@ $all=$ask('Zeige alle Werte beider Wetterstationen');
 check(count(array_filter($all['displayRows'],static fn($r)=>str_contains($r['label'],'Hecke Ost')&&str_contains($r['value'],'56 %')))===1,'All-station status deduplicates linked targets');
 check(!str_contains(json_encode($all['displayRows']),'-100')&&str_contains(json_encode($all['displayRows']),'Nicht verf'),'Invalid battery sentinel is not shown as a measurement');
 check(str_contains($ask('Wie wird das Wetter morgen?')['answer'],'nicht zuverlässig abrufen'),'Live sensors never fabricate a forecast');
-check(str_contains($ask('Wie kalt war es gestern draußen?')['answer'],'Archivauswertung'),'Unsupported archive request does not silently return current readings');
+check(str_contains($ask('Wie kalt war es gestern draußen?')['answer'],'Archivaufzeichnung'),'Unsupported archive request does not silently return current readings');
 $ask('Schalte die Wetterstation ein',['allow_writes'=>true]);
 check(IAHWeatherStation::query($catalog,'Wie geht es dem Backofen?')===null,'Unrelated device queries remain untouched');
 check(IAHWeatherStation::query([],'Wie feucht ist der Garten?')===null,'Existing irrigation/soil handling survives when no weather source exists');

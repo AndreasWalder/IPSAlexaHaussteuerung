@@ -243,16 +243,17 @@ final class IAHHomeConnect
     }
 
     /** Stable numbered choices are carried as data, never parsed from spoken answers. */
-    public static function clarification(array $devices): array
+    public static function clarification(array $devices,string $question='Welches Gerät meinst du?'): array
     {
         $choices = []; $rows = []; $parts = [];
         foreach (array_slice(array_values($devices), 0, 10) as $i=>$d) {
             $choices[] = ['id'=>(int)$d['id'], 'name'=>(string)$d['name'], 'aliases'=>(array)$d['aliases']];
+            if (is_array($d['scope']??null)) $choices[array_key_last($choices)]['scope']=$d['scope'];
             $rows[] = ['label'=>(string)($i+1), 'value'=>$d['name']];
             $parts[] = ($i+1) . ': ' . $d['name'];
         }
         return self::response('Hausgeräteauswahl', 'all', $rows,
-            'Welches Gerät meinst du? ' . implode('. ', $parts) . '.')
+            $question.' ' . implode('. ', $parts) . '.')
             + ['awaitingDevice'=>true, 'deviceChoices'=>$choices];
     }
 
@@ -260,7 +261,7 @@ final class IAHHomeConnect
     public static function choiceReply(string $spoken, array $choices): ?int
     {
         $q = self::norm($spoken);
-        if (preg_match('/^(?:(?:bitte|nummer|das|der|die|den|dem|geraet|backofen) )*(\d+|eins|ein[se]?|zwei|drei|vier|fuenf|sechs|sieben|acht|neun|zehn|erste[rsnm]?|zweite[rsnm]?|dritte[rsnm]?|vierte[rsnm]?|fuenfte[rsnm]?|sechste[rsnm]?|siebte[rsnm]?|achte[rsnm]?|neunte[rsnm]?|zehnte[rsnm]?)(?: (?:bitte|das|der|die|den|dem|geraet|backofen))*$/D', $q, $m)) {
+        if (preg_match('/^(?:(?:bitte|nummer|das|der|die|den|dem|geraet|backofen|option|auswahl|eintrag|variante) )*(\d+|eins|ein[se]?|zwei|drei|vier|fuenf|sechs|sieben|acht|neun|zehn|erste[rsnm]?|zweite[rsnm]?|dritte[rsnm]?|vierte[rsnm]?|fuenfte[rsnm]?|sechste[rsnm]?|siebte[rsnm]?|achte[rsnm]?|neunte[rsnm]?|zehnte[rsnm]?)(?: (?:bitte|das|der|die|den|dem|geraet|backofen|option|auswahl|eintrag|variante))*$/D', $q, $m)) {
             $numbers = ['eins','zwei','drei','vier','fuenf','sechs','sieben','acht','neun','zehn'];
             $stems = ['erst','zweit','dritt','viert','fuenft','sechst','siebt','acht','neunt','zehnt'];
             $index = ctype_digit($m[1]) ? (int)$m[1] : (in_array($m[1],['ein','eine'],true)?1:0);

@@ -1937,6 +1937,12 @@ PHP;
                     $content = str_replace('// IAH_PV_STATUS_QUESTION_INSERT',
                         'if (!class_exists(\'IAHPvStatusQuestion\', false)) {' . "\n" . $recognizer . "\n}", $content);
                 }
+                if (str_contains($content, '// IAH_SYSTEM_HISTORY_INSERT')) {
+                    $history=file_get_contents(__DIR__.'/resources/helpers/SystemHistoryQuery.php');
+                    $history=is_string($history)?preg_replace('/^<\?php\s*declare\(strict_types=1\);\s*/','',$history):null;
+                    if (!is_string($history)||!str_contains($history,'final class IAHSystemHistory')) return (int)$id;
+                    $content=str_replace('// IAH_SYSTEM_HISTORY_INSERT',"if (!class_exists('IAHSystemHistory',false)) {\n".$history."\n}",$content);
+                }
                 if (str_contains($content, '// IAH_HEATING_SYSTEM_INSERT')) {
                     $heating = file_get_contents(__DIR__ . '/resources/helpers/HeatingSystemQuery.php');
                     $heating = is_string($heating)

@@ -113,15 +113,26 @@ function iah_archive_safe_value(mixed $value): mixed
     return $value;
 }
 
-function iah_archive_matches_active(mixed $value,array $dev,string $property): bool
+function iah_archive_activity_state(mixed $value,array $dev,string $property): ?bool
 {
     if ($property!=='motion' && !in_array($property,['power','open','online','alarm','waterLeak','armed'],true))
-        return false;
+        return null;
     if (is_bool($value))return $value;
-    $expected=$dev['stateMapping']['on']??null;
-    return $expected!==null
-        && get_debug_type($expected)===get_debug_type($value)
-        && $expected===$value;
+    $id=(int)($dev['reads'][$property]??0);
+    if ($id>0&&function_exists('IPS_GetVariable')&&IPS_VariableExists($id)
+        &&(IPS_GetVariable($id)['VariableType']??-1)===0) {
+        return (is_int($value)||is_float($value))&&in_array((float)$value,[0.0,1.0],true)?(float)$value===1.0:null;
+    }
+    foreach (['on'=>true,'off'=>false] as $key=>$state) {
+        $expected=$dev['stateMapping'][$key]??null;
+        if ($expected!==null&&get_debug_type($expected)===get_debug_type($value)&&$expected===$value) return $state;
+    }
+    return null;
+}
+
+function iah_archive_matches_active(mixed $value,array $dev,string $property): bool
+{
+    return iah_archive_activity_state($value,$dev,$property)===true;
 }
 
 /** Find the latest logged ON feedback across all eligible lights, not just the first 30. */
@@ -260,23 +271,45 @@ function iah_archive_query(array $devices,array $args,string $spoken,int $archiv
         $filters['type']='motion';
         if ($property==='')$property='motion';
     }
+    if ($property==='') {
+        if (preg_match('/temperatur|frost|kalt|warm/ui',$spoken))$property='temperature';
+        elseif (preg_match('/licht|lampe|beleuchtung/ui',$spoken))$property='power';
+        elseif (preg_match('/fenster/ui',$spoken))$property='open';
+    }
     $found=iah_rc_find($devices,$filters);
+    // Filter actual archived read roles BEFORE deciding whether a question is too broad.
+    $roles=[];$notArchived=[];
+    foreach ($found as $key=>$device) {
+        $role=$property==='activity'?(($device['type']??'')==='motion'?'motion':'power'):$property;
+        if ($role==='') continue;
+        $id=(int)($device['reads'][$role]??0);
+        if ($id<=0&&$role==='motion') $id=iah_archive_discover_source((int)($device['archiveSourceId']??0),$role,$inventory);
+        if ($id<=0&&$role==='state')$id=(int)($device['read']??0);
+        if ($id<=0&&$role==='status'&&($device['type']??'')==='motion')$id=(int)($device['reads']['motion']??0);
+        if ($id<=0||isset($roles[$id])) {unset($found[$key]);continue;}
+        $roles[$id]=true;
+        if (!isset($inventory[$id])) {
+            $notArchived[]=['name'=>$device['name'],'reason'=>'no_archived_feedback'];
+            unset($found[$key]);
+        }
+    }
     if ($found===[] && $filters!==[])
         return ['ok'=>true,'matchedDevices'=>0,'foundHistory'=>0,
-            'message'=>'Kein entsprechend für KI-Lesezugriff freigegebenes Gerät im RoomsCatalog gefunden.'];
-    if (count($found)>30 && empty($filters['name']) && empty($filters['deviceKey'])
+            'missing'=>$notArchived,'partial'=>$notArchived!==[],
+            'message'=>$notArchived!==[]?'Für passende freigegebene Geräte fehlt die Archivaufzeichnung.':'Kein entsprechend für KI-Lesezugriff freigegebenes Gerät im RoomsCatalog gefunden.'];
+    if (count($found)>30 && $property==='' && empty($filters['name']) && empty($filters['deviceKey'])
         && empty($filters['room']) && empty($filters['type']))
         return ['ok'=>false,'error'=>'too_many_devices','matches'=>count($found),
             'message'=>'Bitte Raum oder Gerät eingrenzen.'];
-    $maxDevices=30;
+    $maxDevices=count($found);
     $maxResult=max(1,min(10,(int)($args['limit']??5)));
-    $rows=[];$missing=[];$searched=0;$partial=false;$mostRecent=null;
+    $rows=[];$missing=$notArchived;$searched=0;$partial=$notArchived!==[];$mostRecent=null;
     $started=microtime(true);
     foreach (array_slice($found,0,$maxDevices) as $dev) {
         if (microtime(true)-$started>2.0) {
             $partial=true;break;
         }
-        $role=$property==='activity'?'motion':$property;
+        $role=$property==='activity'?(($dev['type']??'')==='motion'?'motion':'power'):$property;
         if ($role==='') {
             if (($dev['type']??'')==='motion')$role='motion';
             elseif (count((array)($dev['reads']??[]))===1)
@@ -301,6 +334,7 @@ function iah_archive_query(array $devices,array $args,string $spoken,int $archiv
             continue;
         }
         $searched++;
+        $dev['reads'][$role]=$variableId;
         $entry=['deviceKey'=>$dev['id'],'name'=>$dev['name'],'room'=>$dev['room'],
             'property'=>$role,'firstArchivedAt'=>isset($inventory[$variableId]['FirstTime'])
                 ? date('c',(int)$inventory[$variableId]['FirstTime']):null,
@@ -326,7 +360,7 @@ function iah_archive_query(array $devices,array $args,string $spoken,int $archiv
                 $events=[];$endPage=$end;$scanLimit=$op==='history'?$maxResult:
                     ($op==='count_active'?(10 * 1000):250);
                 $pages=$op==='last_active'?4:1;
-                $sawMatch=false;$rowsScanned=0;
+                $sawMatch=false;$rowsScanned=0;$countSamples=[];
                 for ($page=0;$page<$pages;$page++) {
                     $values=AC_GetLoggedValues($archiveId,$variableId,$start,$endPage,$scanLimit);
                     if (!is_array($values) || $values===[])break;
@@ -337,6 +371,7 @@ function iah_archive_query(array $devices,array $args,string $spoken,int $archiv
                         if ($at<=0)continue;
                         $raw=$v['Value']??null;
                         $active=iah_archive_matches_active($raw,$dev,$role);
+                        if ($op==='count_active') $countSamples[$at][]=$raw;
                         if (in_array($op,['last_active','count_active'],true) && !$active)
                             continue;
                         $sawMatch=true;
@@ -356,8 +391,21 @@ function iah_archive_query(array $devices,array $args,string $spoken,int $archiv
                     $entry['incomplete']=true;$partial=true;
                 }
                 if ($op==='count_active') {
-                    $entry['count']=$rowsScanned>=(10 * 1000)?null:count($events);
-                    $entry['countLowerBound']=count($events);
+                    // Count distinct documented active phases, never repeated active updates.
+                    $before=$start>0?AC_GetLoggedValues($archiveId,$variableId,0,$start-1,1):[];
+                    $previous=is_array($before)&&isset($before[0])?iah_archive_activity_state($before[0]['Value']??null,$dev,$role):null;
+                    $incomplete=$rowsScanned>=(10 * 1000)||($start>0&&$previous===null&&$countSamples!==[]&&min(array_keys($countSamples))>$start);
+                    $count=0;ksort($countSamples,SORT_NUMERIC);
+                    foreach ($countSamples as $at=>$samples) {
+                        $states=array_map(static fn($v)=>iah_archive_activity_state($v,$dev,$role),$samples);
+                        if(in_array(null,$states,true)||count(array_unique($states,SORT_REGULAR))!==1){$previous=null;$incomplete=true;continue;}
+                        $active=(bool)reset($states);
+                        if($active&&($previous===false||($previous===null&&$count===0)))$count++;
+                        $previous=$active;
+                    }
+                    $entry['count']=$incomplete?null:$count;
+                    $entry['countLowerBound']=$count;
+                    if($incomplete){$entry['incomplete']=true;$partial=true;}
                 } else {
                     $entry['events']=array_slice($events,0,$maxResult);
                     if ($events!==[] && ($mostRecent===null

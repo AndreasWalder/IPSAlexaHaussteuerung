@@ -9,7 +9,7 @@ final class IAHTauernwetterForecast
     public static function matches(string $text): bool
     {
         $q=self::norm($text);
-        if (preg_match('/\b(?:gestern|vorgestern|letzte|letzten)\b/',$q)) return false;
+        if (preg_match('/\b(?:gestern|vorgestern|letzte|letzten|war|waren|lag|wie oft|wie lange)\b/',$q)) return false;
         $future=preg_match('/\b(?:wird|werden|morgen|uebermorgen|naechste\w*|wettervorhersage|wetterprognose|vorhersage|prognose|aussicht\w*|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)\b/',$q);
         return $future&&preg_match('/\b(?:wetter\w*|regnet|regen|schneit|schnee\w*|tauernwetter|vorhersage|wetterprognose)\b/',$q)===1;
     }

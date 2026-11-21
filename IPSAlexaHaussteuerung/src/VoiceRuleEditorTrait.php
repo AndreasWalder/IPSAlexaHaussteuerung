@@ -1352,6 +1352,7 @@ trait IAHVoiceRuleEditorTrait
             || preg_match('/\b(?:schalte|schalten|oeffne|schliesse|starte|stoppe|dimme|zurueck|ende)\b/',$text))
             return null;
         $target = IAHHouseQuestionContext::followUp($spoken) ?? preg_replace('/^und +/D', '', $text);
+        $target=preg_replace('/^(?:(?:und|bei|der|die|das|den|dem|meine|meiner) )+/','',(string)$target);
         if (IAHHouseQuestionContext::latestMotionQuestion((string)($entry['question']??''))) {
             $area=match($target) {
                 'innen','drinnen','ausser aussen'=>'indoor',
@@ -1361,18 +1362,25 @@ trait IAHVoiceRuleEditorTrait
             if ($area!=='all')
                 return ['type'=>'motion_area','name'=>$area==='indoor'?'Innenräume':'Außenbereich','area'=>$area];
         }
-        return IAHHouseQuestionContext::scope((string)$target,$catalog);
+        return IAHHouseQuestionContext::scope((string)$target,$catalog)
+            ?? IAHHouseQuestionContext::domainScope((string)$target,$catalog)
+            ?? IAHHouseQuestionContext::topicScope((string)$target,$catalog);
     }
 
-    private function pendingHouseDevicePlan(string $spoken,array $entry): ?array
+    private function pendingHouseDevicePlan(string $spoken,array $entry,array $catalog=[]): ?array
     {
         if ((int)($entry['awaitingDeviceUntil']??0)<=time() || empty($entry['question'])) return null;
         if (!class_exists('IAHHomeConnect',false)) require_once __DIR__.'/../resources/helpers/HomeConnect.php';
         $choices=(array)($entry['deviceChoices']??[]);
         $id=IAHHomeConnect::choiceReply($spoken,$choices);
         if ($id===null) return null;
-        if ($id===0) return IAHHomeConnect::clarification($choices)+['reason'=>'unclear_household_selection'];
+        if ($id===0) return IAHHomeConnect::clarification($choices,(string)($entry['choiceQuestion']??'Welches Gerät meinst du?'))+['reason'=>'unclear_household_selection'];
         $choice=array_values(array_filter($choices,static fn($d):bool=>(int)$d['id']===$id))[0];
+        if (is_array($choice['scope']??null)) {
+            $scope=IAHHouseQuestionContext::validateChoiceScope($choice['scope'],$catalog);
+            if ($scope===null) return ['answer'=>'Diese Auswahl ist nicht mehr verfügbar.','reason'=>'selection_unavailable'];
+            return ['question'=>$entry['question'],'scope'=>$scope];
+        }
         return ['question'=>$entry['question'],
             'scope'=>['type'=>'household_device','name'=>$choice['name'],'deviceId'=>$id]];
     }
@@ -1382,13 +1390,17 @@ trait IAHVoiceRuleEditorTrait
     {
         if (!class_exists('IAHHomeConnect', false)) require_once __DIR__.'/../resources/helpers/HomeConnect.php';
         $entry=$key!==''?($this->houseQuestionContexts()[$key]??[]):[];
-        $devicePlan=$this->pendingHouseDevicePlan($spoken,$entry);
+        $timeQuestion=IAHHouseQuestionContext::timeFollowUp($spoken,(string)($entry['question']??''));
+        if ($timeQuestion!==null) return ['question'=>$timeQuestion];
+        $devicePlan=$this->pendingHouseDevicePlan($spoken,$entry,$catalog);
         if ($devicePlan!==null) {
             if (isset($devicePlan['question'])) $this->updateHouseQuestionContext($key,null);
             return $devicePlan;
         }
         if (IAHHomeConnect::recognizes($spoken)) {
             $this->updateHouseQuestionContext($key,null);
+            if ((int)($entry['awaitingLocationUntil']??0)>time()&&!IAHHouseQuestionContext::isNewQuestion($spoken)&&!empty($entry['question']))
+                return ['question'=>$entry['question'].' (Präzisierung: '.$spoken.')'];
             return ['question'=>preg_replace('/^\s*und\s+/ui','',$spoken) ?? $spoken];
         }
         $entry=$key!==''?($this->houseQuestionContexts()[$key]??[]):[];
@@ -1398,7 +1410,17 @@ trait IAHVoiceRuleEditorTrait
             $question=IAHHouseQuestionContext::latestMotionQuestion($entry['question'])
                 ? 'Wo wurde zuletzt Bewegung erkannt?'
                 : IAHHouseQuestionContext::withoutLocation($entry['question'],$catalog);
+            if (($pendingScope['type']??'')==='topic') $question.=' – gemeint ist '.$pendingScope['topic'];
             return ['question'=>$question,'scope'=>$pendingScope];
+        }
+        if ((int)($entry['awaitingLocationUntil']??0)>time()&&!IAHHouseQuestionContext::isNewQuestion($spoken)) {
+            $detail=trim($spoken);
+            if ($detail!==''&&mb_strlen($detail)<=100&&!empty($entry['question'])
+                && !preg_match('/^(?:schalte|oeffne|schliesse|starte|stoppe|zurueck|ende|hauptmenue|startseite)\b/',IAHHouseQuestionContext::normalize($detail))) {
+                $this->updateHouseQuestionContext($key,null);
+                return ['question'=>$entry['question'].' (Präzisierung: '.$detail.')'];
+            }
+            return $this->clarifyHouseLocation($key,(string)($entry['question']??''));
         }
         $target=IAHHouseQuestionContext::followUp($spoken);
         $isFollowup=IAHHouseQuestionContext::isLocationFollowUp($spoken,$dedicatedFollowup);
@@ -1465,6 +1487,8 @@ trait IAHVoiceRuleEditorTrait
                 if (!is_array($choice)||(int)($choice['id']??0)<=0||!is_string($choice['name']??null)) continue;
                 $choices[]=['id'=>(int)$choice['id'],'name'=>mb_substr($choice['name'],0,120),
                     'aliases'=>array_slice(array_values(array_filter((array)($choice['aliases']??[]),'is_string')),0,30)];
+                if (is_array($choice['scope']??null)&&in_array($choice['scope']['type']??'',['domain','room','floor'],true))
+                    $choices[array_key_last($choices)]['scope']=array_intersect_key($choice['scope'],array_flip(['type','name','domain','rooms']));
             }
         }
         $awaitingDevice=count($choices)>1;
@@ -1474,6 +1498,7 @@ trait IAHVoiceRuleEditorTrait
                 'question'=>mb_substr($plan['question'],0,500,'UTF-8'),
                 'awaitingLocationUntil'=>$awaiting?time()+90:0,
                 'awaitingDeviceUntil'=>$awaitingDevice?time()+90:0,'deviceChoices'=>$choices,
+                'choiceQuestion'=>mb_substr((string)($result['choiceQuestion']??(isset($choices[0]['scope'])?'Welche Anlage oder welchen Bereich meinst du?':'Welches Gerät meinst du?')),0,140),
                 'expires'=>time()+($awaiting||$awaitingDevice?90:600),
             ]);
     }
@@ -1500,11 +1525,16 @@ trait IAHVoiceRuleEditorTrait
         $key=$this->alexaHouseQuestionKey($sessionId,$deviceId);
         if ($key==='' || $deviceId==='') return false;
         $entry=$this->houseQuestionContexts()[$key]??[];
+        if (IAHHouseQuestionContext::timeFollowUp($spoken,(string)($entry['question']??''))!==null) return true;
         if ((int)($entry['awaitingLocationUntil']??0)<=time() && (int)($entry['awaitingDeviceUntil']??0)<=time()) return false;
-        if ($this->pendingHouseDevicePlan($spoken,$entry)!==null) return true;
         $catalog=IAHVoiceRuleLiteralReader::read($this->getScriptContent($catalogId))??[];
+        if ($this->pendingHouseDevicePlan($spoken,$entry,$catalog)!==null) return true;
         if ($this->pendingHouseLocationScope($spoken,$catalog,$entry)!==null
             || ((int)($entry['awaitingLocationUntil']??0)>time() && IAHHouseQuestionContext::isLocationFollowUp($spoken))) return true;
+        $bare=IAHHouseQuestionContext::normalize($spoken);
+        if ((int)($entry['awaitingLocationUntil']??0)>time()&&$bare!==''&&strlen($bare)<=100
+            && !IAHHouseQuestionContext::isNewQuestion($spoken)
+            && !preg_match('/^(?:schalte|oeffne|schliesse|starte|stoppe|zurueck|ende|hauptmenue|startseite)\b/',$bare)) return true;
         // A different command, navigation request, or full question ends the pending prompt.
         if (trim($spoken)!=='')$this->updateHouseQuestionContext($key,null);
         return false;

@@ -60,6 +60,11 @@ if (!class_exists('IAHIrrigationQuery', false)) {
     require_once __DIR__ . '/IrrigationQueryEngine.php';
 }
 
+// IAH_SYSTEM_HISTORY_INSERT
+if (!class_exists('IAHSystemHistory',false)) {
+    require_once __DIR__.'/SystemHistoryQuery.php';
+}
+
 // IAH_HEATING_SYSTEM_INSERT
 if (!class_exists('IAHHeatingSystemQuery', false)) {
     require_once __DIR__ . '/HeatingSystemQuery.php';
@@ -884,6 +889,7 @@ function iah_rc_window_answer(string $text,array $catalog,?array $scope): ?array
 function iah_rc_scope_devices(array $devices,?array $scope): array
 {
     if($scope===null)return $devices;
+    if (($scope['type']??'')==='domain') return array_filter($devices,static fn($d):bool=>($d['domain']??'')===($scope['domain']??''));
     $rooms=(array)($scope['rooms']??[]);
     return array_filter($devices,static fn(array $device):bool=>in_array($device['roomKey'],$rooms,true));
 }
@@ -1210,6 +1216,10 @@ function iah_rc_voice(
                 }
             } catch (Throwable $ignored) {}
         }
+        $archiveChoices=IAHHouseQuestionContext::archiveChoices($catalog);
+        if (count($archiveChoices)>1) $locationPrompt=array_replace(IAHHomeConnect::clarification($archiveChoices,'Welche Anlage oder welchen Bereich meinst du?'),[
+            'handled'=>true,'awaitingLocation'=>true,'answerSource'=>'archive_clarification','displayTitle'=>'Archiv – Bereich auswählen',
+            'choiceQuestion'=>'Welche Anlage oder welchen Bereich meinst du?']);
         $homeAllowed=!$preview && $scope===null && (bool)($cfg['allow_writes']??false);
         $selectedHouseholdId=($scope['type']??'')==='household_device' ? (int)($scope['deviceId']??0) : 0;
         $robotStatus=iah_rc_robohub_status_query($catalog,$text,$scope);
@@ -1218,6 +1228,11 @@ function iah_rc_voice(
                 $readSucceeded=true;$readDetails=[['tool'=>'robohub_status','result'=>$robotStatus['displayRows']??[]]];
             }
             return $costFinish($robotStatus);
+        }
+        $history=IAHSystemHistory::query($catalog,$text,$archiveId,min($deadline,microtime(true)+3.5),$scope);
+        if ($history!==null) {
+            $readSucceeded=true;$readDetails=[['tool'=>'system_archive','result'=>$history['historyDiagnostics']??[]]];
+            return $costFinish($history);
         }
         $weather = IAHWeatherStation::query($catalog,$text,$selectedHouseholdId);
         if ($weather !== null) {
@@ -1414,7 +1429,8 @@ function iah_rc_voice(
         if($key==='')return $costFinish(['handled'=>false,'error'=>'KI-Konfiguration unvollständig']);
         $costStarted=true;
         $costReport('start',['model'=>(string)($cfg['model']??'gpt-4.1-mini')]);
-        $devices=iah_rc_scope_devices(iah_rc_index_catalog($catalog,$wantsArchive),$scope);
+        $historyDevices=$wantsArchive?IAHSystemHistory::devices($catalog):[];
+        $devices=iah_rc_scope_devices(array_replace(iah_rc_index_catalog($catalog,$wantsArchive),$historyDevices),$scope);
         $energySources=$scope===null?iah_energy_catalog_sources($catalog):[];
         if($preview){
             foreach($devices as &$device){
@@ -1637,7 +1653,8 @@ function iah_rc_voice(
                 if($rawAnswer==='')throw new RuntimeException('Keine Sprachantwort');
                 $answer=iah_rc_limit_voice_answer($rawAnswer,$maxWords);
                 if(!$preview)iah_rc_log('answer',['durationMs'=>round((microtime(true)-$started)*1000),'text'=>$answer]);
-                return $costFinish(['handled'=>true,'answer'=>$answer]);
+                $clarification=preg_match('/(?:meinst du|welche[rsnm]?|moechtest du|möchtest du|kannst du).*\?\s*$/iu',$answer)===1;
+                return $costFinish(['handled'=>true,'answer'=>$answer,'awaitingLocation'=>$clarification]);
             }
             if($round>=2)throw new RuntimeException('Zu viele Tool-Runden');
             $messages[]=$msg;

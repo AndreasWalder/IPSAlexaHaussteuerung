@@ -47,7 +47,7 @@ Froggit speichert viele Werte standardmäßig nur bei Änderungen. Deshalb bewei
 
 Der Empfang belegt die Erreichbarkeit des Gateways, aber nicht automatisch den Funkempfang jedes einzelnen Sensors. Die Integration ändert keine Einstellungen am Froggit-Modul. Einzelne veraltete Sensoren lassen sich im Editor vom Lesen ausschließen.
 
-Tages-, Wochen-, Monats- und Jahresregen verwenden die jeweiligen Zähler des Froggit-Moduls; die stärkste Tagesböe verwendet dessen Tagesmaximum. Eine freie Archivauswertung, automatische Wetterwarnungen/Durchsagen und Wetterstation-Steuerbefehle sind noch nicht implementiert. Für Wettervorhersagen gibt es die separate Tauernwetter-Anbindung unten; eigene Stationsmesswerte werden nicht als Vorhersage ausgegeben.
+Tages-, Wochen-, Monats- und Jahresregen verwenden die jeweiligen Zähler des Froggit-Moduls; die stärkste Tagesböe verwendet dessen Tagesmaximum. Historische Fragen verwenden die freigegebenen Archivwerte wie in [Archivfragen und Rückfragen](Archivfragen_und_Rueckfragen.md) beschrieben. Automatische Wetterwarnungen/Durchsagen und Wetterstation-Steuerbefehle sind noch nicht implementiert. Für Wettervorhersagen gibt es die separate Tauernwetter-Anbindung unten; eigene Stationsmesswerte werden nicht als Vorhersage ausgegeben.
 
 ## Verständlicher Bericht und kurze Sprachnamen
 

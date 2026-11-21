@@ -139,9 +139,68 @@ final class IAHHouseQuestionContext
             $first=reset($floorRooms);
             return ['type'=>'floor','name'=>$first['floor'],'rooms'=>array_keys($floorRooms)];
         }
-        if(count($rooms)!==1)return null;
+        if(count($rooms)!==1)return self::domainScope($target,$catalog);
         $first=reset($rooms);
         return ['type'=>'room','name'=>$first['name'],'rooms'=>array_keys($rooms)];
+    }
+
+    /** A pending answer can name a system/domain, not only a room. Never invent unpublished sources. */
+    public static function domainScope(string $target,array $catalog): ?array
+    {
+        $labels=['bewaesserung'=>'Bewässerung','wetterstation'=>'Wetterstation','hausgeraete'=>'Hausgeräte',
+            'heizung'=>'Heizung','energie'=>'Energie','licht'=>'Licht','jalousie'=>'Jalousie','lueftung'=>'Lüftung','sensoren'=>'Sensoren'];
+        $aliases=['gartenbewaesserung'=>'bewaesserung','giessen'=>'bewaesserung','wetter'=>'wetterstation',
+            'bodenfeuchte'=>'wetterstation','hausgeraet'=>'hausgeraete','haushaltsgeraete'=>'hausgeraete','lampen'=>'licht','beleuchtung'=>'licht','pv'=>'energie','photovoltaik'=>'energie'];
+        $target=self::normalize($target);$key=$aliases[$target]??$target;$found=[];
+        foreach (($catalog['rooms']??$catalog) as $room) if (is_array($room)) foreach ((array)($room['domains']??[]) as $domain=>$groups) $found[$domain]=true;
+        foreach ((array)($catalog['dataSources']??[]) as $source) if (is_array($source)&&!empty($source['kiEnabled'])) {
+            $domain=$source['domain']??match($source['provider']??''){'FroggitWeather'=>'wetterstation','ObjectTreeIrrigation'=>'bewaesserung','HouseholdDevices','HomeConnect'=>'hausgeraete',default=>''};
+            if ($domain!=='') $found[$domain]=true;
+        }
+        return isset($labels[$key],$found[$key])?['type'=>'domain','domain'=>$key,'name'=>$labels[$key],'rooms'=>[]]:null;
+    }
+
+    public static function archiveChoices(array $catalog): array
+    {
+        $choices=[];
+        foreach (['bewaesserung','wetterstation','licht','heizung','hausgeraete','energie','sensoren','jalousie','lueftung'] as $domain) {
+            $scope=self::domainScope($domain,$catalog);
+            if ($scope!==null) $choices[]=['id'=>count($choices)+1,'name'=>$scope['name'],'aliases'=>[$domain,$scope['name']],'scope'=>$scope];
+        }
+        return $choices;
+    }
+
+    public static function validateChoiceScope(array $scope,array $catalog): ?array
+    {
+        if (($scope['type']??'')==='domain') return self::domainScope((string)($scope['domain']??''),$catalog);
+        if (in_array($scope['type']??'',['room','floor'],true)) {
+            $resolved=self::scope((string)($scope['name']??''),$catalog);
+            return ($resolved['type']??'')===($scope['type']??'')?$resolved:null;
+        }
+        return null;
+    }
+
+    public static function topicScope(string $target,array $catalog): ?array
+    {
+        $target=preg_replace('/^(?:(?:und|die|der|das|den|meine|meiner|mein|meinen) )+/','',self::normalize($target))??'';
+        if ($target===''||strlen($target)>80) return null;
+        $s=$catalog['dataSources']['weather_stations']??[];
+        if (($s['provider']??'')!=='FroggitWeather'||empty($s['kiEnabled'])) return null;
+        foreach ((array)($s['devices']??[]) as $d) if (!empty($d['enabled'])) foreach ((array)($d['variables']??[]) as $m) {
+            if (empty($m['enabled'])||($m['role']??'')!=='soil')continue;
+            $label=self::normalize((string)(($m['speechName']??'')?:$m['title']));
+            if (preg_match('/\b'.preg_quote($target,'/').'\b/',$label)) return ['type'=>'topic','name'=>$target,'topic'=>$target,'rooms'=>[]];
+        }
+        return null;
+    }
+
+    public static function timeFollowUp(string $text,string $previous): ?string
+    {
+        $q=self::normalize($text);
+        if (!preg_match('/\b(?:wann|war|frost|wie oft|wie lange|verlauf|historie|wetter|vorhersage)\b/',self::normalize($previous))) return null;
+        if (!preg_match('/^(?:und )?(?:am )?(heute|gestern|vorgestern|morgen|uebermorgen|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)$/D',$q,$m)) return null;
+        $base=preg_replace('/\b(?:heute|gestern|vorgestern|morgen|übermorgen|uebermorgen|(?:am\s+)?(?:montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag))\b/iu','',$previous)??$previous;
+        return trim(preg_replace('/\s+/u',' ',rtrim($base," ?.!"))??$base).' '.$m[1];
     }
 
     /** Find explicit room/floor phrases in full questions, using longest labels first. */
