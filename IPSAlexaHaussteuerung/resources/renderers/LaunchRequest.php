@@ -151,7 +151,7 @@ $ds = [
   'tiles'=>$tiles,
  ]
 ];
-$speech = ($action === 'zurück' || $args1 === 'zurück') ? '' : ($apl ? 'Willkommen' : ('Willkommen '.$alexa));
+$speech = '';
 
 $calcSize = static function(array $ds, bool $apl, string $speech): int {
     $aplObj = $apl ? ['doc'=>['type'=>'Link','src'=>'doc://alexa/apl/documents/Hausvisualisierung_Main'], 'ds'=>$ds] : null;
