@@ -684,7 +684,7 @@ final class IAHIrrigationQuery
         if ($q===''||preg_match('/^(?:oeffne|starte|stoppe|schalte|aktiviere|deaktiviere|bewaessere)\b/',$q)
             || in_array($q,['bewaesserung','gartenbewaesserung'],true)||self::systems($catalog)===[])return false;
         $topic=preg_match('/bewae?sserung|garten\s*pumpe|pumpenschacht|rohr\s*(begleit\s*)?heiz|heizband|bodenfeucht|frost|\bregensensor\b|wasserholen|wasser holen|manuelles giessen|manuell giessen/',$q);
-        $systemHealth=(bool)preg_match('/alles in ordnung|zusammenfassung|status.*(?:bewae?sserung|heiz)|(?:bewae?sserung|heiz).*status/',$q);
+        $systemHealth=(bool)preg_match('/alles in ordnung|zusammenfassung|status.*(?:bewae?sserung|heiz)|(?:bewae?sserung|heiz).*status|(?:wie )?geht es (?:mit )?(?:meiner|der|unserer )?(?:garten)?bewae?sserung/',$q);
         $stations=preg_match('/(?:kalt|warm|temperatur).*station|station.*(?:kalt|warm|temperatur)/',$q);
         $pump=preg_match('/\bpumpe\b/',$q)&&preg_match('/\b(?:zuletzt|wann|laeuft|status|ein|aus)\b/',$q);
         $zone=preg_match('/\bkreis \d+\b/',$q)&&!preg_match('/heizkreis|heizung|stromkreis/',$q);
@@ -698,7 +698,7 @@ final class IAHIrrigationQuery
             }
         }
         if (!$topic&&!$stations&&!$pump&&!$zone&&!$context&&!$soil&&!$knownStation&&!$systemHealth)return false;
-        return (bool)preg_match('/^(?:und )?(?:wie|ist|sind|war|wann|was|welch\w*|laeuft|laufen|hat|wo|wieviel\w*|sag(?:e)? mir|zeige|nenne|pruefe|kontrolliere|status|heizstarts|alles|zusammenfassung|temperatur|bodenfeuchte|wasserholen|wasser|giessen)\b/',$q);
+        return (bool)preg_match('/^(?:und )?(?:wie|geht es|ist|sind|war|wann|was|welch\w*|laeuft|laufen|hat|wo|wieviel\w*|sag(?:e)? mir|zeige|nenne|pruefe|kontrolliere|status|heizstarts|alles|zusammenfassung|temperatur|bodenfeuchte|wasserholen|wasser|giessen)\b/',$q);
     }
 
     private static function systems(array $catalog): array
@@ -759,7 +759,7 @@ final class IAHIrrigationQuery
         $isHeater=(bool)preg_match('/rohr\s*(begleit\s*)?heiz|heizung|heizband|frostschutzheiz/',$q);
         $isPump=(bool)preg_match('/pumpe/',$q);
         $frostRequested=(bool)preg_match('/\bfrost(?:werte|bereich)?\b|unter null|unter 0|minusgrade|minus temperatur/',$q);
-        $combinedStatus=(bool)preg_match('/alles in ordnung|zusammenfassung|status.*bewae?sserung|bewae?sserung.*status/',$q);
+        $combinedStatus=(bool)preg_match('/alles in ordnung|zusammenfassung|status.*bewae?sserung|bewae?sserung.*status|(?:wie )?geht es (?:mit )?(?:meiner|der|unserer )?(?:garten)?bewae?sserung/',$q);
         $heaterLatest=$isHeater && preg_match('/\bzu\s*letzt\b|letzte[srn]? einschalt|\bwann\b.*(?:eingeschaltet|angesprungen|gelaufen|aktiv)/',$q);
         $heaterDaily=$isHeater && preg_match('/\b(?:pro tag|je tag|tageweise|taeglich)\b/',$q)===1;
         $heatingHistoryRequested=$isHeater && ($heaterLatest
@@ -1016,3 +1016,4 @@ final class IAHIrrigationQuery
         } catch (Throwable $e) {return $ret('Die Bewässerungssteuerung hat den Befehl nicht bestätigt.','request_failed');}
     }
 }
+
