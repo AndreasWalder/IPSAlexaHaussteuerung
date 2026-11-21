@@ -11,6 +11,11 @@ if (!class_exists('IAHHouseholdDevices', false)) {
     require_once __DIR__.'/HouseholdDevices.php';
 }
 
+// IAH_WEATHER_STATION_INSERT
+if (!class_exists('IAHWeatherStation', false)) {
+    require_once __DIR__.'/WeatherStation.php';
+}
+
 // IAH_PV_STATUS_QUESTION_INSERT
 if (!class_exists('IAHPvStatusQuestion', false)) {
     require_once __DIR__ . '/PvStatusQuestion.php';
@@ -1201,6 +1206,11 @@ function iah_rc_voice(
                 $readSucceeded=true;$readDetails=[['tool'=>'robohub_status','result'=>$robotStatus['displayRows']??[]]];
             }
             return $costFinish($robotStatus);
+        }
+        $weather = IAHWeatherStation::query($catalog,$text,$selectedHouseholdId);
+        if ($weather !== null) {
+            $readSucceeded=true; $readDetails=[['tool'=>'weather_station','result'=>$weather['displayRows']]];
+            return $costFinish($weather);
         }
         $home = IAHHouseholdDevices::query($catalog,$text,$homeAllowed,$selectedHouseholdId)
             ?? IAHHomeConnect::query($catalog,$text,$homeAllowed,$selectedHouseholdId);

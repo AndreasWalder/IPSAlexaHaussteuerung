@@ -17,6 +17,7 @@ require_once __DIR__ . '/libs/SystemTreeEditorTrait.php';
 require_once __DIR__ . '/libs/HeatingSystemEditorTrait.php';
 require_once __DIR__ . '/libs/HomeConnectEditorTrait.php';
 require_once __DIR__ . '/libs/HouseholdEditorTrait.php';
+require_once __DIR__ . '/libs/WeatherStationEditorTrait.php';
 require_once dirname(__DIR__) . '/IPSAlexaHaussteuerung/src/VoiceRuleLiteralReader.php';
 require_once __DIR__ . '/../IPSAlexaHaussteuerung/src/VoiceRulePreviewForm.php';
 
@@ -98,6 +99,7 @@ class RoomsCatalogConfigurator extends IPSModule
     use RCCHeatingSystemEditorTrait;
     use RCCHomeConnectEditorTrait;
     use RCCHouseholdEditorTrait;
+    use RCCWeatherStationEditorTrait;
     // V3.4.4: Typen, editierbare Eigenschaften und Rollen nur noch zentral
     // in libs/DeviceTypeRegistry.php pflegen, nicht in diesem Formular.
 
@@ -615,6 +617,7 @@ class RoomsCatalogConfigurator extends IPSModule
     {
         $this->logDebug('ReloadCatalog: Button gedrückt');
         $this->syncHouseholdToEdit();
+        $this->syncWeatherStationsToEdit();
         $this->reloadAllFromCatalog();
         $this->clearSuggestionPreview();
         $this->RefreshVisibleLists();
@@ -5559,6 +5562,7 @@ class RoomsCatalogConfigurator extends IPSModule
     public function GetConfigurationForm()
     {
         $this->syncHouseholdToEdit();
+        $this->syncWeatherStationsToEdit();
         $this->ensureRuntimeCatalogCurrent();
         $entriesProd  = $this->getProdEntries();
         $entriesEdit  = $this->getRuntimeEntries();
@@ -5630,8 +5634,11 @@ class RoomsCatalogConfigurator extends IPSModule
         $sourceRowSaveCallback='if (RCC_UpdateOverviewSelection($id, json_encode(['
             .'"roomKey"=>$Entries["roomKey"],"domain"=>$Entries["domain"],"group"=>$Entries["group"],"key"=>$Entries["key"],'
             .'"selected"=>(bool)$Entries["selected"],"title"=>$Entries["title"],"kiEnabled"=>(bool)$Entries["kiEnabled"],"kiReadOnly"=>(bool)$Entries["kiReadOnly"],'
-            .'"dialogSave"=>isset($Entries["HouseholdAliases"]) || isset($Entries["SystemReadEnabled"]) || isset($Entries["editorOriginalKey"])]))) { } '
-            .'elseif (!empty($Entries["isDataSource"]) && ($Entries["domain"] ?? "") === "hausgeraete") { '
+            .'"dialogSave"=>isset($Entries["HouseholdAliases"]) || isset($Entries["WeatherAliases"]) || isset($Entries["SystemReadEnabled"]) || isset($Entries["editorOriginalKey"])]))) { } '
+            .'elseif (!empty($Entries["isDataSource"]) && ($Entries["domain"] ?? "") === "wetterstation") { '
+            .'RCC_SaveWeatherStationOverview($id, (string)$Entries["key"], (string)$Entries["title"], '
+            .'(string)($Entries["WeatherAliases"] ?? $Entries["synonyms"] ?? ""), (bool)$Entries["kiEnabled"]); '
+            .'} elseif (!empty($Entries["isDataSource"]) && ($Entries["domain"] ?? "") === "hausgeraete") { '
             .'RCC_SaveHouseholdOverview($id, (string)$Entries["key"], (string)$Entries["title"], '
             .'(string)($Entries["HouseholdAliases"] ?? $Entries["synonyms"] ?? ""), (bool)$Entries["kiEnabled"], '
             .'isset($Entries["HouseholdAllowControl"]) ? (bool)$Entries["HouseholdAllowControl"] : !(bool)$Entries["kiReadOnly"], '
@@ -5918,14 +5925,15 @@ class RoomsCatalogConfigurator extends IPSModule
                             'caption'  => 'Geraete und KI-Freigaben',
                             'rowCount' => 20,
                             'loadValuesFromConfiguration' => false,
-                            'form' => 'return json_decode(!empty($Entries["isDataSource"]) && ($Entries["domain"] ?? "") === "hausgeraete" '
+                            'form' => 'return json_decode(!empty($Entries["isDataSource"]) && ($Entries["domain"] ?? "") === "wetterstation" '
+                                .'? RCC_GetWeatherStationEditForm($id, (string)$Entries["key"]) : (!empty($Entries["isDataSource"]) && ($Entries["domain"] ?? "") === "hausgeraete" '
                                 .'? RCC_GetHouseholdEditForm($id, (string)$Entries["key"]) : (str_starts_with((string)($Entries["key"] ?? ""), "irrigation_") && !empty($Entries["isDataSource"]) '
                                 .'? RCC_GetSystemTreeEditForm($id, (string)($Entries["key"] ?? "")) '
                                 .': (!empty($Entries["isDataSource"]) '
                                 .'? RCC_GetHuaweiDataSourceEditForm($id, (string)($Entries["key"] ?? "")) '
                                 .': RCC_GetEntryEditForm($id, (string)($Entries["roomKey"] ?? ""), '
                                 .'(string)($Entries["domain"] ?? ""), (string)($Entries["group"] ?? ""), '
-                                .'(string)($Entries["key"] ?? "")))), true);',
+                                .'(string)($Entries["key"] ?? ""))))), true);',
                             'add'      => true,
                             'delete'   => false,
                             'sort'     => ['column' => 'roomLabel', 'direction' => 'ascending'],
@@ -6401,6 +6409,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $main[]=$this->buildHeatingSystemPanel($editCatalog, $prodCatalog);
         $main[]=$this->buildHomeConnectPanel();
         $main[]=$this->buildHouseholdPanel();
+        $main[]=$this->buildWeatherStationPanel();
         $huaweiId=$this->ReadPropertyInteger('HuaweiDataSourceInstanceId');
         $huaweiKey='huawei_'.$huaweiId;
         $huaweiEdit=$editCatalog['dataSources'][$huaweiKey]??null;
@@ -6491,12 +6500,13 @@ class RoomsCatalogConfigurator extends IPSModule
                     'rowCount'=>12,'loadValuesFromConfiguration'=>false,
                     'add'=>false,'delete'=>false,'rowColor'=>'rowColor',
                     'sort'=>['column'=>'roomLabel','direction'=>'ascending'],
-                    'form'=>'return json_decode(($PendingChanges["domain"] ?? "") === "hausgeraete" '
+                    'form'=>'return json_decode(($PendingChanges["domain"] ?? "") === "wetterstation" '
+                        .'? RCC_GetWeatherStationEditForm($id, (string)$PendingChanges["key"]) : (($PendingChanges["domain"] ?? "") === "hausgeraete" '
                         .'? RCC_GetHouseholdEditForm($id, (string)$PendingChanges["key"]) : RCC_GetEntryEditForm($id, '
                         .'(string)($PendingChanges["roomKey"] ?? ""), '
                         .'(string)($PendingChanges["domain"] ?? ""), '
                         .'(string)($PendingChanges["group"] ?? ""), '
-                        .'(string)($PendingChanges["key"] ?? "")), true);',
+                        .'(string)($PendingChanges["key"] ?? ""))), true);',
                     'columns'=>[
                         ['caption'=>'Raum','name'=>'roomLabel','width'=>'145px','save'=>false,'quickFilter'=>true,'add'=>''],
                         ['caption'=>'Bereich','name'=>'domain','width'=>'100px','save'=>false,'quickFilter'=>true,'add'=>''],
@@ -7047,7 +7057,7 @@ class RoomsCatalogConfigurator extends IPSModule
             $row['rowColor']=$removed?'#FFCCCC':($new?'#DDFFDD':'#FFF1C4');
             $rows[]=$this->decorateIpsIds($row);
         }
-        return array_merge($rows,RCCHouseholdCatalog::pendingRows($editCatalog,$prodCatalog));
+        return array_merge($rows,RCCHouseholdCatalog::pendingRows($editCatalog,$prodCatalog),RCCWeatherStationCatalog::pendingRows($editCatalog,$prodCatalog));
     }
 
     private function buildDiffEntries(array $prodEntries, array $editEntries): array
@@ -7172,7 +7182,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $domainOptions = [['caption' => 'Alle', 'value' => '']];
         foreach (array_keys($domains) as $domainKey) {
             $domainOptions[] = [
-                'caption' => match($domainKey){'bewaesserung'=>'Bewässerung','hausgeraete'=>'Hausgeräte',default=>$domainKey},
+                'caption' => match($domainKey){'bewaesserung'=>'Bewässerung','hausgeraete'=>'Hausgeräte','wetterstation'=>'Wetterstation',default=>$domainKey},
                 'value'   => $domainKey
             ];
         }

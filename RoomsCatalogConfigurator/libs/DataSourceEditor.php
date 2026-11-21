@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__.'/HouseholdCatalog.php';
+require_once __DIR__.'/WeatherStationCatalog.php';
 
 /**
  * Virtual owner rows for module sources and provider-independent household devices.
@@ -30,7 +31,7 @@ final class RCCDataSourceEditor
 
     public static function sourceRows(array $catalog): array
     {
-        $rows=RCCHouseholdCatalog::rows($catalog);
+        $rows=array_merge(RCCHouseholdCatalog::rows($catalog),RCCWeatherStationCatalog::rows($catalog));
         foreach ((array)($catalog['dataSources']??[]) as $key=>$source) {
             if (!is_string($key)||!is_array($source))continue;
             if (($source['provider']??'')==='ObjectTreeIrrigation') {

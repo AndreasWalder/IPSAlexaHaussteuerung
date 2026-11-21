@@ -8,6 +8,15 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
 
 ## ✨ Features
 
+- **Wetterstation – Froggit / Ecowitt**
+  Hauptstation und 433-MHz-Gateways erscheinen automatisch in EDIT unter
+  **Geräte bearbeiten → Wetterstation**. Messwerte, Namen, Verknüpfungen und
+  Lesefreigaben sind über das Zahnrad bearbeitbar. Alexa zeigt den Status mit
+  eigenem Wettersymbol und beantwortet Fragen zu Temperatur, Wind, Regen,
+  Bodenfeuchte und Batterien. Uhrzeit wird nicht übernommen. Nach der Prüfung
+  EDIT nach PROD übernehmen. [Einrichtung und Grenzen](docs/Wetterstation.md).
+
+
 - **Hausgeräte zentral im RoomsCatalog – Home Connect und weitere Hersteller**
   Im **RoomsCatalogConfigurator → Geräte bearbeiten → Domain-Filter Hausgeräte**
   stehen die vorhandenen Home-Connect-Geräte mit allen verknüpften Variablen.

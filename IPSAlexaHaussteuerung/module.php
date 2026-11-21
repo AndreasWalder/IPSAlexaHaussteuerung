@@ -1957,6 +1957,12 @@ PHP;
                     $content=str_replace('// IAH_HOUSEHOLD_DEVICES_INSERT',"if (!class_exists('IAHHomeAssistantAppliances', false)) {\n".$adapter."\n}\n"
                         ."if (!class_exists('IAHHouseholdDevices', false)) {\n".$household."\n}",$content);
                 }
+                if (str_contains($content, '// IAH_WEATHER_STATION_INSERT')) {
+                    $weather=file_get_contents(__DIR__.'/resources/helpers/WeatherStation.php');
+                    $weather=is_string($weather)?preg_replace('/^<\?php\s*declare\(strict_types=1\);\s*/','',$weather):null;
+                    if (!is_string($weather)||!str_contains($weather,'final class IAHWeatherStation')) return (int)$id;
+                    $content=str_replace('// IAH_WEATHER_STATION_INSERT',"if (!class_exists('IAHWeatherStation', false)) {\n".$weather."\n}",$content);
+                }
                 if (str_contains($content, '// IAH_RENDERER_ACTION_DIAGNOSTICS_INSERT')) {
                     $helper = file_get_contents(__DIR__ . '/resources/helpers/RendererActionDiagnostics.php');
                     $helper = is_string($helper)
