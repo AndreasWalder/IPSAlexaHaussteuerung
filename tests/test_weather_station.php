@@ -78,17 +78,17 @@ $rows=RCCDataSourceEditor::sourceRows($catalog);
 check(count($rows)===2&&count(array_filter($rows,static fn($r)=>$r['domain']==='wetterstation'&&$r['kiReadOnly']))===2,'Both devices appear in the ordinary Wetterstation domain, always read-only');
 $ask=static fn(string $q,array $c=[]):array=>iah_rc_voice($q,$c,$catalog);
 $r=$ask('Wie geht es meiner Wetterstation?');
-check($r['displayIcon']==='weather'&&$r['answerSource']==='house_status'&&$r['displayTitle']==='Froggit - Wetterstation'&&str_contains($r['answer'],'-1,2 °C'),'Default station returns the shared full status APL with a weather icon');
+check($r['displayIcon']==='weather'&&$r['answerSource']==='house_status'&&$r['displayTitle']==='Froggit - Wetterstation'&&str_contains($r['answer'],'-1,2 Grad'),'Default station returns the shared full status APL with a weather icon');
 check(str_contains(json_encode($ask('Zeige alle Werte meiner Wetterstation')['displayRows']),'1153,4 mm'),'All-values page includes all readings, including annual rain');
 check(str_contains($ask('Wie stark ist der Wind?')['answer'],'2,2 km/h'),'Wind question reads the configured converted value');
 check(str_contains($ask('Aus welcher Richtung kommt der Wind?')['answer'],'Ost'),'Degree directions are spoken as compass points');
 check(count($ask('Wie viel hat es heute geregnet?')['displayRows'])===1&&str_contains($ask('Wie viel hat es heute geregnet?')['answer'],'0 mm'),'Rain today selects the daily counter, not year or current rate');
 check(str_contains($ask('Regnet es gerade?')['answer'],'mm/h'),'Rain rate uses its actual unit with time basis');
 check(str_contains($ask('Wie viel Regen diese Woche?')['answer'],'1,1 mm'),'Weekly rain counter is addressable');
-check(count($ask('Wie warm ist es draußen?')['displayRows'])===1&&str_contains($ask('Wie warm ist es draußen?')['answer'],'-1,2 °C'),'Outdoor temperature never picks the indoor gateway sensor');
+check(count($ask('Wie warm ist es draußen?')['displayRows'])===1&&str_contains($ask('Wie warm ist es draußen?')['answer'],'-1,2 Grad'),'Outdoor temperature never picks the indoor gateway sensor');
 check(str_contains($ask('Wie hoch ist die solare Einstrahlung der Wetterstation?')['answer'],'0 lx'),'Lux is never invented as watts per square metre');
 $soil=$ask('Wie feucht ist die Hecke Ost?');
-check(count($soil['displayRows'])===1&&str_contains($soil['answer'],'56 %'),'Named soil sensor is resolved across stations and duplicate links only counted once');
+check(count($soil['displayRows'])===1&&str_contains($soil['answer'],'56 Prozent'),'Named soil sensor is resolved across stations and duplicate links only counted once');
 check(str_contains($ask('Wie geht es meiner 433Station?')['answer'],'0,5 °C'),'Sensor-only gateway is individually addressable');
 $all=$ask('Zeige alle Werte beider Wetterstationen');
 check(count(array_filter($all['displayRows'],static fn($r)=>str_contains($r['label'],'Hecke Ost')&&str_contains($r['value'],'56 %')))===1,'All-station status deduplicates linked targets');
@@ -107,7 +107,7 @@ check(IAHWeatherStation::reading($devices['station_49084']['variables']['var_440
 $GLOBALS['vars'][600]['VariableUpdated']=time();
 $denied=$catalog;$denied['dataSources'][IAHWeatherStation::KEY]['devices']['station_15263']['enabled']=false;
 check(str_contains(IAHWeatherStation::query($denied,'Wie geht es der 433Station?')['answer'],'nicht mehr'),'Published station denial is respected');
-check(!str_contains(IAHWeatherStation::query($denied,'Wie feucht ist die Hecke Ost?')['answer'],'56 %'),'A main-station link cannot bypass the linked station denial');
+check(!str_contains(IAHWeatherStation::query($denied,'Wie feucht ist die Hecke Ost?')['answer'],'56 Prozent'),'A main-station link cannot bypass the linked station denial');
 $denied=$catalog;$denied['dataSources'][IAHWeatherStation::KEY]['devices']['station_49084']['variables']['var_52763']['enabled']=false;
 check(!str_contains(IAHWeatherStation::query($denied,'Wie stark ist der Wind?')['answer'],'2,2 km/h'),'Per-metric reading denial is respected');
 $GLOBALS['objects'][52763]['ObjectIdent']='unrelated';
@@ -117,12 +117,12 @@ $GLOBALS['objects'][52763]['ObjectIdent']='windspeedmph';
 final class WeatherEditorFixture
 {
     use RCCWeatherStationEditorTrait;
-    public int $backups=0;public array $prod;public array $updates=[];
+    public int $backups=0;public int $refreshes=0;public array $prod;public array $updates=[];
     public function __construct(public array $catalog){$this->prod=$catalog;}
     private function systemTreeEditContext():array{return [1,serialize($this->catalog),$this->catalog];}
     private function saveSystemTreeEdit($id,$old,array $next):int{check($old===serialize($this->catalog),'No concurrent overwrite');$this->catalog=$next;return ++$this->backups;}
     private function loadConfiguredCatalog(...$args):array{return $this->catalog;}
-    private function refreshSystemTreeCatalog():void{}
+    private function refreshSystemTreeCatalog():void{++$this->refreshes;}
     private function logDebug(...$args):void{}
     public function UpdateFormField($name,$field,string|int|bool|float $value):void{$this->updates[$name][$field]=$value;}
 }

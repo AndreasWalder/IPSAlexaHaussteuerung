@@ -6519,7 +6519,9 @@ class RoomsCatalogConfigurator extends IPSModule
                         ['name'=>'kiReadOnly','visible'=>false,'add'=>true],
                         ['name'=>'roomKey','visible'=>false,'add'=>''],
                         ['name'=>'group','visible'=>false,'add'=>''],
-                        ['name'=>'synonyms','visible'=>false,'add'=>'']
+                        ['name'=>'synonyms','visible'=>false,'add'=>''],
+                        ['name'=>'WeatherVariables','visible'=>false,'add'=>[],'save'=>false,'edit'=>['type'=>'List']],
+                        ['name'=>'HouseholdVariables','visible'=>false,'add'=>[],'save'=>false,'edit'=>['type'=>'List']]
                     ],
                     'values'=>$pending,
                     'onEdit'=>$pendingSaveCallback
@@ -7810,7 +7812,9 @@ class RoomsCatalogConfigurator extends IPSModule
             ['caption'=>'Was ist zu pruefen?','name'=>'checkDetails','width'=>'350px','add'=>'','save'=>false,'quickFilter'=>true],
             ['caption'=>'Datenquelle','name'=>'isDataSource','visible'=>false,'add'=>false],
             ['caption'=>'Raum-Key','name'=>'roomKey','visible'=>false,'add'=>'','quickFilter'=>true],
-            ['caption'=>'Synonyme','name'=>'synonyms','visible'=>false,'add'=>'','quickFilter'=>true]
+            ['caption'=>'Synonyme','name'=>'synonyms','visible'=>false,'add'=>'','quickFilter'=>true],
+            ['name'=>'WeatherVariables','visible'=>false,'add'=>[],'save'=>false,'edit'=>['type'=>'List']],
+            ['name'=>'HouseholdVariables','visible'=>false,'add'=>[],'save'=>false,'edit'=>['type'=>'List']]
         ];
     }
 

@@ -182,8 +182,11 @@ function iah_vir_classify(array $input,array $saved=[]): array
         if(isset($aliases[$target]))return array_replace($result,
             ['category'=>'navigation','route'=>$aliases[$target],'reason'=>'explicit_tile']);
     }
-    if (preg_match('/\b(?:wetter\w*|froggit|frogit|ecowitt|433\s*station|wind\w*|boeen?|regen\w*|regnet|geregnet|niederschlag\w*|taupunkt|luftdruck|uv(?: index)?|bodenfeucht\w*|aussentemperatur)\b/',$text))
+    if (preg_match('/\b(?:wetter\w*|froggit|frogit|ecowitt|433\s*station|wind\w*|boeen?|regen\w*|regnet|geregnet|niederschlag\w*|taupunkt|luftdruck|uv(?: index)?|bodenfeucht\w*|bodensensor\w*|rasenfeucht\w*|frost|friert|aussentemperatur)\b/',$text))
         return array_replace($result,['category'=>'query','reason'=>'weather_question']);
+    if (preg_match('/^(?:braucht|brauchen|muss|soll|sollte)\b/',$text)
+        && preg_match('/\b(?:rasen|hecke|beet|boden|troege)\b/',$text))
+        return array_replace($result,['category'=>'query','reason'=>'weather_care_question']);
     if (IAHHomeConnect::recognizes($text))
         return array_replace($result,['category'=>'query','reason'=>'home_connect_question']);
     if (IAHHeatingSystemQuery::topic($text) !== null)

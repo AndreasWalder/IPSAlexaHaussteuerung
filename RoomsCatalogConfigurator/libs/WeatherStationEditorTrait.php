@@ -27,12 +27,14 @@ trait RCCWeatherStationEditorTrait
         return [$key,$d];
     }
 
-    private function mutateWeatherStation(string $rowKey,callable $change): void
+    private function mutateWeatherStation(string $rowKey,callable $change,bool $refresh=true): void
     {
         [$key]=$this->weatherStationDevice($rowKey); [$id,$old,$catalog]=$this->systemTreeEditContext();
         $d=&$catalog['dataSources'][IAHWeatherStation::KEY]['devices'][$key];
         if (!is_array($d)) throw new RuntimeException('Wetterstation wurde inzwischen entfernt.');
-        $change($d); unset($d); $this->saveSystemTreeEdit($id,$old,$catalog); $this->refreshSystemTreeCatalog();
+        $change($d); unset($d); $this->saveSystemTreeEdit($id,$old,$catalog);
+        // Replacing Entries while its nested variable dialog is saving invalidates the browser's selected row.
+        if ($refresh) $this->refreshSystemTreeCatalog();
     }
 
     public function SaveWeatherStationOverview(string $rowKey,string $title,string $aliases,bool $enabled): void
@@ -53,7 +55,8 @@ trait RCCWeatherStationEditorTrait
         $rows=[]; $receptions=[];
         foreach ((array)$d['variables'] as $key=>$m) {
             $r=IAHWeatherStation::reading($m,$receptions);
-            $rows[]=$m+['key'=>$key,'value'=>$r['value'],'quality'=>match($r['quality']){'ok'=>'OK','stale'=>'Veraltet','unconfirmed'=>'Aktualität unbestätigt',default=>'Nicht verfügbar'},
+            $rows[]=$m+['key'=>$key,'metricTitle'=>$m['title'],'speechName'=>(string)($m['speechName']??''),'dryThreshold'=>(float)($m['dryThreshold']??30),'wetThreshold'=>(float)($m['wetThreshold']??60),
+                'value'=>$r['value'],'quality'=>match($r['quality']){'ok'=>'OK','stale'=>'Veraltet','unconfirmed'=>'Aktualität unbestätigt',default=>'Nicht verfügbar'},
                 'updated'=>isset($r['updated'])&&$r['updated']>0?date('d.m.Y H:i',(int)$r['updated']):'—'];
         }
         return $rows;
@@ -71,7 +74,8 @@ trait RCCWeatherStationEditorTrait
                 ['type'=>'List','name'=>'WeatherVariables','caption'=>'Alle Messwerte und Sensoren','rowCount'=>18,'add'=>false,'delete'=>false,'loadValuesFromConfiguration'=>false,
                     'columns'=>[
                         ['name'=>'key','visible'=>false],
-                        ['name'=>'title','caption'=>'Name','width'=>'240px','quickFilter'=>true,'edit'=>['type'=>'ValidationTextBox']],
+                        ['name'=>'metricTitle','caption'=>'Name','width'=>'240px','quickFilter'=>true,'edit'=>['type'=>'ValidationTextBox']],
+                        ['name'=>'speechName','caption'=>'Kurzer Sprechname (leer = automatisch)','width'=>'210px','edit'=>['type'=>'ValidationTextBox']],
                         ['name'=>'ident','caption'=>'Kennung','width'=>'170px','save'=>false,'quickFilter'=>true],
                         ['name'=>'id','caption'=>'Variable','width'=>'100px','edit'=>['type'=>'SelectVariable']],
                         ['name'=>'role','caption'=>'Messgruppe','width'=>'100px','save'=>false],
@@ -79,8 +83,11 @@ trait RCCWeatherStationEditorTrait
                         ['name'=>'updated','caption'=>'Zuletzt gespeichert','width'=>'150px','save'=>false],
                         ['name'=>'quality','caption'=>'Datenstatus','width'=>'180px','save'=>false],
                         ['name'=>'enabled','caption'=>'KI lesen','width'=>'80px','edit'=>['type'=>'CheckBox']],
+                        ['name'=>'dryThreshold','caption'=>'Boden trocken unter %','width'=>'135px','edit'=>['type'=>'NumberSpinner','minimum'=>0,'maximum'=>100]],
+                        ['name'=>'wetThreshold','caption'=>'Boden feucht ab %','width'=>'135px','edit'=>['type'=>'NumberSpinner','minimum'=>0,'maximum'=>100]],
                     ],'values'=>$this->weatherStationMetricRows($d),
-                    'onEdit'=>'RCC_SaveWeatherStationVariable($id, '.$q.', json_encode(["key"=>$WeatherVariables["key"],"id"=>$WeatherVariables["id"],"title"=>$WeatherVariables["title"],"enabled"=>(bool)$WeatherVariables["enabled"]]));'],
+                    'onEdit'=>'RCC_SaveWeatherStationVariable($id, '.$q.', json_encode(["key"=>$WeatherVariables["key"],"id"=>$WeatherVariables["id"],"title"=>$WeatherVariables["metricTitle"],"speechName"=>$WeatherVariables["speechName"],"dryThreshold"=>$WeatherVariables["dryThreshold"],"wetThreshold"=>$WeatherVariables["wetThreshold"],"enabled"=>(bool)$WeatherVariables["enabled"]]));'],
+                ['type'=>'Label','caption'=>'Die Boden-Richtwerte gelten ausschließlich für Bodenfeuchte: standardmäßig unter 30 % eher trocken, ab 60 % eher feucht. Sie sind Orientierung für diesen Sensor, keine universellen Pflanzengrenzwerte. Je nach Boden und Kalibrierung anpassen; es wird keine Bewässerung geschaltet.'],
                 ['type'=>'Label','caption'=>'Froggit speichert unveränderte Messwerte je nach Einstellung nicht erneut. Ein alter Speicherzeitpunkt allein beweist deshalb keinen Sensorausfall. Gateway-Empfang und Messwert-Aktualität werden getrennt bewertet.'],
             ];
         } catch (Throwable $e) { $items=[['type'=>'Label','caption'=>$e->getMessage()]]; }
@@ -94,10 +101,18 @@ trait RCCWeatherStationEditorTrait
             $this->mutateWeatherStation($rowKey,static function(array &$d)use($row):void {
                 $key=(string)($row['key']??'');
                 if (!isset($d['variables'][$key])) throw new RuntimeException('Messwertzuordnung fehlt.');
+                $old=$d['variables'][$key];
                 $m=IAHWeatherStation::metric((int)($row['id']??0),IAHHomeConnect::clean((string)($row['title']??'')));
+                $m['speechName']=IAHHomeConnect::clean((string)($row['speechName']??$old['speechName']??''));
+                if ($m['role']==='soil') {
+                    $dry=$row['dryThreshold']??$old['dryThreshold']??30; $wet=$row['wetThreshold']??$old['wetThreshold']??60;
+                    if (!is_numeric($dry)||!is_numeric($wet)||!is_finite((float)$dry)||!is_finite((float)$wet)
+                        ||$dry<0||$wet>100||$dry>=$wet) throw new RuntimeException('Boden-Richtwerte prüfen: 0 ≤ trocken < feucht ≤ 100.');
+                    $m['dryThreshold']=(float)$dry; $m['wetThreshold']=(float)$wet;
+                }
                 foreach ($d['variables'] as $otherKey=>$other) if ($otherKey!==$key&&(int)$other['id']===$m['id']) throw new RuntimeException('Variable ist bereits zugeordnet.');
                 $m['enabled']=!empty($row['enabled']); $d['variables'][$key]=$m;
-            });
+            },false);
             [, $d]=$this->weatherStationDevice($rowKey);
             $this->UpdateFormField('WeatherVariables','values',json_encode($this->weatherStationMetricRows($d),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
             echo 'Messwert in EDIT gespeichert.';

@@ -78,7 +78,20 @@ final class IAHWeatherStation
         $m=IAHHouseholdDevices::metric($id,$title);
         if (!self::station($m['parent'])||self::excluded($m['ident'])) throw new RuntimeException('Bitte eine Messvariable einer Froggit-Wetterstation auswählen; Uhrzeit und Zugangsdaten sind ausgeschlossen.');
         $m['title']=self::label($m['ident'],$m['title']); $m['role']=self::role($m['ident']);
+        $m['speechName']='';
+        if ($m['role']==='soil') { $m['dryThreshold']=30; $m['wetThreshold']=60; }
         return $m;
+    }
+
+    public static function speechName(array $m): string
+    {
+        if (trim((string)($m['speechName']??''))!=='') return IAHHomeConnect::clean((string)$m['speechName']);
+        $name=(string)($m['title']??$m['label']??''); $ident=(string)($m['ident']??'');
+        if (in_array(self::role($ident),['soil','battery'],true)) {
+            $short=preg_replace('/^(?:Batterie\s*)?(?:Bodenfeuchte(?:sensor(?:en)?)?|SoilMoisture)\s*(?:\(\s*\d+\s*\)\s*)*[-:·]?\s*/iu','',$name)??$name;
+            if ($short!==$name) return trim($short)!==''?trim($short):'Bodensensor '.(preg_match('/(\d+)$/',$ident,$n)?$n[1]:'ohne Ortsnamen');
+        }
+        return self::label($ident,$name);
     }
 
     public static function discover(): array
@@ -139,7 +152,9 @@ final class IAHWeatherStation
 
     public static function reading(array $m,array &$receptions=[]): array
     {
-        $out=['label'=>(string)($m['title']??''),'value'=>'Nicht verfügbar','quality'=>'missing','id'=>(int)($m['id']??0)];
+        $out=['label'=>(string)($m['title']??''),'value'=>'Nicht verfügbar','quality'=>'missing','id'=>(int)($m['id']??0),
+            'role'=>self::role((string)($m['ident']??'')),'ident'=>(string)($m['ident']??''),'speechName'=>self::speechName($m),
+            'dryThreshold'=>(float)($m['dryThreshold']??30),'wetThreshold'=>(float)($m['wetThreshold']??60),'raw'=>null];
         if (!self::station((int)($m['parent']??0))||self::excluded((string)($m['ident']??''))) return $out;
         $r=IAHHouseholdDevices::reading($m);
         if ($r===null) return $out;
@@ -147,7 +162,7 @@ final class IAHWeatherStation
         if ($numeric&&((in_array($role,['battery','humidity','soil','leaf'],true)&&($raw<0||$raw>100))
             ||(in_array($role,['wind','gust','rain','light','uv','air'],true)&&$raw<0)
             ||(in_array($role,['temperature','feels','dewpoint'],true)&&($raw < -150||$raw>200))
-            ||($role==='pressure'&&$raw<=0))) return $out+['raw'=>null];
+            ||($role==='pressure'&&$raw<=0))) return $out;
         if ($role==='battery'&&is_bool($raw)) $value=$raw?'Batterie schwach':'Batterie OK';
         elseif ($role==='rain'&&is_bool($raw)) $value=$raw?'Regen erkannt':'Kein Regen';
         elseif ($role==='direction'&&$numeric) {
@@ -167,14 +182,109 @@ final class IAHWeatherStation
             elseif ($reception['updated']===0&&!$reception['all']) $quality='unconfirmed';
         }
         if ($quality!=='ok') $value.=($quality==='stale'?' · veraltet':' · Aktualität unbestätigt');
-        return ['label'=>$out['label'],'value'=>$value,'quality'=>$quality,'id'=>$r['id'],'raw'=>$raw,'updated'=>$r['updated'],'role'=>$role,'ident'=>$r['ident']];
+        return array_replace($out,['value'=>$value,'quality'=>$quality,'raw'=>$raw,'updated'=>$r['updated'],
+            'unit'=>trim((string)($r['profile']['Suffix']??''))]);
     }
 
     public static function recognizes(string $text): bool
     {
         $q=IAHHomeConnect::norm($text);
-        return preg_match('/\b(?:wetter\w*|froggit|frogit|ecowitt|eco witt|433\s*station|wind\w*|boeen?|regen\w*|regnet|geregnet|niederschlag\w*|taupunkt|luftdruck|uv\s*(?:index)?|bodenfeucht\w*|aussentemperatur|luftfeuchtigkeit (?:draussen|aussen))\b/',$q)===1
-            ||preg_match('/\b(?:warm|kalt|temperatur|feucht)\b.*\b(?:draussen|aussen|hecke|rasen|beet|eckbeet|maehroboter)\b/',$q)===1;
+        return preg_match('/\b(?:wetter\w*|froggit|frogit|ecowitt|eco witt|433\s*station|wind\w*|boeen?|regen\w*|regnet|geregnet|niederschlag\w*|taupunkt|luftdruck|uv\s*(?:index)?|bodenfeucht\w*|bodensensor\w*|rasenfeucht\w*|frost|friert|aussentemperatur|luftfeuchtigkeit (?:draussen|aussen))\b/',$q)===1
+            ||preg_match('/\b(?:warm|kalt|heiss|frost|friert|temperatur|feucht|nass|trocken)\b.*\b(?:draussen|aussen|hecke|rasen|beet|eckbeet|maehroboter)\b/',$q)===1
+            ||preg_match('/\b(?:draussen|aussen)\b.*\b(?:warm|kalt|heiss|frost|friert|temperatur|feucht|nass|trocken)\b/',$q)===1
+            ||preg_match('/^(?:ist es (?:kalt|warm|heiss|frostig)|wie (?:warm|kalt|heiss) ist es)$/D',$q)===1
+            ||self::soilQuestion($q);
+    }
+
+    private static function soilQuestion(string $q): bool
+    {
+        if (preg_match('/\b(?:wann|zuletzt|wie oft|wurde|wurden)\b/',$q)) return false;
+        return preg_match('/\b(?:rasen\w*|hecke|beet|eckbeet|boden|troege)\b/',$q)===1
+            &&preg_match('/nass|feucht|trocken|wasser|giess|gegossen|bewaess|braucht|brauchen|geht es/',$q)===1;
+    }
+
+    private static function number(float $value): string
+    {
+        return rtrim(rtrim(number_format($value,1,',',''),'0'),',');
+    }
+
+    private static function current(array $rows,string $ident): ?array
+    {
+        foreach ($rows as $r) if (($r['ident']??'')===$ident&&($r['quality']??'')==='ok'&&is_numeric($r['raw']??null)) return $r;
+        return null;
+    }
+
+    private static function celsius(?array $r): ?float
+    {
+        if ($r===null) return null;
+        $u=mb_strtolower(str_replace(' ','',(string)($r['unit']??'')));
+        return match($u){'°c','c','℃'=>(float)$r['raw'],'°f','f','℉'=>((float)$r['raw']-32)/1.8,default=>null};
+    }
+
+    private static function temperatureReport(array $r): string
+    {
+        $c=self::celsius($r); $v=self::number((float)$r['raw']);
+        $value=$v.' '.(str_contains((string)($r['unit']??''),'F')?'Grad Fahrenheit':'Grad');
+        if ($c===null) return 'Die Außentemperatur beträgt '.$r['value'].'.';
+        return match(true){$c<=0=>'Draußen herrscht Frost bei ',$c<10=>'Draußen ist es kalt bei ',
+            $c<18=>'Draußen ist es kühl bei ',$c<26=>'Draußen ist es mild bei ',$c<32=>'Draußen ist es warm bei ',default=>'Draußen ist es heiß bei '}.$value.'.';
+    }
+
+    private static function wateringReport(array $soil,array $context): string
+    {
+        $valid=array_values(array_filter($soil,static fn($r):bool=>($r['quality']??'')==='ok'&&is_numeric($r['raw']??null)));
+        if ($valid===[]) return 'Eine Einschätzung zum Gießen ist ohne aktuelle Bodenwerte nicht möglich.';
+        $temp=self::celsius(self::current($context,'tempf'));
+        if ($temp!==null&&$temp<=0) return 'Wegen Luftfrost würde ich momentan nicht gießen.';
+        $rain=self::current($context,'rainratein')??self::current($context,'rainrate_piezo');
+        if ($rain!==null&&(float)$rain['raw']>0) return 'Aktuell regnet es. Vor zusätzlichem Gießen würde ich die Wirkung des Regens abwarten.';
+        $dry=array_values(array_filter($valid,static fn($r):bool=>(float)$r['raw']<(float)$r['dryThreshold']));
+        if ($dry!==[]) return 'Nach den eingestellten Richtwerten '.(count($dry)===1?'wirkt ':'wirken ').implode(', ',array_column($dry,'speechName')).' eher trocken. Dort würde ich den Boden vor dem Gießen prüfen.';
+        $wet=array_filter($valid,static fn($r):bool=>(float)$r['raw']>=(float)$r['wetThreshold']);
+        if (count($wet)===count($valid)) return 'Nach den eingestellten Richtwerten ist der Boden an den auswertbaren Messstellen eher feucht. Aktuell sehe ich dort keinen Hinweis auf Wasserbedarf.';
+        return 'Die Werte liegen nach den eingestellten Richtwerten im mittleren bis feuchten Bereich. Ein eindeutiger Wasserbedarf lässt sich daraus nicht ableiten.';
+    }
+
+    /** Speech is separate from full display labels; no arbitrary first-four truncation. */
+    private static function report(array $rows,array $context,array $roles,string $q,bool $allValues): string
+    {
+        if ($roles===['soil']) {
+            $good=[]; $unknown=[];
+            foreach ($rows as $r) {
+                if (($r['quality']??'')==='ok') $good[]=$r['speechName'].' '.self::number((float)$r['raw']).' Prozent';
+                else $unknown[]=$r['speechName'];
+            }
+            $answer=$good!==[]?'Die Bodensensoren melden: '.implode(', ',$good).'.':'';
+            if ($unknown!==[]) $answer.=' Für '.implode(', ',$unknown).' fehlen bestätigte aktuelle Werte.';
+            if (self::soilQuestion($q)&&!str_contains($q,'bodenfeucht')) $answer.=' '.self::wateringReport($rows,$context);
+            return trim($answer);
+        }
+        if ($roles===[]&&!$allValues) {
+            $parts=[]; $temp=self::current($context,'tempf');
+            if ($temp!==null) $parts[]=self::temperatureReport($temp);
+            else {
+                $parts[]='Eine bestätigte aktuelle Außentemperatur fehlt.';
+                $sensor=self::current($context,'tempinf');
+                if ($sensor!==null) $parts[]='Der weitere Temperatursensor meldet '.$sensor['value'].'.';
+            }
+            $wind=self::current($context,'windspeedmph');
+            if ($wind!==null) $parts[]='Der Wind weht mit '.$wind['value'].'.';
+            $rain=self::current($context,'rainratein')??self::current($context,'rainrate_piezo');
+            if ($rain!==null) $parts[]=(float)$rain['raw']>0?'Aktuell regnet es mit '.$rain['value'].'.':'Aktuell regnet es nicht.';
+            $daily=self::current($context,'dailyrainin')??self::current($context,'drain_piezo');
+            if ($daily!==null) $parts[]='Heute sind bisher '.$daily['value'].' Regen gefallen.';
+            $grass=array_values(array_filter($context,static fn($r):bool=>($r['role']??'')==='soil'&&str_contains(IAHHomeConnect::norm($r['speechName']??''),'rasen')));
+            if ($grass!==[]) $parts[]='Zum Rasen: '.self::wateringReport($grass,$context);
+            return implode(' ',$parts);
+        }
+        if ($roles===['temperature']&&preg_match('/kalt|warm|frost|friert|heiss|draussen|aussen/',$q)&&self::current($rows,'tempf')!==null) return self::temperatureReport(self::current($rows,'tempf'));
+        $values=[];
+        foreach ($rows as $r) {
+            if ($allValues&&!in_array($r['role']??'',['temperature','wind','rain','soil','humidity'],true)) continue;
+            $values[]=$r['speechName'].' '.$r['value'];
+        }
+        if ($allValues) return self::report($rows,$context,[],$q,false).' Alle Einzelwerte stehen auf dem Display.';
+        return implode('. ',$values).'.';
     }
 
     private static function reply(string $title,array $rows,?string $answer=null): array
@@ -203,11 +313,12 @@ final class IAHWeatherStation
         $wanted=$selectedId>0&&$selected!==[]?$selected:$named;
         if ($wanted!==[]&&array_diff_key($wanted,$allowed)!==[]) return self::reply('Wetterstation',[],'Diese Wetterstation ist nicht mehr für Alexa verfügbar.');
         if ($allowed===[]) return self::reply('Wetterstation',[],'Es ist keine Wetterstation für Alexa freigegeben.');
+        if (preg_match('/duenger|naehrstoff/',$q)) return self::reply('Bodensensoren',[],'Die Sensoren messen Bodenfeuchte. Einen Bedarf an Dünger oder Nährstoffen kann ich daraus nicht bestimmen.');
         if (preg_match('/\b(?:morgen|uebermorgen|vorhersage|prognose|naechste[nsr]?)\b/',$q)) return self::reply('Wetterstation',[],'Meine Wetterstation liefert Messwerte, aber keine Wettervorhersage.');
         if (preg_match('/^(?:bitte )?(?:schalte|stelle|setze|starte|stoppe|aktiviere|deaktiviere)\b/',$q)) return self::reply('Wetterstation',[],'Die Wetterstation kann ich ausschließlich abfragen.');
         $roles=[]; $period='';
         if (preg_match('/batter|akku/',$q)) $roles=['battery'];
-        elseif (preg_match('/bodenfeucht|boden.*feucht|feucht.*(?:hecke|rasen|beet|eckbeet)/',$q)) $roles=['soil'];
+        elseif (preg_match('/bodenfeucht|bodensensor|rasenfeucht|boden.*feucht|feucht.*(?:hecke|rasen|beet|eckbeet)/',$q)||self::soilQuestion($q)) $roles=['soil'];
         elseif (str_contains($q,'taupunkt')) $roles=['dewpoint'];
         elseif (preg_match('/gefuehlt|windchill/',$q)) $roles=['feels'];
         elseif (str_contains($q,'luftdruck')) $roles=['pressure'];
@@ -222,7 +333,7 @@ final class IAHWeatherStation
         }
         elseif (preg_match('/\buv\s*(?:index)?\b/',$q)) $roles=['uv'];
         elseif (preg_match('/einstrahlung|sonnenstrahlung|hell/',$q)) $roles=['light'];
-        elseif (preg_match('/temperatur|warm|kalt/',$q)) $roles=['temperature'];
+        elseif (preg_match('/temperatur|warm|kalt|heiss|frost|friert/',$q)) $roles=['temperature'];
         elseif (preg_match('/\bvpd\b/',$q)) $roles=['vpd'];
         elseif (preg_match('/blitz|gewitter/',$q)) $roles=['lightning'];
         elseif (preg_match('/\bco2\b|feinstaub|luftqualitaet/',$q)) $roles=['air'];
@@ -238,12 +349,13 @@ final class IAHWeatherStation
             });
             $stations=array_slice($stations,0,1,true);
         }
-        $rows=[]; $seen=[]; $receptions=[];
+        $rows=[]; $seen=[]; $receptions=[]; $context=[];
         foreach ($stations as $d) foreach ((array)$d['variables'] as $m) {
             if (empty($m['enabled'])||isset($seen[$m['id']])) continue;
             // A linked sensor cannot bypass its own station's published denial.
             foreach ($all as $ownerKey=>$owner) if ((int)$owner['id']===(int)$m['parent']&&!isset($allowed[$ownerKey])) continue 2;
             $role=self::role((string)$m['ident']);
+            $r=self::reading($m,$receptions); $context[$m['id']]=$r;
             if ($roles!==[]&&!in_array($role,$roles,true)) continue;
             if (!$allValues&&$roles===[]&&in_array($role,['raw','device','other'],true)) continue;
             if ($roles===['gust']&&preg_match('/\b(?:heute|staerkste|maximal|maximum)\b/',$q)&&$m['ident']!=='maxdailygust') continue;
@@ -262,7 +374,7 @@ final class IAHWeatherStation
                 if (!str_contains($label,$location[1])) continue;
                 foreach (['ost','west','sued','nord','mitte'] as $side) if (preg_match('/\b'.$side.'\b/',$q)&&!str_contains($label,$side)) continue 2;
             }
-            $r=self::reading($m,$receptions); $seen[$m['id']]=true;
+            $seen[$m['id']]=true;
             if (count($stations)>1) $r['label']=$d['name'].' · '.$r['label'];
             $rows[]=$r;
         }
@@ -272,6 +384,6 @@ final class IAHWeatherStation
             (array_search($r['role']??'', $priority,true)===false?99:array_search($r['role'],$priority,true)));
         if ($roles===[]) usort($rows,static fn($a,$b):int=>$rank($a)<=>$rank($b));
         $title=count($stations)===1?(string)reset($stations)['name']:'Wetterstationen';
-        return self::reply($title,$rows,$rows===[]?'Für diese Frage ist kein freigegebener Messwert zugeordnet.':null);
+        return self::reply($title,$rows,$rows===[]?'Für diese Frage ist kein freigegebener Messwert zugeordnet.':self::report($rows,$context,$roles,$q,$allValues));
     }
 }
