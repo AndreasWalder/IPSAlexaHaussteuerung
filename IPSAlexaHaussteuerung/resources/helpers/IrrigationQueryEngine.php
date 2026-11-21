@@ -684,7 +684,7 @@ final class IAHIrrigationQuery
         if ($q===''||preg_match('/^(?:oeffne|starte|stoppe|schalte|aktiviere|deaktiviere|bewaessere)\b/',$q)
             || in_array($q,['bewaesserung','gartenbewaesserung'],true)||self::systems($catalog)===[])return false;
         $topic=preg_match('/bewae?sserung|garten\s*pumpe|pumpenschacht|rohr\s*(begleit\s*)?heiz|heizband|bodenfeucht|frost|\bregensensor\b|wasserholen|wasser holen|manuelles giessen|manuell giessen/',$q);
-        $systemHealth=(bool)preg_match('/alles in ordnung|zusammenfassung|status.*(?:bewae?sserung|heiz)|(?:bewae?sserung|heiz).*status|(?:wie )?geht es (?:mit )?(?:meiner|der|unserer )?(?:garten)?bewae?sserung/',$q);
+        $systemHealth=(bool)preg_match('/alles in ordnung|zusammenfassung|status.*(?:bewae?sserung|heiz)|(?:bewae?sserung|heiz).*status|(?:wie )?geht es (?:mit )?(?:(?:meiner|der|unserer|deiner|eurer)\s+)?(?:garten)?bewae?sserung/',$q);
         $stations=preg_match('/(?:kalt|warm|temperatur).*station|station.*(?:kalt|warm|temperatur)/',$q);
         $pump=preg_match('/\bpumpe\b/',$q)&&preg_match('/\b(?:zuletzt|wann|laeuft|status|ein|aus)\b/',$q);
         $zone=preg_match('/\bkreis \d+\b/',$q)&&!preg_match('/heizkreis|heizung|stromkreis/',$q);
@@ -759,7 +759,7 @@ final class IAHIrrigationQuery
         $isHeater=(bool)preg_match('/rohr\s*(begleit\s*)?heiz|heizung|heizband|frostschutzheiz/',$q);
         $isPump=(bool)preg_match('/pumpe/',$q);
         $frostRequested=(bool)preg_match('/\bfrost(?:werte|bereich)?\b|unter null|unter 0|minusgrade|minus temperatur/',$q);
-        $combinedStatus=(bool)preg_match('/alles in ordnung|zusammenfassung|status.*bewae?sserung|bewae?sserung.*status|(?:wie )?geht es (?:mit )?(?:meiner|der|unserer )?(?:garten)?bewae?sserung/',$q);
+        $combinedStatus=(bool)preg_match('/alles in ordnung|zusammenfassung|status.*bewae?sserung|bewae?sserung.*status|(?:wie )?geht es (?:mit )?(?:(?:meiner|der|unserer|deiner|eurer)\s+)?(?:garten)?bewae?sserung/',$q);
         $heaterLatest=$isHeater && preg_match('/\bzu\s*letzt\b|letzte[srn]? einschalt|\bwann\b.*(?:eingeschaltet|angesprungen|gelaufen|aktiv)/',$q);
         $heaterDaily=$isHeater && preg_match('/\b(?:pro tag|je tag|tageweise|taeglich)\b/',$q)===1;
         $heatingHistoryRequested=$isHeater && ($heaterLatest
@@ -833,7 +833,7 @@ final class IAHIrrigationQuery
                 $meter=self::heaterMeter($s,$inventory);
                 $heater=self::heaterHistory($meter,$archive,$inventory,self::period('heute',$mode,$now),$now,$deadline,true);
                 $heat=self::heaterLive($meter,$heater['diagnostics']['archive']??[]);
-                $overview=self::summary($s,true,false,null,$heat,$heater);
+                $overview=self::summary($s,(bool)$mode['winter'],false,null,$heat,$heater);
                 $parts[]=$overview['answer'];
                 $displayRows=$overview['displayRows'];
                 if (count($avgParts)===2)$parts[]='Aktueller Durchschnitt Pumpenschacht oben und unten '

@@ -94,3 +94,16 @@ ausgewählte Kandidaten, das KI-Ergebnis und die Diagnosen der Sprachabfragen
 inklusive Archiveingrenzung und Auswertungsgrund. Auf der Installation kann
 der Anlageneditor zur Kontrolle der tatsächlichen Signalzuordnung geöffnet
 werden.
+
+## Statusfragen im Alexa-Modul
+
+Auch Bewässerungsfragen laufen bei aktivierter Modulabfrage über
+`QueryAlexaHouseReadOnly`. Die erzeugte KIHouseController-Skriptbrücke bleibt
+für den bisherigen Befehlspfad und als Kompatibilitätsweg bei fehlender
+Modulfunktion erhalten. PHP-Diagnosen der Skriptbrücke dürfen eine normale
+Statusfrage nicht zu „Bitte anders formulieren“ machen.
+
+„Wie geht es meiner Bewässerung?“, „Wie geht es mit der Bewässerung?“ und
+entsprechende Formulierungen mit „unserer“ liefern die gemeinsame Statusansicht.
+Deren Messwerte richten sich nach dem tatsächlichen Winter-/Sommermodus.
+Lesende Fragen und Archivabfragen senden keine Geräteaktionen.

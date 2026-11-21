@@ -30,6 +30,7 @@ foreach (['erste','erstes','erster','das erste','den ersten','Nummer eins','1','
 foreach (['zweite','zweites','zweiter','das zweite','den zweiten','Nummer zwei','2','2. das','die zweite bitte'] as $reply)
     hcAssert(IAHHomeConnect::choiceReply($reply,$choices)===$choices[1]['id'],'Second reply from speech/log: '.$reply);
 hcAssert(IAHHomeConnect::choiceReply('den Dampfbackofen',$choices)===$choices[1]['id'],'Named reply uses configured aliases');
+hcAssert(IAHHomeConnect::choiceReply('Mikroparkoffen',$choices)===$choices[0]['id'],'A phonetic named reply remains a read-only device choice');
 hcAssert(IAHHomeConnect::choiceReply('dritte',$choices)===0&&IAHHomeConnect::choiceReply('Backofen',$choices)===0,'Unavailable or ambiguous choice is clarified');
 foreach (['Schalte das erste Licht aus','Wie warm ist es?','zurück','Ende','23 Grad','Mikrobackofen einschalten'] as $reply)
     hcAssert(IAHHomeConnect::choiceReply($reply,$choices)===null,'Another request is not a choice: '.$reply);

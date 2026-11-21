@@ -19,6 +19,7 @@ hcAssert(str_contains($read('Ist die Waschmaschine fertig?')['answer'], 'nicht d
 hcAssert(str_contains($read('Wie geht es meiner Mikrowelle?')['answer'], 'Mikrowelle Max'), 'Untried microwave program is retained and readable');
 hcAssert(!empty($read('Wie geht es meinem Backofen?')['awaitingDevice']), 'Two ovens require clarification');
 hcAssert($read('Wie geht es meiner Waschmaschiene?')['displayTitle'] === 'Waschtrockner', 'Minor ASR spelling error is understood for questions');
+hcAssert($read('Wie geht es mikroparkoffen?')['displayTitle'] === 'Micro-Backofen', 'Logged phonetic ASR spelling identifies the microwave for status');
 hcAssert(count($read('Wie geht es meinen Haushaltsgeräten?')['displayRows']) === 6, 'Overview shows all appliances');
 $GLOBALS['hcValues'][57024] = 'BSH.Common.EnumType.OperationState.Run';
 $GLOBALS['hcValues'][44414] = 3660;
@@ -37,6 +38,8 @@ hcAssert(end($GLOBALS['hcWrites']) === [11287,'Start'], 'Only bound Control vari
 $before = count($GLOBALS['hcWrites']);
 IAHHomeConnect::query($catalog,'Starte die Waschmaschiene',true);
 hcAssert(count($GLOBALS['hcWrites']) === $before, 'Approximate device spelling cannot actuate');
+IAHHomeConnect::query($catalog,'Starte den Mikroparkoffen',true);
+hcAssert(count($GLOBALS['hcWrites']) === $before, 'Phonetic ASR similarity never permits an appliance command');
 IAHHomeConnect::query($catalog,'Starte die Waschmaschine Baumwolle',true);
 hcAssert(count($GLOBALS['hcWrites']) === $before, 'A named different program never starts the previous selection');
 IAHHomeConnect::query($catalog,'Schalte das Kochfeld ein',true);

@@ -206,12 +206,40 @@ final class IAHHomeConnect
                 }
             }
         }
+        if ($matches !== []) return array_values($matches);
+        // Longer, phonetically close ASR names may identify a status target.
+        // Mark every such result approximate so it cannot authorize an action.
+        $distance = PHP_INT_MAX;
+        foreach ($devices as $d) {
+            foreach (array_merge([$d['name']], (array)$d['aliases']) as $alias) {
+                $normalized = self::nameForm((string)$alias);
+                $sound = self::nameSound($normalized);
+                if (strlen($sound)<10 || strlen($sound)>50) continue;
+                $maxWords = min(count($words),count(explode(' ',$normalized))+1);
+                for ($n=1;$n<=$maxWords;$n++) {
+                    for ($i=0;$i<=count($words)-$n;$i++) {
+                        $heard = self::nameSound(implode(' ',array_slice($words,$i,$n)));
+                        if (abs(strlen($heard)-strlen($sound))>1) continue;
+                        $delta = levenshtein($sound,$heard);
+                        if ($delta>1 || $delta>$distance) continue;
+                        if ($delta<$distance) { $matches=[]; $distance=$delta; }
+                        $d['approximate']=true; $matches[(string)$d['id']]=$d;
+                    }
+                }
+            }
+        }
         return array_values($matches);
     }
 
     private static function nameForm(string $text): string
     {
         return preg_replace('/\bmicro/', 'mikro', self::norm($text)) ?? '';
+    }
+
+    private static function nameSound(string $text): string
+    {
+        $text=strtr(str_replace(' ','',$text),['b'=>'p','d'=>'t','g'=>'k','c'=>'k','v'=>'f']);
+        return preg_replace('/([a-z])\1+/','$1',$text)??$text;
     }
 
     /** Stable numbered choices are carried as data, never parsed from spoken answers. */
@@ -249,7 +277,8 @@ final class IAHHomeConnect
         foreach ($selected as $d) {
             foreach (array_merge([$d['name']], (array)$d['aliases']) as $alias) {
                 $alias = str_replace(' ', '', self::nameForm((string)$alias));
-                if ($alias === $bare || (strlen($alias)>=7 && levenshtein($alias,$bare)<=1))
+                if ($alias === $bare || (strlen($alias)>=7 && levenshtein($alias,$bare)<=1)
+                    || (strlen(self::nameSound($alias))>=10 && levenshtein(self::nameSound($alias),self::nameSound($bare))<=1))
                     return count($selected)===1 ? (int)$selected[0]['id'] : 0;
             }
         }
