@@ -11,6 +11,11 @@ if (!class_exists('IAHHouseholdDevices', false)) {
     require_once __DIR__.'/HouseholdDevices.php';
 }
 
+// IAH_TAUERNWETTER_FORECAST_INSERT
+if (!class_exists('IAHTauernwetterForecast', false)) {
+    require_once __DIR__.'/TauernwetterForecast.php';
+}
+
 // IAH_WEATHER_STATION_INSERT
 if (!class_exists('IAHWeatherStation', false)) {
     require_once __DIR__.'/WeatherStation.php';
@@ -1189,6 +1194,13 @@ function iah_rc_voice(
     $locationPrompt=['handled'=>true,'answer'=>'Welchen Raum soll ich im Archiv prüfen?',
         'awaitingLocation'=>true,'answerSource'=>'archive_clarification'];
     try{
+        $forecastProvider=$costInstanceId>0&&function_exists('IAH_GetWeatherForecastData')
+            ?static fn():array=>json_decode(IAH_GetWeatherForecastData($costInstanceId),true,512,JSON_THROW_ON_ERROR):null;
+        $forecast=IAHTauernwetterForecast::query($text,$forecastProvider);
+        if ($forecast!==null) {
+            $readSucceeded=true; $readDetails=[['tool'=>'weather_forecast','result'=>$forecast['displayRows']]];
+            return $costFinish($forecast);
+        }
         $catalog=$previewCatalog??iah_rc_load_catalog($catalogId);
         if ($costInstanceId > 0 && function_exists('IAH_GetHomeConnectCatalog')) {
             try {

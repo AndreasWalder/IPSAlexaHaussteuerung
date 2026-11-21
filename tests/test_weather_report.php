@@ -13,8 +13,8 @@ foreach (['Hecke Ost 56 Prozent','Hecke Süd 50 Prozent','Rasen Ost 71 Prozent',
 check(!str_contains($all['answer'],'Froggit')&&!str_contains($all['answer'],'Bodenfeuchte (')&&!str_contains($all['answer'],'433Station'),'Technical station names and channel labels are not repeated in speech');
 check(str_contains(json_encode($all['displayRows']),'Bodenfeuchte (7)'),'Full visual labels remain available independently of speech');
 $grass=$ask('wie nass ist mein rasen');
-check($grass['answerSource']==='house_status'&&count($grass['displayRows'])===2&&str_contains($grass['answer'],'Rasen Ost 71 Prozent'),'Exact logged question reaches the weather source and selects lawn sensors only');
-check(str_contains($grass['answer'],'Luftfrost')&&!str_contains($grass['answer'],'Boden ist gefroren'),'Air frost is considered without claiming measured ground frost');
+check($grass['answerSource']==='house_status'&&count($grass['displayRows'])>2&&str_contains($grass['answer'],'Rasen Ost 71 Prozent'),'Exact logged question answers lawn sensors while showing the complete soil overview');
+check(str_starts_with($grass['answer'],'Die Rasensensoren melden:')&&!str_contains($grass['answer'],'Hecke Ost')&&str_contains($grass['answer'],'Luftfrost')&&!str_contains($grass['answer'],'Boden ist gefroren'),'Air frost is considered without claiming measured ground frost');
 $report=$ask('Wie geht es meiner Wetterstation?');
 check(str_starts_with($report['answer'],'Draußen herrscht Frost')&&str_contains($report['answer'],'Wind')&&str_contains($report['answer'],'regnet es nicht'),'Weather report leads with outdoor conditions, then wind and precipitation');
 check(!str_contains($report['answer'],'Innensensor')&&!str_contains($report['answer'],'Froggit'),'Unasked indoor readings and technical names are omitted from weather speech');

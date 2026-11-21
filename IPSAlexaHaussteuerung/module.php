@@ -22,6 +22,7 @@ require_once __DIR__ . '/src/AlexaIntentSyncTrait.php';
 require_once __DIR__ . '/src/SystemNavigationMigration.php';
 require_once __DIR__ . '/src/KICostTrait.php';
 require_once __DIR__ . '/src/EchoRemoteTrait.php';
+require_once __DIR__ . '/src/WeatherForecastTrait.php';
 require_once __DIR__ . '/src/HomeConnectTrait.php';
 require_once __DIR__ . '/src/AnnouncementTrait.php';
 require_once __DIR__ . '/src/Router.php';
@@ -45,6 +46,7 @@ class IPSAlexaHaussteuerung extends IPSModule
     use IAHLastAlexaInteractionTrait;
     use IAHAlexaIntentSyncTrait;
     use IAHEchoRemoteTrait;
+    use IAHWeatherForecastTrait;
     use IAHHomeConnectTrait;
     use IAHAnnouncementTrait;
 
@@ -60,6 +62,9 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyInteger('EchoRemoteDeviceId', 0);
         $this->RegisterPropertyBoolean('EchoRemoteAllDevices', true);
         $this->RegisterAttributeString('EchoRemoteLastResult', 'not_sent');
+        $this->RegisterPropertyBoolean('TauernwetterForecastEnabled', true);
+        $this->RegisterAttributeString('TauernwetterForecastCache', '{}');
+        $this->RegisterTimer('WeatherForecastRefresh', 0, 'IAH_RefreshWeatherForecast($_IPS["TARGET"]);');
         $this->RegisterPropertyBoolean('HomeConnectEnabled', true);
         $this->RegisterPropertyInteger('HomeConnectRootId', 0);
         $this->RegisterAttributeString('HomeConnectDeviceSettings', '{}');
@@ -199,6 +204,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->isApplyingChanges = true;
         
         parent::ApplyChanges();
+        $this->SetTimerInterval('WeatherForecastRefresh',$this->ReadPropertyBoolean('TauernwetterForecastEnabled')?1000:0);
 
         $this->EnsureInfrastructure();
 
@@ -429,6 +435,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $form['elements'][]=$this->buildSystemNavigationEditorForm();
         $form['elements'][]=$this->buildVoiceRuleEditorForm();
         $form['elements'][]=$this->buildEchoRemotePanel();
+        $form['elements'][]=$this->buildWeatherForecastPanel();
         $form['elements'][]=$this->buildHomeConnectPanel();
         $form['elements'][]=$this->buildAnnouncementPanel();
         $form['actions'][]=$this->buildAlexaIntentSyncForm();
@@ -1956,6 +1963,12 @@ PHP;
                     if (!is_string($household)||!str_contains($household,'final class IAHHouseholdDevices')) return (int)$id;
                     $content=str_replace('// IAH_HOUSEHOLD_DEVICES_INSERT',"if (!class_exists('IAHHomeAssistantAppliances', false)) {\n".$adapter."\n}\n"
                         ."if (!class_exists('IAHHouseholdDevices', false)) {\n".$household."\n}",$content);
+                }
+                if (str_contains($content, '// IAH_TAUERNWETTER_FORECAST_INSERT')) {
+                    $forecast=file_get_contents(__DIR__.'/resources/helpers/TauernwetterForecast.php');
+                    $forecast=is_string($forecast)?preg_replace('/^<\?php\s*declare\(strict_types=1\);\s*/','',$forecast):null;
+                    if (!is_string($forecast)||!str_contains($forecast,'final class IAHTauernwetterForecast')) return (int)$id;
+                    $content=str_replace('// IAH_TAUERNWETTER_FORECAST_INSERT',"if (!class_exists('IAHTauernwetterForecast', false)) {\n".$forecast."\n}",$content);
                 }
                 if (str_contains($content, '// IAH_WEATHER_STATION_INSERT')) {
                     $weather=file_get_contents(__DIR__.'/resources/helpers/WeatherStation.php');

@@ -254,7 +254,8 @@ final class IAHWeatherStation
                 if (($r['quality']??'')==='ok') $good[]=$r['speechName'].' '.self::number((float)$r['raw']).' Prozent';
                 else $unknown[]=$r['speechName'];
             }
-            $answer=$good!==[]?'Die Bodensensoren melden: '.implode(', ',$good).'.':'';
+            $category=preg_match('/\brasen\b/',$q)?'Die Rasensensoren':'Die Bodensensoren';
+            $answer=$good!==[]?$category.' melden: '.implode(', ',$good).'.':'';
             if ($unknown!==[]) $answer.=' Für '.implode(', ',$unknown).' fehlen bestätigte aktuelle Werte.';
             if (self::soilQuestion($q)&&!str_contains($q,'bodenfeucht')) $answer.=' '.self::wateringReport($rows,$context);
             return trim($answer);
@@ -384,6 +385,14 @@ final class IAHWeatherStation
             (array_search($r['role']??'', $priority,true)===false?99:array_search($r['role'],$priority,true)));
         if ($roles===[]) usort($rows,static fn($a,$b):int=>$rank($a)<=>$rank($b));
         $title=count($stations)===1?(string)reset($stations)['name']:'Wetterstationen';
-        return self::reply($title,$rows,$rows===[]?'Für diese Frage ist kein freigegebener Messwert zugeordnet.':self::report($rows,$context,$roles,$q,$allValues));
+        $display=$rows;
+        if ($roles===['soil']) {
+            // Keep the complete published soil overview visible, even when speech focuses on lawn/hedge.
+            $requested=array_fill_keys(array_column($rows,'id'),true);
+            $display=array_values(array_filter($context,static fn($r):bool=>($r['role']??'')==='soil'));
+            usort($display,static fn($a,$b):int=>(isset($requested[$b['id']])?1:0)<=>(isset($requested[$a['id']])?1:0));
+            $title='Bodensensoren';
+        }
+        return self::reply($title,$display,$rows===[]?'Für diese Frage ist kein freigegebener Messwert zugeordnet.':self::report($rows,$context,$roles,$q,$allValues));
     }
 }
