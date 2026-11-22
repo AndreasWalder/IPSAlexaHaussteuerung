@@ -3069,6 +3069,22 @@ PHP;
         }
         if ($tiles === []) {
             $tiles = (array)($defaults['tiles'] ?? []);
+        } else {
+            $hasBundesliga = false;
+            foreach ($tiles as $tile) {
+                if (strtolower((string)($tile['id'] ?? '')) === 'bundesliga') {
+                    $hasBundesliga = true;
+                    break;
+                }
+            }
+            if (!$hasBundesliga) {
+                foreach ((array)($defaults['tiles'] ?? []) as $tile) {
+                    if (strtolower((string)($tile['id'] ?? '')) === 'bundesliga') {
+                        $tiles[] = $tile;
+                        break;
+                    }
+                }
+            }
         }
 
         $readString = static function (string $value, string $fallback): string {
