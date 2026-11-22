@@ -788,6 +788,19 @@ function iah_sanitize_launch_tile($entry): ?array
         }
     }
 
+    // Aktionsbindung gehört zur Kachel, nicht nur zur Konfigurationsoberfläche.
+    // Ohne diese Felder kann der APL-Router nur "ausgewählt" zurückgeben.
+    $actionType = (string)($entry['actionType'] ?? '');
+    $target = trim((string)($entry['target'] ?? ''));
+    if (($actionType === '' || $target === '') && $id === 'bundesliga') {
+        $actionType = $actionType !== '' ? $actionType : 'route';
+        $target = $target !== '' ? $target : 'bundesliga';
+    }
+    if (in_array($actionType,['route','ai_query'],true) && $target !== ''
+        && mb_strlen($target,'UTF-8') <= 240) {
+        $tile['actionType']=$actionType;
+        $tile['target']=$target;
+    }
     return $tile;
 }
 
