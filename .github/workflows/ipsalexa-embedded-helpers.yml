@@ -1,0 +1,40 @@
+name: Alexa embedded PHP helper guards
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'IPSAlexaHaussteuerung/src/WeatherForecastTrait.php'
+      - 'IPSAlexaHaussteuerung/src/VoiceRuleEditorTrait.php'
+      - 'IPSAlexaHaussteuerung/module.php'
+      - 'IPSAlexaHaussteuerung/resources/helpers/KIHouseController.php'
+      - 'tests/test_embedded_helper_load_guards.php'
+      - '.github/workflows/ipsalexa-embedded-helpers.yml'
+  pull_request:
+    paths:
+      - 'IPSAlexaHaussteuerung/src/WeatherForecastTrait.php'
+      - 'IPSAlexaHaussteuerung/src/VoiceRuleEditorTrait.php'
+      - 'IPSAlexaHaussteuerung/module.php'
+      - 'IPSAlexaHaussteuerung/resources/helpers/KIHouseController.php'
+      - 'tests/test_embedded_helper_load_guards.php'
+  workflow_dispatch:
+
+jobs:
+  embedded-helpers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+      - name: PHP syntax
+        run: |
+          php -l IPSAlexaHaussteuerung/module.php
+          php -l IPSAlexaHaussteuerung/src/WeatherForecastTrait.php
+          php -l IPSAlexaHaussteuerung/src/VoiceRuleEditorTrait.php
+          php -l IPSAlexaHaussteuerung/resources/helpers/TauernwetterForecast.php
+          php -l IPSAlexaHaussteuerung/resources/helpers/IrrigationQueryEngine.php
+          php -l IPSAlexaHaussteuerung/resources/helpers/KIHouseController.php
+          php -l tests/test_embedded_helper_load_guards.php
+      - name: Run embedded helper regression
+        run: php tests/test_embedded_helper_load_guards.php
