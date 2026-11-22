@@ -90,7 +90,7 @@ final class IAHSystemHistory
             'displayTitle'=>'Archiv-Auswertung','displayIcon'=>$icon,'displayRows'=>$rows];
     }
 
-    private static function period(string $q,DateTimeImmutable $now,bool $latest): array
+    public static function period(string $q,DateTimeImmutable $now,bool $latest): array
     {
         $day=$now->setTime(0,0);
         if (str_contains($q,'vorgestern')) return [$day->modify('-2 days')->getTimestamp(),$day->modify('-1 day')->getTimestamp()-1,'Vorgestern'];
@@ -106,7 +106,7 @@ final class IAHSystemHistory
         return $latest&&!str_contains($q,'heute')?[$now->modify('-365 days')->getTimestamp(),$now->getTimestamp(),'In den letzten 365 Tagen']:[$day->getTimestamp(),$now->getTimestamp(),'Heute'];
     }
 
-    private static function series(int $archive,int $id,int $start,int $end,float $deadline): array
+    public static function series(int $archive,int $id,int $start,int $end,float $deadline): array
     {
         $values=[];$cursor=$end;$complete=false;$seed=null;
         try {

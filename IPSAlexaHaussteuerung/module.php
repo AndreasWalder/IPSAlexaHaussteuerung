@@ -1937,6 +1937,13 @@ PHP;
                     $content = str_replace('// IAH_PV_STATUS_QUESTION_INSERT',
                         'if (!class_exists(\'IAHPvStatusQuestion\', false)) {' . "\n" . $recognizer . "\n}", $content);
                 }
+                foreach (['IAH_XSENSE_INSERT'=>['XSense.php','IAHXSense'],'IAH_SECURITY_QUERY_INSERT'=>['SecurityQuery.php','IAHSecurityQuery']] as $marker=>[$file,$class]) {
+                    if (!str_contains($content,'// '.$marker)) continue;
+                    $source=file_get_contents(__DIR__.'/resources/helpers/'.$file);
+                    $source=is_string($source)?preg_replace('/^<\?php\s*declare\(strict_types=1\);\s*/','',$source):null;
+                    if (!is_string($source)||!str_contains($source,'final class '.$class)) return (int)$id;
+                    $content=str_replace('// '.$marker,"if (!class_exists('".$class."',false)) {\n".$source."\n}",$content);
+                }
                 if (str_contains($content, '// IAH_SYSTEM_HISTORY_INSERT')) {
                     $history=file_get_contents(__DIR__.'/resources/helpers/SystemHistoryQuery.php');
                     $history=is_string($history)?preg_replace('/^<\?php\s*declare\(strict_types=1\);\s*/','',$history):null;

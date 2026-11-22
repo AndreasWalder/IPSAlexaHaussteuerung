@@ -8,6 +8,13 @@ Es übernimmt das Routing, Mapping und die Verarbeitung deiner Alexa-Anfragen �
 
 ## ✨ Features
 
+- **X-Sense und Sicherheitsbericht**
+  Rauchmelder, Wassermelder und Basisstation unter **devices → xsense** in EDIT
+  abgleichen und bearbeiten. Alexa-Statusseiten mit passenden Symbolen,
+  Batterievergleich und Archivmeldungen. Sind alle Fenster geschlossen,
+  nennt der Sicherheitsbericht den letzten belegten offenen Fensterzustand.
+  [Einrichtung, Fragen und Grenzen](docs/XSense_und_Sicherheitsbericht.md).
+
 - **Wetterstation – Froggit / Ecowitt**
   Hauptstation und 433-MHz-Gateways erscheinen automatisch in EDIT unter
   **Geräte bearbeiten → Wetterstation**. Messwerte, Namen, Verknüpfungen und

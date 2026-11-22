@@ -2164,6 +2164,7 @@ function Execute($request = null)
                 'light'=>'statusLight','window'=>'statusWindow','door'=>'statusDoor','blind'=>'statusBlind',
                 'temperature'=>'statusTemperature','motion'=>'statusMotion','weather'=>'statusWeather',
                 'alarm'=>'statusAlarm','water'=>'statusWater','energy'=>'statusEnergy','lock'=>'statusLock',
+                'smoke'=>'statusSmoke','shield'=>'statusShield','battery'=>'statusBattery',
                 'fan'=>'statusFan','camera'=>'statusCamera','media'=>'statusMedia','network'=>'statusNetwork',
                 'robot'=>'statusRobot','device'=>'statusDevice'
             ];
@@ -2319,6 +2320,9 @@ function Execute($request = null)
                     'motion' => 'M18,15 A3,3 0 1,0 18,21 A3,3 0 1,0 18,15 Z M11,10 A11,11 0 0,0 11,26 L13,24 A8,8 0 0,1 13,12 Z M25,10 L23,12 A8,8 0 0,1 23,24 L25,26 A11,11 0 0,0 25,10 Z',
                     'weather' => 'M9,21 A6,6 0 0,1 11,9 A8,8 0 0,1 26,12 A5,5 0 1,1 27,22 Z M12,25 L10,30 H12 L14,25 Z M21,25 L19,30 H21 L23,25 Z',
                     'alarm' => 'M18,5 L32,30 H4 Z M17,14 H19 V22 H17 Z M17,25 H19 V27 H17 Z',
+                    'shield' => 'M18,3 L31,8 V18 C31,27 24,32 18,35 C12,32 5,27 5,18 V8 Z M12,18 L16,22 L25,12 L27,14 L16,26 L10,20 Z',
+                    'smoke' => 'M7,18 H29 V27 L25,31 H11 L7,27 Z M11,22 H25 V25 H11 Z M12,15 C5,11 18,10 12,4 L15,3 C23,11 9,11 15,15 Z M23,15 C18,11 30,10 24,4 L27,3 C35,11 21,11 26,15 Z',
+                    'battery' => 'M6,10 H28 V14 H32 V24 H28 V28 H6 Z M9,13 V25 H25 V13 Z M11,15 H15 V23 H11 Z M17,15 H21 V23 H17 Z',
                     'water' => 'M18,5 C14,12 8,17 8,23 A10,10 0 1,0 28,23 C28,17 22,12 18,5 Z',
                     'energy' => 'M20,4 L8,21 H16 L14,33 L28,15 H20 Z',
                     'lock' => 'M10,16 H26 V31 H10 Z M13,16 V12 A5,5 0 0,1 23,12 V16 H21 V12 A3,3 0 0,0 15,12 V16 Z M17,21 H19 V27 H17 Z',

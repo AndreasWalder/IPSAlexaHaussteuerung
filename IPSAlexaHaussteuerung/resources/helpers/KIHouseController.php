@@ -11,6 +11,11 @@ if (!class_exists('IAHHouseholdDevices', false)) {
     require_once __DIR__.'/HouseholdDevices.php';
 }
 
+// IAH_XSENSE_INSERT
+if (!class_exists('IAHXSense',false)) require_once __DIR__.'/XSense.php';
+// IAH_SECURITY_QUERY_INSERT
+if (!class_exists('IAHSecurityQuery',false)) require_once __DIR__.'/SecurityQuery.php';
+
 // IAH_TAUERNWETTER_FORECAST_INSERT
 if (!class_exists('IAHTauernwetterForecast', false)) {
     require_once __DIR__.'/TauernwetterForecast.php';
@@ -201,6 +206,7 @@ function iah_rc_load_catalog(int $scriptId): array
 
 function iah_rc_index_catalog(array $rooms,bool $includeArchiveOnly=false,bool $includeUnknownWindows=false): array
 {
+    $fullCatalog=$rooms;
     if (is_array($rooms['rooms'] ?? null)) $rooms = $rooms['rooms'];
     $devices = [];
     $knownTypes = iah_rc_type_roles();
@@ -326,7 +332,7 @@ function iah_rc_index_catalog(array $rooms,bool $includeArchiveOnly=false,bool $
     if ($excludedTestRooms!==[])
         iah_rc_log('catalog.test_rooms_excluded',[
             'count'=>count($excludedTestRooms),'roomKeys'=>array_slice($excludedTestRooms,0,25)]);
-    return $devices;
+    return array_replace($devices,IAHXSense::index($fullCatalog));
 }
 function iah_rc_find(array $devices, array $filters): array
 {
@@ -1222,6 +1228,11 @@ function iah_rc_voice(
             'choiceQuestion'=>'Welche Anlage oder welchen Bereich meinst du?']);
         $homeAllowed=!$preview && $scope===null && (bool)($cfg['allow_writes']??false);
         $selectedHouseholdId=($scope['type']??'')==='household_device' ? (int)($scope['deviceId']??0) : 0;
+        $security=IAHSecurityQuery::query($catalog,$text,$archiveId,min($deadline,microtime(true)+3.5),$scope);
+        if($security!==null){
+            $readSucceeded=true;$readDetails=[['tool'=>'security_status','result'=>$security['securityDiagnostics']??[]]];
+            return $costFinish($security);
+        }
         $robotStatus=iah_rc_robohub_status_query($catalog,$text,$scope);
         if($robotStatus!==null){
             if(empty($robotStatus['awaitingDevice'])){

@@ -182,6 +182,8 @@ function iah_vir_classify(array $input,array $saved=[]): array
         if(isset($aliases[$target]))return array_replace($result,
             ['category'=>'navigation','route'=>$aliases[$target],'reason'=>'explicit_tile']);
     }
+    if (preg_match('/\b(?:x ?sense|x ?sens|ex ?sense|brandmelde\w*|rauchmelde\w*|rauchalarm\w*|wassermelde\w*|wasseralarm\w*|sicherheitsbericht)\b/',$text))
+        return array_replace($result,['category'=>'query','reason'=>'security_question']);
     if (preg_match('/\b(?:wetter\w*|tauernwetter|vorhersage|froggit|frogit|ecowitt|433\s*station|wind\w*|boeen?|regen\w*|regnet|geregnet|niederschlag\w*|taupunkt|luftdruck|uv(?: index)?|bodenfeucht\w*|bodensensor\w*|rasenfeucht\w*|frost|friert|aussentemperatur)\b/',$text))
         return array_replace($result,['category'=>'query','reason'=>'weather_question']);
     if (preg_match('/^(?:braucht|brauchen|muss|soll|sollte)\b/',$text)
