@@ -334,10 +334,37 @@ try {
                     ['type'=>'Text','text'=>((int)($team['rank'] ?? 0)).'.  '.($bayern ? '★ ' : '').$name,
                         'width'=>'0dp','grow'=>1,'shrink'=>1,'fontSize'=>'20dp','fontWeight'=>$bayern?'bold':'normal','color'=>'#FFFFFF'],
                     ['type'=>'Text','text'=>(int)($team['points'] ?? 0).' Pkt. · '.(int)($team['played'] ?? 0).' Sp. · '
-                        .(int)($team['goalsFor'] ?? 0).':'.(int)($team['goalsAgainst'] ?? 0),
-                        'width'=>'42%','textAlign'=>'right','fontSize'=>'17dp','fontWeight'=>'bold','color'=>'#FFFFFF']
+                        .(int)($team['won'] ?? 0).'-'.(int)($team['draw'] ?? 0).'-'.(int)($team['lost'] ?? 0).' · '
+                        .(int)($team['goalsFor'] ?? 0).':'.(int)($team['goalsAgainst'] ?? 0).' ('
+                        .((int)($team['goalDiff'] ?? 0) > 0 ? '+' : '').(int)($team['goalDiff'] ?? 0).')',
+                        'width'=>'50%','textAlign'=>'right','fontSize'=>'16dp','fontWeight'=>'bold','color'=>'#FFFFFF']
                 ]
             ];
+        }
+        if ($fresh && $rows !== []) {
+            $rows[] = ['type'=>'Text','text'=>'ALLGEMEINE INFOS · '.count($teams).' Vereine · Saison '
+                .(string)($payloadTable['season'] ?? ''),'fontSize'=>'21dp','fontWeight'=>'bold',
+                'color'=>'#FFFFFF','paddingTop'=>'16dp','paddingBottom'=>'6dp'];
+            foreach ($teams as $team) {
+                if (stripos((string)($team['team'] ?? ''), 'Bayern') === false) continue;
+                $rows[] = ['type'=>'Text','text'=>'FC Bayern München · Platz '.(int)($team['rank'] ?? 0)
+                    .' · '.(int)($team['points'] ?? 0).' Punkte · '.(int)($team['won'] ?? 0).' Siege, '
+                    .(int)($team['draw'] ?? 0).' Remis, '.(int)($team['lost'] ?? 0).' Niederlagen',
+                    'fontSize'=>'19dp','fontWeight'=>'bold','color'=>'#FFDCE2','paddingTop'=>'7dp','paddingBottom'=>'7dp'];
+                break;
+            }
+            $newsId = $chosen > 0 ? @IPS_GetObjectIDByIdent('BayernNewsJson', $chosen) : false;
+            $news = $newsId ? json_decode((string)GetValueString((int)$newsId), true) : [];
+            if (is_array($news) && $news !== []) {
+                $rows[] = ['type'=>'Text','text'=>'BAYERN · AKTUELLE MELDUNGEN','fontSize'=>'21dp',
+                    'fontWeight'=>'bold','color'=>'#FFFFFF','paddingTop'=>'12dp','paddingBottom'=>'4dp'];
+                foreach (array_slice($news, 0, 3) as $item) {
+                    $title = trim((string)($item['title'] ?? ''));
+                    if ($title === '') continue;
+                    $rows[] = ['type'=>'Text','text'=>'• '.$title,'fontSize'=>'18dp','color'=>'#F5B8C3',
+                        'paddingTop'=>'4dp','paddingBottom'=>'4dp'];
+                }
+            }
         }
         if (!$fresh || $rows === []) {
             $rows[]=['type'=>'Text','text'=>'Noch keine aktuelle Tabelle verfügbar. Bitte die BundesligaTabelle-Instanz in Symcon aktualisieren.',
