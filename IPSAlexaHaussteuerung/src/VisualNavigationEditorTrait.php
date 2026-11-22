@@ -150,7 +150,7 @@ trait IAHVisualNavigationEditorTrait
         $source = $actionId > 0 ? $this->getScriptContent($actionId) : '';
         $version = 0;
         if (is_string($source)) {
-            for ($candidate=6; $candidate>=1; --$candidate) {
+            for ($candidate=7; $candidate>=1; --$candidate) {
                 $begin='IAH_APL_TILE_ROUTE_V'.$candidate.'_BEGIN';
                 $end='IAH_APL_TILE_ROUTE_V'.$candidate.'_END';
                 if (str_contains($source,$begin) && str_contains($source,$end)) {
@@ -170,7 +170,7 @@ trait IAHVisualNavigationEditorTrait
         }
         $binding=$football===null ? 'nicht vorhanden'
             : (string)$football['actionType'].' → '.(string)$football['target'];
-        $routerStatus=$version===6 ? 'V6 INSTALLIERT'
+        $routerStatus=$version===7 ? 'V7 INSTALLIERT'
             : ($version>0 ? 'V'.$version.' VERALTET' : 'NICHT GEFUNDEN');
         $instruction=$version===6 ? 'Router ist aktuell.'
             : 'Bitte APL-Klickrouter prüfen / reparieren und danach die Diagnose erneut lesen.';
