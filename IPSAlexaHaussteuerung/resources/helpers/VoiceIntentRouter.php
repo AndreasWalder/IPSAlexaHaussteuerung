@@ -189,6 +189,8 @@ function iah_vir_classify(array $input,array $saved=[]): array
     if (preg_match('/^(?:braucht|brauchen|muss|soll|sollte)\b/',$text)
         && preg_match('/\b(?:rasen|hecke|beet|boden|troege)\b/',$text))
         return array_replace($result,['category'=>'query','reason'=>'weather_care_question']);
+    if (preg_match('/\\b(?:fussball|bundesliga|tabelle|fc bayern|bayern muenchen|bayern mue nchen)\\b/u', $text))
+        return array_replace($result,['category'=>'query','reason'=>'football_question']);
     if (IAHHomeConnect::recognizes($text))
         return array_replace($result,['category'=>'query','reason'=>'home_connect_question']);
     if (IAHHeatingSystemQuery::topic($text) !== null)
