@@ -1157,7 +1157,11 @@ trait IAHVoiceRuleEditorTrait
         $decision=iah_vir_classify(['text'=>$spoken,'routes'=>$this->readRendererDomainsProperty($navCatalog)]);
         $normalized=iah_vir_norm($spoken);
         $category=$decision['category'];
-        require_once __DIR__.'/../resources/helpers/IrrigationQueryEngine.php';
+        // The generated KIHouseController already embeds this class.
+        // The editor must not declare it again in the same request.
+        if (!class_exists('IAHIrrigationQuery', false)) {
+            require_once __DIR__.'/../resources/helpers/IrrigationQueryEngine.php';
+        }
         $irr=IAHIrrigationQuery::command($catalog??[],$spoken,
             $this->ReadPropertyBoolean('HomeAgentVoiceRouteCommands'),false);
         if ($irr!==null)return ['category'=>'action','matched'=>true,'ok'=>$irr['ok'],
