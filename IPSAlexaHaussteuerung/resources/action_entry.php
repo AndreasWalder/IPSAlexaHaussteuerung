@@ -788,6 +788,12 @@ function iah_sanitize_launch_tile($entry): ?array
         }
     }
 
+    $tileAction = (string)($entry['actionType'] ?? '');
+    $tileTarget = trim((string)($entry['target'] ?? ''));
+    if (in_array($tileAction, ['route', 'ai_query'], true) && $tileTarget !== '') {
+        $tile['actionType'] = $tileAction;
+        $tile['target'] = $tileTarget;
+    }
     return $tile;
 }
 
@@ -2090,6 +2096,37 @@ function Execute($request = null)
         $APL = $parseAplArgs($request);
         $log('debug','APL_ARGS', $APL['args']);
 
+        // Ausschliesslich bekannte, konfigurierte Kacheln duerfen eine
+        // KI-Frage ausloesen. APL-Daten werden nicht als Script-ID ausgefuehrt.
+        $iahDynamicTileQuestion = '';
+        $iahDynamicTileRoute = '';
+        if (is_array($APL['args'] ?? null) && ($APL['args'][0] ?? '') === 'GetHaus') {
+            $clickedIds = array_map(
+                static fn($v): string => strtolower(trim(is_scalar($v) ? (string)$v : '')),
+                array_slice($APL['args'], 1, 3)
+            );
+            foreach ((array)($launchCatalog['tiles'] ?? []) as $configuredTile) {
+                if (!is_array($configuredTile)) continue;
+                $configuredId = strtolower((string)($configuredTile['id'] ?? ''));
+                if ($configuredId === '' || !in_array($configuredId, $clickedIds, true)) continue;
+                $tileTarget = trim((string)($configuredTile['target'] ?? ''));
+                if (($configuredTile['actionType'] ?? '') === 'ai_query'
+                    && $tileTarget !== '' && mb_strlen($tileTarget, 'UTF-8') <= 240) {
+                    $iahDynamicTileQuestion = $tileTarget;
+                } elseif (($configuredTile['actionType'] ?? '') === 'route'
+                    && preg_match('/^[a-z0-9_-]+$/', $tileTarget)) {
+                    $iahDynamicTileRoute = $tileTarget;
+                }
+                break;
+            }
+            if ($iahDynamicTileQuestion !== '') {
+                $log('info','APL.tile.query',[
+                    'chars'=>mb_strlen($iahDynamicTileQuestion,'UTF-8'),
+                    'source'=>'LaunchCatalog'
+                ]);
+            }
+        }
+
         // ============================================================
         // HOME_AGENT_VOICE_HOOK_BEGIN
         // Nach jeder Alexa-Anfrage den bestehenden Systemlog in die
@@ -2541,6 +2578,10 @@ function Execute($request = null)
             $iahVoiceSpoken = $iahQuestionPrefix . ' ' . $iahQuestionSlot;
         }
         $iahVoiceSpoken = trim(preg_replace('/\s+/u',' ',$iahVoiceSpoken) ?? '');
+        if ($iahDynamicTileQuestion !== '') {
+            $iahVoiceSpoken = $iahDynamicTileQuestion;
+            $rawUserText = $iahDynamicTileQuestion;
+        }
         if ($iahDedicatedSearchIntent) {
             // For question intents use only the actual SearchQuery slot.
             // Do not let old GetHaus slots or SDK text shadow that question.
@@ -3001,6 +3042,9 @@ function Execute($request = null)
             $category = (string)($ctx['category'] ?? '');
             $dedicated = strcasecmp($intent, 'HomeAgentFrageIntent') === 0
                 || preg_match('/^Haus(?:Welche[rsnm]?|Wie|Wo|Wann|SeitWann|Wer|Warum|Wieso|Was|Ist|Sind|Kennst|Hast|Hat|Haben|Gibt|InWelche[rnm]|Und)Intent$/i', $intent) === 1;
+            if (!empty($ctx['tileQuestion']) && $category === 'query') {
+                return ['allowed'=>true,'reason'=>'configured_apl_tile_question'];
+            }
             if (in_array($category, ['navigation', 'apl_navigation', 'apl_action', 'clarify'], true)) {
                 return ['allowed'=>false, 'reason'=>'navigation_or_clarification'];
             }
@@ -3031,6 +3075,10 @@ function Execute($request = null)
         };
         // IAH_KI_GATE_POLICY_END
         $iahVoiceCategory = (string)($iahVoiceDecision['category'] ?? '');
+        if ($iahDynamicTileQuestion !== '') {
+            $iahVoiceCategory = 'query';
+            $iahVoiceDecision['category'] = 'query';
+        }
         $iahKiGate = $iahKiGatePolicy([
             'intent'=>$intentName,
             'category'=>$iahVoiceCategory,
@@ -3040,7 +3088,8 @@ function Execute($request = null)
             'launch'=>$IS_LAUNCH,
             'back'=>$IS_BACK,
             'exit'=>$wantsExit,
-            'kiEnabled'=>$homeAgentEnabled
+            'kiEnabled'=>$homeAgentEnabled,
+            'tileQuestion'=>$iahDynamicTileQuestion !== ''
         ]);
         if ($homeAgentDedicatedIntent || $iahVoiceCategory === 'query') {
             $log('info', 'KIVoice.route_gate', [
@@ -3343,6 +3392,9 @@ function Execute($request = null)
         $iahVoiceForceHome = false;
         // VoiceRouter entscheidet nur das Ziel; die eigentliche Kachel wird
         // weiterhin ausschließlich über die bewährten UI-Renderer geöffnet.
+        if ($iahDynamicTileRoute !== '') {
+            $iahVoiceNavKey = $iahDynamicTileRoute;
+        }
         if ($iahVoiceNavKey === 'main_launch') {
             $iahVoiceForceHome = true;
         } elseif ($iahVoiceNavKey !== '') {
