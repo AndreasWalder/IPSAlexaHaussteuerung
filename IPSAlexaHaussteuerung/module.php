@@ -1299,7 +1299,7 @@ class IPSAlexaHaussteuerung extends IPSModule
                 return;
             }
             IPS_LogMessage('Alexa','APL.TileRoute: Klick-Verknüpfung aktiv.');
-        } catch (\\Throwable $e) {
+        } catch (\Throwable $e) {
             IPS_LogMessage('Alexa','APL.TileRoute: Backup/Patch nicht möglich: '.get_class($e));
         }
     }
