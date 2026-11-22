@@ -224,6 +224,12 @@ function iah_vir_execute(array $input,array &$data,int $now): array
     if($op==='classify') {
         $decision=iah_vir_classify($input,$old);
         $kind=(string)$decision['category'];
+        $safeAplArgs=[];
+        foreach(array_slice((array)($input['aplArgs']??[]),0,4) as $arg) {
+            $value=is_scalar($arg)?strtolower(trim((string)$arg)):'';
+            $safeAplArgs[]=$value!=='' && preg_match('/^[a-z0-9_-]{1,50}$/D',$value)===1
+                ? $value : 'other';
+        }
         $diagnostic=[
             'at'=>date('c',$now),'deviceHash'=>$deviceHash,
             'category'=>$kind,'reason'=>(string)$decision['reason'],
@@ -237,6 +243,7 @@ function iah_vir_execute(array $input,array &$data,int $now): array
             'viewportShape'=>substr(preg_replace('/[^a-zA-Z]/','',(string)($input['viewportShape']??''))??'',0,16),
             'aplSource'=>substr(preg_replace('/[^a-zA-Z]/','',(string)($input['aplSource']??''))??'',0,40),
             'aplArgsCount'=>min(20,count((array)($input['aplArgs']??[]))),
+            'aplArgs'=>$safeAplArgs,
             'contextDomain'=>(string)$decision['contextDomain'],
         ];
         $data['last']=$diagnostic;
