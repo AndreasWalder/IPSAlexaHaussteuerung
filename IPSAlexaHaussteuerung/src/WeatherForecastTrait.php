@@ -1,6 +1,10 @@
 <?php
 declare(strict_types=1);
-require_once __DIR__.'/../resources/helpers/TauernwetterForecast.php';
+// KIHouseController embeds this class in its generated IP-Symcon script.
+// Avoid re-declaring it when the module trait is loaded in the same PHP runtime.
+if (!class_exists('IAHTauernwetterForecast', false)) {
+    require_once __DIR__.'/../resources/helpers/TauernwetterForecast.php';
+}
 
 trait IAHWeatherForecastTrait
 {
