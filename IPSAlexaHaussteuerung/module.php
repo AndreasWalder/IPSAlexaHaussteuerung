@@ -10,6 +10,7 @@ require_once __DIR__ . '/src/AlexaLogBuffer.php';
 require_once __DIR__ . '/src/AlexaLogTrait.php';
 require_once __DIR__ . '/src/SystemConfigurationManager.php';
 require_once __DIR__ . '/src/SystemNavigationEditor.php';
+require_once __DIR__ . '/src/VisualNavigationEditorTrait.php';
 require_once __DIR__ . '/src/VoiceRuleEngine.php';
 require_once __DIR__ . '/src/VoiceRuleLiteralReader.php';
 require_once __DIR__ . '/src/VoiceRuleAiMatcher.php';
@@ -45,6 +46,7 @@ class IPSAlexaHaussteuerung extends IPSModule
     use IAHVoiceRuleEditorTrait;
     use IAHLastAlexaInteractionTrait;
     use IAHAlexaIntentSyncTrait;
+    use IAHVisualNavigationEditorTrait;
     use IAHEchoRemoteTrait;
     use IAHWeatherForecastTrait;
     use IAHHomeConnectTrait;
@@ -136,6 +138,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterAttributeString('DelayedPageSwitchPayload', '');
         $this->RegisterAttributeString('SystemNavigationEditorNotice', '');
         $this->RegisterAttributeString('LaunchIconDiagnostics', '');
+        $this->RegisterAttributeString('VisualNavNotice', '');
         $this->RegisterAttributeString('SystemNavigationPublishPreview', '');
         $this->RegisterAttributeString('VoiceRuleEditorNotice', '');
         $this->RegisterAttributeString('VoiceRulesPublishPreview', '');
@@ -432,7 +435,27 @@ class IPSAlexaHaussteuerung extends IPSModule
 
         // Nach abgeschlossener Migration nur noch den produktiven
         // Navigation-Editor anzeigen; keine Einmal-Migrationsassistenten.
-        $form['elements'][]=$this->buildSystemNavigationEditorForm();
+        // Legacy-Felder bleiben als Expertenansicht erhalten, statt vier
+        // getrennte Haupttabellen anzuzeigen. Werte/Properties bleiben gleich.
+        $legacyPanels = [];
+        $keptElements = [];
+        foreach ($form['elements'] as $element) {
+            if (in_array((string)($element['caption'] ?? ''), [
+                'Page-Zuordnungen', 'Renderer-Domains', 'Launch-Kacheln'
+            ], true) && ($element['type'] ?? '') === 'ExpansionPanel') {
+                $legacyPanels[] = $element;
+            } else {
+                $keptElements[] = $element;
+            }
+        }
+        $form['elements'] = $keptElements;
+        $visual = $this->buildVisualNavigationForm();
+        $visual['items'][] = [
+            'type'=>'ExpansionPanel',
+            'caption'=>'Experteneinstellungen (bisherige Tabellen)',
+            'expanded'=>false,'items'=>$legacyPanels
+        ];
+        $form['elements'][] = $visual;
         $form['elements'][]=$this->buildVoiceRuleEditorForm();
         $form['elements'][]=$this->buildEchoRemotePanel();
         $form['elements'][]=$this->buildWeatherForecastPanel();
@@ -3173,6 +3196,13 @@ PHP;
             if (preg_match('/^#[0-9A-F]{3,6}$/i', $color)) {
                 $tile['color'] = strtoupper($color);
             }
+        }
+
+        $actionType = (string)($entry['actionType'] ?? '');
+        $target = trim((string)($entry['target'] ?? ''));
+        if (in_array($actionType, ['route', 'ai_query'], true) && $target !== '') {
+            $tile['actionType'] = $actionType;
+            $tile['target'] = $target;
         }
 
         return $tile;
