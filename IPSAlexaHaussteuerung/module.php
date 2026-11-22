@@ -1208,6 +1208,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->patchActionScriptRoomUiMigration((int) $id);
         $this->patchActionScriptVoiceRules((int)$id);
         $this->patchActionScriptLastAlexaInteraction((int)$id);
+        $this->patchActionScriptLaunchLiveConfig((int)$id);
 
         $current = $this->getScriptContent((int)$id);
         if (is_string($current)) {
@@ -1229,6 +1230,36 @@ class IPSAlexaHaussteuerung extends IPSModule
      * The original script stays untouched until this readback succeeds.
      * This helper is shared by the existing RoomUi and VoiceRules patches.
      */
+    /**
+     * Aktualisiert gezielt die LaunchCatalog-Quelle eines bereits existierenden
+     * Action-Skripts. Andere Konfigurationsfelder und eigene Anpassungen bleiben.
+     */
+    private function patchActionScriptLaunchLiveConfig(int $scriptId): void
+    {
+        $current = $this->getScriptContent($scriptId);
+        $template = @file_get_contents(__DIR__ . '/resources/action_entry.php');
+        if (!is_string($current) || !is_string($template) || $current === '') return;
+        if (str_contains($current, 'IAH_LAUNCH_LIVE_CONFIG_V1_END')) return;
+
+        $begin = '            // IAH_LAUNCH_LIVE_CONFIG_V1_BEGIN';
+        $end = '            // IAH_LAUNCH_LIVE_CONFIG_V1_END';
+        $from = strpos($template, $begin);
+        $to = $from === false ? false : strpos($template, $end, $from);
+        if ($from === false || $to === false) return;
+        $newBlock = substr($template, $from, $to + strlen($end) - $from);
+        $pattern = '/            \\$launchCatalog = is_array\\(\\$data\\[\'launchCatalog\'\\] \\?\\? null\\)\\s*\\? \\$data\\[\'launchCatalog\'\\]\\s*: iah_build_launch_catalog\\(\\$props\\);/';
+        if (!preg_match($pattern, $current)) {
+            @IPS_LogMessage('Alexa.LaunchTiles', 'PATCH_SKIP reason=LAUNCH_CONFIG_ANCHOR_MISSING script='.$scriptId);
+            return;
+        }
+        $updated = preg_replace($pattern, str_replace('\\', '\\\\', $newBlock), $current, 1, $count);
+        if (!is_string($updated) || $count !== 1 || $updated === $current) return;
+        // Backup vor jeder gezielten Migration des benutzerdefinierten Action-Skripts.
+        $this->createNavigationCatalogBackup($scriptId, 'LaunchCatalog Live-Konfiguration V1', $current);
+        IPS_SetScriptContent($scriptId, $updated);
+        @IPS_LogMessage('Alexa.LaunchTiles', 'PATCH_OK script='.$scriptId.' source=INSTANCE_PROPERTIES');
+    }
+
     private function createNavigationCatalogBackup(
         int $scriptId,string $reason,string $originalSource
     ): int {
