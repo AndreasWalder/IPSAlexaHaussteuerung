@@ -4106,7 +4106,7 @@ function Execute($request = null)
                                 :(preg_match('/Notice/i',$queryPayload)?'notice':'warning');
                         } elseif (preg_match('/^\\s*</', $queryPayload)) {
                             $outputKind='html';
-                        } elseif (json_validate($queryPayload)) {
+                        } elseif (json_last_error()===JSON_ERROR_NONE) {
                             $outputKind='valid_json';
                         } elseif (preg_match('/^[\\[{]/',$queryPayload)) {
                             $outputKind='malformed_json';
