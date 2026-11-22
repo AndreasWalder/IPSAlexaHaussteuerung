@@ -219,7 +219,7 @@ trait IAHVisualNavigationEditorTrait
                             'edit'=>['type'=>'ValidationTextBox']],
                         ['name'=>'icon','caption'=>'Kachelbild (vorhandene Datei)','width'=>'180px',
                             'edit'=>['type'=>'Select','options'=>$this->visualTileIconOptions()]],
-                        ['name'=>'iconUpload','caption'=>'Neues Icon hochladen (PNG/JPG/WebP)','visible'=>false,
+                        ['name'=>'iconUpload','caption'=>'Bild hochladen','width'=>'110px',
                             'edit'=>['type'=>'SelectFile','extensions'=>'.png,.jpg,.jpeg,.webp']],
                         ['name'=>'color','caption'=>'Kachelfarbe','width'=>'105px',
                             'edit'=>['type'=>'SelectColor','allowTransparent'=>false]],
