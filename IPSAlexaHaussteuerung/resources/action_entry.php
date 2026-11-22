@@ -2132,7 +2132,9 @@ function Execute($request = null)
         $kiAlexaKeepOpen = static function (
             string $text, string $status = 'Hinweis', string $question = '', bool $aplSupported = false,
             string $answerSource = '', array $readings = [], string $displayTitle = '', string $displayIcon = '',
-            int $displayDeviceId = 0, string $displayStatus = '', bool $tileResult = false
+            int $displayDeviceId = 0, string $displayStatus = '', bool $tileResult = false,
+            string $tileLayout = 'auto', bool $tileShowStatus = true,
+            string $tileFixedIcon = '', bool $tileSpeak = true
         ) use ($iahLastOutcome, $applyApl, $baseUrl, $token, $S, $V, $ROOMS, $CFG, $ACTIONS_ENABLED) {
             $isDialog = $status === 'Rückfrage' || in_array($answerSource, ['clarification', 'archive_clarification'], true);
             $text=trim(preg_replace('/(?:^|(?<=[.!?])\s+)(?:bitte\s+)?(?:sage|sag|antworte|frag|frage)\b[^\r\n]*?(?:zum\s+beispiel|z\.?\s*b\.?).*$/isu','',$text)??$text);
@@ -2141,8 +2143,11 @@ function Execute($request = null)
             }
             if ($text==='') $text=$isDialog?'Was möchtest du auswählen?':'Was möchtest du wissen?';
             $iahLastOutcome('Hausabfrage', $text, $status);
-            $response = AskResponse::CreatePlainText($text)
-                ->SetRepromptPlainText('Noch eine Frage oder ein Schaltbefehl?');
+            // APL remains available when the user disables spoken answers.
+            // A single-space speech value follows the existing silent Alexa
+            // response convention; never use an empty Alexa response object.
+            $response = AskResponse::CreatePlainText($tileResult && !$tileSpeak ? ' ' : $text)
+                ->SetRepromptPlainText($tileResult && !$tileSpeak ? ' ' : 'Noch eine Frage oder ein Schaltbefehl?');
 
             // Common display policy for all clarification/selection dialogs.
             // Speech, cards and APL show only the question/options, without response examples.
@@ -2171,7 +2176,7 @@ function Execute($request = null)
             };
             $homeKind = str_starts_with($answerSource, 'home_connect_') ? substr($answerSource, strlen('home_connect_')) : '';
             $houseStatus = $answerSource === 'house_status' || $tileResult;
-            if ($tileResult) {
+            if ($tileResult && $tileShowStatus && $tileLayout !== 'text') {
                 $statusLabel = match ($displayStatus) {
                     'ok' => 'In Ordnung',
                     'warning' => 'Achtung',
@@ -2276,6 +2281,7 @@ function Execute($request = null)
                 'color' => '#E2EDF1',
             ];
             $body = $bodyText + ['text' => '${summary.text}'];
+            if ($tileResult && $tileLayout === 'text') $readings=[];
             if ($readings !== []) {
                 $rowLabel = $bodyText + ['text' => '${data.label}', 'grow' => 1, 'shrink' => 1];
                 $rowValue = $bodyText + ['text' => '${data.value}', 'fontWeight' => 'bold', 'spacing' => '12dp'];
@@ -2323,9 +2329,20 @@ function Execute($request = null)
                 ['name' => 'headingFont', 'value' => '${Math.max(25, Math.min(42, viewport.height * 0.083, viewport.width * 0.065))}'],
             ]];
             $heading['spacing'] = '10dp';
+            $headingIcon = ['type' => 'VectorGraphic', 'source' => $graphicName, 'width' => '${headingFont + 9}',
+                'height' => '${headingFont + 9}', 'scale' => 'best-fit'];
+            if ($tileResult && $tileFixedIcon !== ''
+                && preg_match('/^[A-Za-z0-9_-]+\\.(?:png|jpe?g|webp)$/iD', $tileFixedIcon)) {
+                $localIcon=IPS_GetKernelDir().'user'.DIRECTORY_SEPARATOR.'icons'.DIRECTORY_SEPARATOR.$tileFixedIcon;
+                $fixedUrl=rtrim((string)$baseUrl, '/').'/hook/iah-alexa-icons?f='
+                    .rawurlencode($tileFixedIcon).'&token='.rawurlencode((string)$token);
+                if (is_file($localIcon) && str_starts_with($fixedUrl, 'https://')) {
+                    $headingIcon=['type'=>'Image','source'=>$fixedUrl,'width'=>'${headingFont + 9}',
+                        'height'=>'${headingFont + 9}','scale'=>'best-fit'];
+                }
+            }
             $heading = ['type' => 'Container', 'direction' => 'row', 'alignItems' => 'center', 'items' => [
-                ['type' => 'VectorGraphic', 'source' => $graphicName, 'width' => '${headingFont + 9}',
-                    'height' => '${headingFont + 9}', 'scale' => 'best-fit'],
+                $headingIcon,
                 $heading,
             ]];
             $iconPaths = $solar ? [
@@ -3923,7 +3940,7 @@ function Execute($request = null)
         }
         // IAH_VOICE_ROUTE_PRIORITY_END
 
-        // IAH_APL_TILE_ROUTE_V5_BEGIN
+        // IAH_APL_TILE_ROUTE_V6_BEGIN
         // Konfigurierte Startkacheln: APL-Klick direkt zur hinterlegten
         // Renderer-Route leiten. Bewusst erst NACH Launch-/Voice-Entscheidungen,
         // damit ein LaunchRequest ohne Klick unverändert funktioniert.
@@ -4005,7 +4022,9 @@ function Execute($request = null)
                     try {
                         $queryCfg=[
                             'catalog_script_id'=>(int)($S['ROOMS_CATALOG']??0),
-                            'archive_control_id'=>(int)($propsEarly['KIArchiveControlId']??0),
+                            'archive_control_id'=>!empty($tile['useArchive'])
+                                || !array_key_exists('useArchive',$tile)
+                                ? (int)($propsEarly['KIArchiveControlId']??0) : 0,
                             'api_key'=>(string)($propsEarly['KIIntentApiKey']??''),
                             'model'=>(string)($propsEarly['KIModelSelection']??'gpt-6-luna'),
                             'max_words'=>(int)($propsEarly['HomeAgentVoiceMaxWords']??60),
@@ -4027,13 +4046,20 @@ function Execute($request = null)
                             &&trim((string)($queryResult['answer']??''))!=='') {
                             $log('info','APL.tile.ai.success',['id'=>$tileId,
                                 'icon'=>(string)($queryResult['displayIcon']??'device')]);
+                            $tileLayout=(string)($tile['resultLayout']??'auto');
+                            if(!in_array($tileLayout,['auto','text','status'],true))$tileLayout='auto';
+                            $fixedIcon=($tile['resultIconMode']??'ai')==='tile'?(string)($tile['icon']??''):'';
+                            $resultTitle=trim((string)($tile['resultTitle']??''));
                             return $kiAlexaKeepOpen(
                                 (string)$queryResult['answer'],'Beantwortet',$tileTarget,
                                 $iahVoiceHasScreen,'tile_ai',
                                 (array)($queryResult['displayRows']??[]),
-                                (string)($queryResult['displayTitle']??($tile['title']??'KI-Ergebnis')),
+                                $resultTitle!=='' ? $resultTitle :
+                                    (string)($queryResult['displayTitle']??($tile['title']??'KI-Ergebnis')),
                                 (string)($queryResult['displayIcon']??'device'),0,
-                                (string)($queryResult['displayStatus']??'unknown'),true);
+                                (string)($queryResult['displayStatus']??'unknown'),true,
+                                $tileLayout,($tile['resultStatusMode']??'auto')!=='off',
+                                $fixedIcon,(bool)($tile['speakAnswer']??true));
                         }
                         // Do not log question text, model response, token or sensor data.
                         $reason=is_array($queryResult) ? (string)($queryResult['error']??'unhandled') :
@@ -4067,7 +4093,7 @@ function Execute($request = null)
             }
         }
 
-        // IAH_APL_TILE_ROUTE_V5_END
+        // IAH_APL_TILE_ROUTE_V6_END
 
         // --------- Lazy rooms nur wenn benötigt ---------
         $needsRooms = in_array($__route ?? '', ['main_launch','heizung','jalousie','licht','lueftung','geraete','bewaesserung'], true)
