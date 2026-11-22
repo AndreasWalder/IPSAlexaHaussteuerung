@@ -111,29 +111,49 @@ if (is_array($catalog['tiles'] ?? null)) {
     $rawTiles = $catalogDefaults['tiles'];
 }
 
+// Diagnose nur mit IDs und lokalen Dateinamen; niemals Token oder signierte URLs loggen.
+$launchDiag = static function (string $message): void {
+    @IPS_LogMessage('Alexa.LaunchTiles', $message);
+};
+$tileSource = is_array($catalog['tiles'] ?? null) ? 'LaunchCatalog' : 'Defaults';
+$launchDiag('Quelle='.$tileSource.' konfiguriert='.count($rawTiles).' APL='.($apl ? 'ja' : 'nein'));
 $tiles = [];
-foreach ($rawTiles as $entry) {
+$seenTileIds = [];
+foreach ($rawTiles as $index => $entry) {
     $tile = $sanitizeTile($entry);
     if ($tile === null) {
+        $launchDiag('SKIP index='.$index.' reason=INVALID_TILE (ID oder Titel fehlt)');
         continue;
     }
+    $id = $tile['id'];
+    $file = trim((string)($entry['icon'] ?? ''));
+    if ($file === '') $file = (string)($defaultTileIcons[$id] ?? '');
+    $exists = $file !== '' && is_file(IPS_GetKernelDir().'user'.DIRECTORY_SEPARATOR.'icons'.DIRECTORY_SEPARATOR.$file);
+    if (isset($seenTileIds[$id])) {
+        $launchDiag('WARN id='.$id.' reason=DUPLICATE_ID firstIndex='.$seenTileIds[$id]);
+    }
+    $seenTileIds[$id] = $index;
+    $launchDiag('TILE index='.$index.' id='.$id.' title='.$tile['title']
+        .' icon='.($file !== '' ? basename($file) : '(kein Icon)')
+        .' fileExists='.($file === '' ? 'n/a' : ($exists ? 'ja' : 'nein'))
+        .' action=INCLUDED');
     if (!empty($tile['icon'])) {
         $tile['icon'] = $icon($tile['icon']);
     }
     $tiles[] = $tile;
 }
 if ($tiles === [] && is_array($catalogDefaults['tiles'] ?? null)) {
+    $launchDiag('WARN reason=NO_VALID_CONFIG_TILES; verwende Defaults');
     foreach ($catalogDefaults['tiles'] as $entry) {
         $tile = $sanitizeTile($entry);
-        if ($tile === null) {
-            continue;
-        }
-        if (!empty($tile['icon'])) {
-            $tile['icon'] = $icon($tile['icon']);
-        }
+        if ($tile === null) continue;
+        if (!empty($tile['icon'])) $tile['icon'] = $icon($tile['icon']);
         $tiles[] = $tile;
     }
 }
+$launchDiag('RENDER_INPUT configured='.count($rawTiles).' included='.count($tiles)
+    .' ids='.implode(',', array_column($tiles, 'id'))
+    .' note=Renderer begrenzt Kachelanzahl nicht; APL-Dokument kann eigene Layoutgrenzen haben');
 
 $ds = [
  'tilesData'=>[
@@ -302,6 +322,13 @@ if ($apl) {
 @IPS_LogMessage('Alexa', 'LaunchAPL-Ausgabe: aktiv='.($apl ? 'ja' : 'nein')
     .' document=Hausvisualisierung_Main tiles='.count((array)($ds['tilesData']['tiles'] ?? []))
     .' ids='.($tileIdManifest($ds) ?: '(leer)'));
+$finalIds = array_column((array)($ds['tilesData']['tiles'] ?? []), 'id');
+$launchDiag('FINAL_APL tiles='.count($finalIds).' ids='.implode(',', $finalIds)
+    .' bundesliga='. (in_array('bundesliga', $finalIds, true) ? 'INCLUDED' : 'MISSING')
+    .' bytes='.$calcSize($ds, $apl, $speech));
+if (in_array('bundesliga', $finalIds, true)) {
+    $launchDiag('HINWEIS bundesliga ist in der APL-Datenquelle. Wenn auf Echo Show unsichtbar, APL-Dokument Hausvisualisierung_Main auf Grid-Limit, Sichtbereich oder Scrollen pruefen.');
+}
 
 $aplObj = $apl ? ['doc'=>['type'=>'Link','src'=>'doc://alexa/apl/documents/Hausvisualisierung_Main'], 'ds'=>$ds] : null;
 
