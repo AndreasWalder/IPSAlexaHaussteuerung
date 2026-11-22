@@ -1152,6 +1152,11 @@ function iah_rc_robohub_status_query(array $catalog,string $text,?array $scope=n
 
 function iah_rc_football_answer(string $text): ?array
 {
+    // Never answer unrelated questions with a cached Bundesliga table.
+    $question=mb_strtolower(trim($text),'UTF-8');
+    if (preg_match('/\\b(?:fußball|fussball|bundesliga|liga\\s*1|1\\.\\s*bundesliga|fc\\s*bayern|bayern\\s*m[üu]nchen|dortmund|bvb|tabellenstand|fußballtabelle|fussballtabelle)\\b/u',$question)!==1) {
+        return null;
+    }
     if (!function_exists('IPS_GetInstanceListByModuleID') || !function_exists('IPS_GetObjectIDByIdent')) return null;
     $ids = @IPS_GetInstanceListByModuleID('{E4E41370-F6BC-4896-A281-5836F893F7D2}');
     if (!is_array($ids) || $ids === []) return null;
