@@ -312,6 +312,48 @@ trait IAHVisualNavigationEditorTrait
         ];
     }
 
+    /**
+     * Reports only the shape of the script output. Never copies the raw PHP
+     * error page, model response, token or local directory into the UI/log.
+     */
+    private function visualTileOutputDiagnostic(mixed $raw): string
+    {
+        $payload=is_string($raw)?trim($raw):'';
+        $kind='unexpected_text';
+        $type='none';
+        $file='';
+        $line=0;
+        if ($payload==='') {
+            $kind='empty';
+        } elseif (preg_match('/\\b(?:Parse error|syntax error|Fatal error|Uncaught|Compile Error)\\b/i',$payload)) {
+            $kind='php_error';
+            $type=preg_match('/Parse error|syntax error/i',$payload)?'parse'
+                :(preg_match('/Uncaught/i',$payload)?'uncaught':'fatal');
+        } elseif (preg_match('/\\b(?:Warning|Notice|Deprecated|Recoverable fatal error)\\s*:/i',$payload)) {
+            $kind='php_warning';
+            $type=preg_match('/Deprecated/i',$payload)?'deprecated'
+                :(preg_match('/Notice/i',$payload)?'notice':'warning');
+        } elseif (preg_match('/^\\s*</',$payload)) {
+            $kind='html';
+        } elseif (preg_match('/^[\\[{]/',$payload)) {
+            $kind='malformed_json';
+        }
+        if ($kind==='php_error'||$kind==='php_warning') {
+            if (preg_match('~(?:in|thrown in)\\s+([^\\r\\n]+?\\.php)\\s+(?:on\\s+)?line\\s+(\\d{1,7})~i',
+                $payload,$location)) {
+                $file=preg_replace('/[^A-Za-z0-9_.-]/','',
+                    basename(str_replace('\\\\','/',$location[1])))??'';
+                $line=(int)$location[2];
+            }
+        }
+        $summary='Ausgabetyp='.get_debug_type($raw)
+            .' · Länge='.strlen($payload)
+            .' · Kategorie='.$kind
+            .' · PHP-Fehler='.$type;
+        if ($file!=='') $summary.=' · Datei='.$file.' · Zeile='.$line;
+        return $summary;
+    }
+
     /** Read-only test using the same KI controller as an APL tile click. */
     public function TestVisualNavigationTile(string $key): void
     {
@@ -359,8 +401,14 @@ trait IAHVisualNavigationEditorTrait
                 ]);
                 $data=is_string($raw)?json_decode(trim($raw),true):null;
                 if(!is_array($data)||empty($data['handled'])) {
+                    $errorCode=is_array($data)?(string)($data['error']??'unhandled'):'invalid_json';
+                    $diagnostic=$this->visualTileOutputDiagnostic($raw);
+                    // Only fixed fields, never the raw helper output.
+                    IPS_LogMessage('Alexa.KITile',
+                        'Test '.preg_replace('/[^a-z0-9_-]/','',$key)
+                        .' · '.$errorCode.' · '.$diagnostic);
                     throw new RuntimeException('Keine verwertbare Antwort ('
-                        .(is_array($data)?(string)($data['error']??'unhandled'):'invalid_json').').');
+                        .$errorCode.'). '.$diagnostic);
                 }
                 $title=trim((string)($tile['resultTitle']??''));
                 if($title==='')$title=(string)($data['displayTitle']??$tile['title']??'KI-Ergebnis');
