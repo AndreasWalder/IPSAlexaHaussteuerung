@@ -2252,7 +2252,12 @@ function Execute($request = null)
                 $solar => ['Energie.png', 'solarPanel'],
                 default => ['Bewaesserung.png', 'waterDrop'],
             };
-            $image = rtrim((string)$baseUrl, '/') . '/hook/iah-alexa-icons?f=' . $iconFile . '&token=' . rawurlencode((string)$token);
+            if ($tileResult && $tileFixedIcon !== ''
+                && preg_match('/^[A-Za-z0-9_-]+\\.(?:png|jpe?g|webp)$/iD',$tileFixedIcon)
+                && is_file(IPS_GetKernelDir().'user'.DIRECTORY_SEPARATOR.'icons'.DIRECTORY_SEPARATOR.$tileFixedIcon)) {
+                $iconFile=$tileFixedIcon;
+            }
+            $image = rtrim((string)$baseUrl, '/') . '/hook/iah-alexa-icons?f=' . rawurlencode($iconFile) . '&token=' . rawurlencode((string)$token);
             if (preg_match('~^https://[a-z0-9.-]+(?::\d{1,5})?(?:/[^\s]*)?$~iD', $image)) {
                 $response->SetStandardCard($title, $cardText, $image, $image);
             }
