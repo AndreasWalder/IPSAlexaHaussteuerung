@@ -3876,17 +3876,22 @@ function Execute($request = null)
         }
         // IAH_VOICE_ROUTE_PRIORITY_END
 
-        // IAH_APL_TILE_ROUTE_V1_BEGIN
+        // IAH_APL_TILE_ROUTE_V2_BEGIN
         // Konfigurierte Startkacheln: APL-Klick direkt zur hinterlegten
         // Renderer-Route leiten. Bewusst erst NACH Launch-/Voice-Entscheidungen,
         // damit ein LaunchRequest ohne Klick unverändert funktioniert.
-        if ($iahVoiceIsAplEvent && is_array($APL['args'] ?? null)
+        if (!$IS_LAUNCH && is_array($APL['args'] ?? null)
             && (string)($APL['args'][0] ?? '') === 'GetHaus') {
             $clicked = [];
             foreach (array_slice($APL['args'], 1) as $value) {
                 if (!is_scalar($value)) continue;
                 $clicked[] = mb_strtolower(trim((string)$value), 'UTF-8');
             }
+            $log('info','APL.tile.click', [
+                'requestType'=>$iahVoiceRequestType,
+                'argumentsCount'=>count($clicked),
+                'catalogCount'=>count((array)($launchCatalog['tiles'] ?? []))
+            ]);
             foreach ((array)($launchCatalog['tiles'] ?? []) as $tile) {
                 if (!is_array($tile)) continue;
                 $tileId = mb_strtolower(trim((string)($tile['id'] ?? '')), 'UTF-8');
@@ -3902,6 +3907,10 @@ function Execute($request = null)
                     $tileAction = 'route';
                     $tileTarget = 'bundesliga';
                 }
+                if ($tileAction === '' && $tileId === 'bundesliga') {
+                    $tileAction = 'route';
+                    $tileTarget = 'bundesliga';
+                }
                 if ($tileAction === 'route' && preg_match('/^[a-z0-9_-]{1,64}$/', $tileTarget)) {
                     $__route = $tileTarget;
                     $log('info','APL.tile.route', ['id'=>$tileId,'route'=>$tileTarget]);
@@ -3912,7 +3921,7 @@ function Execute($request = null)
             }
         }
 
-        // IAH_APL_TILE_ROUTE_V1_END
+        // IAH_APL_TILE_ROUTE_V2_END
 
         // --------- Lazy rooms nur wenn benötigt ---------
         $needsRooms = in_array($__route ?? '', ['main_launch','heizung','jalousie','licht','lueftung','geraete','bewaesserung'], true)
