@@ -94,6 +94,12 @@ trait IAHVisualNavigationEditorTrait
                 'icon'=>(string)($tile['icon'] ?? ''),
                 'iconUpload'=>'',
                 'color'=>$this->visualTileColorValue((string)($tile['color']??'')),
+                'resultTitle'=>(string)($tile['resultTitle']??''),
+                'resultIconMode'=>(string)($tile['resultIconMode']??'ai'),
+                'resultStatusMode'=>(string)($tile['resultStatusMode']??'auto'),
+                'resultLayout'=>(string)($tile['resultLayout']??'auto'),
+                'speakAnswer'=>(bool)($tile['speakAnswer']??true),
+                'useArchive'=>(bool)($tile['useArchive']??true),
                 'detail'=>(string)($tile['subtitle'] ?? ''),
                 'status'=>$type === 'ai_query' && $target === '' ? 'Ziel fehlt' : 'Konfiguriert',
             ];
@@ -180,7 +186,13 @@ trait IAHVisualNavigationEditorTrait
             .'"target"=>$VisualNavRows["target"], '
             .'"icon"=>($VisualNavRows["icon"] ?? ""), '
             .'"iconUpload"=>($VisualNavRows["iconUpload"] ?? ""), '
-            .'"color"=>($VisualNavRows["color"] ?? 3562633)'
+            .'"color"=>($VisualNavRows["color"] ?? 3562633), '
+            .'"resultTitle"=>($VisualNavRows["resultTitle"] ?? ""), '
+            .'"resultIconMode"=>($VisualNavRows["resultIconMode"] ?? "ai"), '
+            .'"resultStatusMode"=>($VisualNavRows["resultStatusMode"] ?? "auto"), '
+            .'"resultLayout"=>($VisualNavRows["resultLayout"] ?? "auto"), '
+            .'"speakAnswer"=>($VisualNavRows["speakAnswer"] ?? true), '
+            .'"useArchive"=>($VisualNavRows["useArchive"] ?? true)'
             .'], JSON_INVALID_UTF8_SUBSTITUTE));';
         return [
             'type'=>'ExpansionPanel',
@@ -225,6 +237,25 @@ trait IAHVisualNavigationEditorTrait
                             'edit'=>['type'=>'SelectFile','extensions'=>'.png,.jpg,.jpeg,.webp']],
                         ['name'=>'color','caption'=>'Kachelfarbe','width'=>'105px',
                             'edit'=>['type'=>'SelectColor','allowTransparent'=>false]],
+                        ['name'=>'resultTitle','caption'=>'KI: Ergebnis-Überschrift (leer = automatisch)',
+                            'width'=>'215px','edit'=>['type'=>'ValidationTextBox']],
+                        ['name'=>'resultIconMode','caption'=>'KI: Icon auf Ergebnisseite',
+                            'width'=>'165px','edit'=>['type'=>'Select','options'=>[
+                                ['caption'=>'KI wählt Icon','value'=>'ai'],
+                                ['caption'=>'Startkachel-Bild','value'=>'tile']]]],
+                        ['name'=>'resultStatusMode','caption'=>'KI: Statusanzeige',
+                            'width'=>'155px','edit'=>['type'=>'Select','options'=>[
+                                ['caption'=>'Nur bei Fakten bewerten','value'=>'auto'],
+                                ['caption'=>'Ohne Status','value'=>'off']]]],
+                        ['name'=>'resultLayout','caption'=>'KI: Darstellung',
+                            'width'=>'170px','edit'=>['type'=>'Select','options'=>[
+                                ['caption'=>'Automatisch','value'=>'auto'],
+                                ['caption'=>'Nur Antworttext','value'=>'text'],
+                                ['caption'=>'Statusseite mit Details','value'=>'status']]]],
+                        ['name'=>'speakAnswer','caption'=>'KI: Antwort vorlesen','width'=>'120px',
+                            'edit'=>['type'=>'CheckBox']],
+                        ['name'=>'useArchive','caption'=>'KI: Archiv bei Bedarf','width'=>'125px',
+                            'edit'=>['type'=>'CheckBox']],
                         ['name'=>'detail','caption'=>'Zusatzinformation','width'=>'190px','save'=>false],
                         ['name'=>'status','caption'=>'Status','width'=>'140px','save'=>false],
                     ],
@@ -318,6 +349,19 @@ trait IAHVisualNavigationEditorTrait
                         throw new RuntimeException('Ungültiger Icon-Dateiname.');
                     $row['icon']=$icon;
                     $row['color']=$this->visualTileColorHex($color);
+                    foreach ([
+                        'resultIconMode'=>['ai','tile'],
+                        'resultStatusMode'=>['auto','off'],
+                        'resultLayout'=>['auto','text','status'],
+                    ] as $name=>$allowed) {
+                        $value=(string)($entry[$name]??$row[$name]??$allowed[0]);
+                        if (!in_array($value,$allowed,true))
+                            throw new RuntimeException('Ungültige KI-Anzeigeoption: '.$name);
+                        $row[$name]=$value;
+                    }
+                    $row['resultTitle']=mb_substr(trim((string)($entry['resultTitle']??'')),0,90,'UTF-8');
+                    $row['speakAnswer']=(bool)($entry['speakAnswer']??true);
+                    $row['useArchive']=(bool)($entry['useArchive']??true);
                 } elseif ($source === 'page') {
                     if (!in_array($action, ['wfc_item','external_url'], true)) {
                         throw new RuntimeException('Ungültiger Seitentyp.');
@@ -370,7 +414,9 @@ trait IAHVisualNavigationEditorTrait
             if($icon!==''&&!preg_match('/^[A-Za-z0-9_-]+\\.(?:png|jpe?g|webp)$/iD',$icon))
                 throw new RuntimeException('Ungültiger Icon-Dateiname.');
             $rows[]=['id'=>$key,'title'=>$title,'subtitle'=>'','actionType'=>$action,'target'=>$target,
-                'icon'=>$icon,'color'=>$this->visualTileColorHex($color)];
+                'icon'=>$icon,'color'=>$this->visualTileColorHex($color),
+                'resultTitle'=>'','resultIconMode'=>'ai','resultStatusMode'=>'auto',
+                'resultLayout'=>'auto','speakAnswer'=>true,'useArchive'=>true];
             if (function_exists('IPS_HasChanges') && IPS_HasChanges($this->InstanceID)) {
                 throw new RuntimeException('Bitte zuerst ungespeicherte Instanzeinstellungen übernehmen.');
             }
