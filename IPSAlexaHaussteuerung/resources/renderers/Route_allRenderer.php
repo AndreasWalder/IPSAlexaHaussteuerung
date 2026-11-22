@@ -310,12 +310,13 @@ try {
         $instanceIds = function_exists('IPS_GetInstanceListByModuleID')
             ? @IPS_GetInstanceListByModuleID('{E4E41370-F6BC-4896-A281-5836F893F7D2}') : [];
         $payloadTable = null;
+        $chosen = 0;
         foreach ((array)$instanceIds as $footballId) {
             if ((string)@IPS_GetProperty((int)$footballId, 'LigaSelection') !== 'Liga1') continue;
             $jsonId = @IPS_GetObjectIDByIdent('StandingsJson', (int)$footballId);
             if ($jsonId) {
                 $candidate = json_decode((string)GetValueString((int)$jsonId), true);
-                if (is_array($candidate) && is_array($candidate['teams'] ?? null)) { $payloadTable = $candidate; break; }
+                if (is_array($candidate) && is_array($candidate['teams'] ?? null)) { $payloadTable = $candidate; $chosen = (int)$footballId; break; }
             }
         }
         $teams = is_array($payloadTable['teams'] ?? null) ? $payloadTable['teams'] : [];
@@ -391,7 +392,7 @@ try {
                 ]
             ]]]
         ];
-        $dataArr = ['apl'=>['doc'=>$doc,'ds'=>['summary'=>['title'=>$headline,'text'=>'Aktuelle Tabelle, Punkte und Tore.']]]];
+        $dataArr = ['speech'=>'Bundesliga-Tabelle angezeigt.', 'reprompt'=>'Was möchtest du als Nächstes wissen?', 'apl'=>['doc'=>$doc,'ds'=>['summary'=>['title'=>$headline,'text'=>'Aktuelle Tabelle, Punkte und Tore.']]]];
         echo json_encode(['ok'=>true,'route'=>$route,'data'=>$dataArr,'flags'=>$flags,'aplToken'=>'hv-bundesliga'],$JSON);
         return;
     }
