@@ -1215,8 +1215,9 @@ function iah_rc_voice(
     $key=trim((string)($cfg['api_key']??''));$catalogId=(int)($cfg['catalog_script_id']??0);
     // Sillian weather is a public, read-only forecast and can be resolved
     // even when the RoomsCatalog script is unavailable.
-    if(trim($text)==='' || (!$preview&&$catalogId<=0&&!IAHTauernwetterForecast::matches($text)))
-        return ['handled'=>false,'error'=>'KI-Konfiguration unvollständig'];
+    // Any KI tile question is valid, independent of RoomsCatalog.
+    if(trim($text)==='')
+        return ['handled'=>false,'error'=>'question_empty'];
     if (!$preview) {
         $football = iah_rc_football_answer($text);
         if ($football !== null) return $football;
@@ -1275,6 +1276,34 @@ function iah_rc_voice(
         if ($forecast!==null) {
             $readSucceeded=true; $readDetails=[['tool'=>'weather_forecast','result'=>$forecast['displayRows']]];
             return $costFinish($forecast);
+        }
+        // Generic read-only KI fallback when there is no RoomsCatalog. The
+        // model cannot use external services or pretend to know live values.
+        if (!$preview && $catalogId<=0 && !empty($cfg['tile_display'])) {
+            if ($key==='') return $costFinish(['handled'=>false,'error'=>'api_key_missing']);
+            $model=(string)($cfg['model']??'gpt-6-luna');
+            $request=['model'=>$model,'max_completion_tokens'=>260,
+                'messages'=>[
+                    ['role'=>'system','content'=>'Du beantwortest jede frei konfigurierte Alexa-Kachelfrage kurz auf Deutsch. '
+                        .'Ohne ausdrücklich übergebene Quellen hast du keinen Zugriff auf aktuelle Internet-, '
+                        .'Wetter-, Sport- oder Hausdaten. Erfinde keine aktuellen Messwerte und Fakten. '
+                        .'Gib ausschließlich JSON mit answer, title, icon und status zurück. '
+                        .'icon muss eines sein aus: light, window, door, blind, temperature, motion, weather, alarm, '
+                        .'water, energy, lock, smoke, shield, battery, fan, camera, media, network, robot, device. '
+                        .'status muss eines sein aus ok, warning, error, unknown, info. '
+                        .'Ohne belegten Zustand nur unknown oder info verwenden.'],
+                    ['role'=>'user','content'=>mb_substr($text,0,500,'UTF-8')]
+                ]];
+            if ($model==='gpt-6-luna') $request['reasoning_effort']='none';
+            $retry=false;
+            $reply=iah_rc_model_message($request,$key,$deadline,$http??'iah_rc_http',
+                static function(array $response,string $callId):void{},0,$retry);
+            $display=iah_rc_tile_ai_reply((string)($reply['content']??''),$text);
+            if(trim((string)($display['answer']??''))==='') {
+                return $costFinish(['handled'=>false,'error'=>'empty_general_ai_response']);
+            }
+            $display['handled']=true;
+            return $costFinish($display);
         }
         $catalog=$previewCatalog??iah_rc_load_catalog($catalogId);
         if ($costInstanceId > 0 && function_exists('IAH_GetHomeConnectCatalog')) {
@@ -1700,6 +1729,12 @@ function iah_rc_voice(
                 .'Die Symbole sind Kategorien, keine Bild-URLs. Keine Markdown-Codeblöcke, '
                 .'keine zusätzlichen Eigenschaften, kein erfundener Status.';
         }
+        if ($tileDisplay) {
+            $planningRules .= ' KI-Kacheln können beliebige Fragen enthalten. '
+                .'Für allgemeines Wissen direkt antworten ohne Hauswerkzeuge aufzurufen. '
+                .'Hauswerkzeuge nur verwenden, wenn die Frage die Hausdaten betrifft. '
+                .'Bei zeitaktuellen Informationen ohne aktuelle Daten Unsicherheit erklären.';
+        }
         $messages=[
             ['role'=>'system','content'=>$planningRules],
             ['role'=>'user','content'=>mb_substr($text,0,500,'UTF-8')]
@@ -1723,8 +1758,9 @@ function iah_rc_voice(
             }
             iah_rc_log('openai.start',['round'=>$round+1]);
             $model=(string)($cfg['model']??'gpt-6-luna');
-            $request=iah_rc_chat_payload($model,$messages,$tools,$round,
-                $preferRead,$round>=2,$wantsEnergy?'query_energy':
+            $request=iah_rc_chat_payload($model,$messages,$tools,
+                $tileDisplay && $round===0 ? 1 : $round,
+                $preferRead && !$tileDisplay,$round>=2,$wantsEnergy?'query_energy':
                     ($wantsArchive?'query_archive':'query_house'));
             $msg=iah_rc_model_message($request,$key,$deadline,$http??'iah_rc_http',
                 static function (array $response,string $callId) use ($costReport,$model): void {
