@@ -2301,6 +2301,14 @@ function Execute($request = null)
                     'data' => '${summary.readings}',
                     'items' => [$row],
                 ];
+                // Dynamische KI-Ergebnisse müssen Erklärung UND Status zeigen.
+                // Die bisherigen Hausstatus- und Dialogseiten bleiben unverändert.
+                if ($tileResult) {
+                    $body = [
+                        'type'=>'Container','width'=>'100%','spacing'=>'12dp',
+                        'items'=>[$bodyText + ['text'=>'${summary.text}'], $body]
+                    ];
+                }
             }
             $heading = [
                 'type' => 'Text',
