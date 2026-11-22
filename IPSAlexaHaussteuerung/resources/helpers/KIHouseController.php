@@ -1213,7 +1213,9 @@ function iah_rc_voice(
 {
     $preview=$previewCatalog!==null;
     $key=trim((string)($cfg['api_key']??''));$catalogId=(int)($cfg['catalog_script_id']??0);
-    if((!$preview&&$catalogId<=0)||trim($text)==='')
+    // Sillian weather is a public, read-only forecast and can be resolved
+    // even when the RoomsCatalog script is unavailable.
+    if(trim($text)==='' || (!$preview&&$catalogId<=0&&!IAHTauernwetterForecast::matches($text)))
         return ['handled'=>false,'error'=>'KI-Konfiguration unvollständig'];
     if (!$preview) {
         $football = iah_rc_football_answer($text);
