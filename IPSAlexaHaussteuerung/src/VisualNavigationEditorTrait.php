@@ -8,6 +8,64 @@ declare(strict_types=1);
  */
 trait IAHVisualNavigationEditorTrait
 {
+    private function visualTileIconOptions(): array
+    {
+        $options=[['caption'=>'(Standard-Icon)','value'=>'']];
+        $directory=rtrim(IPS_GetKernelDir(),'\\/').DIRECTORY_SEPARATOR.'user'.DIRECTORY_SEPARATOR.'icons';
+        if (!is_dir($directory)) return $options;
+        foreach ((array)@scandir($directory) as $file) {
+            if (!is_string($file) ||
+                !preg_match('/^[A-Za-z0-9_-]+\\.(?:png|jpe?g|webp)$/iD',$file)) continue;
+            $options[]=['caption'=>$file,'value'=>$file];
+        }
+        return $options;
+    }
+
+    private function visualTileColorValue(string $color): int
+    {
+        $color=ltrim($color,'#');
+        return preg_match('/^[0-9a-fA-F]{6}$/D',$color) ? hexdec($color) : 0x365C89;
+    }
+
+    private function visualTileColorHex(mixed $value): string
+    {
+        if(is_int($value) || (is_string($value)&&ctype_digit($value))) {
+            $n=(int)$value;
+            if($n<0 || $n>0xFFFFFF)throw new RuntimeException('Ungültiger RGB-Farbwert.');
+            return sprintf('#%06X',$n);
+        }
+        $text=strtoupper(trim((string)$value));
+        if(preg_match('/^#[0-9A-F]{6}$/D',$text))return $text;
+        throw new RuntimeException('Bitte eine Farbe mit der Farbauswahl wählen.');
+    }
+
+    private function visualTileSaveUploadedIcon(string $tileId,string $base64): string
+    {
+        $base64=trim($base64);
+        if ($base64==='') return '';
+        if(strlen($base64)>700000)throw new RuntimeException('Icondatei zu groß (maximal 500 KB).');
+        if(str_contains($base64,','))$base64=substr($base64,strpos($base64,',')+1);
+        $bytes=base64_decode($base64,true);
+        if(!is_string($bytes)||strlen($bytes)<32||strlen($bytes)>500000)
+            throw new RuntimeException('Ungültige oder zu große Icondatei.');
+        $size=@getimagesizefromstring($bytes);
+        if(!is_array($size)||($size[0]??0)<16||($size[1]??0)<16
+            ||($size[0]??0)>1024||($size[1]??0)>1024)
+            throw new RuntimeException('Das Bild muss zwischen 16 und 1024 Pixel groß sein.');
+        $extension=match((int)($size[2]??0)) {
+            IMAGETYPE_PNG=>'png',IMAGETYPE_JPEG=>'jpg',IMAGETYPE_WEBP=>'webp',
+            default=>throw new RuntimeException('Nur PNG, JPG oder WebP verwenden.'),
+        };
+        $directory=rtrim(IPS_GetKernelDir(),'\\/').DIRECTORY_SEPARATOR.'user'.DIRECTORY_SEPARATOR.'icons';
+        if(!is_dir($directory) && !@mkdir($directory,0755,true) && !is_dir($directory))
+            throw new RuntimeException('Iconverzeichnis kann nicht angelegt werden.');
+        $filename='AlexaTile_'.$tileId.'_'.substr(hash('sha256',$bytes),0,12).'.'.$extension;
+        $path=$directory.DIRECTORY_SEPARATOR.$filename;
+        if(!is_file($path)&&@file_put_contents($path,$bytes,LOCK_EX)!==strlen($bytes))
+            throw new RuntimeException('Icondatei konnte nicht gespeichert werden.');
+        return $filename;
+    }
+
     private function visualNavigationRows(): array
     {
         $rows = [];
