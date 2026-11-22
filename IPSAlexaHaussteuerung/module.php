@@ -1233,6 +1233,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->patchActionScriptVoiceRules((int)$id);
         $this->patchActionScriptLastAlexaInteraction((int)$id);
         $this->patchActionScriptLaunchLiveConfig((int)$id);
+        $this->patchActionScriptAplTileRoute((int)$id);
 
         $current = $this->getScriptContent((int)$id);
         if (is_string($current)) {
@@ -1258,6 +1259,51 @@ class IPSAlexaHaussteuerung extends IPSModule
      * Aktualisiert gezielt die LaunchCatalog-Quelle eines bereits existierenden
      * Action-Skripts. Andere Konfigurationsfelder und eigene Anpassungen bleiben.
      */
+    /**
+     * Kleiner, versionsmarkierter APL-Kachelpatch.
+     * Der bestehende Action-Skriptinhalt wird nicht ersetzt; ein lesbares
+     * Backup muss vor jedem Upgrade erfolgreich erstellt werden.
+     */
+    private function patchActionScriptAplTileRoute(int $scriptId): void
+    {
+        $current = $this->getScriptContent($scriptId);
+        $template = @file_get_contents(__DIR__.'/resources/action_entry.php');
+        if (!is_string($current) || $current === '' || !is_string($template)) return;
+        $begin = '        // IAH_APL_TILE_ROUTE_V1_BEGIN';
+        $end = '        // IAH_APL_TILE_ROUTE_V1_END';
+        if (substr_count($template,$begin)!==1 || substr_count($template,$end)!==1) {
+            IPS_LogMessage('Alexa','APL.TileRoute: Vorlage unvollständig.');
+            return;
+        }
+        $start = strpos($template,$begin);
+        $stop = strpos($template,$end,$start + strlen($begin));
+        if ($stop === false) return;
+        $block = substr($template,$start,$stop+strlen($end)-$start);
+        if (str_contains($current,$begin) || str_contains($current,$end)) {
+            // Never overwrite local modifications to an already installed block.
+            return;
+        }
+        $anchor = '        // --------- Lazy rooms nur wenn benötigt ---------';
+        if (substr_count($current,$anchor)!==1) {
+            IPS_LogMessage('Alexa','APL.TileRoute: Action-Anker nicht eindeutig, kein Patch.');
+            return;
+        }
+        $next = str_replace($anchor,$block."\n\n".$anchor,$current);
+        if ($next === $current) return;
+        try {
+            $this->createNavigationCatalogBackup($scriptId,'BeforeAplTileRouteV1',$current);
+            IPS_SetScriptContent($scriptId,$next);
+            if ($this->getScriptContent($scriptId)!==$next) {
+                IPS_SetScriptContent($scriptId,$current);
+                IPS_LogMessage('Alexa','APL.TileRoute: Schreibprüfung fehlgeschlagen; zurückgesetzt.');
+                return;
+            }
+            IPS_LogMessage('Alexa','APL.TileRoute: Klick-Verknüpfung aktiv.');
+        } catch (\\Throwable $e) {
+            IPS_LogMessage('Alexa','APL.TileRoute: Backup/Patch nicht möglich: '.get_class($e));
+        }
+    }
+
     private function patchActionScriptLaunchLiveConfig(int $scriptId): void
     {
         $current = $this->getScriptContent($scriptId);
