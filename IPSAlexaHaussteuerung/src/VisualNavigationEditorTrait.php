@@ -14,14 +14,25 @@ trait IAHVisualNavigationEditorTrait
         $launch = json_decode($this->ReadPropertyString('LaunchCatalog'), true);
         foreach (is_array($launch) ? $launch : [] as $tile) {
             if (!is_array($tile) || empty($tile['id'])) continue;
-            $type = (string)($tile['actionType'] ?? 'route');
+            $type = (string)($tile['actionType'] ?? '');
+            $target = trim((string)($tile['target'] ?? ''));
+            if ($type === '' || $target === '') {
+                foreach ((array)($this->launchCatalogDefaults()['tiles'] ?? []) as $preset) {
+                    if (($preset['id'] ?? '') !== $tile['id']) continue;
+                    if ($type === '') $type = (string)($preset['actionType'] ?? 'route');
+                    if ($target === '') $target = (string)($preset['target'] ?? $tile['id']);
+                    break;
+                }
+            }
+            if ($type === '') $type = 'route';
+            if ($target === '') $target = (string)$tile['id'];
             $rows[] = [
                 'source'=>'launch', 'key'=>(string)$tile['id'],
                 'title'=>(string)($tile['title'] ?? $tile['id']),
                 'actionType'=>$type,
-                'target'=>(string)($tile['target'] ?? $tile['id']),
+                'target'=>$target,
                 'detail'=>(string)($tile['subtitle'] ?? ''),
-                'status'=>$type === 'ai_query' && empty($tile['target']) ? 'Ziel fehlt' : 'Konfiguriert',
+                'status'=>$type === 'ai_query' && $target === '' ? 'Ziel fehlt' : 'Konfiguriert',
             ];
         }
         foreach ($this->readPageMappingsProperty() as $key=>$mapping) {
@@ -200,6 +211,10 @@ trait IAHVisualNavigationEditorTrait
                 throw new RuntimeException('ID (a-z, 0-9, _, -), Titel und Ziel angeben.');
             }
             if (!in_array($action,['route','ai_query'],true)) throw new RuntimeException('Ungültige Aktion.');
+            if ($action === 'route' && !preg_match('/^[a-z0-9_-]+$/', $target))
+                throw new RuntimeException('Bitte eine gültige Route angeben.');
+            if ($action === 'ai_query' && mb_strlen($target,'UTF-8') > 240)
+                throw new RuntimeException('Frage ist zu lang.');
             $rows=json_decode($this->ReadPropertyString('LaunchCatalog'),true);
             if (!is_array($rows)) throw new RuntimeException('Kachelkonfiguration nicht lesbar.');
             foreach ($rows as $row) if (($row['id']??'')===$key) throw new RuntimeException('ID existiert bereits.');
