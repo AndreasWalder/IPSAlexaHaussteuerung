@@ -35,6 +35,8 @@ trait IAHVisualNavigationEditorTrait
             return sprintf('#%06X',$n);
         }
         $text=strtoupper(trim((string)$value));
+        if(preg_match('/^0X([0-9A-F]{6})$/D',$text,$match))return '#'.$match[1];
+        if(preg_match('/^([0-9A-F]{6})$/D',$text,$match))return '#'.$match[1];
         if(preg_match('/^#[0-9A-F]{6}$/D',$text))return $text;
         throw new RuntimeException('Bitte eine Farbe mit der Farbauswahl wählen.');
     }
