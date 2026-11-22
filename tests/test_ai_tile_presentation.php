@@ -34,8 +34,8 @@ ckAiTile($unsafe['displayStatus']==='unknown','Unknown status cannot imply OK');
 ckAiTile(!str_contains($unsafe['displayTitle'],'<'),'Title is escaped/stripped');
 ckAiTile(str_contains($backend,"'tile_display'")===false ||
     str_contains($backend,"$cfg['tile_display']"),'AI display is explicitly opt-in');
-ckAiTile(str_contains($action,'IAH_APL_TILE_ROUTE_V6_BEGIN')
-    && str_contains($action,'IAH_APL_TILE_ROUTE_V6_END')
+ckAiTile(str_contains($action,'IAH_APL_TILE_ROUTE_V7_BEGIN')
+    && str_contains($action,'IAH_APL_TILE_ROUTE_V7_END')
     && str_contains($action,"'allow_writes'=>false")
     && str_contains($action,"'tile_display'=>true"),
     'Configured tile invokes read-only AI and APL V3');
@@ -53,4 +53,6 @@ ckAiTile(str_contains($action,'$tileFixedIcon') && str_contains($action,'$tileLa
     'KI rendering accepts fixed icon and text/status layout');
 ckAiTile(str_contains($editor,'TestVisualNavigationTile('),
     'KI editor offers a direct read-only test action');
+ckAiTile(str_contains($editor,'visualTileOutputDiagnostic(') && str_contains($action,"'phpErrorClass'=>"),
+    'Safe PHP error diagnostic present in editor and runtime');
 echo "PASS: KI icon, status, title, layout, speech, archive, editor and safe installation\n";
