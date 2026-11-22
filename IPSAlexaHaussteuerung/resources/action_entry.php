@@ -790,6 +790,16 @@ function iah_sanitize_launch_tile($entry): ?array
 
     $tileAction = (string)($entry['actionType'] ?? '');
     $tileTarget = trim((string)($entry['target'] ?? ''));
+    // Upgrade: vorherige Standardkacheln ohne Aktion behalten ihre
+    // Vorgabe-Aktion aus dem aktuellen Standardkatalog.
+    if ($tileAction === '' || $tileTarget === '') {
+        foreach ((array)(iah_launch_catalog_defaults()['tiles'] ?? []) as $defaultTile) {
+            if (($defaultTile['id'] ?? '') !== $id) continue;
+            $tileAction = $tileAction !== '' ? $tileAction : (string)($defaultTile['actionType'] ?? '');
+            $tileTarget = $tileTarget !== '' ? $tileTarget : (string)($defaultTile['target'] ?? '');
+            break;
+        }
+    }
     if (in_array($tileAction, ['route', 'ai_query'], true) && $tileTarget !== '') {
         $tile['actionType'] = $tileAction;
         $tile['target'] = $tileTarget;
