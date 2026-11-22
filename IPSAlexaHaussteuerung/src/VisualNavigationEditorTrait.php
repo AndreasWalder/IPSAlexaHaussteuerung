@@ -79,8 +79,8 @@ trait IAHVisualNavigationEditorTrait
         $actionId = $this->getActionScriptId();
         $source = $actionId > 0 ? $this->getScriptContent($actionId) : '';
         $installed = is_string($source)
-            && str_contains($source, 'IAH_APL_TILE_ROUTE_V2_BEGIN')
-            && str_contains($source, 'IAH_APL_TILE_ROUTE_V2_END');
+            && str_contains($source, 'IAH_APL_TILE_ROUTE_V3_BEGIN')
+            && str_contains($source, 'IAH_APL_TILE_ROUTE_V3_END');
         $entries = json_decode($this->ReadPropertyString('LaunchCatalog'), true);
         $football = null;
         foreach (is_array($entries) ? $entries : [] as $entry) {
@@ -89,7 +89,7 @@ trait IAHVisualNavigationEditorTrait
         $binding = $football === null ? 'nicht vorhanden' :
             (string)($football['actionType'] ?? '(Altbestand)').' → '
             .(string)($football['target'] ?? '(kein Ziel)');
-        return 'Action #'.$actionId.' · APL-Klickrouter V2: '
+        return 'Action #'.$actionId.' · APL-Klickrouter V3: '
             .($installed?'INSTALLIERT':'FEHLT').' · Fußball: '.$binding
             .' · Falls der Router fehlt: unten Reparatur starten.';
     }
@@ -122,7 +122,7 @@ trait IAHVisualNavigationEditorTrait
             'items'=>[
                 ['type'=>'Label','caption'=>'Alle Verknüpfungen an einem Ort. '
                     .'Aktion und Ziel einer Launch-Kachel bearbeiten: "Seite öffnen" verwendet eine vorhandene Route; '
-                    .'"KI-Frage" verwendet den hinterlegten Fragetext. '
+                    .'"KI-Frage" fragt die KI und zeigt Antwort, automatisch gewähltes Icon und Status. '
                     .'Page-Zuordnungen und Renderer werden direkt übernommen. '
                     .'Navigationstabs bleiben zum Schutz der bestehenden EDIT/PROD-Veröffentlichung separat versioniert.'],
                 ['type'=>'Label','name'=>'VisualNavRuntimeStatus',
