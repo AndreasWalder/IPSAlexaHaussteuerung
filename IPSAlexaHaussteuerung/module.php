@@ -1268,39 +1268,59 @@ class IPSAlexaHaussteuerung extends IPSModule
     {
         $current = $this->getScriptContent($scriptId);
         $template = @file_get_contents(__DIR__.'/resources/action_entry.php');
-        if (!is_string($current) || $current === '' || !is_string($template)) return;
-        $begin = '        // IAH_APL_TILE_ROUTE_V1_BEGIN';
-        $end = '        // IAH_APL_TILE_ROUTE_V1_END';
+        if (!is_string($current) || $current === '' || !is_string($template)) {
+            IPS_LogMessage('Alexa','APL.TileRoute: Action-Skript oder Vorlage nicht lesbar.');
+            return;
+        }
+
+        $begin = '        // IAH_APL_TILE_ROUTE_V2_BEGIN';
+        $end = '        // IAH_APL_TILE_ROUTE_V2_END';
         if (substr_count($template,$begin)!==1 || substr_count($template,$end)!==1) {
-            IPS_LogMessage('Alexa','APL.TileRoute: Vorlage unvollständig.');
+            IPS_LogMessage('Alexa','APL.TileRoute: Vorlage V2 nicht eindeutig.');
             return;
         }
-        $start = strpos($template,$begin);
-        $stop = strpos($template,$end,$start + strlen($begin));
-        if ($stop === false) return;
-        $block = substr($template,$start,$stop+strlen($end)-$start);
-        if (str_contains($current,$begin) || str_contains($current,$end)) {
-            // Never overwrite local modifications to an already installed block.
+        $from = strpos($template,$begin);
+        $to = strpos($template,$end,$from+strlen($begin));
+        if ($to===false) return;
+        $block = substr($template,$from,$to+strlen($end)-$from);
+        if (str_contains($current,$begin) && str_contains($current,$end)) {
+            IPS_LogMessage('Alexa','APL.TileRoute: V2 bereits aktiv. Action #'.$scriptId);
             return;
         }
-        $anchor = '        // --------- Lazy rooms nur wenn benötigt ---------';
-        if (substr_count($current,$anchor)!==1) {
-            IPS_LogMessage('Alexa','APL.TileRoute: Action-Anker nicht eindeutig, kein Patch.');
-            return;
+
+        $oldBegin = '        // IAH_APL_TILE_ROUTE_V1_BEGIN';
+        $oldEnd = '        // IAH_APL_TILE_ROUTE_V1_END';
+        if (substr_count($current,$oldBegin)===1 && substr_count($current,$oldEnd)===1) {
+            $oldFrom = strpos($current,$oldBegin);
+            $oldTo = strpos($current,$oldEnd,$oldFrom+strlen($oldBegin));
+            if ($oldTo===false) return;
+            $next = substr($current,0,$oldFrom).$block
+                .substr($current,$oldTo+strlen($oldEnd));
+        } else {
+            if (str_contains($current,$oldBegin) || str_contains($current,$oldEnd)
+                || str_contains($current,$begin) || str_contains($current,$end)) {
+                IPS_LogMessage('Alexa','APL.TileRoute: vorhandene Marker unvollständig; keine Änderung.');
+                return;
+            }
+            $anchor = '        // --------- Lazy rooms nur wenn benötigt ---------';
+            if (substr_count($current,$anchor)!==1) {
+                IPS_LogMessage('Alexa','APL.TileRoute: Einfügeanker nicht eindeutig. Action #'.$scriptId);
+                return;
+            }
+            $next = str_replace($anchor,$block."\n\n".$anchor,$current);
         }
-        $next = str_replace($anchor,$block."\n\n".$anchor,$current);
-        if ($next === $current) return;
+        if ($next===$current) return;
         try {
-            $this->createNavigationCatalogBackup($scriptId,'BeforeAplTileRouteV1',$current);
+            $this->createNavigationCatalogBackup($scriptId,'BeforeAplTileRouteV2',$current);
             IPS_SetScriptContent($scriptId,$next);
             if ($this->getScriptContent($scriptId)!==$next) {
                 IPS_SetScriptContent($scriptId,$current);
-                IPS_LogMessage('Alexa','APL.TileRoute: Schreibprüfung fehlgeschlagen; zurückgesetzt.');
+                IPS_LogMessage('Alexa','APL.TileRoute: Verifizierung fehlgeschlagen, zurückgesetzt.');
                 return;
             }
-            IPS_LogMessage('Alexa','APL.TileRoute: Klick-Verknüpfung aktiv.');
+            IPS_LogMessage('Alexa','APL.TileRoute: V2 in Action #'.$scriptId.' installiert.');
         } catch (\Throwable $e) {
-            IPS_LogMessage('Alexa','APL.TileRoute: Backup/Patch nicht möglich: '.get_class($e));
+            IPS_LogMessage('Alexa','APL.TileRoute: Installation abgebrochen: '.get_class($e));
         }
     }
 
