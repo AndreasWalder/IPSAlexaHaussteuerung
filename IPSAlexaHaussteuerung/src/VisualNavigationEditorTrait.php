@@ -1,0 +1,216 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * Gemeinsame Sicht auf die vorhandenen Alexa-Kachel-, Seiten-, Renderer- und
+ * Navigationsdefinitionen. Keine zweite Datenquelle: Änderungen werden in
+ * die bisherigen Instanzeigenschaften geschrieben; Navigation bleibt EDIT/PROD.
+ */
+trait IAHVisualNavigationEditorTrait
+{
+    private function visualNavigationRows(): array
+    {
+        $rows = [];
+        $launch = json_decode($this->ReadPropertyString('LaunchCatalog'), true);
+        foreach (is_array($launch) ? $launch : [] as $tile) {
+            if (!is_array($tile) || empty($tile['id'])) continue;
+            $type = (string)($tile['actionType'] ?? 'route');
+            $rows[] = [
+                'source'=>'launch', 'key'=>(string)$tile['id'],
+                'title'=>(string)($tile['title'] ?? $tile['id']),
+                'actionType'=>$type,
+                'target'=>(string)($tile['target'] ?? $tile['id']),
+                'detail'=>(string)($tile['subtitle'] ?? ''),
+                'status'=>$type === 'ai_query' && empty($tile['target']) ? 'Ziel fehlt' : 'Konfiguriert',
+            ];
+        }
+        foreach ($this->readPageMappingsProperty() as $key=>$mapping) {
+            $rows[] = [
+                'source'=>'page','key'=>(string)$key,
+                'title'=>(string)($mapping['label'] ?? $key),
+                'actionType'=>(string)($mapping['type'] ?? 'wfc_item'),
+                'target'=>(string)($mapping['value'] ?? ''),
+                'detail'=>'Page-Zuordnung', 'status'=>'Konfiguriert',
+            ];
+        }
+        $renderers = json_decode($this->ReadPropertyString('RendererDomains'), true);
+        foreach (is_array($renderers) ? $renderers : [] as $renderer) {
+            if (!is_array($renderer) || empty($renderer['route'])) continue;
+            $rows[] = [
+                'source'=>'renderer','key'=>(string)$renderer['route'],
+                'title'=>(string)($renderer['title'] ?? $renderer['route']),
+                'actionType'=>'render',
+                'target'=>(string)($renderer['roomDomain'] ?? ''),
+                'detail'=>(string)($renderer['aplDoc'] ?? ''),
+                'status'=>'Konfiguriert',
+            ];
+        }
+        $context = $this->navigationEditorContext();
+        if (is_array($context['edit'])) {
+            foreach (IAHSystemNavigationEditor::items($context['edit']) as $entry) {
+                if (!is_array($entry)) continue;
+                $rows[] = [
+                    'source'=>'navigation',
+                    'key'=>(string)($entry['entryKey'] ?? $entry['tabKey'] ?? ''),
+                    'title'=>(string)($entry['title'] ?? ''),
+                    'actionType'=>'navigation',
+                    'target'=>'IPS-Objekt #'.(string)($entry['objectId'] ?? 0),
+                    'detail'=>(string)($entry['roomKey'] ?? '').' / '.(string)($entry['domainKey'] ?? ''),
+                    'status'=>empty($entry['enabled']) ? 'Inaktiv' : 'EDIT/PROD separat',
+                ];
+            }
+        }
+        return $rows;
+    }
+
+    private function buildVisualNavigationForm(): array
+    {
+        $onEdit = 'IAH_SaveVisualNavigationEntry($id, json_encode(['
+            .'"source"=>$VisualNavRows["source"], '
+            .'"key"=>$VisualNavRows["key"], '
+            .'"title"=>$VisualNavRows["title"], '
+            .'"actionType"=>$VisualNavRows["actionType"], '
+            .'"target"=>$VisualNavRows["target"]'
+            .'], JSON_INVALID_UTF8_SUBSTITUTE));';
+        return [
+            'type'=>'ExpansionPanel',
+            'caption'=>'Visualisierung & Navigation – zentral bearbeiten',
+            'expanded'=>true,
+            'items'=>[
+                ['type'=>'Label','caption'=>'Alle Verknüpfungen an einem Ort. '
+                    .'Aktion und Ziel einer Launch-Kachel bearbeiten: "Seite öffnen" verwendet eine vorhandene Route; '
+                    .'"KI-Frage" verwendet den hinterlegten Fragetext. '
+                    .'Page-Zuordnungen und Renderer werden direkt übernommen. '
+                    .'Navigationstabs bleiben zum Schutz der bestehenden EDIT/PROD-Veröffentlichung separat versioniert.'],
+                ['type'=>'Label','name'=>'VisualNavNotice',
+                    'caption'=>$this->ReadAttributeString('VisualNavNotice')],
+                ['type'=>'List','name'=>'VisualNavRows',
+                    'caption'=>'Kacheln, Seiten und Verknüpfungen',
+                    'rowCount'=>15,'add'=>false,'delete'=>false,
+                    'loadValuesFromConfiguration'=>false,
+                    'values'=>$this->visualNavigationRows(),
+                    'columns'=>[
+                        ['name'=>'source','caption'=>'Herkunft','width'=>'110px','save'=>false],
+                        ['name'=>'key','caption'=>'Interner Schlüssel','width'=>'130px','save'=>false],
+                        ['name'=>'title','caption'=>'Anzeigetext','width'=>'165px',
+                            'edit'=>['type'=>'ValidationTextBox']],
+                        ['name'=>'actionType','caption'=>'Beim Antippen','width'=>'145px',
+                            'edit'=>['type'=>'Select','options'=>[
+                                ['caption'=>'Seite öffnen','value'=>'route'],
+                                ['caption'=>'KI-Frage ausführen','value'=>'ai_query'],
+                                ['caption'=>'IPS-Element','value'=>'wfc_item'],
+                                ['caption'=>'Externe HTTPS-URL','value'=>'external_url'],
+                                ['caption'=>'Renderer','value'=>'render'],
+                                ['caption'=>'Navigations-Tab (EDIT)','value'=>'navigation'],
+                            ]]],
+                        ['name'=>'target','caption'=>'Ziel / Frage / Objekt','width'=>'235px',
+                            'edit'=>['type'=>'ValidationTextBox']],
+                        ['name'=>'detail','caption'=>'Zusatzinformation','width'=>'190px','save'=>false],
+                        ['name'=>'status','caption'=>'Status','width'=>'140px','save'=>false],
+                    ],
+                    'onEdit'=>$onEdit,
+                ],
+                ['type'=>'Label','caption'=>'Neue Startkachel mit verständlicher Aktion anlegen:'],
+                ['type'=>'RowLayout','items'=>[
+                    ['type'=>'ValidationTextBox','name'=>'VisualNavNewKey','caption'=>'Kachel-ID','value'=>''],
+                    ['type'=>'ValidationTextBox','name'=>'VisualNavNewTitle','caption'=>'Titel','value'=>''],
+                    ['type'=>'Select','name'=>'VisualNavNewAction','caption'=>'Aktion','value'=>'route',
+                        'options'=>[['caption'=>'Seite öffnen','value'=>'route'],['caption'=>'KI-Frage','value'=>'ai_query']]],
+                    ['type'=>'ValidationTextBox','name'=>'VisualNavNewTarget','caption'=>'Route oder genaue Frage','value'=>''],
+                ]],
+                ['type'=>'Button','caption'=>'STARTKACHEL ANLEGEN',
+                    'onClick'=>'IAH_CreateVisualNavigationTile($id, $VisualNavNewKey, $VisualNavNewTitle, $VisualNavNewAction, $VisualNavNewTarget);'],
+                ['type'=>'ExpansionPanel','caption'=>'Navigationstabs (EDIT/PROD) bearbeiten',
+                    'expanded'=>false,'items'=>[$this->buildSystemNavigationEditorForm()]],
+            ],
+        ];
+    }
+
+    public function SaveVisualNavigationEntry(string $payload): void
+    {
+        try {
+            $entry = json_decode($payload, true, 64, JSON_THROW_ON_ERROR);
+            if (!is_array($entry)) throw new RuntimeException('Ungültige Eingabe.');
+            $source = (string)($entry['source'] ?? '');
+            $key = (string)($entry['key'] ?? '');
+            $title = trim((string)($entry['title'] ?? ''));
+            $action = (string)($entry['actionType'] ?? '');
+            $target = trim((string)($entry['target'] ?? ''));
+            if ($key === '' || $title === '' || $target === '') {
+                throw new RuntimeException('Schlüssel, Titel und Ziel dürfen nicht leer sein.');
+            }
+            if ($source === 'navigation') {
+                throw new RuntimeException('Navigation bitte im EDIT/PROD-Untereditor bearbeiten.');
+            }
+            $property = match ($source) {
+                'launch'=>'LaunchCatalog','page'=>'PageMappings','renderer'=>'RendererDomains',
+                default=>throw new RuntimeException('Unbekannte Herkunft.'),
+            };
+            $rows = json_decode($this->ReadPropertyString($property), true);
+            if (!is_array($rows)) throw new RuntimeException('Gespeicherte Konfiguration nicht lesbar.');
+            $matchKey = $source === 'page' ? 'key' : ($source === 'renderer' ? 'route' : 'id');
+            $found = false;
+            foreach ($rows as &$row) {
+                if (!is_array($row) || (string)($row[$matchKey] ?? '') !== $key) continue;
+                $found = true;
+                if ($source === 'launch') {
+                    if (!in_array($action, ['route','ai_query'], true)) {
+                        throw new RuntimeException('Launch-Kacheln unterstützen Seite öffnen oder KI-Frage.');
+                    }
+                    if ($action === 'route' && preg_match('/^[a-z0-9_-]+$/', $target) !== 1) {
+                        throw new RuntimeException('Die Route darf nur Buchstaben, Zahlen, _ und - enthalten.');
+                    }
+                    if ($action === 'ai_query' && mb_strlen($target, 'UTF-8') > 240) {
+                        throw new RuntimeException('Frage ist zu lang (max. 240 Zeichen).');
+                    }
+                    $row['title'] = $title;
+                    $row['actionType'] = $action;
+                    $row['target'] = $target;
+                } elseif ($source === 'page') {
+                    if (!in_array($action, ['wfc_item','external_url'], true)) {
+                        throw new RuntimeException('Ungültiger Seitentyp.');
+                    }
+                    if ($action === 'external_url' && !str_starts_with($target, 'https://')) {
+                        throw new RuntimeException('Externe Seiten benötigen HTTPS.');
+                    }
+                    $row['label']=$title; $row['type']=$action; $row['value']=$target;
+                } elseif ($source === 'renderer') {
+                    if ($action !== 'render') throw new RuntimeException('Renderer-Aktion nicht veränderbar.');
+                    $row['title']=$title; $row['roomDomain']=$target;
+                }
+                break;
+            }
+            unset($row);
+            if (!$found) throw new RuntimeException('Eintrag wurde nicht gefunden; bitte neu laden.');
+            IPS_SetProperty($this->InstanceID, $property,
+                json_encode($rows, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
+            IPS_ApplyChanges($this->InstanceID);
+            $this->WriteAttributeString('VisualNavNotice', 'Gespeichert: '.$source.' / '.$key);
+        } catch (Throwable $e) {
+            $this->WriteAttributeString('VisualNavNotice', 'Nicht gespeichert: '.$e->getMessage());
+        }
+        $this->ReloadForm();
+    }
+
+    public function CreateVisualNavigationTile(string $key,string $title,string $action,string $target): void
+    {
+        $key=strtolower(trim($key)); $title=trim($title); $target=trim($target);
+        try {
+            if (!preg_match('/^[a-z0-9_-]{2,48}$/', $key) || $title==='' || $target==='') {
+                throw new RuntimeException('ID (a-z, 0-9, _, -), Titel und Ziel angeben.');
+            }
+            if (!in_array($action,['route','ai_query'],true)) throw new RuntimeException('Ungültige Aktion.');
+            $rows=json_decode($this->ReadPropertyString('LaunchCatalog'),true);
+            if (!is_array($rows)) throw new RuntimeException('Kachelkonfiguration nicht lesbar.');
+            foreach ($rows as $row) if (($row['id']??'')===$key) throw new RuntimeException('ID existiert bereits.');
+            $rows[]=['id'=>$key,'title'=>$title,'subtitle'=>'','actionType'=>$action,'target'=>$target];
+            IPS_SetProperty($this->InstanceID,'LaunchCatalog',
+                json_encode($rows,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
+            IPS_ApplyChanges($this->InstanceID);
+            $this->WriteAttributeString('VisualNavNotice','Kachel angelegt: '.$title);
+        } catch(Throwable $e) {
+            $this->WriteAttributeString('VisualNavNotice','Nicht angelegt: '.$e->getMessage());
+        }
+        $this->ReloadForm();
+    }
+}
