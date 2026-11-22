@@ -258,21 +258,11 @@ $shrinkSoft = static function(array $ds, bool $apl, string $speech, int $targetB
     }
     if (($size = $calcSize($ds,$apl,$speech)) <= $targetBytes) return [$ds,$trace];
 
-    // 5) Tile-Anzahl moderat reduzieren: 13→12→10→8
-    if (isset($td['tiles']) && is_array($td['tiles'])) {
-        $n = count($td['tiles']);
-        $cuts = [12,10,8];
-        foreach ($cuts as $c) {
-            if ($n > $c) { $td['tiles'] = array_slice($td['tiles'], 0, $c); $n = $c; $trace[] = 'Tiles auf '.$c.' reduziert'; }
-            if (($size = $calcSize($ds,$apl,$speech)) <= $targetBytes) return [$ds,$trace];
-        }
-    }
-
-    // 6) Header-Icon (zusätzlich zum kleinen Content-Icon) entfernen
+    // 5) Header-Icon (zusätzlich zum kleinen Content-Icon) entfernen
     if (isset($td['Icon'])) { unset($td['Icon']); $trace[] = 'Header-Icon entfernt'; }
     if (($size = $calcSize($ds,$apl,$speech)) <= $targetBytes) return [$ds,$trace];
 
-    // 7) Alle Tile-Icons entfernen (letzte Stufe, Optik leidet etwas)
+    // 6) Alle Tile-Icons entfernen (letzte Stufe, Optik leidet etwas)
     if (isset($td['tiles']) && is_array($td['tiles'])) {
         foreach ($td['tiles'] as &$t) if (isset($t['icon'])) unset($t['icon']);
         unset($t);
@@ -280,11 +270,8 @@ $shrinkSoft = static function(array $ds, bool $apl, string $speech, int $targetB
     }
     if (($size = $calcSize($ds,$apl,$speech)) <= $targetBytes) return [$ds,$trace];
 
-    // 8) Minimal-Fallback (sollte selten greifen)
-    if (isset($td['tiles']) && is_array($td['tiles'])) {
-        $td['tiles'] = array_slice($td['tiles'], 0, 6);
-        $trace[] = 'Minimal-Fallback: 6 Tiles';
-    }
+    // Tile count is never reduced. Keep all cards even when the remaining
+    // payload exceeds the target; the size warning below makes that visible.
     return [$ds,$trace];
 };
 
