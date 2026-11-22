@@ -2132,7 +2132,7 @@ function Execute($request = null)
         $kiAlexaKeepOpen = static function (
             string $text, string $status = 'Hinweis', string $question = '', bool $aplSupported = false,
             string $answerSource = '', array $readings = [], string $displayTitle = '', string $displayIcon = '',
-            int $displayDeviceId = 0
+            int $displayDeviceId = 0, string $displayStatus = '', bool $tileResult = false
         ) use ($iahLastOutcome, $applyApl, $baseUrl, $token, $S, $V, $ROOMS, $CFG, $ACTIONS_ENABLED) {
             $isDialog = $status === 'Rückfrage' || in_array($answerSource, ['clarification', 'archive_clarification'], true);
             $text=trim(preg_replace('/(?:^|(?<=[.!?])\s+)(?:bitte\s+)?(?:sage|sag|antworte|frag|frage)\b[^\r\n]*?(?:zum\s+beispiel|z\.?\s*b\.?).*$/isu','',$text)??$text);
@@ -2170,9 +2170,20 @@ function Execute($request = null)
                 default => '',
             };
             $homeKind = str_starts_with($answerSource, 'home_connect_') ? substr($answerSource, strlen('home_connect_')) : '';
-            $houseStatus = $answerSource === 'house_status';
+            $houseStatus = $answerSource === 'house_status' || $tileResult;
+            if ($tileResult) {
+                $statusLabel = match ($displayStatus) {
+                    'ok' => 'In Ordnung',
+                    'warning' => 'Achtung',
+                    'error' => 'Störung',
+                    'info' => 'Information',
+                    default => 'Nicht bewertet'
+                };
+                array_unshift($readings, ['label'=>'Status','value'=>$statusLabel]);
+            }
             if ($isDialog && $homeKind === '') $homeKind = 'all';
             $title = match (true) {
+                $tileResult => ($displayTitle !== '' ? $displayTitle : 'KI-Ergebnis'),
                 $isDialog => $displayTitle !== '' ? $displayTitle : ($readings !== [] ? 'Auswahl' : 'Rückfrage'),
                 $answerSource === 'robohub' => $displayTitle !== '' ? $displayTitle : 'Roboterstatus',
                 $homeKind !== '' => $displayTitle !== '' ? $displayTitle : 'Haushaltsgeräte',
@@ -2207,7 +2218,16 @@ function Execute($request = null)
             [$iconFile, $graphicName] = match (true) {
                 $answerSource === 'robohub' => ['Geraete.png', 'statusRobot'],
                 $homeKind !== '' => ['Geraete.png', 'homeConnectDevice'],
-                $houseStatus => ['Geraete.png', $houseGraphics[$displayIcon] ?? 'statusDevice'],
+                $houseStatus => [match($displayIcon) {
+                    'energy','battery' => 'Energie.png',
+                    'temperature' => 'Heizung.png',
+                    'water' => 'Bewaesserung.png',
+                    'camera' => 'Kamera.png',
+                    'light' => 'Licht.png',
+                    'blind' => 'Jalousie.png',
+                    'shield','alarm','smoke','window','lock','door' => 'Sicherheit.png',
+                    default => 'Geraete.png'
+                }, $houseGraphics[$displayIcon] ?? 'statusDevice'],
                 $heatingTitle !== '' => ['Heizung.png', 'radiator'],
                 $solar => ['Energie.png', 'solarPanel'],
                 default => ['Bewaesserung.png', 'waterDrop'],
@@ -3889,7 +3909,7 @@ function Execute($request = null)
         }
         // IAH_VOICE_ROUTE_PRIORITY_END
 
-        // IAH_APL_TILE_ROUTE_V2_BEGIN
+        // IAH_APL_TILE_ROUTE_V3_BEGIN
         // Konfigurierte Startkacheln: APL-Klick direkt zur hinterlegten
         // Renderer-Route leiten. Bewusst erst NACH Launch-/Voice-Entscheidungen,
         // damit ein LaunchRequest ohne Klick unverändert funktioniert.
@@ -3936,6 +3956,60 @@ function Execute($request = null)
                     $tileAction = 'route';
                     $tileTarget = 'bundesliga';
                 }
+                if ($tileAction === 'ai_query' && $tileTarget !== ''
+                    && mb_strlen($tileTarget,'UTF-8')<=240) {
+                    // Dedicated read-only path for APL tile questions.
+                    // Never dispatch dynamic questions as device controls.
+                    $helperRoot = iah_get_child_object($instanceId,
+                        'iahHelper','Alexa new devices helper');
+                    $queryScript = iah_get_child_object($helperRoot,
+                        'kiHouseControllerScript','KIHouseController');
+                    $log('info','APL.tile.ai.start',['id'=>$tileId,
+                        'chars'=>mb_strlen($tileTarget,'UTF-8')]);
+                    if ($queryScript <= 0 || !function_exists('IPS_RunScriptWaitEx')) {
+                        return $kiAlexaKeepOpen('KI-Abfrage nicht verfügbar.','Fehler',
+                            $tileTarget,$iahVoiceHasScreen,'tile_ai',[],$tile['title']??'KI-Ergebnis',
+                            'device',0,'unknown',true);
+                    }
+                    try {
+                        $queryCfg=[
+                            'catalog_script_id'=>(int)($S['ROOMS_CATALOG']??0),
+                            'archive_control_id'=>(int)($propsEarly['KIArchiveControlId']??0),
+                            'api_key'=>(string)($propsEarly['KIIntentApiKey']??''),
+                            'model'=>(string)($propsEarly['KIModelSelection']??'gpt-6-luna'),
+                            'max_words'=>(int)($propsEarly['HomeAgentVoiceMaxWords']??60),
+                            'timeout_seconds'=>(int)($propsEarly['HomeAgentVoiceTimeoutSeconds']??6),
+                            'device_diagnostics'=>(bool)($propsEarly['KIDetailedQueryDiagnostics']??true),
+                            'allow_writes'=>false,'ki_cost_instance_id'=>$instanceId,
+                            'tile_display'=>true
+                        ];
+                        $queryJson=IPS_RunScriptWaitEx($queryScript,[
+                            'kiCatalogText'=>$tileTarget,
+                            'kiCatalogConfigJson'=>json_encode($queryCfg,JSON_UNESCAPED_UNICODE
+                                |JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)
+                        ]);
+                        $queryResult=json_decode((string)$queryJson,true);
+                        if(is_array($queryResult)&&!empty($queryResult['handled'])
+                            &&trim((string)($queryResult['answer']??''))!=='') {
+                            $log('info','APL.tile.ai.success',['id'=>$tileId,
+                                'icon'=>(string)($queryResult['displayIcon']??'device')]);
+                            return $kiAlexaKeepOpen(
+                                (string)$queryResult['answer'],'Beantwortet',$tileTarget,
+                                $iahVoiceHasScreen,'tile_ai',
+                                (array)($queryResult['displayRows']??[]),
+                                (string)($queryResult['displayTitle']??($tile['title']??'KI-Ergebnis')),
+                                (string)($queryResult['displayIcon']??'device'),0,
+                                (string)($queryResult['displayStatus']??'unknown'),true);
+                        }
+                        $log('warn','APL.tile.ai.no_result',['id'=>$tileId]);
+                    } catch (Throwable $err) {
+                        $log('warn','APL.tile.ai.failed',['id'=>$tileId,
+                            'type'=>get_class($err)]);
+                    }
+                    return $kiAlexaKeepOpen('Für diese Frage liegt derzeit keine auswertbare Antwort vor.',
+                        'Fehler',$tileTarget,$iahVoiceHasScreen,'tile_ai',[],
+                        (string)($tile['title']??'KI-Ergebnis'),'device',0,'unknown',true);
+                }
                 if ($tileAction === 'route' && preg_match('/^[a-z0-9_-]{1,64}$/', $tileTarget)) {
                     $__route = $tileTarget;
                     $log('info','APL.tile.route', ['id'=>$tileId,'route'=>$tileTarget]);
@@ -3946,7 +4020,7 @@ function Execute($request = null)
             }
         }
 
-        // IAH_APL_TILE_ROUTE_V2_END
+        // IAH_APL_TILE_ROUTE_V3_END
 
         // --------- Lazy rooms nur wenn benötigt ---------
         $needsRooms = in_array($__route ?? '', ['main_launch','heizung','jalousie','licht','lueftung','geraete','bewaesserung'], true)
