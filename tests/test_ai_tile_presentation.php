@@ -34,12 +34,23 @@ ckAiTile($unsafe['displayStatus']==='unknown','Unknown status cannot imply OK');
 ckAiTile(!str_contains($unsafe['displayTitle'],'<'),'Title is escaped/stripped');
 ckAiTile(str_contains($backend,"'tile_display'")===false ||
     str_contains($backend,"$cfg['tile_display']"),'AI display is explicitly opt-in');
-ckAiTile(str_contains($action,'IAH_APL_TILE_ROUTE_V5_BEGIN')
-    && str_contains($action,'IAH_APL_TILE_ROUTE_V5_END')
+ckAiTile(str_contains($action,'IAH_APL_TILE_ROUTE_V6_BEGIN')
+    && str_contains($action,'IAH_APL_TILE_ROUTE_V6_END')
     && str_contains($action,"'allow_writes'=>false")
     && str_contains($action,"'tile_display'=>true"),
     'Configured tile invokes read-only AI and APL V3');
 ckAiTile(str_contains($module,'patchActionScriptAiStatusPage((int)$id)')
     && str_contains($module,'patchActionScriptAplTileRoute((int)$id)'),
     'Existing installed Action scripts receive both patches');
-echo "PASS: KI icon, status, title, APL routing and safe installation\n";
+$editor=file_get_contents($root.'src/VisualNavigationEditorTrait.php');
+ckAiTile(is_string($editor),'Editor source readable');
+foreach (['resultTitle','resultIconMode','resultStatusMode','resultLayout',
+    'speakAnswer','useArchive'] as $field) {
+    ckAiTile(str_contains($editor,$field),'Editor persists KI option: '.$field);
+    ckAiTile(str_contains($action,$field),'Runtime reads KI option: '.$field);
+}
+ckAiTile(str_contains($action,'$tileFixedIcon') && str_contains($action,'$tileLayout'),
+    'KI rendering accepts fixed icon and text/status layout');
+ckAiTile(str_contains($editor,'TestVisualNavigationTile('),
+    'KI editor offers a direct read-only test action');
+echo "PASS: KI icon, status, title, layout, speech, archive, editor and safe installation\n";
