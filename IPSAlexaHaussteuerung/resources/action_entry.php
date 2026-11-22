@@ -4050,14 +4050,12 @@ function Execute($request = null)
                         $log('warn','APL.tile.ai.failed',['id'=>$tileId,
                             'type'=>get_class($err)]);
                     }
-                    $weatherTile=preg_match('/\b(?:wetter|regen|schnee|vorhersage|prognose)\b/iu',$tileTarget)===1;
-                    $fallbackText=$weatherTile
-                        ? 'Die aktuelle Wettervorhersage ist derzeit nicht verfügbar. Bitte prüfe die Wetterdatenquelle.'
-                        : 'Für diese Frage liegt derzeit keine auswertbare Antwort vor.';
-                    return $kiAlexaKeepOpen($fallbackText,
+                    // One generic failure path for every freely configured
+                    // question. Topic-specific providers supply their own
+                    // answer, display icon and status when available.
+                    return $kiAlexaKeepOpen('Für diese Frage liegt derzeit keine verwertbare Antwort vor.',
                         'Fehler',$tileTarget,$iahVoiceHasScreen,'tile_ai',[],
-                        $weatherTile?'Wettervorschau':(string)($tile['title']??'KI-Ergebnis'),
-                        $weatherTile?'weather':'device',0,'unknown',true);
+                        (string)($tile['title']??'KI-Ergebnis'),'device',0,'unknown',true);
                 }
                 if ($tileAction === 'route' && preg_match('/^[a-z0-9_-]{1,64}$/', $tileTarget)) {
                     $__route = $tileTarget;
