@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 53782)
+Total output lines: 4274
+
 <?php
 /**
  * ============================================================
@@ -508,6 +511,31 @@ function iah_build_launch_catalog(array $props): array
             'title' => $label !== '' ? $label : ucfirst($key),
         ];
         $tileIds[$key] = true;
+    }
+
+    // Die Bundesliga-Kachel ist ein Modul-Standard und muss auch bei einer
+    // vorhandenen, benutzerdefinierten LaunchCatalog-Liste erhalten bleiben.
+    // In der Alexa-Ansicht steht sie bewusst immer am Ende.
+    $football = null;
+    $otherTiles = [];
+    foreach ($tiles as $tile) {
+        if (strtolower((string)($tile['id'] ?? '')) === 'bundesliga') {
+            $football = $tile;
+            continue;
+        }
+        $otherTiles[] = $tile;
+    }
+    if ($football === null) {
+        foreach ((array)($defaults['tiles'] ?? []) as $entry) {
+            if (is_array($entry) && strtolower((string)($entry['id'] ?? '')) === 'bundesliga') {
+                $football = $entry;
+                break;
+            }
+        }
+    }
+    if ($football !== null) {
+        $tiles = $otherTiles;
+        $tiles[] = $football;
     }
 
     $read = static function (string $key, string $fallback) use ($props): string {
@@ -2324,256 +2352,7 @@ function Execute($request = null)
                     'smoke' => 'M7,18 H29 V27 L25,31 H11 L7,27 Z M11,22 H25 V25 H11 Z M12,15 C5,11 18,10 12,4 L15,3 C23,11 9,11 15,15 Z M23,15 C18,11 30,10 24,4 L27,3 C35,11 21,11 26,15 Z',
                     'battery' => 'M6,10 H28 V14 H32 V24 H28 V28 H6 Z M9,13 V25 H25 V13 Z M11,15 H15 V23 H11 Z M17,15 H21 V23 H17 Z',
                     'water' => 'M18,5 C14,12 8,17 8,23 A10,10 0 1,0 28,23 C28,17 22,12 18,5 Z',
-                    'energy' => 'M20,4 L8,21 H16 L14,33 L28,15 H20 Z',
-                    'lock' => 'M10,16 H26 V31 H10 Z M13,16 V12 A5,5 0 0,1 23,12 V16 H21 V12 A3,3 0 0,0 15,12 V16 Z M17,21 H19 V27 H17 Z',
-                    'fan' => 'M18,16 A3,3 0 1,0 18,22 A3,3 0 1,0 18,16 Z M18,15 C11,3 7,12 15,17 Z M21,19 C34,15 28,8 20,16 Z M17,22 C17,36 27,31 20,21 Z',
-                    'camera' => 'M6,12 H12 L15,8 H23 L26,12 H30 V29 H6 Z M18,15 A5,5 0 1,0 18,25 A5,5 0 1,0 18,15 Z',
-                    'media' => 'M9,6 H27 V31 H9 Z M14,11 H22 V13 H14 Z M18,20 A5,5 0 1,0 18,30 A5,5 0 1,0 18,20 Z',
-                    'network' => 'M16,7 H20 V11 H16 Z M7,25 H11 V29 H7 Z M25,25 H29 V29 H25 Z M17,12 H19 V20 H17 Z M9,21 H27 V23 H9 Z M9,21 H11 V25 H9 Z M25,21 H27 V25 H25 Z',
-                    'robot' => 'M8,10 H28 V26 H8 Z M12,6 H14 V10 H12 Z M22,6 H24 V10 H22 Z M12,15 A2,2 0 1,0 12,19 A2,2 0 1,0 12,15 Z M22,15 A2,2 0 1,0 22,19 A2,2 0 1,0 22,15 Z M13,22 H23 V24 H13 Z M5,15 H8 V21 H5 Z M28,15 H31 V21 H28 Z',
-                    default => 'M7,7 H29 V29 H7 Z M11,11 H25 V13 H11 Z M11,17 H25 V19 H11 Z M11,23 H21 V25 H11 Z',
-                };
-                $iconPaths = [['type'=>'path','fill'=>$iconFill,'pathData'=>$iconShape]];
-                $heading['items'][1]['grow'] = 1;
-                $heading['items'][1]['shrink'] = 1;
-                $heading['items'][1]['maxLines'] = 2;
-                $heading['items'][0]['width'] = '${headingFont + 25}';
-                $heading['items'][0]['height'] = '${headingFont + 25}';
-            }
-            $graphics = ['graphics' => [$graphicName => [
-                'type' => 'AVG', 'version' => '1.1', 'width' => 36, 'height' => 36,
-                'items' => [
-                    ['type' => 'path', 'fill' => '#1A4352', 'pathData' => 'M18,1 A17,17 0 1,1 18,35 A17,17 0 1,1 18,1 Z'],
-                    ...$iconPaths,
-                ],
-            ]]];
-            $applyApl($response, [
-                'doc' => [
-                    'type' => 'APL',
-                    'version' => '1.4',
-                    'background' => '#0B1D28',
-                    'mainTemplate' => [
-                        'parameters' => ['summary'],
-                        'items' => [[
-                            'type' => 'Container',
-                            'width' => '100vw',
-                            'height' => '100vh',
-                            'paddingLeft' => '${viewport.width < 600 ? 16 : 28}',
-                            'paddingRight' => '${viewport.width < 600 ? 16 : 28}',
-                            'paddingTop' => '16dp',
-                            'paddingBottom' => '12dp',
-                            'items' => [
-                                $heading,
-                                [
-                                    'type' => 'ScrollView',
-                                    'width' => '100%',
-                                    'height' => '0dp',
-                                    'grow' => 1,
-                                    'spacing' => '8dp',
-                                    'items' => [$body],
-                                ],
-                            ],
-                        ] + $responsive],
-                    ],
-                ] + $graphics,
-                'ds' => [
-                    'summary' => [
-                        'title' => $title,
-                        'text' => str_replace(["\r\n", "\r", "\n"], '<br>', $escape($visualText)),
-                        'rowCount' => count($readings),
-                        'readings' => array_map(static fn(array $row): array => [
-                            'label' => $escape($row['label']),
-                            'value' => $escape($row['value']),
-                        ], $readings),
-                    ],
-                ],
-            ], 'iah-house-summary');
-            return $response;
-        };
-        // IAH_HOUSE_SUMMARY_END
-        // Eigener Freitext-Intent hat Vorrang. GetHaus und sämtliche APL-Aktionen bleiben erhalten.
-        // --- Lokaler KI-Sprachrouter: Navigation vor OpenAI klassifizieren ---
-        // Die Helper-Skript-ID wird wie die bestehenden Voice-Bridges dynamisch
-        // aus der lokalen IP-Symcon-Instanz geladen (keine duplizierte NAV_MAP).
-        $iahVoiceRouterHelperParent = iah_get_child_object($instanceId, 'iahHelper', 'Alexa new devices helper');
-        $iahVoiceRouterScript = iah_get_child_object($iahVoiceRouterHelperParent, 'voiceIntentRouterScript', 'VoiceIntentRouter');
-        $iahVoiceRouter = static function (array $event) use ($instanceId, $iahVoiceRouterScript, $log): array {
-            if ($iahVoiceRouterScript <= 0 || !function_exists('IPS_RunScriptWaitEx')) return [];
-            try {
-                $event['instanceId'] = $instanceId;
-                $raw = IPS_RunScriptWaitEx($iahVoiceRouterScript, [
-                    'voiceIntentRouterJson' => json_encode($event, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR)
-                ]);
-                $result = json_decode((string)$raw, true);
-                return is_array($result) ? $result : [];
-            } catch (Throwable $err) {
-                $log('warn', 'VoiceRouter.unavailable', ['errorType'=>get_class($err)]);
-                return [];
-            }
-        };
-        $iahVoiceDeviceId = method_exists($request, 'GetDeviceId') ? (string)$request->GetDeviceId() : '';
-        $iahHouseSession = (array)(((array)$rawData)['session'] ?? []);
-        $iahHouseSessionId = is_string($iahHouseSession['sessionId'] ?? null)
-            ? $iahHouseSession['sessionId'] : '';
-        if ($iahHouseSessionId === '' && is_callable([$request, 'GetSessionId'])) {
-            try { $iahHouseSessionId = (string)$request->GetSessionId(); }
-            catch (Throwable $ignored) {}
-        }
-        if ($iahHouseSessionId !== '' && ($IS_LAUNCH || $IS_BACK || !empty($iahHouseSession['new']))
-            && function_exists('IAH_ResetAlexaHouseQuestion')) {
-            try { IAH_ResetAlexaHouseQuestion($instanceId, $iahHouseSessionId, $iahVoiceDeviceId); }
-            catch (Throwable $ignored) {}
-        }
-        // IAH_TILE_VOICE_BRIDGE_BEGIN
-        // Nur die aktuell geoeffnete HTML-Seite auf DEMSELBEN Echo
-        // bleibt bei Sprachbefehlen erhalten. Andere Geraete behalten APL.
-        $iahHtmlDeviceKey = $iahVoiceDeviceId !== '' && $token !== ''
-            ? substr(hash_hmac('sha256', $iahVoiceDeviceId, $token), 0, 32) : '';
-        $iahHtmlPreserve = false;
-        if ($iahHtmlDeviceKey !== '' && $instanceId > 0
-            && (bool)($propsEarly['TilePreserveHtmlOnVoice'] ?? true)) {
-            $iahDiag = (int)@IPS_GetObjectIDByIdent('iahDiag', $instanceId);
-            $iahHtmlDiag = $iahDiag > 0
-                ? (int)@IPS_GetObjectIDByIdent('iahExternalHtmlDiag', $iahDiag) : 0;
-            $iahHtmlState = $iahHtmlDiag > 0
-                ? (int)@IPS_GetObjectIDByIdent('iahTileHtmlSessions', $iahHtmlDiag) : 0;
-            if ($iahHtmlState > 0 && IPS_VariableExists($iahHtmlState)) {
-                $iahStates = json_decode((string)GetValueString($iahHtmlState), true);
-                $iahHtmlPreserve = is_array($iahStates)
-                    && (int)($iahStates[$iahHtmlDeviceKey] ?? 0) >= time();
-            }
-        }
-        // IAH_TILE_VOICE_BRIDGE_END
-        $iahVoiceRequestType = (string)(((array)(((array)$rawData)['request'] ?? []))['type'] ?? $request->type ?? '');
-        $iahVoiceIsAplEvent = $iahVoiceRequestType === 'Alexa.Presentation.APL.UserEvent';
-        $rawContext = (array)(((array)$rawData)['context'] ?? []);
-        $rawSystem = (array)($rawContext['System'] ?? []);
-        $rawDevice = (array)($rawSystem['device'] ?? []);
-        $iahHtmlInterfaces = $rawDevice['supportedInterfaces']
-            ?? $request->context->System->device->supportedInterfaces ?? null;
-        $iahVoiceHasScreen = array_key_exists('Alexa.Presentation.APL', (array)$iahHtmlInterfaces);
-        $iahHtmlSupport=$iahHtmlInterfaces === null ? null :
-            (is_object($iahHtmlInterfaces)
-                ? isset($iahHtmlInterfaces->{'Alexa.Presentation.HTML'})
-                : (is_array($iahHtmlInterfaces)
-                    ? array_key_exists('Alexa.Presentation.HTML',$iahHtmlInterfaces) : null));
-        $iahVoiceViewport = $request->context->Viewport ?? null;
-        $iahVoiceViewportMode = (string)($iahVoiceViewport->mode ?? '');
-        $iahVoiceViewportShape = (string)($iahVoiceViewport->shape ?? '');
-        $iahVoiceAplSource = (string)($request->source->type ?? '');
-        // IAH_ALEXA_QUESTION_CAPTURE_BEGIN
-        // Alexa liefert bei einem AMAZON.SearchQuery-Slot nur den variablen
-        // Text, NICHT das feste Fragewort aus der Sample Utterance.
-        // Each intent owns one exact carrier, including multiword prefixes.
-        // Keep this list in sync with docs/Alexa_Hausfragen_Intent_Paket.json.
-        $iahQuestionPrefixes = [
-            'hauswelcheintent'=>'welche',
-            'hauswelcherintent'=>'welcher',
-            'hauswelchesintent'=>'welches',
-            'hauswelchenintent'=>'welchen',
-            'hauswelchemintent'=>'welchem',
-            'hauswieintent'=>'wie',
-            'hauswointent'=>'wo',
-            'hauswannintent'=>'wann',
-            'hausseitwannintent'=>'seit wann',
-            'hauswerintent'=>'wer',
-            'hauswarumintent'=>'warum',
-            'hauswiesointent'=>'wieso',
-            'hauswasintent'=>'was',
-            'hausistintent'=>'ist',
-            'haussindintent'=>'sind',
-            'hauskennstintent'=>'kennst',
-            'haushastintent'=>'hast',
-            'haushatintent'=>'hat',
-            'haushabenintent'=>'haben',
-            'hausgibtintent'=>'gibt',
-            'hausinwelchemintent'=>'in welchem',
-            'hausinwelchenintent'=>'in welchen',
-            'hausinwelcherintent'=>'in welcher',
-            'hausundintent'=>'und',
-        ];
-        $iahQuestionPrefix = $iahQuestionPrefixes[strtolower((string)$intentName)] ?? '';
-        if (strcasecmp((string)$intentName, 'GetHaus') === 0 && isset($iahRequestSlots)) {
-            // A current slot or a transcript carried by the current envelope
-            // is stronger evidence than free text exposed by the SDK wrapper.
-            $rawUserText = iah_extract_raw_user_text((object)$iahCurrentRequest);
-            if ($rawUserText === '') {
-                foreach (['frage','question','raw','text','utterance'] as $iahTextSlot) {
-                    $rawUserText = trim((string)($iahRequestSlots[$iahTextSlot] ?? ''));
-                    if ($rawUserText !== '') break;
-                }
-            }
-        }
-        $iahOwnCommandIntent = strcasecmp((string)$intentName, 'HausBefehlIntent') === 0;
-        $iahDedicatedSearchIntent = $iahOwnCommandIntent
-            || strcasecmp((string)$intentName, 'HomeAgentFrageIntent') === 0
-            || $iahQuestionPrefix !== '';
-        $iahQuestionSlot = $iahDedicatedSearchIntent
-            ? trim((string)($getSlotCH($request, 'Frage') ?? '')) : '';
-        $iahVoiceSpoken = $iahDedicatedSearchIntent
-            ? $iahQuestionSlot
-            : trim((string)($rawUserText !== '' ? $rawUserText : $rawSlotsToText($rawSlotValues)));
-        if ($iahQuestionPrefix !== '' && $iahQuestionSlot !== ''
-            && preg_match('/^' . preg_quote($iahQuestionPrefix, '/') . '\\b/ui', $iahQuestionSlot) !== 1) {
-            $iahVoiceSpoken = $iahQuestionPrefix . ' ' . $iahQuestionSlot;
-        }
-        $iahVoiceSpoken = trim(preg_replace('/\s+/u',' ',$iahVoiceSpoken) ?? '');
-        if ($iahDedicatedSearchIntent) {
-            // For question intents use only the actual SearchQuery slot.
-            // Do not let old GetHaus slots or SDK text shadow that question.
-            $rawUserText = $iahVoiceSpoken;
-            $log('info', 'KIVoice.slot_capture', [
-                'intent'=>$intentName,
-                'slotPresent'=>$iahQuestionSlot !== '',
-                'prefix'=>$iahQuestionPrefix,
-                'chars'=>mb_strlen($iahVoiceSpoken, 'UTF-8')
-            ]);
-        }
-        // IAH_ALEXA_QUESTION_CAPTURE_END
-        // IAH_VOICE_RULES_V37_BEGIN
-        // For older GetHaus models the resolved slot display text may be
-        // empty while the action ID still contains the spoken command.
-        // Include this already parsed ID only as a matching candidate;
-        // no script/variable IDs are ever taken from an Alexa slot.
-        if (!$iahDedicatedSearchIntent && $iahVoiceSpoken==='' && !empty($rawSlots)
-            && is_array($rawSlots) && isset($rawSlotsToText)
-            && is_callable($rawSlotsToText)) {
-            $iahVoiceSpoken=trim((string)$rawSlotsToText($rawSlots));
-        }
-        if (!$IS_LAUNCH && in_array($iahVoiceRequestType, ['IntentRequest', 'Alexa.Presentation.APL.UserEvent'], true)) {
-            $iahLastInteraction = [
-                'requestType' => $iahVoiceRequestType,
-                'deviceId' => $iahVoiceDeviceId,
-                'spoken' => $iahVoiceSpoken,
-                'intent' => (string)$intentName,
-                'frageslot' => $iahQuestionSlot ?? '',
-                'slotPresent' => $iahDedicatedSearchIntent ? ($iahQuestionSlot !== '') : !empty($iahRequestSlots),
-                'route' => $iahVoiceIsAplEvent ? 'Bildschirm' : 'Sprachbefehl',
-                'status' => 'Empfangen',
-                'slots' => []
-            ];
-            foreach ($iahDedicatedSearchIntent ? [] : ['action'=>'a','device'=>'d','room'=>'r','szene'=>'s',
-                'object'=>'o','number'=>'n','prozent'=>'p','alles'=>'al'] as $field=>$slot) {
-                $value = (string)($rawSlotValues[$slot] ?? '');
-                $iahLastInteraction['slots'][$field] = $value !== '' && $value !== '?'
-                    ? $value : (($rawSlots[$slot] ?? '') === '?' ? '' : ($rawSlots[$slot] ?? ''));
-            }
-        }
-        // These built-in intents do not carry house-command text.
-        $iahBuiltIn = strtolower((string)$intentName);
-        if (!$iahVoiceIsAplEvent && empty($APL['args'])) {
-            if (in_array($iahBuiltIn, ['amazon.stopintent', 'amazon.cancelintent'], true)) {
-                if (isset($resetState, $V)) $resetState($V);
-                $iahSkillId = (int)($V['SKILL_ACTIVE'] ?? 0);
-                if ($iahSkillId > 0) SetValueBoolean($iahSkillId, false);
-                $iahLastOutcome('Skill beenden', 'Bis bald.', 'Verarbeitet');
-                return TellResponse::CreatePlainText('Bis bald.');
-            }
-            if (in_array($iahBuiltIn, ['amazon.helpintent', 'amazon.fallbackintent'], true)) {
-                $iahBuiltInText = $iahBuiltIn === 'amazon.helpintent'
-                    ? 'Du kannst Geräte abfragen, Kacheln öffnen und eigene Befehle ausführen.'
-                    : 'Das habe ich nicht verstanden.';
-                $iahLastOutcome('Skill-Hilfe', $iahBuiltInText, 'Hinweis');
+                    'energy' => 'M20,4 L8,…3782 tokens truncated…$iahBuiltInText, 'Hinweis');
                 return AskResponse::CreatePlainText($iahBuiltInText)
                     ->SetRepromptPlainText('Was möchtest du wissen?');
             }
@@ -4246,3 +4025,4 @@ function Execute($request = null)
         $logEarly('debug', 'Ende');
     }
 }
+
