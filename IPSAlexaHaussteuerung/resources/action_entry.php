@@ -2366,7 +2366,13 @@ function Execute($request = null)
                 $heading['items'][0]['height'] = '${headingFont + 25}';
             }
             if ($houseStatus) {
-                $iconFill = '#75E4D0';
+                $iconFill = $tileResult ? match ($displayStatus) {
+                    'ok' => '#75E4D0',
+                    'warning' => '#FFD166',
+                    'error' => '#FF7B7B',
+                    'info' => '#76B8FF',
+                    default => '#B5C2CC'
+                } : '#75E4D0';
                 $iconShape = match ($displayIcon) {
                     'light' => 'M18,5 A8,8 0 0,0 13,20 V24 H23 V20 A8,8 0 0,0 18,5 Z M13,27 H23 V29 H13 Z M15,32 H21 V34 H15 Z',
                     'window' => 'M7,6 H29 V30 H7 Z M17,7 H19 V29 H17 Z M8,17 H28 V19 H8 Z',
