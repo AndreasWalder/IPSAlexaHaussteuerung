@@ -2187,7 +2187,11 @@ function Execute($request = null)
             };
             $homeKind = str_starts_with($answerSource, 'home_connect_') ? substr($answerSource, strlen('home_connect_')) : '';
             $houseStatus = $answerSource === 'house_status' || $tileResult;
-            if ($tileResult && $tileShowStatus && $tileLayout !== 'text') {
+            if ($tileResult && !$tileShowStatus) $displayStatus='unknown';
+            $hasFactRows=$readings !== [];
+            if ($tileResult && $tileShowStatus && $tileLayout !== 'text'
+                && ($tileLayout === 'status' || $hasFactRows
+                    || in_array($displayStatus,['ok','warning','error'],true))) {
                 $statusLabel = match ($displayStatus) {
                     'ok' => 'In Ordnung',
                     'warning' => 'Achtung',
