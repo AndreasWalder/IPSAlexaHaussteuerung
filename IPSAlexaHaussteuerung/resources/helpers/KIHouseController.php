@@ -1154,7 +1154,7 @@ function iah_rc_football_answer(string $text): ?array
 {
     // Never answer unrelated questions with a cached Bundesliga table.
     $question=mb_strtolower(trim($text),'UTF-8');
-    if (preg_match('/\\b(?:fußball|fussball|bundesliga|liga\\s*1|1\\.\\s*bundesliga|fc\\s*bayern|bayern\\s*m[üu]nchen|dortmund|bvb|tabellenstand|fußballtabelle|fussballtabelle)\\b/u',$question)!==1) {
+    if (preg_match('/\b(?:fußball|fussball|bundesliga|liga\s*1|1\.\s*bundesliga|fc\s*bayern|bayern\s*m[üu]nchen|dortmund|bvb|tabellenstand|fußballtabelle|fussballtabelle)\b/u',$question)!==1) {
         return null;
     }
     if (!function_exists('IPS_GetInstanceListByModuleID') || !function_exists('IPS_GetObjectIDByIdent')) return null;
