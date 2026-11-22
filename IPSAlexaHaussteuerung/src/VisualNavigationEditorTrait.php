@@ -89,6 +89,9 @@ trait IAHVisualNavigationEditorTrait
                 'title'=>(string)($tile['title'] ?? $tile['id']),
                 'actionType'=>$type,
                 'target'=>$target,
+                'icon'=>(string)($tile['icon'] ?? ''),
+                'iconUpload'=>'',
+                'color'=>$this->visualTileColorValue((string)($tile['color']??'')),
                 'detail'=>(string)($tile['subtitle'] ?? ''),
                 'status'=>$type === 'ai_query' && $target === '' ? 'Ziel fehlt' : 'Konfiguriert',
             ];
@@ -172,7 +175,10 @@ trait IAHVisualNavigationEditorTrait
             .'"key"=>$VisualNavRows["key"], '
             .'"title"=>$VisualNavRows["title"], '
             .'"actionType"=>$VisualNavRows["actionType"], '
-            .'"target"=>$VisualNavRows["target"]'
+            .'"target"=>$VisualNavRows["target"], '
+            .'"icon"=>$VisualNavRows["icon"], '
+            .'"iconUpload"=>$VisualNavRows["iconUpload"], '
+            .'"color"=>$VisualNavRows["color"]'
             .'], JSON_INVALID_UTF8_SUBSTITUTE));';
         return [
             'type'=>'ExpansionPanel',
@@ -211,6 +217,12 @@ trait IAHVisualNavigationEditorTrait
                             ]]],
                         ['name'=>'target','caption'=>'Ziel / Frage / Objekt','width'=>'235px',
                             'edit'=>['type'=>'ValidationTextBox']],
+                        ['name'=>'icon','caption'=>'Kachelbild (vorhandene Datei)','width'=>'180px',
+                            'edit'=>['type'=>'Select','options'=>$this->visualTileIconOptions()]],
+                        ['name'=>'iconUpload','caption'=>'Neues Icon hochladen (PNG/JPG/WebP)','visible'=>false,
+                            'edit'=>['type'=>'SelectFile','extensions'=>'.png,.jpg,.jpeg,.webp']],
+                        ['name'=>'color','caption'=>'Kachelfarbe','width'=>'105px',
+                            'edit'=>['type'=>'SelectColor','allowTransparent'=>false]],
                         ['name'=>'detail','caption'=>'Zusatzinformation','width'=>'190px','save'=>false],
                         ['name'=>'status','caption'=>'Status','width'=>'140px','save'=>false],
                     ],
@@ -226,9 +238,15 @@ trait IAHVisualNavigationEditorTrait
                     ['type'=>'Select','name'=>'VisualNavNewAction','caption'=>'Aktion','value'=>'route',
                         'options'=>[['caption'=>'Seite öffnen','value'=>'route'],['caption'=>'KI-Frage','value'=>'ai_query']]],
                     ['type'=>'ValidationTextBox','name'=>'VisualNavNewTarget','caption'=>'Route oder genaue Frage','value'=>''],
+                    ['type'=>'Select','name'=>'VisualNavNewIcon','caption'=>'Vorhandenes Kachelbild',
+                        'options'=>$this->visualTileIconOptions(),'value'=>''],
+                    ['type'=>'SelectColor','name'=>'VisualNavNewColor','caption'=>'Kachelfarbe',
+                        'allowTransparent'=>false,'value'=>0x365C89],
+                    ['type'=>'SelectFile','name'=>'VisualNavNewIconUpload','caption'=>'Oder Bild hochladen',
+                        'extensions'=>'.png,.jpg,.jpeg,.webp'],
                 ]],
                 ['type'=>'Button','caption'=>'STARTKACHEL ANLEGEN',
-                    'onClick'=>'IAH_CreateVisualNavigationTile($id, $VisualNavNewKey, $VisualNavNewTitle, $VisualNavNewAction, $VisualNavNewTarget);'],
+                    'onClick'=>'IAH_CreateVisualNavigationTile($id, $VisualNavNewKey, $VisualNavNewTitle, $VisualNavNewAction, $VisualNavNewTarget, $VisualNavNewIcon, $VisualNavNewColor, $VisualNavNewIconUpload);'],
                 ['type'=>'ExpansionPanel','caption'=>'Navigationstabs (EDIT/PROD) bearbeiten',
                     'expanded'=>false,'items'=>[$this->buildSystemNavigationEditorForm()]],
             ],
@@ -245,6 +263,9 @@ trait IAHVisualNavigationEditorTrait
             $title = trim((string)($entry['title'] ?? ''));
             $action = (string)($entry['actionType'] ?? '');
             $target = trim((string)($entry['target'] ?? ''));
+            $icon=trim((string)($entry['icon']??''));
+            $iconUpload=trim((string)($entry['iconUpload']??''));
+            $color=$entry['color']??0x365C89;
             if ($key === '' || $title === '' || $target === '') {
                 throw new RuntimeException('Schlüssel, Titel und Ziel dürfen nicht leer sein.');
             }
@@ -290,6 +311,11 @@ trait IAHVisualNavigationEditorTrait
                     $row['title'] = $title;
                     $row['actionType'] = $action;
                     $row['target'] = $target;
+                    if($iconUpload!=='')$icon=$this->visualTileSaveUploadedIcon($key,$iconUpload);
+                    if($icon!==''&&!preg_match('/^[A-Za-z0-9_-]+\\.(?:png|jpe?g|webp)$/iD',$icon))
+                        throw new RuntimeException('Ungültiger Icon-Dateiname.');
+                    $row['icon']=$icon;
+                    $row['color']=$this->visualTileColorHex($color);
                 } elseif ($source === 'page') {
                     if (!in_array($action, ['wfc_item','external_url'], true)) {
                         throw new RuntimeException('Ungültiger Seitentyp.');
@@ -322,7 +348,8 @@ trait IAHVisualNavigationEditorTrait
         $this->ReloadForm();
     }
 
-    public function CreateVisualNavigationTile(string $key,string $title,string $action,string $target): void
+    public function CreateVisualNavigationTile(string $key,string $title,string $action,string $target,
+        string $icon='',mixed $color=0x365C89,string $iconUpload=''): void
     {
         $key=strtolower(trim($key)); $title=trim($title); $target=trim($target);
         try {
@@ -337,7 +364,11 @@ trait IAHVisualNavigationEditorTrait
             $rows=json_decode($this->ReadPropertyString('LaunchCatalog'),true);
             if (!is_array($rows)) throw new RuntimeException('Kachelkonfiguration nicht lesbar.');
             foreach ($rows as $row) if (($row['id']??'')===$key) throw new RuntimeException('ID existiert bereits.');
-            $rows[]=['id'=>$key,'title'=>$title,'subtitle'=>'','actionType'=>$action,'target'=>$target];
+            if($iconUpload!=='')$icon=$this->visualTileSaveUploadedIcon($key,$iconUpload);
+            if($icon!==''&&!preg_match('/^[A-Za-z0-9_-]+\\.(?:png|jpe?g|webp)$/iD',$icon))
+                throw new RuntimeException('Ungültiger Icon-Dateiname.');
+            $rows[]=['id'=>$key,'title'=>$title,'subtitle'=>'','actionType'=>$action,'target'=>$target,
+                'icon'=>$icon,'color'=>$this->visualTileColorHex($color)];
             if (function_exists('IPS_HasChanges') && IPS_HasChanges($this->InstanceID)) {
                 throw new RuntimeException('Bitte zuerst ungespeicherte Instanzeinstellungen übernehmen.');
             }
