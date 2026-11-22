@@ -4019,7 +4019,10 @@ function Execute($request = null)
                             'kiCatalogConfigJson'=>json_encode($queryCfg,JSON_UNESCAPED_UNICODE
                                 |JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)
                         ]);
-                        $queryResult=json_decode((string)$queryJson,true);
+                        $queryPayload=is_string($queryJson)?trim($queryJson):'';
+                        $queryPayload=ltrim($queryPayload,chr(239).chr(187).chr(191));
+                        $queryResult=$queryPayload!==''?json_decode($queryPayload,true):null;
+                        $queryDecodeError=json_last_error_msg();
                         if(is_array($queryResult)&&!empty($queryResult['handled'])
                             &&trim((string)($queryResult['answer']??''))!=='') {
                             $log('info','APL.tile.ai.success',['id'=>$tileId,
@@ -4032,14 +4035,29 @@ function Execute($request = null)
                                 (string)($queryResult['displayIcon']??'device'),0,
                                 (string)($queryResult['displayStatus']??'unknown'),true);
                         }
-                        $log('warn','APL.tile.ai.no_result',['id'=>$tileId]);
+                        // Do not log question text, model response, token or sensor data.
+                        $reason=is_array($queryResult) ? (string)($queryResult['error']??'unhandled') :
+                            ($queryPayload===''?'empty_script_output':'invalid_json');
+                        $log('warn','APL.tile.ai.no_result',[
+                            'id'=>$tileId,'reason'=>mb_substr($reason,0,80,'UTF-8'),
+                            'outputType'=>get_debug_type($queryJson),
+                            'outputLength'=>strlen($queryPayload),
+                            'decodeError'=>is_array($queryResult)?'none':$queryDecodeError,
+                            'catalogId'=>(int)($queryCfg['catalog_script_id']??0),
+                            'queryScriptId'=>$queryScript
+                        ]);
                     } catch (Throwable $err) {
                         $log('warn','APL.tile.ai.failed',['id'=>$tileId,
                             'type'=>get_class($err)]);
                     }
-                    return $kiAlexaKeepOpen('Für diese Frage liegt derzeit keine auswertbare Antwort vor.',
+                    $weatherTile=preg_match('/\b(?:wetter|regen|schnee|vorhersage|prognose)\b/iu',$tileTarget)===1;
+                    $fallbackText=$weatherTile
+                        ? 'Die aktuelle Wettervorhersage ist derzeit nicht verfügbar. Bitte prüfe die Wetterdatenquelle.'
+                        : 'Für diese Frage liegt derzeit keine auswertbare Antwort vor.';
+                    return $kiAlexaKeepOpen($fallbackText,
                         'Fehler',$tileTarget,$iahVoiceHasScreen,'tile_ai',[],
-                        (string)($tile['title']??'KI-Ergebnis'),'device',0,'unknown',true);
+                        $weatherTile?'Wettervorschau':(string)($tile['title']??'KI-Ergebnis'),
+                        $weatherTile?'weather':'device',0,'unknown',true);
                 }
                 if ($tileAction === 'route' && preg_match('/^[a-z0-9_-]{1,64}$/', $tileTarget)) {
                     $__route = $tileTarget;
