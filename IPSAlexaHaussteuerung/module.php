@@ -1234,6 +1234,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->patchActionScriptLastAlexaInteraction((int)$id);
         $this->patchActionScriptLaunchLiveConfig((int)$id);
         $this->patchActionScriptAplTileRoute((int)$id);
+        $this->patchActionScriptAiStatusPage((int)$id);
 
         $current = $this->getScriptContent((int)$id);
         if (is_string($current)) {
@@ -1322,6 +1323,46 @@ class IPSAlexaHaussteuerung extends IPSModule
             IPS_LogMessage('Alexa','APL.TileRoute: V3 in Action #'.$scriptId.' installiert.');
         } catch (\Throwable $e) {
             IPS_LogMessage('Alexa','APL.TileRoute: Installation abgebrochen: '.get_class($e));
+        }
+    }
+
+    /**
+     * Update the dedicated APL status renderer in an already generated Action
+     * script. The V3 tile router passes status/icon metadata to this closure;
+     * replacing the entire script would destroy local customisations.
+     */
+    private function patchActionScriptAiStatusPage(int $scriptId): void
+    {
+        $current = $this->getScriptContent($scriptId);
+        $template = @file_get_contents(__DIR__.'/resources/action_entry.php');
+        if (!is_string($current) || $current === '' || !is_string($template)) return;
+        $startMarker = '        // IAH_HOUSE_SUMMARY_BEGIN';
+        $endMarker = '        // IAH_HOUSE_SUMMARY_END';
+        if (substr_count($template,$startMarker)!==1 || substr_count($template,$endMarker)!==1
+            || substr_count($current,$startMarker)!==1 || substr_count($current,$endMarker)!==1) {
+            IPS_LogMessage('Alexa','APL.KIStatus: Statusseiten-Marker nicht eindeutig.');
+            return;
+        }
+        $start = strpos($template,$startMarker);
+        $stop = strpos($template,$endMarker,$start+strlen($startMarker));
+        $newBlock = substr($template,$start,$stop+strlen($endMarker)-$start);
+        $oldStart = strpos($current,$startMarker);
+        $oldStop = strpos($current,$endMarker,$oldStart+strlen($startMarker));
+        $oldBlock = substr($current,$oldStart,$oldStop+strlen($endMarker)-$oldStart);
+        if ($newBlock===$oldBlock) return;
+        $next = substr($current,0,$oldStart).$newBlock
+            .substr($current,$oldStop+strlen($endMarker));
+        try {
+            $this->createNavigationCatalogBackup($scriptId,'BeforeAiStatusPageV1',$current);
+            IPS_SetScriptContent($scriptId,$next);
+            if ($this->getScriptContent($scriptId)!==$next) {
+                IPS_SetScriptContent($scriptId,$current);
+                IPS_LogMessage('Alexa','APL.KIStatus: Statusseiten-Update zurückgesetzt.');
+                return;
+            }
+            IPS_LogMessage('Alexa','APL.KIStatus: dynamische KI-Statusseite installiert. Action #'.$scriptId);
+        } catch (\Throwable $e) {
+            IPS_LogMessage('Alexa','APL.KIStatus: Update abgebrochen: '.get_class($e));
         }
     }
 
