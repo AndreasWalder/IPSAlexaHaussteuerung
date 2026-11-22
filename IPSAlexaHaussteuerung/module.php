@@ -1293,7 +1293,7 @@ class IPSAlexaHaussteuerung extends IPSModule
             : (str_contains($current,'IAH_APL_TILE_ROUTE_V5_BEGIN') ? 'V5'
             : (str_contains($current,'IAH_APL_TILE_ROUTE_V4_BEGIN') ? 'V4'
             : (str_contains($current,'IAH_APL_TILE_ROUTE_V3_BEGIN') ? 'V3'
-            : (str_contains($current,'IAH_APL_TILE_ROUTE_V2_BEGIN') ? 'V2' : 'V1')));
+            : (str_contains($current,'IAH_APL_TILE_ROUTE_V2_BEGIN') ? 'V2' : 'V1'))));
         $oldBegin = '        // IAH_APL_TILE_ROUTE_'.$oldVersion.'_BEGIN';
         $oldEnd = '        // IAH_APL_TILE_ROUTE_'.$oldVersion.'_END';
         if (substr_count($current,$oldBegin)===1 && substr_count($current,$oldEnd)===1) {
