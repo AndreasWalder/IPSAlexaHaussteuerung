@@ -65,7 +65,7 @@ trait IAHVisualNavigationEditorTrait
                     'key'=>(string)($entry['entryKey'] ?? $entry['tabKey'] ?? ''),
                     'title'=>(string)($entry['title'] ?? ''),
                     'actionType'=>'navigation',
-                    'target'=>'IPS-Objekt #'.(string)($entry['objectId'] ?? 0),
+                    'target'=>(string)($entry['objectId'] ?? 0),
                     'detail'=>(string)($entry['roomKey'] ?? '').' / '.(string)($entry['domainKey'] ?? ''),
                     'status'=>empty($entry['enabled']) ? 'Inaktiv' : 'EDIT/PROD separat',
                 ];
@@ -154,7 +154,22 @@ trait IAHVisualNavigationEditorTrait
                 throw new RuntimeException('Schlüssel, Titel und Ziel dürfen nicht leer sein.');
             }
             if ($source === 'navigation') {
-                throw new RuntimeException('Navigation bitte im EDIT/PROD-Untereditor bearbeiten.');
+                if ($action !== 'navigation' || !ctype_digit($target)) {
+                    throw new RuntimeException('Für Navigation eine numerische IPS-Objekt-ID angeben.');
+                }
+                $context = $this->navigationEditorContext();
+                if (!is_array($context['edit'])) {
+                    throw new RuntimeException('SystemConfigurationEdit ist nicht lesbar.');
+                }
+                foreach (IAHSystemNavigationEditor::items($context['edit']) as $navigation) {
+                    if ((string)($navigation['entryKey'] ?? '') !== $key) continue;
+                    $navigation['title'] = $title;
+                    $navigation['objectId'] = (int)$target;
+                    $this->SaveSystemNavigationTab(json_encode($navigation,
+                        JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
+                    return;
+                }
+                throw new RuntimeException('Navigations-Tab nicht gefunden.');
             }
             $property = match ($source) {
                 'launch'=>'LaunchCatalog','page'=>'PageMappings','renderer'=>'RendererDomains',
