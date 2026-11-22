@@ -1151,7 +1151,9 @@ trait IAHVoiceRuleEditorTrait
 
     private function previewAlexaVoiceRoute(string $spoken,?array $catalog,int $prodId,string $key): array
     {
-        require_once __DIR__.'/../resources/helpers/VoiceIntentRouter.php';
+        if (!function_exists('iah_vir_classify')) {
+            require_once __DIR__.'/../resources/helpers/VoiceIntentRouter.php';
+        }
         $system=IAHVoiceRuleLiteralReader::read($this->getScriptContent($prodId))??[];
         $navCatalog=IAHSystemNavigationMigration::project($catalog??[],(array)($system['navigation']??[]));
         $decision=iah_vir_classify(['text'=>$spoken,'routes'=>$this->readRendererDomainsProperty($navCatalog)]);
@@ -1222,7 +1224,9 @@ trait IAHVoiceRuleEditorTrait
             $plan, array_flip(['answer','answerSource','awaitingLocation','awaitingDevice','deviceChoices','reason'])) + ['ok'=>true]);
         $spoken=$plan['question'];
         $scope=$plan['scope']??null;
-        require_once __DIR__.'/../resources/helpers/KIHouseController.php';
+        if (!function_exists('iah_rc_voice')) {
+            require_once __DIR__.'/../resources/helpers/KIHouseController.php';
+        }
         $query=iah_rc_voice($spoken,$this->alexaReadOnlyHouseQueryConfig($scope),$catalog);
         $result['matchMethod']=!empty($query['localHouseQuery'])?'local_house_query':'ai_house_query';
         $result['readQueries']=$query['readQueries']??[];
@@ -1274,7 +1278,9 @@ trait IAHVoiceRuleEditorTrait
                 if($configuredCatalog<=0 || $configuredCatalog!==$catalogId)
                     return '{"handled":false,"error":"house_query_catalog_not_available"}';
             }
+            if (!function_exists('iah_rc_voice')) {
             require_once __DIR__.'/../resources/helpers/KIHouseController.php';
+        }
             $scope=json_decode($scopeJson,true,512,JSON_THROW_ON_ERROR);
             $config=$this->alexaReadOnlyHouseQueryConfig(is_array($scope)?$scope:null);
             $config['catalog_script_id']=$catalogId;
@@ -1293,7 +1299,9 @@ trait IAHVoiceRuleEditorTrait
     {
         if ($catalogId<=0||!IPS_ScriptExists($catalogId)||mb_strlen($question)>300)return '{}';
         try {
-            require_once __DIR__.'/../resources/helpers/IrrigationQueryEngine.php';
+            if (!class_exists('IAHIrrigationQuery', false)) {
+                require_once __DIR__.'/../resources/helpers/IrrigationQueryEngine.php';
+            }
             $settings=$this->getObjectIDByIdentOrName($this->InstanceID,'iahSettings','Einstellungen');
             $default=$settings>0?$this->getObjectIDByIdentOrName($settings,'roomsCatalog','RoomsCatalog'):0;
             if ($catalogId!==$default) {
@@ -1435,9 +1443,13 @@ trait IAHVoiceRuleEditorTrait
                 ?(preg_replace('/^\s*und\s+/ui','',$spoken)??$spoken):$spoken;
             if (!class_exists('IAHHomeConnect', false)) require_once __DIR__.'/../resources/helpers/HomeConnect.php';
             if (IAHHomeConnect::recognizes($question)) return ['question'=>$question];
-            require_once __DIR__.'/../resources/helpers/HeatingSystemQuery.php';
+            if (!class_exists('IAHHeatingSystemQuery', false)) {
+                require_once __DIR__.'/../resources/helpers/HeatingSystemQuery.php';
+            }
             if (IAHHeatingSystemQuery::topic($question) !== null) return ['question'=>$question];
-            require_once __DIR__.'/../resources/helpers/IrrigationQueryEngine.php';
+            if (!class_exists('IAHIrrigationQuery', false)) {
+                require_once __DIR__.'/../resources/helpers/IrrigationQueryEngine.php';
+            }
             if (IAHIrrigationQuery::matchesQuestion($catalog,$question))return ['question'=>$question];
             $scope=$resolveInitial?IAHHouseQuestionContext::initialScope($question,$catalog):null;
             if(($scope['type']??'')==='unresolved')
