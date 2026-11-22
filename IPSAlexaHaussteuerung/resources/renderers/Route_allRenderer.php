@@ -240,7 +240,7 @@ try {
         }
         $rendererDomainMap[$routeKey] = $entry;
     }
-    $knownStaticRoutes = ['main_launch','heizung','jalousie','licht','lueftung','geraete','bewaesserung','settings','external'];
+    $knownStaticRoutes = ['main_launch','heizung','jalousie','licht','lueftung','geraete','bewaesserung','bundesliga','settings','external'];
     $pageMappings = is_array($V['pageMappings'] ?? null) ? $V['pageMappings'] : [];
     $launchCatalog = is_array($CFG['launchCatalog'] ?? null) ? $CFG['launchCatalog'] : [];
     $externalPagesPayload = $payload['externalPages'] ?? null;
@@ -301,6 +301,69 @@ try {
         .' tokenConfigured='.($token !== '' ? 'yes' : 'no'));
 
     $flags = ['setDomainFlag'=>null,'resetDomainFlag'=>false,'setSkillActive'=>null];
+
+    // =============================
+    // BUNDESLIGA STATUS (cached module data, read-only)
+    // =============================
+    if ($route === 'bundesliga') {
+        $flags['setDomainFlag'] = 'bundesliga';
+        $instanceIds = function_exists('IPS_GetInstanceListByModuleID')
+            ? @IPS_GetInstanceListByModuleID('{E4E41370-F6BC-4896-A281-5836F893F7D2}') : [];
+        $payloadTable = null;
+        foreach ((array)$instanceIds as $footballId) {
+            if ((string)@IPS_GetProperty((int)$footballId, 'LigaSelection') !== 'Liga1') continue;
+            $jsonId = @IPS_GetObjectIDByIdent('StandingsJson', (int)$footballId);
+            if ($jsonId) {
+                $candidate = json_decode((string)GetValueString((int)$jsonId), true);
+                if (is_array($candidate) && is_array($candidate['teams'] ?? null)) { $payloadTable = $candidate; break; }
+            }
+        }
+        $teams = is_array($payloadTable['teams'] ?? null) ? $payloadTable['teams'] : [];
+        $updated = strtotime((string)($payloadTable['updatedAt'] ?? ''));
+        $fresh = $updated !== false && time() - $updated <= (72 * 60 * 60);
+        $rows = [];
+        if ($fresh) foreach ($teams as $team) {
+            $name = (string)($team['team'] ?? '');
+            if ($name === '') continue;
+            $bayern = stripos($name, 'Bayern') !== false;
+            $rows[] = [
+                'type'=>'Container','direction'=>'row','width'=>'100%','paddingLeft'=>'12dp','paddingRight'=>'12dp',
+                'paddingTop'=>'8dp','paddingBottom'=>'8dp','alignItems'=>'center','spacing'=>'8dp',
+                'backgroundColor'=>$bayern ? '#B20E2B' : '#14253D',
+                'items'=>[
+                    ['type'=>'Text','text'=>((int)($team['rank'] ?? 0)).'.  '.($bayern ? '★ ' : '').$name,
+                        'width'=>'0dp','grow'=>1,'shrink'=>1,'fontSize'=>'20dp','fontWeight'=>$bayern?'bold':'normal','color'=>'#FFFFFF'],
+                    ['type'=>'Text','text'=>(int)($team['points'] ?? 0).' Pkt. · '.(int)($team['played'] ?? 0).' Sp. · '
+                        .(int)($team['goalsFor'] ?? 0).':'.(int)($team['goalsAgainst'] ?? 0),
+                        'width'=>'42%','textAlign'=>'right','fontSize'=>'17dp','fontWeight'=>'bold','color'=>'#FFFFFF']
+                ]
+            ];
+        }
+        if (!$fresh || $rows === []) {
+            $rows[]=['type'=>'Text','text'=>'Noch keine aktuelle Tabelle verfügbar. Bitte die BundesligaTabelle-Instanz in Symcon aktualisieren.',
+                'fontSize'=>'20dp','color'=>'#FFFFFF','padding'=>'16dp'];
+        }
+        $season = htmlspecialchars((string)($payloadTable['season'] ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $headline = $season !== '' ? 'Saison '.$season.' · FC Bayern München' : 'FC Bayern München';
+        $doc = [
+            'type'=>'APL','version'=>'1.4','background'=>'#08172B',
+            'mainTemplate'=>['parameters'=>['summary'],'items'=>[[
+                'type'=>'Container','width'=>'100vw','height'=>'100vh','paddingLeft'=>'24dp','paddingRight'=>'24dp',
+                'paddingTop'=>'18dp','paddingBottom'=>'14dp','items'=>[
+                    ['type'=>'Text','text'=>'BUNDESLIGA · FC BAYERN','fontSize'=>'18dp','color'=>'#F5B8C3','letterSpacing'=>'2dp'],
+                    ['type'=>'Text','text'=>$headline,'fontSize'=>'34dp','fontWeight'=>'bold','color'=>'#FFFFFF','paddingTop'=>'4dp','paddingBottom'=>'10dp'],
+                    ['type'=>'ScrollView','width'=>'100%','height'=>'0dp','grow'=>1,'items'=>[
+                        ['type'=>'Container','spacing'=>'5dp','items'=>$rows],
+                        ['type'=>'Text','text'=>$fresh?'Tabelle: OpenLigaDB · Stand '.date('d.m.Y H:i',$updated).' Uhr':'Tabelle wird nach dem Modulupdate geladen.',
+                            'fontSize'=>'13dp','color'=>'#AFC0D5','paddingTop'=>'10dp']
+                    ]]
+                ]
+            ]]]
+        ];
+        $dataArr = ['apl'=>['doc'=>$doc,'ds'=>['summary'=>['title'=>$headline,'text'=>'Aktuelle Tabelle, Punkte und Tore.']]]];
+        echo json_encode(['ok'=>true,'route'=>$route,'data'=>$dataArr,'flags'=>$flags,'aplToken'=>'hv-bundesliga'],$JSON);
+        return;
+    }
 
     // =============================
     // MAIN LAUNCH
