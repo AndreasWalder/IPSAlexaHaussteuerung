@@ -135,30 +135,6 @@ if ($tiles === [] && is_array($catalogDefaults['tiles'] ?? null)) {
     }
 }
 
-// Fußball muss in jedem Launch-Menü enthalten sein und wird immer zuletzt angezeigt.
-$footballTile = null;
-$otherTiles = [];
-foreach ($tiles as $tile) {
-    if (strtolower((string)($tile['id'] ?? '')) === 'bundesliga') {
-        $footballTile = $tile;
-        continue;
-    }
-    $otherTiles[] = $tile;
-}
-if ($footballTile === null) {
-    foreach ((array)($catalogDefaults['tiles'] ?? []) as $entry) {
-        $tile = $sanitizeTile($entry);
-        if ($tile === null || strtolower((string)($tile['id'] ?? '')) !== 'bundesliga') continue;
-        if (!empty($tile['icon'])) $tile['icon'] = $icon($tile['icon']);
-        $footballTile = $tile;
-        break;
-    }
-}
-if ($footballTile !== null) {
-    $tiles = $otherTiles;
-    $tiles[] = $footballTile;
-}
-
 $ds = [
  'tilesData'=>[
   'title'=> $launchTitle,
@@ -330,4 +306,3 @@ if ($apl) {
 $aplObj = $apl ? ['doc'=>['type'=>'Link','src'=>'doc://alexa/apl/documents/Hausvisualisierung_Main'], 'ds'=>$ds] : null;
 
 echo json_encode(['speech'=>$speech,'apl'=>$aplObj], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
-
