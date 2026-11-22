@@ -370,6 +370,10 @@ try {
             $rows[]=['type'=>'Text','text'=>'Noch keine aktuelle Tabelle verfügbar. Bitte die BundesligaTabelle-Instanz in Symcon aktualisieren.',
                 'fontSize'=>'20dp','color'=>'#FFFFFF','padding'=>'16dp'];
         }
+        IPS_LogMessage('Alexa', 'BUNDESLIGA.route matched=yes moduleInstances='.count((array)$instanceIds)
+            .' tableFound='.($payloadTable !== null ? 'yes' : 'no')
+            .' fresh='.($fresh ? 'yes' : 'no')
+            .' teams='.count($teams).' aplRows='.count($rows));
         $season = htmlspecialchars((string)($payloadTable['season'] ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $headline = $season !== '' ? 'Saison '.$season.' · FC Bayern München' : 'FC Bayern München';
         $doc = [
