@@ -3913,6 +3913,18 @@ function Execute($request = null)
                     && ($tileTitle === '' || !in_array($tileTitle, $clicked, true)))) continue;
                 $tileAction = (string)($tile['actionType'] ?? '');
                 $tileTarget = trim((string)($tile['target'] ?? ''));
+                // Bei älteren installierten Action-Skripten hat der alte
+                // Launch-Sanitizer actionType/target verworfen. Die originale
+                // Instanz-Property ist die verbindliche Quelle.
+                if ($tileAction === '' || $tileTarget === '') {
+                    $rawTiles = json_decode((string)($propsEarly['LaunchCatalog'] ?? '[]'),true);
+                    foreach (is_array($rawTiles) ? $rawTiles : [] as $rawTile) {
+                        if (!is_array($rawTile) || (string)($rawTile['id'] ?? '') !== $tileId) continue;
+                        if ($tileAction === '') $tileAction = (string)($rawTile['actionType'] ?? '');
+                        if ($tileTarget === '') $tileTarget = trim((string)($rawTile['target'] ?? ''));
+                        break;
+                    }
+                }
                 // Migrationskompatibilität: die bisherige Bayern-Frage hat
                 // bereits eine lokale, schreibgeschützte Bundesliga-Seite.
                 if ($tileAction === 'ai_query'
