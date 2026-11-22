@@ -3960,7 +3960,7 @@ function Execute($request = null)
         }
         // IAH_VOICE_ROUTE_PRIORITY_END
 
-        // IAH_APL_TILE_ROUTE_V6_BEGIN
+        // IAH_APL_TILE_ROUTE_V7_BEGIN
         // Konfigurierte Startkacheln: APL-Klick direkt zur hinterlegten
         // Renderer-Route leiten. Bewusst erst NACH Launch-/Voice-Entscheidungen,
         // damit ein LaunchRequest ohne Klick unverändert funktioniert.
@@ -4088,8 +4088,43 @@ function Execute($request = null)
                         // Do not log question text, model response, token or sensor data.
                         $reason=is_array($queryResult) ? (string)($queryResult['error']??'unhandled') :
                             ($queryPayload===''?'empty_script_output':'invalid_json');
+                        // Classify without copying any returned text, API keys,
+                        // user questions or local paths to the log.
+                        $outputKind='unknown';
+                        $phpErrorClass='none';
+                        $phpFile='';
+                        $phpLine=0;
+                        if ($queryPayload==='') {
+                            $outputKind='empty';
+                        } elseif (preg_match('/\\b(?:Parse error|syntax error|Fatal error|Uncaught|Compile Error)\\b/i',$queryPayload)) {
+                            $outputKind='php_error';
+                            $phpErrorClass=preg_match('/Parse error|syntax error/i',$queryPayload)
+                                ? 'parse' : (preg_match('/Uncaught/i',$queryPayload)?'uncaught':'fatal');
+                        } elseif (preg_match('/\\b(?:Warning|Notice|Deprecated|Recoverable fatal error)\\s*:/i',$queryPayload)) {
+                            $outputKind='php_warning';
+                            $phpErrorClass=preg_match('/Deprecated/i',$queryPayload)?'deprecated'
+                                :(preg_match('/Notice/i',$queryPayload)?'notice':'warning');
+                        } elseif (preg_match('/^\\s*</', $queryPayload)) {
+                            $outputKind='html';
+                        } elseif (json_validate($queryPayload)) {
+                            $outputKind='valid_json';
+                        } elseif (preg_match('/^[\\[{]/',$queryPayload)) {
+                            $outputKind='malformed_json';
+                        } else {
+                            $outputKind='unexpected_text';
+                        }
+                        if ($outputKind==='php_error' || $outputKind==='php_warning') {
+                            if (preg_match('~(?:in|thrown in)\\s+([^\\r\\n]+?\\.php)\\s+(?:on\\s+)?line\\s+(\\d{1,7})~i',
+                                $queryPayload,$phpLocation)) {
+                                $phpFile=preg_replace('/[^A-Za-z0-9_.-]/','',
+                                    basename(str_replace('\\\\','/',$phpLocation[1])))??'';
+                                $phpLine=(int)$phpLocation[2];
+                            }
+                        }
                         $log('warn','APL.tile.ai.no_result',[
                             'id'=>$tileId,'reason'=>mb_substr($reason,0,80,'UTF-8'),
+                            'outputKind'=>$outputKind,'phpErrorClass'=>$phpErrorClass,
+                            'phpFile'=>$phpFile,'phpLine'=>$phpLine,
                             'outputType'=>get_debug_type($queryJson),
                             'outputLength'=>strlen($queryPayload),
                             'decodeError'=>is_array($queryResult)?'none':$queryDecodeError,
@@ -4117,7 +4152,7 @@ function Execute($request = null)
             }
         }
 
-        // IAH_APL_TILE_ROUTE_V6_END
+        // IAH_APL_TILE_ROUTE_V7_END
 
         // --------- Lazy rooms nur wenn benötigt ---------
         $needsRooms = in_array($__route ?? '', ['main_launch','heizung','jalousie','licht','lueftung','geraete','bewaesserung'], true)
