@@ -3317,7 +3317,18 @@ PHP;
             $tile['target'] = $target;
         }
 
-        return $tile;
+            foreach ([
+            'resultIconMode'=>['ai','tile'],
+            'resultStatusMode'=>['auto','off'],
+            'resultLayout'=>['auto','text','status']
+        ] as $field=>$allowed) {
+            $value=(string)($entry[$field]??$allowed[0]);
+            $tile[$field]=in_array($value,$allowed,true)?$value:$allowed[0];
+        }
+        $tile['resultTitle']=mb_substr(trim((string)($entry['resultTitle']??'')),0,90,'UTF-8');
+        $tile['speakAnswer']=(bool)($entry['speakAnswer']??true);
+        $tile['useArchive']=(bool)($entry['useArchive']??true);
+    return $tile;
     }
 
     private function pageMappingDefaults(): array
