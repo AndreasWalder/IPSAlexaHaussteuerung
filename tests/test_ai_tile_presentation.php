@@ -34,8 +34,8 @@ ckAiTile($unsafe['displayStatus']==='unknown','Unknown status cannot imply OK');
 ckAiTile(!str_contains($unsafe['displayTitle'],'<'),'Title is escaped/stripped');
 ckAiTile(str_contains($backend,"'tile_display'")===false ||
     str_contains($backend,"$cfg['tile_display']"),'AI display is explicitly opt-in');
-ckAiTile(str_contains($action,'IAH_APL_TILE_ROUTE_V3_BEGIN')
-    && str_contains($action,'IAH_APL_TILE_ROUTE_V3_END')
+ckAiTile(str_contains($action,'IAH_APL_TILE_ROUTE_V5_BEGIN')
+    && str_contains($action,'IAH_APL_TILE_ROUTE_V5_END')
     && str_contains($action,"'allow_writes'=>false")
     && str_contains($action,"'tile_display'=>true"),
     'Configured tile invokes read-only AI and APL V3');
