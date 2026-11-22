@@ -3992,17 +3992,21 @@ function Execute($request = null)
                 $tileId = mb_strtolower(trim((string)($tile['id'] ?? '')),'UTF-8');
                 $tileAction = (string)($tile['actionType'] ?? '');
                 $tileTarget = trim((string)($tile['target'] ?? ''));
-                // Bei älteren installierten Action-Skripten hat der alte
-                // Launch-Sanitizer actionType/target verworfen. Die originale
-                // Instanz-Property ist die verbindliche Quelle.
-                if ($tileAction === '' || $tileTarget === '') {
-                    $rawTiles = json_decode((string)($propsEarly['LaunchCatalog'] ?? '[]'),true);
-                    foreach (is_array($rawTiles) ? $rawTiles : [] as $rawTile) {
-                        if (!is_array($rawTile) || (string)($rawTile['id'] ?? '') !== $tileId) continue;
-                        if ($tileAction === '') $tileAction = (string)($rawTile['actionType'] ?? '');
-                        if ($tileTarget === '') $tileTarget = trim((string)($rawTile['target'] ?? ''));
-                        break;
+                // Installed Action scripts can still run an older sanitizer.
+                // The instance property is authoritative for all tile display
+                // options, including migrated scripts.
+                $rawTiles = json_decode((string)($propsEarly['LaunchCatalog'] ?? '[]'),true);
+                foreach (is_array($rawTiles) ? $rawTiles : [] as $rawTile) {
+                    if (!is_array($rawTile) || (string)($rawTile['id'] ?? '') !== $tileId) continue;
+                    foreach ([
+                        'actionType','target','icon','resultTitle','resultIconMode',
+                        'resultStatusMode','resultLayout','speakAnswer','useArchive'
+                    ] as $field) {
+                        if (array_key_exists($field,$rawTile)) $tile[$field]=$rawTile[$field];
                     }
+                    $tileAction=(string)($tile['actionType']??'');
+                    $tileTarget=trim((string)($tile['target']??''));
+                    break;
                 }
                 // Migrationskompatibilität: die bisherige Bayern-Frage hat
                 // bereits eine lokale, schreibgeschützte Bundesliga-Seite.
