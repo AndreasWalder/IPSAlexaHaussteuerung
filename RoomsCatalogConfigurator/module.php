@@ -7,6 +7,7 @@ require_once __DIR__ . '/libs/SafeAutoRepair.php';
 require_once __DIR__ . '/libs/DeviceTypeRegistry.php';
 require_once __DIR__ . '/libs/DeviceCapabilities.php';
 require_once __DIR__ . '/libs/GuidedDiscovery.php';
+require_once __DIR__ . '/libs/RoomTileBuilderTrait.php';
 require_once __DIR__ . '/libs/KnxGroupAddressDiscovery.php';
 require_once __DIR__ . '/../IPSAlexaHaussteuerung/src/SymconScriptSource.php';
 require_once __DIR__ . '/libs/ModuleDataSources.php';
@@ -100,6 +101,7 @@ class RoomsCatalogConfigurator extends IPSModule
     use RCCHeatingSystemEditorTrait;
     use RCCHomeConnectEditorTrait;
     use RCCHouseholdEditorTrait;
+    use RCCRoomTileBuilderTrait;
     use RCCWeatherStationEditorTrait;
     use RCCXSenseEditorTrait;
     // V3.4.4: Typen, editierbare Eigenschaften und Rollen nur noch zentral
@@ -5693,6 +5695,16 @@ class RoomsCatalogConfigurator extends IPSModule
                     'caption'=>'RoomsCatalog EDIT: '.count($entriesEdit).' Eintraege. '
                         .($aiReadable-$aiWritable).' KI nur lesen, '.$aiWritable.' KI schaltbar, '
                         .(count($entriesEdit)-$aiReadable).' ohne KI-Freigabe. EDIT wird erst nach Freigabe produktiv.'
+                ],
+                [
+                    'type'=>'ExpansionPanel',
+                    'caption'=>'Automatische Raumstatus-Kacheln',
+                    'expanded'=>false,
+                    'items'=>[
+                        ['type'=>'Label','caption'=>'Erstellt eine Raumübersicht mit Status-Badges und je Raum eine Detailseite. Es werden ausschließlich lesbare Statusvariablen aus dem produktiven RoomsCatalog angezeigt; Schalter und Aktionen werden nicht angelegt. Zielbereich: Visualization (42569) → Tile Home (52221) → Haus.'],
+                        ['type'=>'Button','caption'=>'Raumkacheln erstellen / aktualisieren','confirm'=>'Nur die automatisch erzeugte Raumstatus-Übersicht und ihre Detailseiten innerhalb Visualization (42569) → Tile Home (52221) erstellen oder aktualisieren? Geräte- und Hauskategorien außerhalb dieses Bereichs bleiben unverändert.','onClick'=>'RCC_GenerateRoomTiles($id);'],
+                        ['type'=>'Label','name'=>'RoomTileNotice','caption'=>'Noch keine Raumkacheln erstellt.'],
+                    ],
                 ],
                 [
                     'type'    => 'ExpansionPanel',
