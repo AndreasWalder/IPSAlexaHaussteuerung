@@ -1226,9 +1226,32 @@ function iah_build_system_configuration(int $instanceId): array
             $rendererDomains = is_array($data['rendererDomains'] ?? null)
                 ? $data['rendererDomains']
                 : iah_build_renderer_domain_list($props);
-            $launchCatalog = is_array($data['launchCatalog'] ?? null)
-                ? $data['launchCatalog']
-                : iah_build_launch_catalog($props);
+            // IAH_LAUNCH_LIVE_CONFIG_V1_BEGIN
+            // Launch-Kacheln kommen immer aus der aktuellen Instanzkonfiguration.
+            $launchCatalog = iah_build_launch_catalog($props);
+            $snapshotLaunchCatalog = is_array($data['launchCatalog'] ?? null)
+                ? $data['launchCatalog'] : [];
+            $launchIds = static function (array $catalog): array {
+                $ids = [];
+                foreach ((array)($catalog['tiles'] ?? []) as $tile) {
+                    if (is_array($tile)) $ids[] = strtolower(trim((string)($tile['id'] ?? '')));
+                }
+                return array_values(array_filter($ids, static fn(string $id): bool => $id !== ''));
+            };
+            $liveIds = $launchIds($launchCatalog);
+            $snapshotIds = $launchIds($snapshotLaunchCatalog);
+            @IPS_LogMessage('Alexa.LaunchTiles',
+                'CONFIG_SOURCE=INSTANCE_PROPERTIES'
+                .' instance='.$instanceId
+                .' liveCount='.count($liveIds)
+                .' snapshotCount='.count($snapshotIds)
+                .' liveIds='.implode(',', $liveIds)
+                .' snapshotIds='.implode(',', $snapshotIds)
+                .' onlyLive='.implode(',', array_values(array_diff($liveIds, $snapshotIds)))
+                .' onlySnapshot='.implode(',', array_values(array_diff($snapshotIds, $liveIds)))
+                .' bundesligaLive='.(in_array('bundesliga', $liveIds, true) ? 'ja' : 'nein')
+                .' bundesligaSnapshot='.(in_array('bundesliga', $snapshotIds, true) ? 'ja' : 'nein'));
+            // IAH_LAUNCH_LIVE_CONFIG_V1_END
             // Diese zwei Einstellungen bleiben auch bei einer eigenen
             // SystemConfiguration.php an die aktuelle Modulinstanz gebunden.
             $var['TileTestEnabled'] = (bool)($props['TileTestEnabled'] ?? true);
