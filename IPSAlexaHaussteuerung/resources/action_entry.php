@@ -3876,6 +3876,7 @@ function Execute($request = null)
         }
         // IAH_VOICE_ROUTE_PRIORITY_END
 
+        // IAH_APL_TILE_ROUTE_V1_BEGIN
         // Konfigurierte Startkacheln: APL-Klick direkt zur hinterlegten
         // Renderer-Route leiten. Bewusst erst NACH Launch-/Voice-Entscheidungen,
         // damit ein LaunchRequest ohne Klick unverändert funktioniert.
@@ -3910,6 +3911,8 @@ function Execute($request = null)
                 break;
             }
         }
+
+        // IAH_APL_TILE_ROUTE_V1_END
 
         // --------- Lazy rooms nur wenn benötigt ---------
         $needsRooms = in_array($__route ?? '', ['main_launch','heizung','jalousie','licht','lueftung','geraete','bewaesserung'], true)
