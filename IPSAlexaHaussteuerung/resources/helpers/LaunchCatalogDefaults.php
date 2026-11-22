@@ -12,6 +12,7 @@ return [
         ['id' => 'heizung',      'title' => 'Heizung',      'subtitle' => 'soll/ist',              'icon' => 'Heizung.png',      'color' => '#FF8A80'],
         ['id' => 'lueftung',     'title' => 'Lüftung',      'subtitle' => 'Stufen & Timer',        'icon' => 'Lueftung.png',     'color' => '#63E6BE'],
         ['id' => 'bewaesserung', 'title' => 'Bewässerung',  'subtitle' => 'Zonen & Automatik',      'icon' => 'Bewaesserung.png', 'color' => '#0FC0FC'],
+        ['id' => 'bundesliga',    'title' => 'Fußball',      'subtitle' => 'Bundesliga & Bayern',    'icon' => 'Bayern.png',       'color' => '#C8102E'],
         ['id' => 'geraete',      'title' => 'Geräte',       'subtitle' => 'Steckdosen & mehr',      'icon' => 'Geraete.png',      'color' => '#BAC8FF'],
         ['id' => 'sicherheit',   'title' => 'Sicherheit',   'subtitle' => 'Fenster & Türen',        'icon' => 'Sicherheit.png',   'color' => '#FFC9C9'],
         ['id' => 'listen',       'title' => 'Listen',       'subtitle' => 'Aufgaben & Notizen',     'icon' => 'Listen.png',       'color' => '#D8F212'],
