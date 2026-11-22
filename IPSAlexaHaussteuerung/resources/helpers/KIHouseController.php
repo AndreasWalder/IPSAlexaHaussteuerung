@@ -1150,6 +1150,58 @@ function iah_rc_robohub_status_query(array $catalog,string $text,?array $scope=n
         'readOnly'=>true,'contextEligible'=>true];
 }
 
+function iah_rc_football_answer(string $text): ?array
+{
+    if (!function_exists('IPS_GetInstanceListByModuleID') || !function_exists('IPS_GetObjectIDByIdent')) return null;
+    $ids = @IPS_GetInstanceListByModuleID('{E4E41370-F6BC-4896-A281-5836F893F7D2}');
+    if (!is_array($ids) || $ids === []) return null;
+    $chosen = 0;
+    foreach ($ids as $id) {
+        if ((string)@IPS_GetProperty((int)$id, 'LigaSelection') === 'Liga1') { $chosen = (int)$id; break; }
+    }
+    if ($chosen <= 0) return null;
+    $dataId = (int)@IPS_GetObjectIDByIdent('StandingsJson', $chosen);
+    if ($dataId <= 0 || !function_exists('IPS_VariableExists') || !IPS_VariableExists($dataId)) return null;
+    $payload = json_decode((string)GetValueString($dataId), true);
+    if (!is_array($payload) || !is_array($payload['teams'] ?? null) || $payload['teams'] === []) return null;
+    $updated = strtotime((string)($payload['updatedAt'] ?? ''));
+    if ($updated === false || time() - $updated > (72 * 60 * 60)) return null;
+    $teams = $payload['teams'];
+    $bayern = null;
+    $rows = [];
+    foreach ($teams as $team) {
+        $name = trim((string)($team['team'] ?? ''));
+        if ($name === '') continue;
+        $isBayern = stripos($name, 'Bayern') !== false;
+        if ($isBayern) $bayern = $team;
+        $rows[] = [
+            'label' => (int)($team['rank'] ?? 0) . '. ' . ($isBayern ? '★ ' : '') . $name,
+            'value' => (int)($team['points'] ?? 0) . ' Pkt. · ' . (int)($team['played'] ?? 0) . ' Sp. · '
+                . (int)($team['goalsFor'] ?? 0) . ':' . (int)($team['goalsAgainst'] ?? 0)
+                . ' (' . ((int)($team['goalDiff'] ?? 0) > 0 ? '+' : '') . (int)($team['goalDiff'] ?? 0) . ')'
+        ];
+    }
+    if (!$bayern || $rows === []) return null;
+    $isBayernQuestion = (bool)preg_match('/\b(?:bayern|fc bayern|muenchen|munchen)\b/u', mb_strtolower($text, 'UTF-8'));
+    if ($isBayernQuestion) {
+        $answer = 'Der FC Bayern steht auf Platz ' . (int)$bayern['rank'] . ' mit ' . (int)$bayern['points']
+            . ' Punkten. Aus ' . (int)$bayern['played'] . ' Spielen: ' . (int)$bayern['won'] . ' Siege, '
+            . (int)$bayern['draw'] . ' Unentschieden und ' . (int)$bayern['lost'] . ' Niederlagen. '
+            . 'Torverhältnis ' . (int)$bayern['goalsFor'] . ' zu ' . (int)$bayern['goalsAgainst'] . '.';
+    } else {
+        $places = [];
+        foreach (array_slice($teams, 0, 3) as $team) $places[] = (int)$team['rank'] . '. ' . (string)$team['team'];
+        $answer = 'In der ' . (string)($payload['league'] ?? 'Bundesliga') . ' führt '
+            . implode(', gefolgt von ', $places) . '. Der FC Bayern liegt auf Platz '
+            . (int)$bayern['rank'] . ' mit ' . (int)$bayern['points'] . ' Punkten.';
+    }
+    $rows[] = ['label'=>'Stand', 'value'=>date('d.m.Y H:i', $updated)];
+    return ['handled'=>true,'localHouseQuery'=>true,'answerSource'=>'house_status',
+        'displayTitle'=>'Bundesliga – FC Bayern München','displayIcon'=>'device','displayRows'=>$rows,
+        'answer'=>$answer.' Die Tabelle ist vom '.date('d.m.Y H:i', $updated).'.',
+        'readOnly'=>true,'contextEligible'=>true];
+}
+
 function iah_rc_voice(
     string $text,array $cfg,?array $previewCatalog=null,?callable $http=null
 ): array
@@ -1158,6 +1210,10 @@ function iah_rc_voice(
     $key=trim((string)($cfg['api_key']??''));$catalogId=(int)($cfg['catalog_script_id']??0);
     if((!$preview&&$catalogId<=0)||trim($text)==='')
         return ['handled'=>false,'error'=>'KI-Konfiguration unvollständig'];
+    if (!$preview) {
+        $football = iah_rc_football_answer($text);
+        if ($football !== null) return $football;
+    }
     // Ereignisse an das persistente IPS-Modul melden, ohne den normalen Antwortweg zu beeinflussen.
     $costInstanceId=(int)($cfg['ki_cost_instance_id']??0);
     $recordAction = !$preview && $costInstanceId > 0 && function_exists('IAH_RecordAlexaVariableAction')
