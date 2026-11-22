@@ -143,37 +143,54 @@ trait IAHVisualNavigationEditorTrait
         return $rows;
     }
 
+    /** Reports the router version actually installed in the generated Action script. */
     private function visualNavigationRuntimeStatus(): string
     {
         $actionId = $this->getActionScriptId();
         $source = $actionId > 0 ? $this->getScriptContent($actionId) : '';
-        $installed = is_string($source)
-            && str_contains($source, 'IAH_APL_TILE_ROUTE_V5_BEGIN')
-            && str_contains($source, 'IAH_APL_TILE_ROUTE_V5_END');
-        $entries = json_decode($this->ReadPropertyString('LaunchCatalog'), true);
-        $football = null;
-        foreach (is_array($entries) ? $entries : [] as $entry) {
-            if (($entry['id'] ?? '') === 'bundesliga') { $football=$entry; break; }
+        $version = 0;
+        if (is_string($source)) {
+            for ($candidate=6; $candidate>=1; --$candidate) {
+                $begin='IAH_APL_TILE_ROUTE_V'.$candidate.'_BEGIN';
+                $end='IAH_APL_TILE_ROUTE_V'.$candidate.'_END';
+                if (str_contains($source,$begin) && str_contains($source,$end)) {
+                    $version=$candidate;
+                    break;
+                }
+            }
         }
-        $binding = $football === null ? 'nicht vorhanden' :
-            (string)($football['actionType'] ?? '(Altbestand)').' → '
-            .(string)($football['target'] ?? '(kein Ziel)');
-        return 'Action #'.$actionId.' · APL-Klickrouter V5: '
-            .($installed?'INSTALLIERT':'FEHLT').' · Fußball: '.$binding
-            .' · Falls der Router fehlt: unten Reparatur starten.';
+
+        // Resolve inherited/default bindings the same way as the editor list.
+        $football = null;
+        foreach ($this->visualNavigationRows() as $row) {
+            if (($row['source']??'')==='launch' && ($row['key']??'')==='bundesliga') {
+                $football=$row;
+                break;
+            }
+        }
+        $binding=$football===null ? 'nicht vorhanden'
+            : (string)$football['actionType'].' → '.(string)$football['target'];
+        $routerStatus=$version===6 ? 'V6 INSTALLIERT'
+            : ($version>0 ? 'V'.$version.' VERALTET' : 'NICHT GEFUNDEN');
+        $instruction=$version===6 ? 'Router ist aktuell.'
+            : 'Bitte APL-Klickrouter prüfen / reparieren und danach die Diagnose erneut lesen.';
+        return 'Action #'.$actionId.' · APL-Klickrouter: '.$routerStatus
+            .' · Fußball: '.$binding.' · '.$instruction;
     }
 
     public function RepairVisualTileRouting(): void
     {
         $actionId = $this->getActionScriptId();
-        if ($actionId > 0 && IPS_ScriptExists($actionId)) {
+        if ($actionId <= 0 || !IPS_ScriptExists($actionId)) {
+            $status='APL-Klickrouter: Action-Skript nicht gefunden. Keine Änderung durchgeführt.';
+        } else {
             $this->patchActionScriptAplTileRoute($actionId);
             $this->patchActionScriptAiStatusPage($actionId);
+            $status=$this->visualNavigationRuntimeStatus();
         }
-        $status = $this->visualNavigationRuntimeStatus();
-        $this->WriteAttributeString('VisualNavNotice', $status);
-        $this->UpdateFormField('VisualNavRuntimeStatus', 'caption', $status);
-        $this->UpdateFormField('VisualNavNotice', 'caption', $status);
+        $this->WriteAttributeString('VisualNavNotice',$status);
+        $this->UpdateFormField('VisualNavRuntimeStatus','caption',$status);
+        $this->UpdateFormField('VisualNavNotice','caption',$status);
     }
 
     private function buildVisualNavigationForm(): array
