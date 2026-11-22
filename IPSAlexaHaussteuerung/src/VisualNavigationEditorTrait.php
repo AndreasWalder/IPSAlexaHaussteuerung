@@ -142,8 +142,8 @@ trait IAHVisualNavigationEditorTrait
         $actionId = $this->getActionScriptId();
         $source = $actionId > 0 ? $this->getScriptContent($actionId) : '';
         $installed = is_string($source)
-            && str_contains($source, 'IAH_APL_TILE_ROUTE_V4_BEGIN')
-            && str_contains($source, 'IAH_APL_TILE_ROUTE_V4_END');
+            && str_contains($source, 'IAH_APL_TILE_ROUTE_V5_BEGIN')
+            && str_contains($source, 'IAH_APL_TILE_ROUTE_V5_END');
         $entries = json_decode($this->ReadPropertyString('LaunchCatalog'), true);
         $football = null;
         foreach (is_array($entries) ? $entries : [] as $entry) {
@@ -152,7 +152,7 @@ trait IAHVisualNavigationEditorTrait
         $binding = $football === null ? 'nicht vorhanden' :
             (string)($football['actionType'] ?? '(Altbestand)').' → '
             .(string)($football['target'] ?? '(kein Ziel)');
-        return 'Action #'.$actionId.' · APL-Klickrouter V4: '
+        return 'Action #'.$actionId.' · APL-Klickrouter V5: '
             .($installed?'INSTALLIERT':'FEHLT').' · Fußball: '.$binding
             .' · Falls der Router fehlt: unten Reparatur starten.';
     }
