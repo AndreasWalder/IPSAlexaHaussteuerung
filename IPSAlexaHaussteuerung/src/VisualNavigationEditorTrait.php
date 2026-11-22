@@ -261,6 +261,15 @@ trait IAHVisualNavigationEditorTrait
                     ],
                     'onEdit'=>$onEdit,
                 ],
+                ['type'=>'Label','caption'=>'KI-Kachel testen: ID einer bestehenden Kachel eingeben. '
+                    .'Der Test verwendet die echte KI-/Datenquelle (gegebenenfalls API-Kosten), '
+                    .'schaltet aber keine Geräte.'],
+                ['type'=>'RowLayout','items'=>[
+                    ['type'=>'ValidationTextBox','name'=>'VisualNavTestKey','caption'=>'Kachel-ID für Test','value'=>''],
+                    ['type'=>'Button','caption'=>'KI-FRAGE TESTEN',
+                        'onClick'=>'IAH_TestVisualNavigationTile($id, $VisualNavTestKey);']
+                ]],
+                ['type'=>'Label','name'=>'VisualNavTestStatus','caption'=>'Noch kein Test ausgeführt.'],
                 ['type'=>'Button','caption'=>'LETZTE VISUALISIERUNGSÄNDERUNG ZURÜCKNEHMEN',
                     'confirm'=>'Die vorherige Konfiguration der zuletzt geänderten Kachel-, Page- oder Renderer-Liste wiederherstellen?',
                     'onClick'=>'IAH_RestoreVisualNavigationBackup($id);'],
@@ -284,6 +293,74 @@ trait IAHVisualNavigationEditorTrait
                     'expanded'=>false,'items'=>[$this->buildSystemNavigationEditorForm()]],
             ],
         ];
+    }
+
+    /** Read-only test using the same KI controller as an APL tile click. */
+    public function TestVisualNavigationTile(string $key): void
+    {
+        $key=strtolower(trim($key));
+        $message='';
+        try {
+            $tiles=json_decode($this->ReadPropertyString('LaunchCatalog'),true);
+            $tile=null;
+            foreach (is_array($tiles)?$tiles:[] as $candidate) {
+                if (is_array($candidate) && strtolower((string)($candidate['id']??''))===$key) {
+                    $tile=$candidate; break;
+                }
+            }
+            if($tile===null)throw new RuntimeException('Kachel-ID nicht gefunden.');
+            $action=(string)($tile['actionType']??'route');
+            if($action!=='ai_query') {
+                $message='Kachel '.(string)($tile['title']??$key)
+                    .': APL-Seite öffnen → '.(string)($tile['target']??$key)
+                    .' (keine KI-Abfrage).';
+            } else {
+                $question=trim((string)($tile['target']??''));
+                if($question==='')throw new RuntimeException('Kein Fragetext hinterlegt.');
+                $helper=$this->getObjectIDByIdentOrName($this->InstanceID,'iahHelper','Alexa new devices helper');
+                $script=$helper>0?$this->getObjectIDByIdentOrName($helper,'kiHouseControllerScript','KIHouseController'):0;
+                if($script<=0 || !IPS_ScriptExists($script))
+                    throw new RuntimeException('KIHouseController nicht gefunden.');
+                $settings=$this->getObjectIDByIdentOrName($this->InstanceID,'iahSettings','Einstellungen');
+                $catalog=$settings>0?$this->getObjectIDByIdentOrName($settings,'roomsCatalog','RoomsCatalog'):0;
+                $config=[
+                    'catalog_script_id'=>$catalog,
+                    'archive_control_id'=>(bool)($tile['useArchive']??true)
+                        ?(int)$this->ReadPropertyInteger('KIArchiveControlId'):0,
+                    'api_key'=>$this->ReadPropertyString('KIIntentApiKey'),
+                    'model'=>$this->ReadPropertyString('KIModelSelection'),
+                    'max_words'=>(int)$this->ReadPropertyInteger('HomeAgentVoiceMaxWords'),
+                    'timeout_seconds'=>(int)$this->ReadPropertyInteger('HomeAgentVoiceTimeoutSeconds'),
+                    'device_diagnostics'=>false,
+                    'allow_writes'=>false,
+                    'ki_cost_instance_id'=>$this->InstanceID,
+                    'tile_display'=>true
+                ];
+                $raw=IPS_RunScriptWaitEx($script,[
+                    'kiCatalogText'=>$question,
+                    'kiCatalogConfigJson'=>json_encode($config,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)
+                ]);
+                $data=is_string($raw)?json_decode(trim($raw),true):null;
+                if(!is_array($data)||empty($data['handled'])) {
+                    throw new RuntimeException('Keine verwertbare Antwort ('
+                        .(is_array($data)?(string)($data['error']??'unhandled'):'invalid_json').').');
+                }
+                $title=trim((string)($tile['resultTitle']??''));
+                if($title==='')$title=(string)($data['displayTitle']??$tile['title']??'KI-Ergebnis');
+                $icon=($tile['resultIconMode']??'ai')==='tile'
+                    ?(string)($tile['icon']??''): (string)($data['displayIcon']??'device');
+                $status=($tile['resultStatusMode']??'auto')==='off'
+                    ? 'ausgeblendet' : (string)($data['displayStatus']??'unknown');
+                $answer=mb_substr((string)($data['answer']??''),0,500,'UTF-8');
+                $message='KI-Test erfolgreich · Titel: '.$title.' · Icon: '.$icon
+                    .' · Status: '.$status.' · Layout: '.(string)($tile['resultLayout']??'auto')
+                    .' · Detailzeilen: '.count((array)($data['displayRows']??[]))
+                    .' · Antwort: '.$answer;
+            }
+        } catch(\\Throwable $e) {
+            $message='KI-Test fehlgeschlagen: '.$e->getMessage();
+        }
+        $this->UpdateFormField('VisualNavTestStatus','caption',$message);
     }
 
     public function SaveVisualNavigationEntry(string $payload): void
