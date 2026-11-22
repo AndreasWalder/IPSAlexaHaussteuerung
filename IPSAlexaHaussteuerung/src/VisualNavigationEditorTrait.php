@@ -74,6 +74,38 @@ trait IAHVisualNavigationEditorTrait
         return $rows;
     }
 
+    private function visualNavigationRuntimeStatus(): string
+    {
+        $actionId = $this->getActionScriptId();
+        $source = $actionId > 0 ? $this->getScriptContent($actionId) : '';
+        $installed = is_string($source)
+            && str_contains($source, 'IAH_APL_TILE_ROUTE_V2_BEGIN')
+            && str_contains($source, 'IAH_APL_TILE_ROUTE_V2_END');
+        $entries = json_decode($this->ReadPropertyString('LaunchCatalog'), true);
+        $football = null;
+        foreach (is_array($entries) ? $entries : [] as $entry) {
+            if (($entry['id'] ?? '') === 'bundesliga') { $football=$entry; break; }
+        }
+        $binding = $football === null ? 'nicht vorhanden' :
+            (string)($football['actionType'] ?? '(Altbestand)').' → '
+            .(string)($football['target'] ?? '(kein Ziel)');
+        return 'Action #'.$actionId.' · APL-Klickrouter V2: '
+            .($installed?'INSTALLIERT':'FEHLT').' · Fußball: '.$binding
+            .' · Falls der Router fehlt: unten Reparatur starten.';
+    }
+
+    public function RepairVisualTileRouting(): void
+    {
+        $actionId = $this->getActionScriptId();
+        if ($actionId > 0 && IPS_ScriptExists($actionId)) {
+            $this->patchActionScriptAplTileRoute($actionId);
+        }
+        $status = $this->visualNavigationRuntimeStatus();
+        $this->WriteAttributeString('VisualNavNotice', $status);
+        $this->UpdateFormField('VisualNavRuntimeStatus', 'caption', $status);
+        $this->UpdateFormField('VisualNavNotice', 'caption', $status);
+    }
+
     private function buildVisualNavigationForm(): array
     {
         $onEdit = 'IAH_SaveVisualNavigationEntry($id, json_encode(['
@@ -93,6 +125,10 @@ trait IAHVisualNavigationEditorTrait
                     .'"KI-Frage" verwendet den hinterlegten Fragetext. '
                     .'Page-Zuordnungen und Renderer werden direkt übernommen. '
                     .'Navigationstabs bleiben zum Schutz der bestehenden EDIT/PROD-Veröffentlichung separat versioniert.'],
+                ['type'=>'Label','name'=>'VisualNavRuntimeStatus',
+                    'caption'=>$this->visualNavigationRuntimeStatus()],
+                ['type'=>'Button','caption'=>'APL-KLICKROUTER PRÜFEN / REPARIEREN',
+                    'onClick'=>'IAH_RepairVisualTileRouting($id);'],
                 ['type'=>'Label','name'=>'VisualNavNotice',
                     'caption'=>$this->ReadAttributeString('VisualNavNotice')],
                 ['type'=>'List','name'=>'VisualNavRows',
