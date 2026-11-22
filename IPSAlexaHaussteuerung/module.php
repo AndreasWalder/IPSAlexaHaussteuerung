@@ -15,7 +15,9 @@ require_once __DIR__ . '/src/VoiceRuleEngine.php';
 require_once __DIR__ . '/src/VoiceRuleLiteralReader.php';
 require_once __DIR__ . '/src/VoiceRuleAiMatcher.php';
 require_once __DIR__ . '/src/VoiceRulePreviewForm.php';
-require_once __DIR__ . '/src/HouseQuestionContext.php';
+if (!class_exists('IAHHouseQuestionContext', false)) {
+    require_once __DIR__ . '/src/HouseQuestionContext.php';
+}
 require_once __DIR__ . '/src/VoiceLegacyMigration.php';
 require_once __DIR__ . '/src/VoiceRuleEditorTrait.php';
 require_once __DIR__ . '/src/LastAlexaInteractionTrait.php';
