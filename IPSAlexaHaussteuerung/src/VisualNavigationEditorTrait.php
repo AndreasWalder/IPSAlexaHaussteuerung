@@ -121,6 +121,9 @@ trait IAHVisualNavigationEditorTrait
                     ],
                     'onEdit'=>$onEdit,
                 ],
+                ['type'=>'Button','caption'=>'LETZTE VISUALISIERUNGSÄNDERUNG ZURÜCKNEHMEN',
+                    'confirm'=>'Die vorherige Konfiguration der zuletzt geänderten Kachel-, Page- oder Renderer-Liste wiederherstellen?',
+                    'onClick'=>'IAH_RestoreVisualNavigationBackup($id);'],
                 ['type'=>'Label','caption'=>'Neue Startkachel mit verständlicher Aktion anlegen:'],
                 ['type'=>'RowLayout','items'=>[
                     ['type'=>'ValidationTextBox','name'=>'VisualNavNewKey','caption'=>'Kachel-ID','value'=>''],
@@ -193,6 +196,12 @@ trait IAHVisualNavigationEditorTrait
             }
             unset($row);
             if (!$found) throw new RuntimeException('Eintrag wurde nicht gefunden; bitte neu laden.');
+            if (function_exists('IPS_HasChanges') && IPS_HasChanges($this->InstanceID)) {
+                throw new RuntimeException('Bitte zuerst ungespeicherte Instanzeinstellungen übernehmen.');
+            }
+            $this->WriteAttributeString('VisualNavBackup', json_encode([
+                'property'=>$property,'previous'=>$this->ReadPropertyString($property)
+            ], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
             IPS_SetProperty($this->InstanceID, $property,
                 json_encode($rows, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
             IPS_ApplyChanges($this->InstanceID);
@@ -219,12 +228,39 @@ trait IAHVisualNavigationEditorTrait
             if (!is_array($rows)) throw new RuntimeException('Kachelkonfiguration nicht lesbar.');
             foreach ($rows as $row) if (($row['id']??'')===$key) throw new RuntimeException('ID existiert bereits.');
             $rows[]=['id'=>$key,'title'=>$title,'subtitle'=>'','actionType'=>$action,'target'=>$target];
+            if (function_exists('IPS_HasChanges') && IPS_HasChanges($this->InstanceID)) {
+                throw new RuntimeException('Bitte zuerst ungespeicherte Instanzeinstellungen übernehmen.');
+            }
+            $this->WriteAttributeString('VisualNavBackup', json_encode([
+                'property'=>'LaunchCatalog','previous'=>$this->ReadPropertyString('LaunchCatalog')
+            ],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
             IPS_SetProperty($this->InstanceID,'LaunchCatalog',
                 json_encode($rows,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
             IPS_ApplyChanges($this->InstanceID);
             $this->WriteAttributeString('VisualNavNotice','Kachel angelegt: '.$title);
         } catch(Throwable $e) {
             $this->WriteAttributeString('VisualNavNotice','Nicht angelegt: '.$e->getMessage());
+        }
+        $this->ReloadForm();
+    }
+    public function RestoreVisualNavigationBackup(): void
+    {
+        try {
+            $backup=json_decode($this->ReadAttributeString('VisualNavBackup'),true,64,JSON_THROW_ON_ERROR);
+            if (!is_array($backup) || !in_array(($backup['property']??''),[
+                'LaunchCatalog','PageMappings','RendererDomains'
+            ],true) || !is_string($backup['previous']??null)) {
+                throw new RuntimeException('Kein gültiges Backup vorhanden.');
+            }
+            if (function_exists('IPS_HasChanges') && IPS_HasChanges($this->InstanceID)) {
+                throw new RuntimeException('Bitte zuerst ungespeicherte Instanzeinstellungen übernehmen.');
+            }
+            IPS_SetProperty($this->InstanceID,$backup['property'],$backup['previous']);
+            IPS_ApplyChanges($this->InstanceID);
+            $this->WriteAttributeString('VisualNavBackup','');
+            $this->WriteAttributeString('VisualNavNotice','Letzte Änderung zurückgenommen.');
+        } catch(Throwable $e) {
+            $this->WriteAttributeString('VisualNavNotice','Wiederherstellung fehlgeschlagen: '.$e->getMessage());
         }
         $this->ReloadForm();
     }
