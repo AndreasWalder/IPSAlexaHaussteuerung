@@ -158,9 +158,20 @@ $calcSize = static function(array $ds, bool $apl, string $speech): int {
     return strlen(json_encode(['speech'=>$speech,'apl'=>$aplObj], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
 };
 $bytes = static function($v): int { return strlen(json_encode($v, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)); };
+$tileIdManifest = static function(array $ds): string {
+    $tiles = (array)($ds['tilesData']['tiles'] ?? []);
+    $ids = [];
+    foreach ($tiles as $tile) {
+        if (!is_array($tile)) continue;
+        $id = strtolower((string)($tile['id'] ?? ''));
+        $id = preg_replace('/[^a-z0-9_-]/', '', $id) ?? '';
+        if ($id !== '') $ids[] = $id;
+    }
+    return substr(implode(',', $ids), 0, 2000);
+};
 
 /* — Deutsche Diagnose — */
-$payloadReport = static function(array $ds, bool $apl, string $speech) use ($calcSize,$bytes,$nf) {
+$payloadReport = static function(array $ds, bool $apl, string $speech) use ($calcSize,$bytes,$nf,$tileIdManifest) {
     $total = $calcSize($ds,$apl,$speech);
     $dsBytes = $bytes($ds);
     @IPS_LogMessage('Alexa', 'GESAMT: '. $nf($total) .' Bytes  |  Datasource: '. $nf($dsBytes) .' Bytes');
@@ -201,6 +212,7 @@ $payloadReport = static function(array $ds, bool $apl, string $speech) use ($cal
     $chunks = [];
     foreach ($topTiles as $x) $chunks[] = $x['id'].':'.$nf($x['bytes']).'b';
     @IPS_LogMessage('Alexa', $msgTiles.implode(', ', $chunks));
+    @IPS_LogMessage('Alexa', 'LaunchCatalog-Reihenfolge: '.($tileIdManifest($ds) ?: '(leer)'));
 
     if (!empty($perKey['Value2']) && $perKey['Value2'] > 2000) {
         @IPS_LogMessage('Alexa', 'HINWEIS: "Value2" (Status/Meldungen) ist sehr lang und verursacht den Hauptanteil der Payload.');
@@ -286,6 +298,10 @@ if ($apl) {
     if (!empty($trace)) @IPS_LogMessage('Alexa', 'Limiter-Schritte: '.implode(' → ', $trace));
     if ($after > (256 * 1000)) @IPS_LogMessage('Alexa', 'WARNUNG: Payload weiterhin groß. Prüfe besonders Value2 (Status/Meldungen).');
 }
+
+@IPS_LogMessage('Alexa', 'LaunchAPL-Ausgabe: aktiv='.($apl ? 'ja' : 'nein')
+    .' document=Hausvisualisierung_Main tiles='.count((array)($ds['tilesData']['tiles'] ?? []))
+    .' ids='.($tileIdManifest($ds) ?: '(leer)'));
 
 $aplObj = $apl ? ['doc'=>['type'=>'Link','src'=>'doc://alexa/apl/documents/Hausvisualisierung_Main'], 'ds'=>$ds] : null;
 
