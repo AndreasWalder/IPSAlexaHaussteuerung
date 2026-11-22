@@ -99,6 +99,7 @@ trait IAHVisualNavigationEditorTrait
         $actionId = $this->getActionScriptId();
         if ($actionId > 0 && IPS_ScriptExists($actionId)) {
             $this->patchActionScriptAplTileRoute($actionId);
+            $this->patchActionScriptAiStatusPage($actionId);
         }
         $status = $this->visualNavigationRuntimeStatus();
         $this->WriteAttributeString('VisualNavNotice', $status);
