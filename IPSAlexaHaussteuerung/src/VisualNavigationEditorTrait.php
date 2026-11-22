@@ -176,9 +176,9 @@ trait IAHVisualNavigationEditorTrait
             .'"title"=>$VisualNavRows["title"], '
             .'"actionType"=>$VisualNavRows["actionType"], '
             .'"target"=>$VisualNavRows["target"], '
-            .'"icon"=>$VisualNavRows["icon"], '
-            .'"iconUpload"=>$VisualNavRows["iconUpload"], '
-            .'"color"=>$VisualNavRows["color"]'
+            .'"icon"=>($VisualNavRows["icon"] ?? ""), '
+            .'"iconUpload"=>($VisualNavRows["iconUpload"] ?? ""), '
+            .'"color"=>($VisualNavRows["color"] ?? 3562633)'
             .'], JSON_INVALID_UTF8_SUBSTITUTE));';
         return [
             'type'=>'ExpansionPanel',
@@ -246,7 +246,7 @@ trait IAHVisualNavigationEditorTrait
                         'extensions'=>'.png,.jpg,.jpeg,.webp'],
                 ]],
                 ['type'=>'Button','caption'=>'STARTKACHEL ANLEGEN',
-                    'onClick'=>'IAH_CreateVisualNavigationTile($id, $VisualNavNewKey, $VisualNavNewTitle, $VisualNavNewAction, $VisualNavNewTarget, $VisualNavNewIcon, $VisualNavNewColor, $VisualNavNewIconUpload);'],
+                    'onClick'=>'IAH_CreateVisualNavigationTile($id, $VisualNavNewKey, $VisualNavNewTitle, $VisualNavNewAction, $VisualNavNewTarget, $VisualNavNewIcon, $VisualNavNewColor, (string)$VisualNavNewIconUpload);'],
                 ['type'=>'ExpansionPanel','caption'=>'Navigationstabs (EDIT/PROD) bearbeiten',
                     'expanded'=>false,'items'=>[$this->buildSystemNavigationEditorForm()]],
             ],
