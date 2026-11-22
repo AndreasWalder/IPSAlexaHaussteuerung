@@ -1273,10 +1273,10 @@ class IPSAlexaHaussteuerung extends IPSModule
             return;
         }
 
-        $begin = '        // IAH_APL_TILE_ROUTE_V2_BEGIN';
-        $end = '        // IAH_APL_TILE_ROUTE_V2_END';
+        $begin = '        // IAH_APL_TILE_ROUTE_V3_BEGIN';
+        $end = '        // IAH_APL_TILE_ROUTE_V3_END';
         if (substr_count($template,$begin)!==1 || substr_count($template,$end)!==1) {
-            IPS_LogMessage('Alexa','APL.TileRoute: Vorlage V2 nicht eindeutig.');
+            IPS_LogMessage('Alexa','APL.TileRoute: Vorlage V3 nicht eindeutig.');
             return;
         }
         $from = strpos($template,$begin);
@@ -1284,12 +1284,13 @@ class IPSAlexaHaussteuerung extends IPSModule
         if ($to===false) return;
         $block = substr($template,$from,$to+strlen($end)-$from);
         if (str_contains($current,$begin) && str_contains($current,$end)) {
-            IPS_LogMessage('Alexa','APL.TileRoute: V2 bereits aktiv. Action #'.$scriptId);
+            IPS_LogMessage('Alexa','APL.TileRoute: V3 bereits aktiv. Action #'.$scriptId);
             return;
         }
 
-        $oldBegin = '        // IAH_APL_TILE_ROUTE_V1_BEGIN';
-        $oldEnd = '        // IAH_APL_TILE_ROUTE_V1_END';
+        $oldVersion = str_contains($current,'IAH_APL_TILE_ROUTE_V2_BEGIN') ? 'V2' : 'V1';
+        $oldBegin = '        // IAH_APL_TILE_ROUTE_'.$oldVersion.'_BEGIN';
+        $oldEnd = '        // IAH_APL_TILE_ROUTE_'.$oldVersion.'_END';
         if (substr_count($current,$oldBegin)===1 && substr_count($current,$oldEnd)===1) {
             $oldFrom = strpos($current,$oldBegin);
             $oldTo = strpos($current,$oldEnd,$oldFrom+strlen($oldBegin));
@@ -1311,14 +1312,14 @@ class IPSAlexaHaussteuerung extends IPSModule
         }
         if ($next===$current) return;
         try {
-            $this->createNavigationCatalogBackup($scriptId,'BeforeAplTileRouteV2',$current);
+            $this->createNavigationCatalogBackup($scriptId,'BeforeAplTileRouteV3',$current);
             IPS_SetScriptContent($scriptId,$next);
             if ($this->getScriptContent($scriptId)!==$next) {
                 IPS_SetScriptContent($scriptId,$current);
                 IPS_LogMessage('Alexa','APL.TileRoute: Verifizierung fehlgeschlagen, zurückgesetzt.');
                 return;
             }
-            IPS_LogMessage('Alexa','APL.TileRoute: V2 in Action #'.$scriptId.' installiert.');
+            IPS_LogMessage('Alexa','APL.TileRoute: V3 in Action #'.$scriptId.' installiert.');
         } catch (\Throwable $e) {
             IPS_LogMessage('Alexa','APL.TileRoute: Installation abgebrochen: '.get_class($e));
         }
