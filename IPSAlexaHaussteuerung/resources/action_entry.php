@@ -3876,6 +3876,41 @@ function Execute($request = null)
         }
         // IAH_VOICE_ROUTE_PRIORITY_END
 
+        // Konfigurierte Startkacheln: APL-Klick direkt zur hinterlegten
+        // Renderer-Route leiten. Bewusst erst NACH Launch-/Voice-Entscheidungen,
+        // damit ein LaunchRequest ohne Klick unverändert funktioniert.
+        if ($iahVoiceIsAplEvent && is_array($APL['args'] ?? null)
+            && (string)($APL['args'][0] ?? '') === 'GetHaus') {
+            $clicked = [];
+            foreach (array_slice($APL['args'], 1) as $value) {
+                if (!is_scalar($value)) continue;
+                $clicked[] = mb_strtolower(trim((string)$value), 'UTF-8');
+            }
+            foreach ((array)($launchCatalog['tiles'] ?? []) as $tile) {
+                if (!is_array($tile)) continue;
+                $tileId = mb_strtolower(trim((string)($tile['id'] ?? '')), 'UTF-8');
+                $tileTitle = mb_strtolower(trim((string)($tile['title'] ?? '')), 'UTF-8');
+                if ($tileId === '' || (!in_array($tileId, $clicked, true)
+                    && ($tileTitle === '' || !in_array($tileTitle, $clicked, true)))) continue;
+                $tileAction = (string)($tile['actionType'] ?? '');
+                $tileTarget = trim((string)($tile['target'] ?? ''));
+                // Migrationskompatibilität: die bisherige Bayern-Frage hat
+                // bereits eine lokale, schreibgeschützte Bundesliga-Seite.
+                if ($tileAction === 'ai_query'
+                    && mb_strtolower($tileTarget, 'UTF-8') === 'fußball tabelle bayern münchen') {
+                    $tileAction = 'route';
+                    $tileTarget = 'bundesliga';
+                }
+                if ($tileAction === 'route' && preg_match('/^[a-z0-9_-]{1,64}$/', $tileTarget)) {
+                    $__route = $tileTarget;
+                    $log('info','APL.tile.route', ['id'=>$tileId,'route'=>$tileTarget]);
+                } else {
+                    $log('info','APL.tile.unhandled', ['id'=>$tileId,'action'=>$tileAction]);
+                }
+                break;
+            }
+        }
+
         // --------- Lazy rooms nur wenn benötigt ---------
         $needsRooms = in_array($__route ?? '', ['main_launch','heizung','jalousie','licht','lueftung','geraete','bewaesserung'], true)
             || (is_string($__route ?? null) && isset($rendererDomainMap[$__route]));
