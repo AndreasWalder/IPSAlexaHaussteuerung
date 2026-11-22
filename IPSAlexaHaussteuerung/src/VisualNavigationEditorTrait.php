@@ -357,7 +357,7 @@ trait IAHVisualNavigationEditorTrait
                     .' · Detailzeilen: '.count((array)($data['displayRows']??[]))
                     .' · Antwort: '.$answer;
             }
-        } catch(\\Throwable $e) {
+        } catch(\Throwable $e) {
             $message='KI-Test fehlgeschlagen: '.$e->getMessage();
         }
         $this->UpdateFormField('VisualNavTestStatus','caption',$message);
