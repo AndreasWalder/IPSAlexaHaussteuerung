@@ -1680,6 +1680,19 @@ function iah_rc_voice(
             .'VariableUpdated ist kein Wertwechsel. Eine gesendete Schaltaktion ist keine bestaetigte '
             .'physische Rueckmeldung. Antworte mit maximal '.$maxWords.' Woertern in natuerlichem Deutsch.'
             .$uiHint;
+        $tileDisplay = !empty($cfg['tile_display']);
+        if ($tileDisplay) {
+            $planningRules .= ' Wenn die Antwort fertig ist, gib AUSSCHLIESSLICH ein JSON-Objekt '
+                .'mit den Schlüsseln answer, title, icon und status aus. '
+                .'answer ist die faktentreue deutsche Antwort. title ist ein kurzer Seitentitel. '
+                .'icon ist GENAU eines aus: light, window, door, blind, temperature, motion, weather, alarm, '
+                .'water, energy, lock, smoke, shield, battery, fan, camera, media, network, robot, device. '
+                .'status ist GENAU eines aus ok, warning, error, unknown, info. '
+                .'ok NUR bei durch echte Messdaten bestätigtem Normalzustand; warning/error nur bei belegter '
+                .'Warnung oder Störung; sonst unknown oder info. '
+                .'Die Symbole sind Kategorien, keine Bild-URLs. Keine Markdown-Codeblöcke, '
+                .'keine zusätzlichen Eigenschaften, kein erfundener Status.';
+        }
         $messages=[
             ['role'=>'system','content'=>$planningRules],
             ['role'=>'user','content'=>mb_substr($text,0,500,'UTF-8')]
@@ -1716,12 +1729,16 @@ function iah_rc_voice(
             $calls=$msg['tool_calls']??[];
             if(!$calls){
                 if ($archiveNeedsLocation && !$archiveReadSucceeded && !$wrote) return $costFinish($locationPrompt);
-                $rawAnswer=trim(strip_tags((string)($msg['content']??'')));
+                $rawAnswer=trim((string)($msg['content']??''));
                 if($rawAnswer==='')throw new RuntimeException('Keine Sprachantwort');
-                $answer=iah_rc_limit_voice_answer($rawAnswer,$maxWords);
+                $tileMeta=$tileDisplay ? iah_rc_tile_ai_reply($rawAnswer,$text) : [];
+                $answer=iah_rc_limit_voice_answer($tileDisplay
+                    ? (string)($tileMeta['answer']??'') : strip_tags($rawAnswer),$maxWords);
+                if($answer==='')throw new RuntimeException('Keine verwertbare Sprachantwort');
                 if(!$preview)iah_rc_log('answer',['durationMs'=>round((microtime(true)-$started)*1000),'text'=>$answer]);
                 $clarification=preg_match('/(?:meinst du|welche[rsnm]?|moechtest du|möchtest du|kannst du).*\?\s*$/iu',$answer)===1;
-                return $costFinish(['handled'=>true,'answer'=>$answer,'awaitingLocation'=>$clarification]);
+                return $costFinish(array_merge(['handled'=>true,'answer'=>$answer,
+                    'awaitingLocation'=>$clarification],$tileMeta));
             }
             if($round>=2)throw new RuntimeException('Zu viele Tool-Runden');
             $messages[]=$msg;
@@ -1793,6 +1810,39 @@ function iah_rc_voice(
     return $costFinish(['handled'=>false,'error'=>'Keine Antwort']);
 }
 /** Keep PHP notices and legacy script output out of the IPS_RunScriptWaitEx JSON protocol. */
+
+/**
+ * Structured Alexa tile presentation returned in the SAME AI reply.
+ * No remote image URLs, executable commands or unverified device states.
+ */
+function iah_rc_tile_ai_reply(string $raw, string $question): array
+{
+    $fallbackTitle=trim(mb_substr($question,0,70,'UTF-8'));
+    $raw=trim($raw);
+    if (preg_match('/^\x60{3}(?:json)?\s*(.*?)\s*\x60{3}$/su',$raw,$fence)) $raw=trim($fence[1]);
+    $data=json_decode($raw,true);
+    $allowed=['light','window','door','blind','temperature','motion','weather','alarm',
+        'water','energy','lock','smoke','shield','battery','fan','camera','media',
+        'network','robot','device'];
+    $statuses=['ok','warning','error','unknown','info'];
+    if(!is_array($data) || !is_string($data['answer']??null)
+        || trim($data['answer'])==='') {
+        return ['answer'=>trim(strip_tags($raw)),
+            'displayTitle'=>$fallbackTitle,'displayIcon'=>'device',
+            'displayStatus'=>'unknown'];
+    }
+    $icon=(string)($data['icon']??'device');
+    if(!in_array($icon,$allowed,true))$icon='device';
+    $status=(string)($data['status']??'unknown');
+    if(!in_array($status,$statuses,true))$status='unknown';
+    $title=trim(strip_tags((string)($data['title']??'')));
+    $title=$title!==''?mb_substr($title,0,70,'UTF-8'):$fallbackTitle;
+    return [
+        'answer'=>trim(strip_tags((string)$data['answer'])),
+        'displayTitle'=>$title,'displayIcon'=>$icon,'displayStatus'=>$status
+    ];
+}
+
 function iah_rc_bridge_reply(callable $run): string
 {
     ob_start();
