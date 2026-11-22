@@ -3923,28 +3923,45 @@ function Execute($request = null)
         }
         // IAH_VOICE_ROUTE_PRIORITY_END
 
-        // IAH_APL_TILE_ROUTE_V3_BEGIN
+        // IAH_APL_TILE_ROUTE_V4_BEGIN
         // Konfigurierte Startkacheln: APL-Klick direkt zur hinterlegten
         // Renderer-Route leiten. Bewusst erst NACH Launch-/Voice-Entscheidungen,
         // damit ein LaunchRequest ohne Klick unverändert funktioniert.
         if (!$IS_LAUNCH && is_array($APL['args'] ?? null)
             && (string)($APL['args'][0] ?? '') === 'GetHaus') {
-            $clicked = [];
-            foreach (array_slice($APL['args'], 1) as $value) {
-                if (!is_scalar($value)) continue;
-                $clicked[] = mb_strtolower(trim((string)$value), 'UTF-8');
+            // Click ID is one explicit APL argument, not every string in
+            // the event. Matching against all arguments could select an older
+            // unrelated tile (e.g. Bundesliga while "test" was clicked).
+            $rawClick = (string)($APL['args'][1] ?? '');
+            if (mb_strtolower(trim($rawClick),'UTF-8') === 'home') {
+                $rawClick = (string)($APL['args'][2] ?? '');
+            }
+            $clickKey = mb_strtolower(trim($rawClick),'UTF-8');
+            $configuredTiles = (array)($launchCatalog['tiles'] ?? []);
+            $chosenTile = null;
+            foreach ($configuredTiles as $tile) {
+                if (!is_array($tile)) continue;
+                if (mb_strtolower(trim((string)($tile['id'] ?? '')),'UTF-8') === $clickKey) {
+                    $chosenTile = $tile;
+                    break;
+                }
+            }
+            // Legacy documents occasionally send the visible title instead of
+            // the internal ID. Only accept an unambiguous exact title match.
+            if ($chosenTile === null && $clickKey !== '') {
+                $titleMatches = array_values(array_filter($configuredTiles,
+                    static fn($tile): bool => is_array($tile)
+                        && mb_strtolower(trim((string)($tile['title'] ?? '')),'UTF-8') === $clickKey));
+                if (count($titleMatches) === 1) $chosenTile = $titleMatches[0];
             }
             $log('info','APL.tile.click', [
                 'requestType'=>$iahVoiceRequestType,
-                'argumentsCount'=>count($clicked),
-                'catalogCount'=>count((array)($launchCatalog['tiles'] ?? []))
+                'selectedKey'=>$clickKey,
+                'found'=>$chosenTile !== null,
+                'catalogCount'=>count($configuredTiles),
             ]);
-            foreach ((array)($launchCatalog['tiles'] ?? []) as $tile) {
-                if (!is_array($tile)) continue;
-                $tileId = mb_strtolower(trim((string)($tile['id'] ?? '')), 'UTF-8');
-                $tileTitle = mb_strtolower(trim((string)($tile['title'] ?? '')), 'UTF-8');
-                if ($tileId === '' || (!in_array($tileId, $clicked, true)
-                    && ($tileTitle === '' || !in_array($tileTitle, $clicked, true)))) continue;
+            foreach ($chosenTile === null ? [] : [$chosenTile] as $tile) {
+                $tileId = mb_strtolower(trim((string)($tile['id'] ?? '')),'UTF-8');
                 $tileAction = (string)($tile['actionType'] ?? '');
                 $tileTarget = trim((string)($tile['target'] ?? ''));
                 // Bei älteren installierten Action-Skripten hat der alte
@@ -4034,7 +4051,7 @@ function Execute($request = null)
             }
         }
 
-        // IAH_APL_TILE_ROUTE_V3_END
+        // IAH_APL_TILE_ROUTE_V4_END
 
         // --------- Lazy rooms nur wenn benötigt ---------
         $needsRooms = in_array($__route ?? '', ['main_launch','heizung','jalousie','licht','lueftung','geraete','bewaesserung'], true)
