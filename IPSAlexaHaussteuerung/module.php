@@ -1274,10 +1274,10 @@ class IPSAlexaHaussteuerung extends IPSModule
             return;
         }
 
-        $begin = '        // IAH_APL_TILE_ROUTE_V4_BEGIN';
-        $end = '        // IAH_APL_TILE_ROUTE_V4_END';
+        $begin = '        // IAH_APL_TILE_ROUTE_V5_BEGIN';
+        $end = '        // IAH_APL_TILE_ROUTE_V5_END';
         if (substr_count($template,$begin)!==1 || substr_count($template,$end)!==1) {
-            IPS_LogMessage('Alexa','APL.TileRoute: Vorlage V4 nicht eindeutig.');
+            IPS_LogMessage('Alexa','APL.TileRoute: Vorlage V5 nicht eindeutig.');
             return;
         }
         $from = strpos($template,$begin);
@@ -1285,12 +1285,13 @@ class IPSAlexaHaussteuerung extends IPSModule
         if ($to===false) return;
         $block = substr($template,$from,$to+strlen($end)-$from);
         if (str_contains($current,$begin) && str_contains($current,$end)) {
-            IPS_LogMessage('Alexa','APL.TileRoute: V4 bereits aktiv. Action #'.$scriptId);
+            IPS_LogMessage('Alexa','APL.TileRoute: V5 bereits aktiv. Action #'.$scriptId);
             return;
         }
 
-        $oldVersion = str_contains($current,'IAH_APL_TILE_ROUTE_V3_BEGIN') ? 'V3'
-            : (str_contains($current,'IAH_APL_TILE_ROUTE_V2_BEGIN') ? 'V2' : 'V1');
+        $oldVersion = str_contains($current,'IAH_APL_TILE_ROUTE_V4_BEGIN') ? 'V4'
+            : (str_contains($current,'IAH_APL_TILE_ROUTE_V3_BEGIN') ? 'V3'
+            : (str_contains($current,'IAH_APL_TILE_ROUTE_V2_BEGIN') ? 'V2' : 'V1'));
         $oldBegin = '        // IAH_APL_TILE_ROUTE_'.$oldVersion.'_BEGIN';
         $oldEnd = '        // IAH_APL_TILE_ROUTE_'.$oldVersion.'_END';
         if (substr_count($current,$oldBegin)===1 && substr_count($current,$oldEnd)===1) {
@@ -1314,14 +1315,14 @@ class IPSAlexaHaussteuerung extends IPSModule
         }
         if ($next===$current) return;
         try {
-            $this->createNavigationCatalogBackup($scriptId,'BeforeAplTileRouteV4',$current);
+            $this->createNavigationCatalogBackup($scriptId,'BeforeAplTileRouteV5',$current);
             IPS_SetScriptContent($scriptId,$next);
             if ($this->getScriptContent($scriptId)!==$next) {
                 IPS_SetScriptContent($scriptId,$current);
                 IPS_LogMessage('Alexa','APL.TileRoute: Verifizierung fehlgeschlagen, zurückgesetzt.');
                 return;
             }
-            IPS_LogMessage('Alexa','APL.TileRoute: V4 in Action #'.$scriptId.' installiert.');
+            IPS_LogMessage('Alexa','APL.TileRoute: V5 in Action #'.$scriptId.' installiert.');
         } catch (\Throwable $e) {
             IPS_LogMessage('Alexa','APL.TileRoute: Installation abgebrochen: '.get_class($e));
         }
@@ -1329,7 +1330,7 @@ class IPSAlexaHaussteuerung extends IPSModule
 
     /**
      * Update the dedicated APL status renderer in an already generated Action
-     * script. The V4 tile router passes status/icon metadata to this closure;
+     * script. The V5 tile router passes status/icon metadata to this closure;
      * replacing the entire script would destroy local customisations.
      */
     private function patchActionScriptAiStatusPage(int $scriptId): void
