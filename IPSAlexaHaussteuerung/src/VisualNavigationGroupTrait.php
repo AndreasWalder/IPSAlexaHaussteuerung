@@ -553,10 +553,10 @@ trait IAHVisualNavigationGroupTrait
     /** A picker for each installed Classic WebFront instance. */
     private function visualNavigationWebFrontInstanceOptions(): array
     {
-        $options=[['caption'=>'Alle WebFront-Instanzen','value'=>0]];
+        $options=[['caption'=>'Alle WebFront-Instanzen','value'=>'0']];
         foreach ($this->visualNavigationWebFrontInstances() as $id) {
             $name=function_exists('IPS_GetName')?(string)IPS_GetName($id):'WebFront';
-            $options[]=['caption'=>$name.' (#'.$id.')','value'=>$id];
+            $options[]=['caption'=>$name.' (#'.$id.')','value'=>(string)$id];
         }
         return $options;
     }
@@ -621,6 +621,7 @@ trait IAHVisualNavigationGroupTrait
                     'resultTitle'=>'','resultIconMode'=>'ai','resultStatusMode'=>'auto',
                     'resultLayout'=>'auto','speakAnswer'=>true,'useArchive'=>true,
                     'pageTitle'=>'','pageAction'=>'wfc_item','pageTarget'=>'',
+                    'pageInstance'=>'0','pageTargetChoice'=>'',
                     'rendererTitle'=>'','rendererTarget'=>'',
                     'parts'=>'','status'=>'','detail'=>''
                 ];
@@ -833,12 +834,12 @@ trait IAHVisualNavigationGroupTrait
                                     ['caption'=>'IP-Symcon Visualisierung (item...)','value'=>'wfc_item'],
                                     ['caption'=>'Externe HTTPS-Seite','value'=>'external_url']]],
                             ['type'=>'Select','name'=>'pageInstance',
-                                'caption'=>'WebFront-Instanz (Classic)',
+                                'caption'=>'WebFront-Instanz (Classic)','value'=>'0',
                                 'visible'=>$row['pageAction']!=='external_url',
                                 'options'=>$this->visualNavigationWebFrontInstanceOptions(),
                                 'onChange'=>'IAH_UpdateVisualNavigationWebFrontInstance($id, (int)$pageInstance);'],
                             ['type'=>'Select','name'=>'pageTargetChoice',
-                                'caption'=>'Vorhandenes WebFront-Element (ID + Bezeichnung)',
+                                'caption'=>'Vorhandenes WebFront-Element (ID + Bezeichnung)','value'=>'',
                                 'visible'=>$row['pageAction']!=='external_url',
                                 'options'=>$this->visualNavigationWebFrontItemOptions()],
                             ['type'=>'ValidationTextBox','name'=>'pageTarget',
