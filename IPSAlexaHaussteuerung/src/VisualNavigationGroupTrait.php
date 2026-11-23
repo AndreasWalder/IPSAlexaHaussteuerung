@@ -412,7 +412,8 @@ trait IAHVisualNavigationGroupTrait
     public function UpdateVisualNavigationWebFrontInstance(int $instanceId): void
     {
         $this->UpdateFormField('pageTargetChoice','options',
-            $this->visualNavigationWebFrontItemOptions($instanceId));
+            json_encode($this->visualNavigationWebFrontItemOptions($instanceId),
+                JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
         $this->UpdateFormField('pageTargetChoice','value','');
     }
 
