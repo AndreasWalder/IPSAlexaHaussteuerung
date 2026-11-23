@@ -383,6 +383,25 @@ trait IAHVisualNavigationEditorTrait
                     'onClick'=>'IAH_RepairVisualTileRouting($id);'],
                 ['type'=>'Label','name'=>'VisualNavNotice',
                     'caption'=>$this->ReadAttributeString('VisualNavNotice')],
+                ['type'=>'ExpansionPanel','name'=>'VisualNavDiagnostics',
+                    'caption'=>'DIAGNOSE – EDIT / PROD / Klickrouter (letzte 500 Ereignisse)',
+                    'expanded'=>false,'items'=>[
+                        ['type'=>'Label','caption'=>'Erfasst Dialog-OK, Feldübergaben, '
+                            .'erkannte Unterschiede, EDIT-Speicherung, Prüfungen, '
+                            .'PROD-Freigaben und Fehler. Keine KI-Fragen oder Zugangsdaten.'],
+                        ['type'=>'ValidationTextBox','name'=>'VisualNavDiagnosticJson',
+                            'caption'=>'Diagnose JSON – vollständig kopierbar',
+                            'multiline'=>true,'width'=>'100%',
+                            'value'=>$this->GetVisualNavigationDiagnostics()],
+                        ['type'=>'RowLayout','items'=>[
+                            ['type'=>'Button','caption'=>'DIAGNOSE AKTUALISIEREN',
+                                'onClick'=>'IAH_RefreshVisualNavigationDiagnostics($id);'],
+                            ['type'=>'Button','caption'=>'DIAGNOSE LEEREN',
+                                'confirm'=>'Die letzten APL-Diagnoseeinträge löschen?',
+                                'onClick'=>'IAH_ClearVisualNavigationDiagnostics($id);']
+                        ]]
+                    ]],
+
                 ['type'=>'List','name'=>'VisualNavRows',
                     'caption'=>'Verknüpfungen nach Schlüssel zusammengefasst',
                     'rowCount'=>15,'add'=>false,'delete'=>false,
