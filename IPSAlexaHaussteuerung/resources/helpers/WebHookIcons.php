@@ -16,15 +16,17 @@ declare(strict_types=1);
 $SECRET = '';
 $base   = IPS_GetKernelDir() . 'user' . DIRECTORY_SEPARATOR . 'icons' . DIRECTORY_SEPARATOR;
 
+// IP-Symcon treats "exit" as a failed script run. Always return
+// normally after sending the HTTP response, including error responses.
 $bad = static function (int $code): void {
     http_response_code($code);
-    exit;
 };
 
 try {
     $token = isset($_GET['token']) ? (string)$_GET['token'] : '';
     if ($SECRET === '' || !hash_equals($SECRET, $token)) {
         $bad(403);
+        return;
     }
 
     $file = isset($_GET['f']) ? (string)$_GET['f'] : '';
@@ -34,11 +36,13 @@ try {
     $name = basename($file);
     if ($name === '' || $name[0] === '.') {
         $bad(404);
+        return;
     }
 
     $path = $base . $name;
     if (!is_file($path)) {
         $bad(404);
+        return;
     }
 
     $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
@@ -90,14 +94,14 @@ try {
         $ts = strtotime($ims);
         if ($ts !== false && $ts >= $mtime) {
             http_response_code(304);
-            exit;
+            return;
         }
     }
 
     $inm = isset($_SERVER['HTTP_IF_NONE_MATCH']) ? (string)$_SERVER['HTTP_IF_NONE_MATCH'] : '';
     if ($inm !== '' && trim($inm) === $etag) {
         http_response_code(304);
-        exit;
+        return;
     }
 
     // Protokolliert lediglich, ob unsere neue Diagnose-Shell ausgeliefert
@@ -111,9 +115,9 @@ try {
         ]));
     }
     readfile($path);
-    exit;
+    return;
 } catch (Throwable $e) {
     IPS_LogMessage('Alexa', 'Webhook Error: ' . $e->getMessage());
     http_response_code(500);
-    exit;
+    return;
 }
