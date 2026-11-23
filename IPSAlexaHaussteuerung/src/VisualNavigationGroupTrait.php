@@ -9,6 +9,189 @@ declare(strict_types=1);
 trait IAHVisualNavigationGroupTrait
 {
     /** Detect WebFront Classic instances without assuming a single configured ID. */
+    /** The three APL lists have one staged EDIT copy, without live writes. */
+    private function visualNavigationDraftData(): array
+    {
+        $draft=json_decode($this->ReadAttributeString('VisualNavDraft'),true);
+        return is_array($draft) ? $draft : ['properties'=>[],'baseline'=>[]];
+    }
+
+    private function visualNavigationReadProperty(string $name): string
+    {
+        $draft=$this->visualNavigationDraftData();
+        return (string)($draft['properties'][$name]??$this->ReadPropertyString($name));
+    }
+
+    private function visualNavigationStageProperties(array $updates): void
+    {
+        $allowed=['LaunchCatalog','PageMappings','RendererDomains'];
+        $draft=$this->visualNavigationDraftData();
+        foreach ($updates as $name=>$json) {
+            if (!in_array($name,$allowed,true) || !is_string($json)
+                || !is_array(json_decode($json,true)))
+                throw new \RuntimeException('Ungültige EDIT-Eigenschaft: '.$name);
+            $current=$this->ReadPropertyString($name);
+            $baseline=$draft['baseline'][$name]??hash('sha256',$current);
+            if (!hash_equals($baseline,hash('sha256',$current)))
+                throw new \RuntimeException('PROD wurde zwischenzeitlich verändert: '.$name);
+            $draft['baseline'][$name]=$baseline;
+            $draft['properties'][$name]=$json;
+        }
+        $this->WriteAttributeString('VisualNavDraft',json_encode($draft,
+            JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
+        $this->WriteAttributeString('VisualNavDraftPreview','');
+    }
+
+    private function visualNavigationDraftSummary(): string
+    {
+        $draft=$this->visualNavigationDraftData();
+        $names=array_keys((array)($draft['properties']??[]));
+        if ($names===[]) return 'EDIT: Keine offenen Kachel-/Seitenänderungen.';
+        return 'EDIT: '.count($names).' geänderte Konfigurationsbereiche ('
+            .implode(', ',$names).'). Noch nicht in PROD.';
+    }
+
+    public function ValidateVisualNavigationTileDraft(string $key,string $title,
+        string $action,string $target): string
+    {
+        $key=strtolower(trim($key));$title=trim($title);$target=trim($target);
+        if (!preg_match('/^[a-z0-9_-]{2,48}$/D',$key))
+            return 'Kachel-ID muss 2–48 Zeichen (a-z, 0-9, _ oder -) haben.';
+        if ($title==='' || mb_strlen($title,'UTF-8')>120)
+            return 'Bitte einen Titel mit höchstens 120 Zeichen eingeben.';
+        if (!in_array($action,['route','ai_query'],true))return 'Ungültige Aktion.';
+        if ($target==='')return 'Route oder KI-Frage fehlt.';
+        if ($action==='route' && !preg_match('/^[a-z0-9_-]{1,64}$/D',$target))
+            return 'Ungültige APL-Route.';
+        if ($action==='ai_query' && mb_strlen($target,'UTF-8')>240)
+            return 'KI-Frage ist zu lang.';
+        $rows=json_decode($this->visualNavigationReadProperty('LaunchCatalog'),true);
+        if (!is_array($rows))return 'EDIT-Kachelkonfiguration nicht lesbar.';
+        foreach ($rows as $row) {
+            if (is_array($row) && (string)($row['id']??'')===$key)
+                return 'Diese Kachel-ID existiert bereits.';
+        }
+        return '';
+    }
+
+    public function CreateVisualNavigationTileDraft(string $payload): void
+    {
+        try {
+            $input=json_decode($payload,true,64,JSON_THROW_ON_ERROR);
+            if (!is_array($input))throw new \RuntimeException('Ungültige Kacheldaten.');
+            $key=strtolower(trim((string)($input['key']??'')));
+            $title=trim((string)($input['title']??''));
+            $action=(string)($input['action']??'');
+            $target=trim((string)($input['target']??''));
+            $error=$this->ValidateVisualNavigationTileDraft($key,$title,$action,$target);
+            if ($error!=='')throw new \RuntimeException($error);
+            $icon=trim((string)($input['icon']??''));
+            $upload=trim((string)($input['iconUpload']??''));
+            if ($upload!=='') $icon=$this->visualTileSaveUploadedIcon($key,$upload);
+            if ($icon!==''&&!preg_match('/^[A-Za-z0-9_-]+\\.(?:png|jpe?g|webp)$/iD',$icon))
+                throw new \RuntimeException('Ungültiger Bilddateiname.');
+            $layout=(string)($input['resultLayout']??'auto');
+            if (!in_array($layout,['auto','text','status'],true))
+                throw new \RuntimeException('Ungültiges Ergebnislayout.');
+            $rows=json_decode($this->visualNavigationReadProperty('LaunchCatalog'),true,64,JSON_THROW_ON_ERROR);
+            if (!is_array($rows))throw new \RuntimeException('LaunchCatalog ist kein Array.');
+            $rows[]=[
+                'id'=>$key,'title'=>$title,'subtitle'=>'',
+                'actionType'=>$action,'target'=>$target,'icon'=>$icon,
+                'color'=>$this->visualTileColorHex($input['color']??0x365C89),
+                'resultTitle'=>mb_substr(trim((string)($input['resultTitle']??'')),0,90,'UTF-8'),
+                'resultIconMode'=>'ai','resultStatusMode'=>'auto',
+                'resultLayout'=>$layout,
+                'speakAnswer'=>(bool)($input['speakAnswer']??true),
+                'useArchive'=>(bool)($input['useArchive']??true)
+            ];
+            $this->visualNavigationStageProperties(['LaunchCatalog'=>json_encode($rows,
+                JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)]);
+            $this->WriteAttributeString('VisualNavNotice',
+                'Kachel '.$key.' in EDIT angelegt. Zum Veröffentlichen EDIT prüfen und nach PROD übernehmen.');
+        } catch (\Throwable $error) {
+            $this->WriteAttributeString('VisualNavNotice','Kachel nicht angelegt: '.$error->getMessage());
+        }
+        $this->ReloadForm();
+    }
+
+    public function PreviewVisualNavigationDraft(): void
+    {
+        $this->WriteAttributeString('VisualNavDraftPreview','');
+        try {
+            $draft=$this->visualNavigationDraftData();
+            $changes=(array)($draft['properties']??[]);
+            if ($changes===[])throw new \RuntimeException('Keine EDIT-Änderungen.');
+            foreach ($changes as $name=>$json) {
+                if (!is_array(json_decode((string)$json,true)))
+                    throw new \RuntimeException('EDIT-JSON ungültig: '.$name);
+                if (!hash_equals((string)($draft['baseline'][$name]??''),
+                    hash('sha256',$this->ReadPropertyString($name))))
+                    throw new \RuntimeException('PROD wurde seit EDIT geändert: '.$name);
+            }
+            $this->WriteAttributeString('VisualNavDraftPreview',json_encode([
+                'hash'=>hash('sha256',json_encode($draft,JSON_THROW_ON_ERROR)),
+                'time'=>time()
+            ],JSON_THROW_ON_ERROR));
+            $this->WriteAttributeString('VisualNavNotice',
+                'Vorschau OK: '.implode(', ',array_keys($changes))
+                .' · EDIT kann jetzt nach PROD übernommen werden (10 Minuten gültig).');
+        } catch (\Throwable $error) {
+            $this->WriteAttributeString('VisualNavNotice','EDIT-Prüfung: '.$error->getMessage());
+        }
+        $this->ReloadForm();
+    }
+
+    public function PublishVisualNavigationDraft(): void
+    {
+        try {
+            $draft=$this->visualNavigationDraftData();
+            $changes=(array)($draft['properties']??[]);
+            $preview=json_decode($this->ReadAttributeString('VisualNavDraftPreview'),true);
+            if ($changes===[] || !is_array($preview)
+                || (int)($preview['time']??0)<time()-600
+                || !hash_equals((string)($preview['hash']??''),
+                    hash('sha256',json_encode($draft,JSON_THROW_ON_ERROR))))
+                throw new \RuntimeException('Bitte zuerst EDIT-Änderungen erneut prüfen.');
+            if (function_exists('IPS_HasChanges') && IPS_HasChanges($this->InstanceID))
+                throw new \RuntimeException('Instanzeinstellungen zuerst übernehmen.');
+            $before=[];
+            foreach ($changes as $name=>$json) {
+                $raw=$this->ReadPropertyString($name);
+                if (!hash_equals((string)($draft['baseline'][$name]??''),hash('sha256',$raw)))
+                    throw new \RuntimeException('PROD zwischenzeitlich geändert: '.$name);
+                if (!is_array(json_decode((string)$json,true)))
+                    throw new \RuntimeException('Ungültiges EDIT-JSON: '.$name);
+                $before[$name]=$raw;
+            }
+            $this->WriteAttributeString('VisualNavBackup',json_encode([
+                'properties'=>$before,'reason'=>'before_visual_edit_to_prod',
+                'timestamp'=>time()
+            ],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
+            try {
+                foreach ($changes as $name=>$json)
+                    IPS_SetProperty($this->InstanceID,$name,$json);
+                IPS_ApplyChanges($this->InstanceID);
+                foreach ($changes as $name=>$json) {
+                    if (json_decode($this->ReadPropertyString($name),true)!==json_decode($json,true))
+                        throw new \RuntimeException('PROD-Schreibprüfung fehlgeschlagen: '.$name);
+                }
+            } catch (\Throwable $error) {
+                foreach ($before as $name=>$json)
+                    IPS_SetProperty($this->InstanceID,$name,$json);
+                IPS_ApplyChanges($this->InstanceID);
+                throw $error;
+            }
+            $this->WriteAttributeString('VisualNavDraft','');
+            $this->WriteAttributeString('VisualNavDraftPreview','');
+            $this->WriteAttributeString('VisualNavNotice',
+                'APL-Konfiguration aus EDIT nach PROD übernommen: '.implode(', ',array_keys($changes)));
+        } catch (\Throwable $error) {
+            $this->WriteAttributeString('VisualNavNotice','Nicht veröffentlicht: '.$error->getMessage());
+        }
+        $this->ReloadForm();
+    }
+
     private function visualNavigationWebFrontInstances(): array
     {
         if (!function_exists('IPS_GetInstanceListByModuleID')) return [];
