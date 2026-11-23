@@ -547,7 +547,10 @@ trait IAHVisualNavigationEditorTrait
                 if (!is_array($context['edit'])) {
                     throw new RuntimeException('SystemConfigurationEdit ist nicht lesbar.');
                 }
-                foreach (IAHSystemNavigationEditor::items($context['edit']) as $navigation) {
+                // Use the normal editor's row, including its revision hash.
+                // Saving the raw item loses "revision" and cannot pass the
+                // concurrency protection in IAHSystemNavigationEditor::update.
+                foreach (IAHSystemNavigationEditor::rows($context['edit']) as $navigation) {
                     if ((string)($navigation['entryKey'] ?? '') !== $key) continue;
                     $navigation['title'] = $title;
                     $navigation['objectId'] = (int)$target;
