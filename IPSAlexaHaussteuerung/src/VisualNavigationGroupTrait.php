@@ -100,8 +100,11 @@ trait IAHVisualNavigationGroupTrait
             JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
         $this->WriteAttributeString('VisualNavDraftPreview','');
         $check=$this->visualNavigationDraftData();
-        if (count((array)($check['properties']??[]))<count($updates))
-            throw new \RuntimeException('EDIT-Schreibprüfung fehlgeschlagen.');
+        foreach ($updates as $name=>$json) {
+            if (!array_key_exists($name,(array)($check['properties']??[]))
+                || $check['properties'][$name]!==$json)
+                throw new \RuntimeException('EDIT-Schreibprüfung fehlgeschlagen: '.$name);
+        }
         $this->visualNavigationTrace('OK','EDIT_STAGE_SAVED',[
             'properties'=>implode(',',array_keys($updates)),
             'draftCount'=>count((array)($check['properties']??[]))
@@ -782,9 +785,16 @@ trait IAHVisualNavigationGroupTrait
         foreach ($this->visualNavigationGroups() as $candidate) {
             if ($candidate['groupId']===$groupId) {$row=$candidate;break;}
         }
-        if ($row===null) return json_encode([
-            ['type'=>'Label','caption'=>'Eintrag nicht mehr vorhanden. Bitte Konfigurator neu öffnen.']
-        ],JSON_THROW_ON_ERROR);
+        if ($row===null) {
+            $this->visualNavigationTrace('ERROR','DIALOG_OPEN_UNKNOWN_GROUP',['group'=>$groupId]);
+            return json_encode([
+                ['type'=>'Label','caption'=>'Eintrag nicht mehr vorhanden. Bitte Konfigurator neu öffnen.']
+            ],JSON_THROW_ON_ERROR);
+        }
+        $this->visualNavigationTrace('INFO','DIALOG_OPEN',[
+            'group'=>$groupId,'source'=>(string)$row['source'],
+            'count'=>count($row)
+        ]);
         $isNav=$row['source']==='navigation';
         $isAi=$row['actionType']==='ai_query';
         if ($isNav) {
