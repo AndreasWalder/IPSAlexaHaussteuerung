@@ -10,6 +10,49 @@ trait IAHVisualNavigationGroupTrait
 {
     /** Detect WebFront Classic instances without assuming a single configured ID. */
     /** The three APL lists have one staged EDIT copy, without live writes. */
+    /**
+     * Persistent, copyable diagnostics. Never store full payloads, questions,
+     * uploaded file bytes or secrets in the trace.
+     */
+    private function visualNavigationTrace(string $level,string $event,array $data=[]): void
+    {
+        try {
+            $entries=json_decode($this->ReadAttributeString('VisualNavDiagnosticLog'),true);
+            if (!is_array($entries))$entries=[];
+            $safe=[];
+            foreach ($data as $key=>$value) {
+                if (!preg_match('/^(group|key|source|field|fields|property|properties|count|changed|step|status|reason|error|type|instance|selected|targetId|revision|beforeHash|afterHash|draftCount)$/D',(string)$key)) continue;
+                if (!is_scalar($value) && $value!==null)continue;
+                $safe[(string)$key]=mb_substr((string)$value,0,240,'UTF-8');
+            }
+            $entries[]=[
+                'at'=>date('Y-m-d H:i:s'),'level'=>$level,'event'=>$event,
+                'data'=>$safe
+            ];
+            $entries=array_slice($entries,-500);
+            $this->WriteAttributeString('VisualNavDiagnosticLog',json_encode($entries,
+                JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE));
+            if ($level==='ERROR' && function_exists('IPS_LogMessage')) {
+                IPS_LogMessage('Alexa APL EDIT',$event.' '.json_encode($safe,JSON_UNESCAPED_UNICODE));
+            }
+        } catch (\Throwable $ignored) {
+            // Diagnostics are deliberately never allowed to block a save.
+        }
+    }
+
+    public function GetVisualNavigationDiagnostics(): string
+    {
+        $entries=json_decode($this->ReadAttributeString('VisualNavDiagnosticLog'),true);
+        return json_encode(is_array($entries)?$entries:[],
+            JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+    }
+
+    public function ClearVisualNavigationDiagnostics(): void
+    {
+        $this->WriteAttributeString('VisualNavDiagnosticLog','[]');
+        $this->ReloadForm();
+    }
+
     private function visualNavigationDraftData(): array
     {
         $draft=json_decode($this->ReadAttributeString('VisualNavDraft'),true);
@@ -26,6 +69,10 @@ trait IAHVisualNavigationGroupTrait
     {
         $allowed=['LaunchCatalog','PageMappings','RendererDomains'];
         $draft=$this->visualNavigationDraftData();
+        $this->visualNavigationTrace('INFO','EDIT_STAGE_BEGIN',[
+            'properties'=>implode(',',array_keys($updates)),
+            'draftCount'=>count((array)($draft['properties']??[]))
+        ]);
         foreach ($updates as $name=>$json) {
             if (!in_array($name,$allowed,true) || !is_string($json)
                 || !is_array(json_decode($json,true)))
@@ -40,6 +87,13 @@ trait IAHVisualNavigationGroupTrait
         $this->WriteAttributeString('VisualNavDraft',json_encode($draft,
             JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
         $this->WriteAttributeString('VisualNavDraftPreview','');
+        $check=$this->visualNavigationDraftData();
+        if (count((array)($check['properties']??[]))<count($updates))
+            throw new \RuntimeException('EDIT-Schreibprüfung fehlgeschlagen.');
+        $this->visualNavigationTrace('OK','EDIT_STAGE_SAVED',[
+            'properties'=>implode(',',array_keys($updates)),
+            'draftCount'=>count((array)($check['properties']??[]))
+        ]);
     }
 
     private function visualNavigationDraftSummary(): string
