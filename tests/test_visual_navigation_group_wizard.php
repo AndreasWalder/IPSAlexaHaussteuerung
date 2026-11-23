@@ -74,6 +74,26 @@ checkGroup(in_array(['name'=>'VisualNavStage3','field'=>'expanded','value'=>true
     $h->formUpdates,true),'Next/back did not expand selected wizard stage');
 checkGroup(in_array(['name'=>'VisualNavStage1','field'=>'expanded','value'=>false],
     $h->formUpdates,true),'Next/back did not collapse previous wizard stage');
+// Identical display name but a different legacy navigation key must still
+// appear in one edit dialog, without re-keying the underlying navigation.
+$h->records[]=['source'=>'navigation','key'=>'legacy_bienen','title'=>'Bienen',
+    'actionType'=>'navigation','target'=>49803];
+$merged=$h->groups();
+$mergedBienen=array_values(array_filter($merged,static fn($r)=>$r['groupId']==='route:bienen'))[0]??null;
+checkGroup(count($merged)===3,'Matching navigation must not create a second Bienen row');
+checkGroup($mergedBienen['navigationKey']==='legacy_bienen','Legacy navigation key lost');
+checkGroup($mergedBienen['navigationTarget']===49803,'Navigation target lost');
+checkGroup(str_contains($mergedBienen['parts'],'Navigation (EDIT)'),'Merged overview must show navigation');
+$mergedForm=json_decode($h->GetVisualNavigationGroupForm('route:bienen'),true,512,JSON_THROW_ON_ERROR);
+checkGroup(str_contains(json_encode($mergedForm),'navigationTarget'),
+    'Unified dialog must contain navigation object selector');
+$h->records[]=['source'=>'navigation','key'=>'legacy_bienen_2','title'=>'Bienen',
+    'actionType'=>'navigation','target'=>49804];
+$ambiguous=$h->groups();
+checkGroup(count($ambiguous)===4,'Ambiguous legacy navigation must remain independently editable');
+// Restore the original fixture for the existing multi-property save checks.
+array_pop($h->records);
+array_pop($h->records);
 $changed=$bienen;
 $changed['title']='Bienen Übersicht';
 $changed['rendererTarget']='bees';
