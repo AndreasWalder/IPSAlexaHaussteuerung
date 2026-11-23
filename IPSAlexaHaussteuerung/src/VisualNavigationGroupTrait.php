@@ -63,6 +63,12 @@ trait IAHVisualNavigationGroupTrait
                 $g['title']=(string)$record['title'];
                 $g['target']=(int)$record['target'];
                 $g['actionType']='navigation';
+                foreach (['navigationRoom','navigationDomain','navigationOrder',
+                    'navigationAliases','navigationEnabled'] as $field) {
+                    $g[$field]=$record[$field]??($field==='navigationEnabled'?true:'');
+                }
+                $g['navigationTitle']=$g['title'];
+                $g['navigationTarget']=$g['target'];
             }
             unset($g);
         }
@@ -94,6 +100,10 @@ trait IAHVisualNavigationGroupTrait
             $groups[$targetId]['navigationKey']=$groups[$navId]['key'];
             $groups[$targetId]['navigationTitle']=$groups[$navId]['title'];
             $groups[$targetId]['navigationTarget']=$groups[$navId]['target'];
+            foreach (['navigationRoom','navigationDomain','navigationOrder',
+                'navigationAliases','navigationEnabled'] as $field) {
+                $groups[$targetId][$field]=$groups[$navId][$field]??null;
+            }
             unset($groups[$navId]);
         }
         foreach ($groups as &$g) {
@@ -139,6 +149,12 @@ trait IAHVisualNavigationGroupTrait
                 ['type'=>'Label','caption'=>'1. Navigation (EDIT) – Eintrag '.$row['key']],
                 ['type'=>'ValidationTextBox','name'=>'title','caption'=>'Anzeigename'],
                 ['type'=>'SelectObject','name'=>'target','caption'=>'Verknüpftes IP-Symcon-Objekt'],
+                ['type'=>'ValidationTextBox','name'=>'navigationRoom','caption'=>'Raum-Schlüssel'],
+                ['type'=>'ValidationTextBox','name'=>'navigationDomain','caption'=>'Bereich-Schlüssel'],
+                ['type'=>'NumberSpinner','name'=>'navigationOrder','caption'=>'Reihenfolge'],
+                ['type'=>'ValidationTextBox','name'=>'navigationAliases',
+                    'caption'=>'Synonyme (Komma-getrennt)'],
+                ['type'=>'CheckBox','name'=>'navigationEnabled','caption'=>'Navigation aktiv'],
                 ['type'=>'Label','caption'=>'2. Prüfung: Änderungen werden nur in '
                     .'SystemConfigurationEdit gespeichert. Anschließend separat nach PROD übernehmen.']
             ],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
@@ -266,6 +282,16 @@ trait IAHVisualNavigationGroupTrait
                     ['type'=>'ValidationTextBox','name'=>'navigationTitle','caption'=>'Navigationsname'],
                     ['type'=>'SelectObject','name'=>'navigationTarget',
                         'caption'=>'Navigationsziel (IP-Symcon-Objekt)'],
+                    ['type'=>'ValidationTextBox','name'=>'navigationRoom',
+                        'caption'=>'Raum-Schlüssel'],
+                    ['type'=>'ValidationTextBox','name'=>'navigationDomain',
+                        'caption'=>'Bereich-Schlüssel'],
+                    ['type'=>'NumberSpinner','name'=>'navigationOrder',
+                        'caption'=>'Reihenfolge'],
+                    ['type'=>'ValidationTextBox','name'=>'navigationAliases',
+                        'caption'=>'Synonyme (Komma-getrennt)'],
+                    ['type'=>'CheckBox','name'=>'navigationEnabled',
+                        'caption'=>'Navigation aktiv'],
                     ['type'=>'Label','caption'=>'Änderungen am Navigationstab werden über den '
                         .'bestehenden revisionierten EDIT-Speicherweg übernommen. '
                         .'PROD wird dadurch nicht verändert.']
@@ -328,6 +354,11 @@ trait IAHVisualNavigationGroupTrait
                     if ((string)($nav['entryKey']??'')!==$key)continue;
                     $nav['title']=trim((string)($input['title']??''));
                     $nav['objectId']=(int)($input['target']??0);
+                    foreach (['navigationRoom'=>'roomKey','navigationDomain'=>'domainKey',
+                        'navigationOrder'=>'sortOrder','navigationAliases'=>'aliases',
+                        'navigationEnabled'=>'enabled'] as $inputField=>$navField) {
+                        if (array_key_exists($inputField,$input)) $nav[$navField]=$input[$inputField];
+                    }
                     $this->SaveSystemNavigationTab(json_encode($nav,JSON_THROW_ON_ERROR));
                     return;
                 }
@@ -451,8 +482,28 @@ trait IAHVisualNavigationGroupTrait
                 $newNavTarget=(int)($input['navigationTarget']??$existing['navigationTarget']);
                 if ($newNavTitle==='' || $newNavTarget<=0)
                     throw new RuntimeException('Navigation: Name und IPS-Objekt müssen gültig sein.');
+                $navFieldMap=[
+                    'navigationRoom'=>'roomKey','navigationDomain'=>'domainKey',
+                    'navigationOrder'=>'sortOrder','navigationAliases'=>'aliases',
+                    'navigationEnabled'=>'enabled'
+                ];
+                $metadataChanged=false;
+                foreach ($navFieldMap as $inputField=>$_) {
+                    if (!array_key_exists($inputField,$input)) continue;
+                    $original=$existing[$inputField]??null;
+                    $proposed=$input[$inputField];
+                    if ($inputField==='navigationEnabled') {
+                        $original=(bool)$original;$proposed=(bool)$proposed;
+                    } elseif ($inputField==='navigationOrder') {
+                        $original=(int)$original;$proposed=(int)$proposed;
+                    } else {
+                        $original=trim((string)$original);$proposed=trim((string)$proposed);
+                    }
+                    if ($original!==$proposed) {$metadataChanged=true;break;}
+                }
                 if ($newNavTitle!==$existing['navigationTitle']
-                    || $newNavTarget!==(int)$existing['navigationTarget']) {
+                    || $newNavTarget!==(int)$existing['navigationTarget']
+                    || $metadataChanged) {
                     $context=$this->navigationEditorContext();
                     if (!is_array($context['edit']))
                         throw new RuntimeException('Navigation-EDIT ist nicht lesbar.');
@@ -460,6 +511,9 @@ trait IAHVisualNavigationGroupTrait
                         if ((string)($nav['entryKey']??'')!==(string)$existing['navigationKey'])continue;
                         $nav['title']=$newNavTitle;
                         $nav['objectId']=$newNavTarget;
+                        foreach ($navFieldMap as $inputField=>$navField) {
+                            if (array_key_exists($inputField,$input)) $nav[$navField]=$input[$inputField];
+                        }
                         $navChange=$nav;
                         break;
                     }
