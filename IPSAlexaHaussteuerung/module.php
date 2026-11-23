@@ -640,14 +640,9 @@ class IPSAlexaHaussteuerung extends IPSModule
                     'columns' => $fields, 'values' => $rows,
                     'onEdit' => $onEdit,
                 ],
-                ['type'=>'RowLayout','items'=>[
-                    ['type'=>'Button','caption'=>'ÄNDERUNGEN PRÜFEN',
-                        'onClick'=>'IAH_PreviewSystemNavigationUpdate($id);'],
-                    ['type'=>'Button','caption'=>'ÄNDERUNGEN NACH PROD ÜBERNEHMEN',
-                        'confirm'=>'Nur die Navigation aus SystemConfigurationEdit '
-                            .'mit Backup nach PROD uebernehmen?',
-                        'onClick'=>'IAH_PublishSystemNavigationUpdate($id);'],
-                ]],
+                ['type'=>'Label','caption'=>'Navigation in EDIT speichern. '
+                    .'Die Prüfung und Freigabe erfolgt zentral über '
+                    .'"Änderungen EDIT vor PROD" im Alexa-Modul.'],
                 ['type' => 'Label', 'caption' => 'Neuen Navigations-Tab anlegen:'],
                 ['type' => 'RowLayout', 'items' => [
                     ['type' => 'Select', 'name' => 'SystemNavNewRoom', 'caption' => 'Raum',
