@@ -406,9 +406,6 @@ trait IAHVisualNavigationEditorTrait
                         'onClick'=>'IAH_TestVisualNavigationTile($id, $VisualNavTestKey);']
                 ]],
                 ['type'=>'Label','name'=>'VisualNavTestStatus','caption'=>'Noch kein Test ausgeführt.'],
-                ['type'=>'Button','caption'=>'LETZTE VISUALISIERUNGSÄNDERUNG ZURÜCKNEHMEN',
-                    'confirm'=>'Die vorherige Konfiguration der zuletzt geänderten Kachel-, Page- oder Renderer-Liste wiederherstellen?',
-                    'onClick'=>'IAH_RestoreVisualNavigationBackup($id);'],
                 ['type'=>'Label','caption'=>'Neue Startkachel mit verständlicher Aktion anlegen:'],
                 ['type'=>'RowLayout','items'=>[
                     ['type'=>'ValidationTextBox','name'=>'VisualNavNewKey','caption'=>'Kachel-ID','value'=>''],
