@@ -76,8 +76,11 @@ assertVisual(in_array(['name'=>'VisualNavAiSettings','property'=>'visible','valu
     $editor->updates,true),'switch to route must hide KI panel');
 
 $source=(string)file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/src/VisualNavigationEditorTrait.php');
-assertVisual(str_contains($source,"'form'=>'return json_decode(IAH_GetVisualNavigationEditForm("),
-    'unified list must call source-specific form');
-assertVisual(str_contains($source,"['name'=>'resultTitle','visible'=>false,'save'=>true]"),
-    'hidden metadata must survive list edits');
-echo "PASS: dynamic Launch/Page/Renderer/Navigation dialogs and action-dependent KI fields\n";
+assertVisual(str_contains($source,"'form'=>'return json_decode(IAH_GetVisualNavigationGroupForm("),
+    'unified list must call grouped step-by-step form');
+assertVisual(str_contains($source,"IAH_SaveVisualNavigationGroup("),
+    'unified list must persist all grouped sources together');
+$groupSource=(string)file_get_contents(dirname(__DIR__).'/IPSAlexaHaussteuerung/src/VisualNavigationGroupTrait.php');
+assertVisual(str_contains($groupSource,"'resultTitle'") && str_contains($groupSource,"'speakAnswer'"),
+    'grouped editor must preserve KI display metadata');
+echo "PASS: legacy editing options remain available; current list uses grouped wizard\n";
