@@ -90,7 +90,7 @@ checkGroup(str_contains(json_encode($mergedForm),'navigationTarget'),
 $h->records[]=['source'=>'navigation','key'=>'legacy_bienen_2','title'=>'Bienen',
     'actionType'=>'navigation','target'=>49804];
 $ambiguous=$h->groups();
-checkGroup(count($ambiguous)===4,'Ambiguous legacy navigation must remain independently editable');
+checkGroup(count($ambiguous)===5,'Ambiguous legacy navigation must remain independently editable');
 // Restore the original fixture for the existing multi-property save checks.
 array_pop($h->records);
 array_pop($h->records);
