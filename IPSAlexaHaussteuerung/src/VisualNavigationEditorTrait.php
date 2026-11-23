@@ -71,7 +71,7 @@ trait IAHVisualNavigationEditorTrait
     private function visualNavigationRows(): array
     {
         $rows = [];
-        $launch = json_decode($this->ReadPropertyString('LaunchCatalog'), true);
+        $launch = json_decode($this->visualNavigationReadProperty('LaunchCatalog'), true);
         foreach (is_array($launch) ? $launch : [] as $tile) {
             if (!is_array($tile) || empty($tile['id'])) continue;
             $type = (string)($tile['actionType'] ?? '');
@@ -113,7 +113,7 @@ trait IAHVisualNavigationEditorTrait
                 'detail'=>'Page-Zuordnung', 'status'=>'Konfiguriert',
             ];
         }
-        $renderers = json_decode($this->ReadPropertyString('RendererDomains'), true);
+        $renderers = json_decode($this->visualNavigationReadProperty('RendererDomains'), true);
         foreach (is_array($renderers) ? $renderers : [] as $renderer) {
             if (!is_array($renderer) || empty($renderer['route'])) continue;
             $rows[] = [
@@ -537,7 +537,7 @@ trait IAHVisualNavigationEditorTrait
         $key=strtolower(trim($key));
         $message='';
         try {
-            $tiles=json_decode($this->ReadPropertyString('LaunchCatalog'),true);
+            $tiles=json_decode($this->visualNavigationReadProperty('LaunchCatalog'),true);
             $tile=null;
             foreach (is_array($tiles)?$tiles:[] as $candidate) {
                 if (is_array($candidate) && strtolower((string)($candidate['id']??''))===$key) {
@@ -729,7 +729,7 @@ trait IAHVisualNavigationEditorTrait
                 throw new RuntimeException('Bitte eine gültige Route angeben.');
             if ($action === 'ai_query' && mb_strlen($target,'UTF-8') > 240)
                 throw new RuntimeException('Frage ist zu lang.');
-            $rows=json_decode($this->ReadPropertyString('LaunchCatalog'),true);
+            $rows=json_decode($this->visualNavigationReadProperty('LaunchCatalog'),true);
             if (!is_array($rows)) throw new RuntimeException('Kachelkonfiguration nicht lesbar.');
             foreach ($rows as $row) if (($row['id']??'')===$key) throw new RuntimeException('ID existiert bereits.');
             if($iconUpload!=='')$icon=$this->visualTileSaveUploadedIcon($key,$iconUpload);
@@ -743,7 +743,7 @@ trait IAHVisualNavigationEditorTrait
                 throw new RuntimeException('Bitte zuerst ungespeicherte Instanzeinstellungen übernehmen.');
             }
             $this->WriteAttributeString('VisualNavBackup', json_encode([
-                'property'=>'LaunchCatalog','previous'=>$this->ReadPropertyString('LaunchCatalog')
+                'property'=>'LaunchCatalog','previous'=>$this->visualNavigationReadProperty('LaunchCatalog')
             ],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
             IPS_SetProperty($this->InstanceID,'LaunchCatalog',
                 json_encode($rows,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
