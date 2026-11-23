@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * The unified navigator groups related records by their exact stable key.
+ * The unified navigator groups exact route keys and unambiguous navigation titles.
  * This is only a view: the three existing module properties remain canonical.
  * Navigation EDIT/PROD remains a separate, revision-checked lifecycle.
  */
@@ -66,12 +66,36 @@ trait IAHVisualNavigationGroupTrait
             }
             unset($g);
         }
+        // Merge legacy EDIT navigation into a canonical tile only on a
+        // unique, normalized display-name match. No fuzzy matching.
+        $normalize=static function (string $title): string {
+            $title=mb_strtolower(trim($title),'UTF-8');
+            return preg_replace('/[^\\p{L}\\p{N}]+/u','', $title) ?? '';
+        };
+        $titleIndex=[];
+        foreach ($groups as $id=>$group) {
+            if (($group['source']??'')==='navigation') continue;
+            $name=$normalize((string)($group['title']?:$group['rendererTitle']?:$group['pageTitle']?:$group['key']));
+            if ($name!=='') $titleIndex[$name][]=$id;
+        }
+        foreach (array_keys($groups) as $navId) {
+            if (!isset($groups[$navId]) || $groups[$navId]['source']!=='navigation') continue;
+            $name=$normalize((string)$groups[$navId]['title']);
+            $matches=$titleIndex[$name]??[];
+            if ($name==='' || count($matches)!==1) continue;
+            $targetId=$matches[0];
+            if (!empty($groups[$targetId]['navigationKey'])) continue;
+            $groups[$targetId]['navigationKey']=$groups[$navId]['key'];
+            $groups[$targetId]['navigationTitle']=$groups[$navId]['title'];
+            $groups[$targetId]['navigationTarget']=$groups[$navId]['target'];
+            unset($groups[$navId]);
+        }
         foreach ($groups as &$g) {
             $parts=[];
             if ($g['hasLaunch']) $parts[]='Startkachel';
             if ($g['hasPage']) $parts[]='Seitenziel';
             if ($g['hasRenderer']) $parts[]='Renderer';
-            if ($g['source']==='navigation') $parts[]='Navigation (EDIT)';
+            if ($g['source']==='navigation' || !empty($g['navigationKey'])) $parts[]='Navigation (EDIT)';
             $g['parts']=implode(' + ',$parts);
             $g['detail']=$g['parts'];
             $g['status']=$g['source']==='navigation'?'Nur EDIT – PROD separat':
@@ -226,6 +250,20 @@ trait IAHVisualNavigationGroupTrait
                             'onClick'=>'IAH_OpenVisualNavigationGroupStep($id, 4);']
                     ]
                 ]])],
+            ['type'=>'ExpansionPanel','name'=>'VisualNavNavigationEdit',
+                'caption'=>'Zugehöriger Navigations-Tab (EDIT)',
+                'expanded'=>!empty($row['navigationKey']),
+                'visible'=>!empty($row['navigationKey']),
+                'items'=>[
+                    ['type'=>'Label','caption'=>'Legacy-Schlüssel: '.(string)($row['navigationKey']??'')
+                        .' · EDIT bleibt getrennt von PROD.'],
+                    ['type'=>'ValidationTextBox','name'=>'navigationTitle','caption'=>'Navigationsname'],
+                    ['type'=>'SelectObject','name'=>'navigationTarget',
+                        'caption'=>'Navigationsziel (IP-Symcon-Objekt)'],
+                    ['type'=>'Label','caption'=>'Änderungen am Navigationstab werden über den '
+                        .'bestehenden revisionierten EDIT-Speicherweg übernommen. '
+                        .'PROD wird dadurch nicht verändert.']
+                ]],
             ['type'=>'ExpansionPanel','name'=>'VisualNavStage4','caption'=>'4. Prüfen und speichern',
                 'expanded'=>false,'items'=>[
                     ['type'=>'Label','caption'=>'Nur angehakte oder bereits vorhandene Komponenten '
@@ -400,13 +438,43 @@ trait IAHVisualNavigationGroupTrait
                 $encoded=json_encode($value,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
                 if (json_decode($before[$property],true)!==$value) $updated[$property]=$encoded;
             }
-            if ($updated===[]) {
+            // Only write the legacy EDIT navigation when explicitly changed.
+            $navChange=null;
+            if (!empty($existing['navigationKey'])) {
+                $newNavTitle=trim((string)($input['navigationTitle']??$existing['navigationTitle']));
+                $newNavTarget=(int)($input['navigationTarget']??$existing['navigationTarget']);
+                if ($newNavTitle==='' || $newNavTarget<=0)
+                    throw new RuntimeException('Navigation: Name und IPS-Objekt müssen gültig sein.');
+                if ($newNavTitle!==$existing['navigationTitle']
+                    || $newNavTarget!==(int)$existing['navigationTarget']) {
+                    $context=$this->navigationEditorContext();
+                    if (!is_array($context['edit']))
+                        throw new RuntimeException('Navigation-EDIT ist nicht lesbar.');
+                    foreach (IAHSystemNavigationEditor::rows($context['edit']) as $nav) {
+                        if ((string)($nav['entryKey']??'')!==(string)$existing['navigationKey'])continue;
+                        $nav['title']=$newNavTitle;
+                        $nav['objectId']=$newNavTarget;
+                        $navChange=$nav;
+                        break;
+                    }
+                    if ($navChange===null)throw new RuntimeException('Navigations-Tab nicht mehr vorhanden.');
+                }
+            }
+            if ($updated===[] && $navChange===null) {
                 $this->WriteAttributeString('VisualNavNotice','Keine Änderungen: '.$key);
                 $this->ReloadForm();return;
             }
             // Restore-compatible backup contains every modified original.
             $backup=[];
             foreach ($updated as $property=>$_) $backup[$property]=$before[$property];
+            if ($navChange!==null && $updated!==[]) {
+                throw new RuntimeException('Navigation und Kacheleinstellungen wurden gleichzeitig geändert. '
+                    .'Bitte zunächst die Kachel speichern und danach die Navigation.');
+            }
+            if ($navChange!==null) {
+                $this->SaveSystemNavigationTab(json_encode($navChange,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
+                return;
+            }
             $this->WriteAttributeString('VisualNavBackup',json_encode([
                 'properties'=>$backup,'key'=>$key
             ],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
