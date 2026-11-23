@@ -953,6 +953,11 @@ trait IAHVisualNavigationGroupTrait
             $input=json_decode($payload,true,64,JSON_THROW_ON_ERROR);
             if (!is_array($input)) throw new RuntimeException('Ungültige Eingabe.');
             $groupId=(string)($input['groupId']??'');
+            $this->visualNavigationTrace('INFO','DIALOG_OK_RECEIVED',[
+                'group'=>$groupId,
+                'fields'=>implode(',',array_keys($input)),
+                'count'=>count($input)
+            ]);
             $existing=null;
             foreach ($this->visualNavigationGroups() as $candidate) {
                 if ($candidate['groupId']===$groupId) {$existing=$candidate;break;}
@@ -977,8 +982,8 @@ trait IAHVisualNavigationGroupTrait
                 }
                 throw new RuntimeException('Navigations-Tab nicht gefunden.');
             }
-            if (function_exists('IPS_HasChanges') && IPS_HasChanges($this->InstanceID))
-                throw new RuntimeException('Bitte zuerst andere ungespeicherte Instanzänderungen übernehmen.');
+            // EDIT drafts are attributes, not instance properties. Pending
+            // ordinary instance form edits must not suppress saving the draft.
             $addLaunch=!$existing['hasLaunch'] && !empty($input['addLaunch']);
             $addPage=!$existing['hasPage'] && !empty($input['addPage']);
             $launch=$existing['hasLaunch']||$addLaunch;
@@ -989,7 +994,8 @@ trait IAHVisualNavigationGroupTrait
             if ($existing['hasPage'] && !$addPage
                 && (string)($input['pageAction']??'')===(string)$existing['pageAction']
                 && trim((string)($input['pageTitle']??''))===(string)$existing['pageTitle']
-                && trim((string)($input['pageTarget']??''))===(string)$existing['pageTarget']) {
+                && trim((string)($input['pageTarget']??''))===(string)$existing['pageTarget']
+                && trim((string)($input['pageTargetChoice']??''))==='') {
                 $rawPage=json_decode($this->visualNavigationReadProperty('PageMappings'),true);
                 $storedPage=false;
                 foreach (is_array($rawPage)?$rawPage:[] as $entry) {
@@ -1143,7 +1149,13 @@ trait IAHVisualNavigationGroupTrait
                     if ($navChange===null)throw new RuntimeException('Navigations-Tab nicht mehr vorhanden.');
                 }
             }
+            $this->visualNavigationTrace('INFO','DIALOG_DIFF',[
+                'group'=>$groupId,'properties'=>implode(',',array_keys($updated)),
+                'changed'=>$navChange!==null?'navigation':'apl',
+                'count'=>count($updated)
+            ]);
             if ($updated===[] && $navChange===null) {
+                $this->visualNavigationTrace('INFO','DIALOG_NO_CHANGES',['key'=>$key]);
                 $this->WriteAttributeString('VisualNavNotice','Keine Änderungen: '.$key);
                 $this->ReloadForm();return;
             }
@@ -1157,9 +1169,15 @@ trait IAHVisualNavigationGroupTrait
                 return;
             }
             $this->visualNavigationStageProperties($updated);
+            $this->visualNavigationTrace('OK','DIALOG_EDIT_SAVED',[
+                'key'=>$key,'properties'=>implode(',',array_keys($updated))
+            ]);
             $this->WriteAttributeString('VisualNavNotice',
                 'In EDIT gespeichert: '.$key.' · '.implode(', ',array_keys($updated)));
         } catch (\Throwable $error) {
+            $this->visualNavigationTrace('ERROR','DIALOG_SAVE_FAILED',[
+                'error'=>$error->getMessage()
+            ]);
             $this->WriteAttributeString('VisualNavNotice',
                 'Nicht gespeichert: '.$error->getMessage());
         }
