@@ -142,6 +142,7 @@ trait IAHVisualNavigationGroupTrait
 
     public function CreateVisualNavigationTileDraft(string $payload): void
     {
+        $this->visualNavigationTrace('INFO','CREATE_TILE_BEGIN');
         try {
             $input=json_decode($payload,true,64,JSON_THROW_ON_ERROR);
             if (!is_array($input))throw new \RuntimeException('Ungültige Kacheldaten.');
@@ -173,9 +174,11 @@ trait IAHVisualNavigationGroupTrait
             ];
             $this->visualNavigationStageProperties(['LaunchCatalog'=>json_encode($rows,
                 JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)]);
+            $this->visualNavigationTrace('OK','CREATE_TILE_EDIT_SAVED',['key'=>$key]);
             $this->WriteAttributeString('VisualNavNotice',
                 'Kachel '.$key.' in EDIT angelegt. Zum Veröffentlichen EDIT prüfen und nach PROD übernehmen.');
         } catch (\Throwable $error) {
+            $this->visualNavigationTrace('ERROR','CREATE_TILE_FAILED',['error'=>$error->getMessage()]);
             $this->WriteAttributeString('VisualNavNotice','Kachel nicht angelegt: '.$error->getMessage());
         }
         $this->ReloadForm();
@@ -432,6 +435,7 @@ trait IAHVisualNavigationGroupTrait
     /** Delete only the APL-facing components; linked EDIT navigation is protected. */
     public function DeleteVisualNavigationGroupDraft(string $groupId): void
     {
+        $this->visualNavigationTrace('INFO','DELETE_EDIT_BEGIN',['group'=>$groupId]);
         try {
             $entry=null;
             foreach ($this->visualNavigationGroups() as $candidate) {
@@ -455,10 +459,14 @@ trait IAHVisualNavigationGroupTrait
             if ($changes===[])
                 throw new \RuntimeException('Keine gespeicherte APL-Komponente zum Löschen gefunden.');
             $this->visualNavigationStageProperties($changes);
+            $this->visualNavigationTrace('OK','DELETE_EDIT_SAVED',[
+                'key'=>$key,'properties'=>implode(',',array_keys($changes))
+            ]);
             $this->WriteAttributeString('VisualNavNotice',
                 'APL-Eintrag '.$key.' in EDIT zum Löschen vorgemerkt. '
                 .'Verknüpfte Navigation bleibt bestehen. Vor PROD-Übernahme prüfen.');
         } catch (\Throwable $error) {
+            $this->visualNavigationTrace('ERROR','DELETE_EDIT_FAILED',['error'=>$error->getMessage()]);
             $this->WriteAttributeString('VisualNavNotice','Nicht gelöscht: '.$error->getMessage());
         }
         $this->ReloadForm();
@@ -485,6 +493,10 @@ trait IAHVisualNavigationGroupTrait
                 'hash'=>hash('sha256',json_encode($draft,JSON_THROW_ON_ERROR)),
                 'time'=>time()
             ],JSON_THROW_ON_ERROR));
+            $this->visualNavigationTrace('OK','APL_PREVIEW_OK',[
+                'properties'=>implode(',',array_keys($changes)),
+                'count'=>count($this->visualNavigationDraftChanges())
+            ]);
             $this->WriteAttributeString('VisualNavNotice',
                 'Vorschau OK (10 Minuten gültig): '
                 .implode(' | ',$this->visualNavigationDraftChanges())
@@ -547,6 +559,9 @@ trait IAHVisualNavigationGroupTrait
             }
             $this->WriteAttributeString('VisualNavDraft','');
             $this->WriteAttributeString('VisualNavDraftPreview','');
+            $this->visualNavigationTrace('OK','APL_PUBLISH_OK',[
+                'properties'=>implode(',',array_keys($changes))
+            ]);
             $this->WriteAttributeString('VisualNavNotice',
                 'APL-Konfiguration aus EDIT nach PROD übernommen: '.implode(', ',array_keys($changes)));
         } catch (\Throwable $error) {
