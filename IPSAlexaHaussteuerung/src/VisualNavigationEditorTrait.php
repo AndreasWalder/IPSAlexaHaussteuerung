@@ -104,7 +104,20 @@ trait IAHVisualNavigationEditorTrait
                 'status'=>$type === 'ai_query' && $target === '' ? 'Ziel fehlt' : 'Konfiguriert',
             ];
         }
-        foreach ($this->readPageMappingsProperty() as $key=>$mapping) {
+        $pageMappings=$this->readPageMappingsProperty();
+        $draftPages=json_decode($this->visualNavigationReadProperty('PageMappings'),true);
+        if (is_array($draftPages) && $draftPages!==[]) {
+            $pageMappings=[];
+            foreach ($draftPages as $page) {
+                if (!is_array($page))continue;
+                $parsed=$this->sanitizePageMappingEntry($page);
+                if (!is_array($parsed))continue;
+                $pageKey=(string)$parsed['key'];
+                unset($parsed['key']);
+                $pageMappings[$pageKey]=$parsed;
+            }
+        }
+        foreach ($pageMappings as $key=>$mapping) {
             $rows[] = [
                 'source'=>'page','key'=>(string)$key,
                 'title'=>(string)($mapping['label'] ?? $key),
