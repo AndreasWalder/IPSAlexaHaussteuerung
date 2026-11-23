@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /** Run: php tests/test_visual_navigation_group_wizard.php */
-function IPS_HasChanges(int $id): bool { return false; }
+function IPS_HasChanges(int $id): bool { return (bool)($GLOBALS['ipsHasChanges']??false); }
 function IPS_SetProperty(int $id,string $property,string $value): void {
     $GLOBALS['navHarness']->properties[$property]=$value;
 }
@@ -173,7 +173,9 @@ $energy=array_values(array_filter($h->groups(),
     static fn($g)=>$g['groupId']==='route:energie'))[0];
 $energy['pageInstance']='45135';
 $energy['pageTargetChoice']='item9907';
+$GLOBALS['ipsHasChanges']=true;
 $h->SaveVisualNavigationGroup(json_encode($energy,JSON_THROW_ON_ERROR));
+$GLOBALS['ipsHasChanges']=false;
 $staged=json_decode($h->ReadAttributeString('VisualNavDraft'),true);
 checkGroup(isset($staged['properties']['PageMappings']),
     'Changing a WebFront target must write a page mapping EDIT draft');
@@ -182,6 +184,9 @@ checkGroup(json_decode($staged['properties']['PageMappings'],true)[0]['value']==
 checkGroup(json_decode($h->properties['PageMappings'],true)[0]['value']==='item2124',
     'PROD mapping was modified before approval');
 checkGroup($h->applyCount===2,'WebFront dialog OK must not apply instance changes');
+checkGroup((bool)array_filter(json_decode($h->GetVisualNavigationDiagnostics(),true),
+    static fn($row)=>($row['event']??'')==='EDIT_STAGE_SAVED'),
+    'Expected a persisted draft even while IPS_HasChanges is true');
 $log=json_decode($h->GetVisualNavigationDiagnostics(),true);
 checkGroup(is_array($log)&&count($log)>0,'Missing persistent diagnostic entries');
 checkGroup((bool)array_filter($log,static fn($row)=>($row['event']??'')==='DIALOG_EDIT_SAVED'),
