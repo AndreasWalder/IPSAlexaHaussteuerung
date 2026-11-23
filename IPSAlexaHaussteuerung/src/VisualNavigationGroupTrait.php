@@ -116,6 +116,60 @@ trait IAHVisualNavigationGroupTrait
     }
 
     /** Summarize item-level changes, not just the modified JSON properties. */
+    /** Read-only, per-element change log across the IAH-managed EDIT areas. */
+    public function GetUnifiedEditChanges(): string
+    {
+        $rows=[];
+        $append=static function (string $area,string $name,string $kind,string $detail='') use (&$rows): void {
+            $rows[]=['bereich'=>$area,'element'=>$name,'aenderung'=>$kind,
+                'details'=>$detail,'status'=>'EDIT offen'];
+        };
+        foreach ($this->visualNavigationDraftChanges() as $change) {
+            if (preg_match('/^(NEU|GEÄNDERT|ENTFERNT) ([^:]+): (.*)$/u',(string)$change,$match))
+                $append('APL / '.$match[2],$match[3],$match[1]);
+        }
+        foreach ([
+            ['Navigation','navigationEditorContext','navigation'],
+            ['Sprachregeln','voiceRuleContext','voiceRules']
+        ] as [$area,$method,$section]) {
+            try {
+                $ctx=$this->$method();
+                if (!is_array($ctx['edit']??null) || !is_array($ctx['prod']??null)) {
+                    $append($area,'Konfiguration','NICHT PRÜFBAR','EDIT oder PROD fehlt');
+                    continue;
+                }
+                $ed=$section==='navigation'
+                    ? IAHSystemNavigationEditor::items($ctx['edit'])
+                    : IAHVoiceRuleEngine::rules($ctx['edit']);
+                $pd=$section==='navigation'
+                    ? IAHSystemNavigationEditor::items($ctx['prod'])
+                    : IAHVoiceRuleEngine::rules($ctx['prod']);
+                // Rules may be a list: index by their stable ID when present.
+                $index=static function (array $items): array {
+                    $out=[];
+                    foreach ($items as $key=>$item) {
+                        if (!is_array($item))continue;
+                        $id=(string)($item['id']??$item['key']??$key);
+                        $out[$id]=$item;
+                    }
+                    return $out;
+                };
+                $edit=$index((array)$ed);$prod=$index((array)$pd);
+                foreach ($edit as $key=>$item) {
+                    $name=(string)($item['title']??$item['name']??$item['label']??$key);
+                    if (!isset($prod[$key]))$append($area,$name,'NEU',$key);
+                    elseif ($prod[$key]!==$item)$append($area,$name,'GEÄNDERT',$key);
+                }
+                foreach ($prod as $key=>$item)
+                    if (!isset($edit[$key]))
+                        $append($area,(string)($item['title']??$item['name']??$key),'ENTFERNT',$key);
+            } catch (\Throwable $e) {
+                $append($area,'Konfiguration','NICHT PRÜFBAR',$e->getMessage());
+            }
+        }
+        return json_encode($rows,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
+    }
+
     private function visualNavigationDraftChanges(): array
     {
         $result=[];
