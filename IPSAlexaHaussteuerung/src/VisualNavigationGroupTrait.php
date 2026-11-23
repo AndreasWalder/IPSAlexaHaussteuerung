@@ -117,7 +117,7 @@ trait IAHVisualNavigationGroupTrait
         $form=[
             ['type'=>'Label','caption'=>'Gemeinsamer Schlüssel: '.$row['key']
                 .' · Vorhanden: '.$row['parts'].'. Jeder Schritt ist Teil derselben Konfiguration.'],
-            ['type'=>'ExpansionPanel','caption'=>'1. Startkachel – Anzeige und Aktion',
+            ['type'=>'ExpansionPanel','name'=>'VisualNavStage1','caption'=>'1. Startkachel – Anzeige und Aktion',
                 'expanded'=>true,'items'=>array_merge(
                     $row['hasLaunch']?[]:[[
                         'type'=>'CheckBox','name'=>'addLaunch',
@@ -167,9 +167,13 @@ trait IAHVisualNavigationGroupTrait
                                         'caption'=>'Archiv bei Hausfragen berücksichtigen']
                                 ]]
                         ]
+                    ]],
+                    [[
+                        'type'=>'Button','caption'=>'Weiter zu Schritt 2',
+                        'onClick'=>'IAH_OpenVisualNavigationGroupStep($id, 2);'
                     ]]
                 )],
-            ['type'=>'ExpansionPanel','caption'=>'2. Seitenzuordnung – nur falls benötigt',
+            ['type'=>'ExpansionPanel','name'=>'VisualNavStage2','caption'=>'2. Seitenzuordnung – nur falls benötigt',
                 'expanded'=>$row['hasPage'],'items'=>array_merge(
                     $row['hasPage']?[]:[[
                         'type'=>'CheckBox','name'=>'addPage',
@@ -192,10 +196,18 @@ trait IAHVisualNavigationGroupTrait
                                 'caption'=>$row['pageAction']==='external_url'
                                     ?'HTTPS-Adresse':'IPS Item-ID (z. B. item2124)']
                         ]
+                    ]],
+                    [[
+                        'type'=>'RowLayout','items'=>[
+                            ['type'=>'Button','caption'=>'Zurück zu 1',
+                                'onClick'=>'IAH_OpenVisualNavigationGroupStep($id, 1);'],
+                            ['type'=>'Button','caption'=>'Weiter zu 3',
+                                'onClick'=>'IAH_OpenVisualNavigationGroupStep($id, 3);']
+                        ]
                     ]]
                 )],
-            ['type'=>'ExpansionPanel','caption'=>'3. Renderer – Anzeige einer eigenen APL-Seite',
-                'expanded'=>$row['hasRenderer'],'items'=>$row['hasRenderer']?[
+            ['type'=>'ExpansionPanel','name'=>'VisualNavStage3','caption'=>'3. Renderer – Anzeige einer eigenen APL-Seite',
+                'expanded'=>false,'items'=>array_merge($row['hasRenderer']?[
                     ['type'=>'ValidationTextBox','name'=>'rendererTitle',
                         'caption'=>'Titel der Ergebnisseite'],
                     ['type'=>'ValidationTextBox','name'=>'rendererTarget',
@@ -206,17 +218,37 @@ trait IAHVisualNavigationGroupTrait
                         .'viele vorhandene APL-Routen ist keiner erforderlich. '
                         .'Neue Renderer mit eigener APL-Vorlage werden weiterhin '
                         .'über die Experteneinstellungen angelegt.']
-                ]],
-            ['type'=>'ExpansionPanel','caption'=>'4. Prüfen und speichern',
+                ],[[
+                    'type'=>'RowLayout','items'=>[
+                        ['type'=>'Button','caption'=>'Zurück zu 2',
+                            'onClick'=>'IAH_OpenVisualNavigationGroupStep($id, 2);'],
+                        ['type'=>'Button','caption'=>'Weiter zu 4: Prüfen',
+                            'onClick'=>'IAH_OpenVisualNavigationGroupStep($id, 4);']
+                    ]
+                ]])],
+            ['type'=>'ExpansionPanel','name'=>'VisualNavStage4','caption'=>'4. Prüfen und speichern',
                 'expanded'=>false,'items'=>[
                     ['type'=>'Label','caption'=>'Nur angehakte oder bereits vorhandene Komponenten '
                         .'werden gespeichert. Die bestehenden Instanz-Eigenschaften bleiben erhalten. '
                         .'Bei Änderungen an mehreren Eigenschaften wird zuvor ein gemeinsames Backup angelegt.'],
                     ['type'=>'Label','caption'=>'Navigationstabs haben einen eigenen EDIT-/PROD-Lebenszyklus '
-                        .'und werden niemals automatisch nach PROD veröffentlicht.']
+                        .'und werden niemals automatisch nach PROD veröffentlicht.'],
+                    ['type'=>'Button','caption'=>'Zurück zu Schritt 3',
+                        'onClick'=>'IAH_OpenVisualNavigationGroupStep($id, 3);'],
+                    ['type'=>'Label','caption'=>'Zum Abschließen unten OK drücken. '
+                        .'Bei Fehlern bleibt die vorhandene Konfiguration erhalten.']
                 ]]
         ];
         return json_encode($form,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
+    }
+
+    /** Guide the user from one setup step to the next without saving early. */
+    public function OpenVisualNavigationGroupStep(int $step): void
+    {
+        if ($step<1 || $step>4) return;
+        for ($i=1;$i<=4;$i++) {
+            $this->UpdateFormField('VisualNavStage'.$i,'expanded',$i===$step);
+        }
     }
 
     public function ToggleVisualNavigationGroupPart(string $panel,bool $enabled): void
