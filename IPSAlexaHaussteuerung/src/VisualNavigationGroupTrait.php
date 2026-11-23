@@ -239,6 +239,7 @@ trait IAHVisualNavigationGroupTrait
     /** Preflight all changed IAH sections without changing any PROD data. */
     public function PreviewUnifiedEditPublish(): string
     {
+        $this->visualNavigationTrace('INFO','UNIFIED_PREVIEW_BEGIN');
         try {
             $rows=json_decode($this->GetUnifiedEditChanges(),true,512,JSON_THROW_ON_ERROR);
             $counts=['Navigation'=>0,'Sprachregeln'=>0,'APL'=>0];
@@ -274,6 +275,7 @@ trait IAHVisualNavigationGroupTrait
             return json_encode($state,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
         } catch (\Throwable $e) {
             $this->WriteAttributeString('UnifiedPublishPreview','');
+            $this->visualNavigationTrace('ERROR','UNIFIED_PREVIEW_FAILED',['error'=>$e->getMessage()]);
             $this->WriteAttributeString('UnifiedPublishNotice','Prüfung fehlgeschlagen: '.$e->getMessage());
             return json_encode(['ok'=>false,'error'=>$e->getMessage()],JSON_UNESCAPED_UNICODE);
         }
@@ -286,6 +288,7 @@ trait IAHVisualNavigationGroupTrait
      */
     public function PublishUnifiedEditSections(): string
     {
+        $this->visualNavigationTrace('INFO','UNIFIED_PUBLISH_BEGIN');
         $completed=[];
         try {
             $preview=json_decode($this->ReadAttributeString('UnifiedPublishPreview'),true);
@@ -316,6 +319,7 @@ trait IAHVisualNavigationGroupTrait
                         throw new \RuntimeException($area.': nach Freigabe weiterhin offene Änderungen.');
                 }
                 $completed[]=$area;
+                $this->visualNavigationTrace('OK','UNIFIED_SECTION_PUBLISHED',['property'=>$area]);
             }
             $this->WriteAttributeString('UnifiedPublishPreview','');
             $this->WriteAttributeString('UnifiedPublishNotice',
@@ -324,6 +328,9 @@ trait IAHVisualNavigationGroupTrait
         } catch (\Throwable $e) {
             $this->WriteAttributeString('UnifiedPublishPreview','');
             $error=$e->getMessage();
+            $this->visualNavigationTrace('ERROR','UNIFIED_PUBLISH_FAILED',[
+                'properties'=>implode(',',$completed),'error'=>$error
+            ]);
             $this->WriteAttributeString('UnifiedPublishNotice',
                 'TEILWEISE/FEHLER: '.implode(', ',$completed).' · '.$error);
             return json_encode(['ok'=>false,'completed'=>$completed,'error'=>$error],
@@ -459,6 +466,9 @@ trait IAHVisualNavigationGroupTrait
 
     public function PreviewVisualNavigationDraft(): void
     {
+        $this->visualNavigationTrace('INFO','APL_PREVIEW_BEGIN',[
+            'draftCount'=>count((array)($this->visualNavigationDraftData()['properties']??[]))
+        ]);
         $this->WriteAttributeString('VisualNavDraftPreview','');
         try {
             $draft=$this->visualNavigationDraftData();
@@ -480,6 +490,7 @@ trait IAHVisualNavigationGroupTrait
                 .implode(' | ',$this->visualNavigationDraftChanges())
                 .' · EDIT kann nach PROD übernommen werden.');
         } catch (\Throwable $error) {
+            $this->visualNavigationTrace('ERROR','APL_PREVIEW_FAILED',['error'=>$error->getMessage()]);
             $this->WriteAttributeString('VisualNavNotice','EDIT-Prüfung: '.$error->getMessage());
         }
         $this->ReloadForm();
@@ -487,6 +498,7 @@ trait IAHVisualNavigationGroupTrait
 
     public function PublishVisualNavigationDraft(): void
     {
+        $this->visualNavigationTrace('INFO','APL_PUBLISH_BEGIN');
         try {
             $draft=$this->visualNavigationDraftData();
             $changes=(array)($draft['properties']??[]);
@@ -538,6 +550,7 @@ trait IAHVisualNavigationGroupTrait
             $this->WriteAttributeString('VisualNavNotice',
                 'APL-Konfiguration aus EDIT nach PROD übernommen: '.implode(', ',array_keys($changes)));
         } catch (\Throwable $error) {
+            $this->visualNavigationTrace('ERROR','APL_PUBLISH_FAILED',['error'=>$error->getMessage()]);
             $this->WriteAttributeString('VisualNavNotice','Nicht veröffentlicht: '.$error->getMessage());
         }
         $this->ReloadForm();
