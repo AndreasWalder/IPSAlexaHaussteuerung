@@ -47,6 +47,18 @@ trait IAHVisualNavigationGroupTrait
             JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
     }
 
+    public function RefreshVisualNavigationDiagnostics(): void
+    {
+        $this->UpdateFormField('VisualNavDiagnosticJson','value',
+            $this->GetVisualNavigationDiagnostics());
+        $this->UpdateFormField('VisualNavNotice','caption',
+            $this->ReadAttributeString('VisualNavNotice'));
+        $this->UpdateFormField('UnifiedEditChanges','values',
+            $this->GetUnifiedEditChanges());
+        $this->UpdateFormField('VisualNavDraftStatus','caption',
+            $this->visualNavigationDraftSummary());
+    }
+
     public function ClearVisualNavigationDiagnostics(): void
     {
         $this->WriteAttributeString('VisualNavDiagnosticLog','[]');
@@ -965,6 +977,13 @@ trait IAHVisualNavigationGroupTrait
             }
             if ($existing===null) throw new RuntimeException('Eintrag nicht mehr vorhanden. Bitte neu laden.');
             $key=$existing['key'];
+            $this->visualNavigationTrace('INFO','DIALOG_VALUES',[
+                'group'=>$groupId,
+                'source'=>(string)$existing['source'],
+                'selected'=>(string)($input['pageTargetChoice']??''),
+                'instance'=>(string)($input['pageInstance']??''),
+                'fields'=>implode(',',array_keys($input))
+            ]);
             if ($existing['source']==='navigation') {
                 // Native navigation editor retains its concurrency protection.
                 $context=$this->navigationEditorContext();
