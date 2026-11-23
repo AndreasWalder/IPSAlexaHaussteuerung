@@ -78,11 +78,17 @@ trait IAHVisualNavigationGroupTrait
             $name=$normalize((string)($group['title']?:$group['rendererTitle']?:$group['pageTitle']?:$group['key']));
             if ($name!=='') $titleIndex[$name][]=$id;
         }
+        $navTitleCounts=[];
+        foreach ($groups as $candidate) {
+            if (($candidate['source']??'')!=='navigation') continue;
+            $normalized=$normalize((string)$candidate['title']);
+            if ($normalized!=='') $navTitleCounts[$normalized]=($navTitleCounts[$normalized]??0)+1;
+        }
         foreach (array_keys($groups) as $navId) {
             if (!isset($groups[$navId]) || $groups[$navId]['source']!=='navigation') continue;
             $name=$normalize((string)$groups[$navId]['title']);
             $matches=$titleIndex[$name]??[];
-            if ($name==='' || count($matches)!==1) continue;
+            if ($name==='' || count($matches)!==1 || ($navTitleCounts[$name]??0)!==1) continue;
             $targetId=$matches[0];
             if (!empty($groups[$targetId]['navigationKey'])) continue;
             $groups[$targetId]['navigationKey']=$groups[$navId]['key'];
