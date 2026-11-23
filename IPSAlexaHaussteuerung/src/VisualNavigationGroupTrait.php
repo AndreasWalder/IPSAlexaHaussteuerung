@@ -20,7 +20,7 @@ trait IAHVisualNavigationGroupTrait
                     $info=IPS_GetInstance((int)$id);
                     $name=strtolower((string)($info['ModuleInfo']['ModuleName']??''));
                     if (str_contains($name,'webfront')) $ids[]=(int)$id;
-                } catch (\\Throwable $e) { continue; }
+                } catch (\Throwable $e) { continue; }
             }
         }
         $ids=array_values(array_unique(array_map('intval',$ids)));
@@ -71,7 +71,7 @@ trait IAHVisualNavigationGroupTrait
                     $options[]=['caption'=>$title.' — '.$id.' ('.$name.' #'.$instanceId.')',
                         'value'=>$id];
                 }
-            } catch (\\Throwable $error) { continue; }
+            } catch (\Throwable $error) { continue; }
         }
         usort($options,static fn(array $a,array $b):int=>
             $a['value']===''?-1:($b['value']===''?1:
