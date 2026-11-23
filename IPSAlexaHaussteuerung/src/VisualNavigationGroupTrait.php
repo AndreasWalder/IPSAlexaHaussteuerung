@@ -382,6 +382,11 @@ trait IAHVisualNavigationGroupTrait
                 foreach ($updated as $property=>$value)
                     IPS_SetProperty($this->InstanceID,$property,$value);
                 IPS_ApplyChanges($this->InstanceID);
+                foreach ($updated as $property=>$value) {
+                    $actual=json_decode($this->ReadPropertyString($property),true);
+                    if ($actual!==json_decode($value,true))
+                        throw new RuntimeException('Schreibprüfung fehlgeschlagen: '.$property);
+                }
             } catch (\Throwable $writeError) {
                 foreach ($backup as $property=>$raw)
                     IPS_SetProperty($this->InstanceID,$property,$raw);
