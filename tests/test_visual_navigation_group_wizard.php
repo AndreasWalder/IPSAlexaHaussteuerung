@@ -15,6 +15,10 @@ final class VisualGroupHarness
     use IAHVisualNavigationGroupTrait;
     public int $InstanceID=16159;
     public int $applyCount=0;
+    public array $formUpdates=[];
+    public function UpdateFormField(string $name,string $field,mixed $value): void {
+        $this->formUpdates[]=['name'=>$name,'field'=>$field,'value'=>$value];
+    }
     public array $properties=[
         'LaunchCatalog'=>'[{"id":"bienen","title":"Bienen","actionType":"route","target":"bienen","icon":"Bienen.png","color":"#667788"}]',
         'PageMappings'=>'[{"key":"energie","type":"wfc_item","value":"item2124","label":"Energie"}]',
@@ -63,6 +67,13 @@ foreach(['1. Startkachel','2. Seitenzuordnung','3. Renderer','4. Prüfen'] as $h
 }
 checkGroup(str_contains(json_encode($dialog),'"name":"addPage"'),
     'Missing optional page creation');
+checkGroup(str_contains(json_encode($dialog),'IAH_OpenVisualNavigationGroupStep'),
+    'Wizard must have next/back navigation buttons');
+$h->OpenVisualNavigationGroupStep(3);
+checkGroup(in_array(['name'=>'VisualNavStage3','field'=>'expanded','value'=>true],
+    $h->formUpdates,true),'Next/back did not expand selected wizard stage');
+checkGroup(in_array(['name'=>'VisualNavStage1','field'=>'expanded','value'=>false],
+    $h->formUpdates,true),'Next/back did not collapse previous wizard stage');
 $changed=$bienen;
 $changed['title']='Bienen Übersicht';
 $changed['rendererTarget']='bees';
