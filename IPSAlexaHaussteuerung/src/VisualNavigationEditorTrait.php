@@ -172,7 +172,7 @@ trait IAHVisualNavigationEditorTrait
             : (string)$football['actionType'].' → '.(string)$football['target'];
         $routerStatus=$version===7 ? 'V7 INSTALLIERT'
             : ($version>0 ? 'V'.$version.' VERALTET' : 'NICHT GEFUNDEN');
-        $instruction=$version===6 ? 'Router ist aktuell.'
+        $instruction=$version===7 ? 'Router ist aktuell.'
             : 'Bitte APL-Klickrouter prüfen / reparieren und danach die Diagnose erneut lesen.';
         return 'Action #'.$actionId.' · APL-Klickrouter: '.$routerStatus
             .' · Fußball: '.$binding.' · '.$instruction;
@@ -342,50 +342,36 @@ trait IAHVisualNavigationEditorTrait
                     'loadValuesFromConfiguration'=>false,
                     'values'=>$this->visualNavigationRows(),
                     'columns'=>[
-                        ['name'=>'source','caption'=>'Herkunft','width'=>'110px','save'=>false],
-                        ['name'=>'key','caption'=>'Interner Schlüssel','width'=>'130px','save'=>false],
-                        ['name'=>'title','caption'=>'Anzeigetext','width'=>'165px',
-                            'edit'=>['type'=>'ValidationTextBox']],
-                        ['name'=>'actionType','caption'=>'Beim Antippen','width'=>'145px',
-                            'edit'=>['type'=>'Select','options'=>[
-                                ['caption'=>'Seite öffnen','value'=>'route'],
-                                ['caption'=>'KI-Frage ausführen','value'=>'ai_query'],
-                                ['caption'=>'IPS-Element','value'=>'wfc_item'],
-                                ['caption'=>'Externe HTTPS-URL','value'=>'external_url'],
-                                ['caption'=>'Renderer','value'=>'render'],
-                                ['caption'=>'Navigations-Tab (EDIT)','value'=>'navigation'],
-                            ]]],
-                        ['name'=>'target','caption'=>'Ziel / Frage / Objekt','width'=>'235px',
-                            'edit'=>['type'=>'ValidationTextBox']],
-                        ['name'=>'icon','caption'=>'Kachelbild (vorhandene Datei)','width'=>'180px',
-                            'edit'=>['type'=>'Select','options'=>$this->visualTileIconOptions()]],
-                        ['name'=>'iconUpload','caption'=>'Bild hochladen','width'=>'110px',
-                            'edit'=>['type'=>'SelectFile','extensions'=>'.png,.jpg,.jpeg,.webp']],
-                        ['name'=>'color','caption'=>'Kachelfarbe','width'=>'105px',
-                            'edit'=>['type'=>'SelectColor','allowTransparent'=>false]],
-                        ['name'=>'resultTitle','caption'=>'KI: Ergebnis-Überschrift (leer = automatisch)',
-                            'width'=>'215px','edit'=>['type'=>'ValidationTextBox']],
-                        ['name'=>'resultIconMode','caption'=>'KI: Icon auf Ergebnisseite',
-                            'width'=>'165px','edit'=>['type'=>'Select','options'=>[
-                                ['caption'=>'KI wählt Icon','value'=>'ai'],
-                                ['caption'=>'Startkachel-Bild','value'=>'tile']]]],
-                        ['name'=>'resultStatusMode','caption'=>'KI: Statusanzeige',
-                            'width'=>'155px','edit'=>['type'=>'Select','options'=>[
-                                ['caption'=>'Nur bei Fakten bewerten','value'=>'auto'],
-                                ['caption'=>'Ohne Status','value'=>'off']]]],
-                        ['name'=>'resultLayout','caption'=>'KI: Darstellung',
-                            'width'=>'170px','edit'=>['type'=>'Select','options'=>[
-                                ['caption'=>'Automatisch','value'=>'auto'],
-                                ['caption'=>'Nur Antworttext','value'=>'text'],
-                                ['caption'=>'Statusseite mit Details','value'=>'status']]]],
-                        ['name'=>'speakAnswer','caption'=>'KI: Antwort vorlesen','width'=>'120px',
-                            'edit'=>['type'=>'CheckBox']],
-                        ['name'=>'useArchive','caption'=>'KI: Archiv bei Bedarf','width'=>'125px',
-                            'edit'=>['type'=>'CheckBox']],
-                        ['name'=>'detail','caption'=>'Zusatzinformation','width'=>'190px','save'=>false],
-                        ['name'=>'status','caption'=>'Status','width'=>'140px','save'=>false],
-                    ],
-                    'onEdit'=>$onEdit,
+                         ['name'=>'source','caption'=>'Bereich','width'=>'95px','save'=>false],
+                         ['name'=>'key','caption'=>'Schlüssel','width'=>'120px','save'=>false],
+                         ['name'=>'title','caption'=>'Anzeigename','width'=>'195px','save'=>true],
+                         ['name'=>'actionType','caption'=>'Beim Antippen','width'=>'195px','save'=>true,
+                             'edit'=>['type'=>'Select','options'=>[
+                                 ['caption'=>'APL-Seite öffnen','value'=>'route'],
+                                 ['caption'=>'KI-Frage ausführen','value'=>'ai_query'],
+                                 ['caption'=>'IPS-Element','value'=>'wfc_item'],
+                                 ['caption'=>'Externe HTTPS-Seite','value'=>'external_url'],
+                                 ['caption'=>'Renderer','value'=>'render'],
+                                 ['caption'=>'Navigations-Tab (EDIT)','value'=>'navigation']
+                             ]]],
+                         ['name'=>'target','caption'=>'Verknüpftes Ziel','width'=>'230px','save'=>true],
+                         ['name'=>'detail','caption'=>'Beschreibung','width'=>'145px','save'=>false],
+                         ['name'=>'status','caption'=>'Status','width'=>'155px','save'=>false],
+                         // Values edited in the dynamic dialog, not shown on unrelated rows.
+                         ['name'=>'icon','visible'=>false,'save'=>true],
+                         ['name'=>'iconUpload','visible'=>false,'save'=>true],
+                         ['name'=>'color','visible'=>false,'save'=>true],
+                         ['name'=>'resultTitle','visible'=>false,'save'=>true],
+                         ['name'=>'resultIconMode','visible'=>false,'save'=>true],
+                         ['name'=>'resultStatusMode','visible'=>false,'save'=>true],
+                         ['name'=>'resultLayout','visible'=>false,'save'=>true],
+                         ['name'=>'speakAnswer','visible'=>false,'save'=>true],
+                         ['name'=>'useArchive','visible'=>false,'save'=>true],
+                     ],
+                     'form'=>'return json_decode(IAH_GetVisualNavigationEditForm('
+                         .'$id, (string)($VisualNavRows["source"] ?? ""), '
+                         .'(string)($VisualNavRows["actionType"] ?? "")), true);',
+                     'onEdit'=>$onEdit,
                 ],
                 ['type'=>'Label','caption'=>'KI-Kachel testen: ID einer bestehenden Kachel eingeben. '
                     .'Der Test verwendet die echte KI-/Datenquelle (gegebenenfalls API-Kosten), '
