@@ -44,6 +44,7 @@ final class VisualGroupHarness
     }
     public function ReadPropertyString(string $p): string {return $this->properties[$p];}
     public function WriteAttributeString(string $p,string $v): void {$this->attributes[$p]=$v;}
+    public function ReadAttributeString(string $p): string {return $this->attributes[$p]??'';}
     public function ReloadForm(): void {}
     public function groups(): array {return $this->visualNavigationGroups();}
 }
@@ -111,18 +112,30 @@ $changed=$bienen;
 $changed['title']='Bienen Übersicht';
 $changed['rendererTarget']='bees';
 $h->SaveVisualNavigationGroup(json_encode($changed,JSON_THROW_ON_ERROR));
-$launch=json_decode($h->properties['LaunchCatalog'],true);
-$render=json_decode($h->properties['RendererDomains'],true);
-checkGroup($launch[0]['title']==='Bienen Übersicht','Launch change lost');
-checkGroup($render[0]['roomDomain']==='bees','Renderer change lost');
+$draft=json_decode($h->attributes['VisualNavDraft']??'',true);
+checkGroup(isset($draft['properties']['LaunchCatalog'],$draft['properties']['RendererDomains']),
+    'Grouped edits must be staged together in EDIT');
+checkGroup(!isset($draft['properties']['PageMappings']),'Unchanged page must not be staged');
+checkGroup($h->applyCount===0,'Group editing must never update PROD directly');
+$launch=json_decode($draft['properties']['LaunchCatalog'],true);
+$render=json_decode($draft['properties']['RendererDomains'],true);
+checkGroup($launch[0]['title']==='Bienen Übersicht','EDIT launch change lost');
+checkGroup($render[0]['roomDomain']==='bees','EDIT renderer change lost');
 checkGroup($render[0]['aplDoc']==='doc://existing','Renderer APL source must be preserved');
-checkGroup($h->applyCount===1,'Exactly one ApplyChanges expected');
+$h->PreviewVisualNavigationDraft();
+$preview=json_decode($h->attributes['VisualNavDraftPreview']??'',true);
+checkGroup(is_array($preview)&&isset($preview['hash']),'EDIT preview not created');
+$h->PublishVisualNavigationDraft();
+checkGroup($h->applyCount===1,'Exactly one PROD apply expected');
+checkGroup(json_decode($h->properties['LaunchCatalog'],true)[0]['title']==='Bienen Übersicht',
+    'EDIT launch was not published');
+checkGroup($h->ReadAttributeString('VisualNavDraft')==='','EDIT draft must be cleared');
 $backup=json_decode($h->attributes['VisualNavBackup']??'',true);
 checkGroup(isset($backup['properties']['LaunchCatalog'],$backup['properties']['RendererDomains']),
-    'Multi-source backup incomplete');
-checkGroup(!isset($backup['properties']['PageMappings']),'Unchanged page should not be saved');
+    'Multi-source publish backup incomplete');
+checkGroup(!isset($backup['properties']['PageMappings']),'Unchanged page backup should not be saved');
 
 $nav=json_decode($h->GetVisualNavigationGroupForm('navigation:legacy_dampf'),true,512,JSON_THROW_ON_ERROR);
 checkGroup(str_contains(json_encode($nav),'SelectObject'),'Navigation must use object selector');
 checkGroup(str_contains(json_encode($nav),'PROD'),'Navigation must explicitly protect PROD');
-echo "PASS: one entry per key, numbered wizard, optional links, safe multi-source save and backup\n";
+echo "PASS: grouped editor, navigation metadata, staged EDIT, preview and safe PROD publish\n";
