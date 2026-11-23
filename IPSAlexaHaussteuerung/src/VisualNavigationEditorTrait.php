@@ -337,41 +337,30 @@ trait IAHVisualNavigationEditorTrait
                 ['type'=>'Label','name'=>'VisualNavNotice',
                     'caption'=>$this->ReadAttributeString('VisualNavNotice')],
                 ['type'=>'List','name'=>'VisualNavRows',
-                    'caption'=>'Kacheln, Seiten und Verknüpfungen',
+                    'caption'=>'Verknüpfungen nach Schlüssel zusammengefasst',
                     'rowCount'=>15,'add'=>false,'delete'=>false,
                     'loadValuesFromConfiguration'=>false,
-                    'values'=>$this->visualNavigationRows(),
+                    'values'=>$this->visualNavigationGroups(),
                     'columns'=>[
-                         ['name'=>'source','caption'=>'Bereich','width'=>'95px','save'=>false],
-                         ['name'=>'key','caption'=>'Schlüssel','width'=>'120px','save'=>false],
-                         ['name'=>'title','caption'=>'Anzeigename','width'=>'195px','save'=>true],
-                         ['name'=>'actionType','caption'=>'Beim Antippen','width'=>'195px','save'=>true,
-                             'edit'=>['type'=>'Select','options'=>[
+                         ['name'=>'key','caption'=>'Schlüssel','width'=>'130px','save'=>false],
+                         ['name'=>'title','caption'=>'Anzeigename','width'=>'200px','save'=>true],
+                         ['name'=>'parts','caption'=>'Zusammengehörige Elemente','width'=>'250px','save'=>false],
+                         ['name'=>'actionType','caption'=>'Startkachel / Typ','width'=>'170px',
+                             'save'=>true,'edit'=>['type'=>'Select','options'=>[
                                  ['caption'=>'APL-Seite öffnen','value'=>'route'],
-                                 ['caption'=>'KI-Frage ausführen','value'=>'ai_query'],
-                                 ['caption'=>'IPS-Element','value'=>'wfc_item'],
-                                 ['caption'=>'Externe HTTPS-Seite','value'=>'external_url'],
+                                 ['caption'=>'KI-Frage','value'=>'ai_query'],
+                                 ['caption'=>'Seitenzuordnung','value'=>'wfc_item'],
                                  ['caption'=>'Renderer','value'=>'render'],
-                                 ['caption'=>'Navigations-Tab (EDIT)','value'=>'navigation']
+                                 ['caption'=>'Navigation EDIT','value'=>'navigation']
                              ]]],
-                         ['name'=>'target','caption'=>'Verknüpftes Ziel','width'=>'230px','save'=>true],
-                         ['name'=>'detail','caption'=>'Beschreibung','width'=>'145px','save'=>false],
+                         ['name'=>'target','caption'=>'Ziel / Frage','width'=>'235px','save'=>true],
                          ['name'=>'status','caption'=>'Status','width'=>'155px','save'=>false],
-                         // Values edited in the dynamic dialog, not shown on unrelated rows.
-                         ['name'=>'icon','visible'=>false,'save'=>true],
-                         ['name'=>'iconUpload','visible'=>false,'save'=>true],
-                         ['name'=>'color','visible'=>false,'save'=>true],
-                         ['name'=>'resultTitle','visible'=>false,'save'=>true],
-                         ['name'=>'resultIconMode','visible'=>false,'save'=>true],
-                         ['name'=>'resultStatusMode','visible'=>false,'save'=>true],
-                         ['name'=>'resultLayout','visible'=>false,'save'=>true],
-                         ['name'=>'speakAnswer','visible'=>false,'save'=>true],
-                         ['name'=>'useArchive','visible'=>false,'save'=>true],
+                         ['name'=>'groupId','visible'=>false,'save'=>true],
                      ],
-                     'form'=>'return json_decode(IAH_GetVisualNavigationEditForm('
-                         .'$id, (string)($VisualNavRows["source"] ?? ""), '
-                         .'(string)($VisualNavRows["actionType"] ?? "")), true);',
-                     'onEdit'=>$onEdit,
+                     'form'=>'return json_decode(IAH_GetVisualNavigationGroupForm('
+                         .'$id, (string)($VisualNavRows["groupId"] ?? "")), true);',
+                                          
+                     'onEdit'=>'IAH_SaveVisualNavigationGroup($id, json_encode($VisualNavRows, JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE));',
                 ],
                 ['type'=>'Label','caption'=>'KI-Kachel testen: ID einer bestehenden Kachel eingeben. '
                     .'Der Test verwendet die echte KI-/Datenquelle (gegebenenfalls API-Kosten), '
