@@ -7,6 +7,15 @@ function IPS_SetProperty(int $id,string $property,string $value): void {
     $GLOBALS['navHarness']->properties[$property]=$value;
 }
 function IPS_ApplyChanges(int $id): void { $GLOBALS['navHarness']->applyCount++; }
+function IPS_GetInstanceListByModuleID(string $module): array {return [45135];}
+function IPS_GetConfiguration(int $id): string {
+    return json_encode(['Items'=>json_encode([
+        ['ID'=>'item9907','ClassName'=>'TabPane',
+            'Configuration'=>json_encode(['title'=>'Kamera'])]
+    ])],JSON_THROW_ON_ERROR);
+}
+function IPS_GetName(int $id): string {return 'Haus';}
+
 
 require_once dirname(__DIR__).'/IPSAlexaHaussteuerung/src/VisualNavigationGroupTrait.php';
 
@@ -159,6 +168,26 @@ $h->PublishVisualNavigationDraft();
 checkGroup(count(json_decode($h->properties['LaunchCatalog'],true))===2,
     'New tile was not published after explicit confirmation');
 checkGroup($h->applyCount===2,'New tile publication must apply exactly once');
+// Selecting a Classic WebFront item must stage the chosen ID in EDIT.
+$energy=array_values(array_filter($h->groups(),
+    static fn($g)=>$g['groupId']==='route:energie'))[0];
+$energy['pageInstance']='45135';
+$energy['pageTargetChoice']='item9907';
+$h->SaveVisualNavigationGroup(json_encode($energy,JSON_THROW_ON_ERROR));
+$staged=json_decode($h->ReadAttributeString('VisualNavDraft'),true);
+checkGroup(isset($staged['properties']['PageMappings']),
+    'Changing a WebFront target must write a page mapping EDIT draft');
+checkGroup(json_decode($staged['properties']['PageMappings'],true)[0]['value']==='item9907',
+    'Selected WebFront element ID not preserved');
+checkGroup(json_decode($h->properties['PageMappings'],true)[0]['value']==='item2124',
+    'PROD mapping was modified before approval');
+checkGroup($h->applyCount===2,'WebFront dialog OK must not apply instance changes');
+$log=json_decode($h->GetVisualNavigationDiagnostics(),true);
+checkGroup(is_array($log)&&count($log)>0,'Missing persistent diagnostic entries');
+checkGroup((bool)array_filter($log,static fn($row)=>($row['event']??'')==='DIALOG_EDIT_SAVED'),
+    'Missing dialog save success log entry');
+$h->DiscardVisualNavigationDraft();
+
 $nav=json_decode($h->GetVisualNavigationGroupForm('navigation:legacy_dampf'),true,512,JSON_THROW_ON_ERROR);
 checkGroup(str_contains(json_encode($nav),'SelectObject'),'Navigation must use object selector');
 checkGroup(str_contains(json_encode($nav),'PROD'),'Navigation must explicitly protect PROD');
