@@ -135,6 +135,30 @@ checkGroup(isset($backup['properties']['LaunchCatalog'],$backup['properties']['R
     'Multi-source publish backup incomplete');
 checkGroup(!isset($backup['properties']['PageMappings']),'Unchanged page backup should not be saved');
 
+// Creating a tile through the popup must be a staged EDIT operation.
+$h->CreateVisualNavigationTileDraft(json_encode([
+    'key'=>'neue_testkachel','title'=>'Neue Testkachel',
+    'action'=>'route','target'=>'bienen','icon'=>'',
+    'color'=>0x365C89,'resultLayout'=>'auto',
+    'speakAnswer'=>true,'useArchive'=>true
+],JSON_THROW_ON_ERROR));
+$draft=json_decode($h->ReadAttributeString('VisualNavDraft'),true);
+checkGroup(isset($draft['properties']['LaunchCatalog']),'Popup tile was not staged');
+checkGroup($h->applyCount===1,'Creating a popup tile must not update PROD');
+$draftTiles=json_decode($draft['properties']['LaunchCatalog'],true);
+checkGroup(count(array_filter($draftTiles,static fn($tile)=>($tile['id']??'')==='neue_testkachel'))===1,
+    'New tile must exist exactly once in EDIT');
+checkGroup(count(json_decode($h->properties['LaunchCatalog'],true))===1,
+    'New tile must not be visible in PROD before publication');
+checkGroup($h->ValidateVisualNavigationTileDraft('neue_testkachel','Duplicate','route','bienen')!=='',
+    'Duplicate EDIT tile IDs must be rejected');
+$h->PreviewVisualNavigationDraft();
+checkGroup(str_contains($h->ReadAttributeString('VisualNavNotice'),'NEU LaunchCatalog'),
+    'Review must show newly added tile by name');
+$h->PublishVisualNavigationDraft();
+checkGroup(count(json_decode($h->properties['LaunchCatalog'],true))===2,
+    'New tile was not published after explicit confirmation');
+checkGroup($h->applyCount===2,'New tile publication must apply exactly once');
 $nav=json_decode($h->GetVisualNavigationGroupForm('navigation:legacy_dampf'),true,512,JSON_THROW_ON_ERROR);
 checkGroup(str_contains(json_encode($nav),'SelectObject'),'Navigation must use object selector');
 checkGroup(str_contains(json_encode($nav),'PROD'),'Navigation must explicitly protect PROD');
