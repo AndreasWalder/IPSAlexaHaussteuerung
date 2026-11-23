@@ -170,6 +170,101 @@ trait IAHVisualNavigationGroupTrait
         return json_encode($rows,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
     }
 
+    /** Preflight all changed IAH sections without changing any PROD data. */
+    public function PreviewUnifiedEditPublish(): string
+    {
+        try {
+            $rows=json_decode($this->GetUnifiedEditChanges(),true,512,JSON_THROW_ON_ERROR);
+            $counts=['Navigation'=>0,'Sprachregeln'=>0,'APL'=>0];
+            foreach ($rows as $row) {
+                if (($row['aenderung']??'')==='NICHT PRÜFBAR')
+                    throw new \RuntimeException($row['bereich'].': '.$row['details']);
+                $area=(string)($row['bereich']??'');
+                if ($area==='Navigation')$counts['Navigation']++;
+                elseif ($area==='Sprachregeln')$counts['Sprachregeln']++;
+                elseif (str_starts_with($area,'APL / '))$counts['APL']++;
+            }
+            if ($counts['Navigation']>0) {
+                $this->PreviewSystemNavigationUpdate();
+                if ($this->ReadAttributeString('SystemNavigationPublishPreview')==='')
+                    throw new \RuntimeException('Navigation-Vorschau fehlgeschlagen.');
+            }
+            if ($counts['Sprachregeln']>0) {
+                $this->PreviewVoiceRules();
+                if ($this->ReadAttributeString('VoiceRulesPublishPreview')==='')
+                    throw new \RuntimeException('Sprechregel-Vorschau fehlgeschlagen.');
+            }
+            if ($counts['APL']>0) {
+                $this->PreviewVisualNavigationDraft();
+                if ($this->ReadAttributeString('VisualNavDraftPreview')==='')
+                    throw new \RuntimeException('APL-Vorschau fehlgeschlagen.');
+            }
+            $state=['at'=>time(),'hash'=>hash('sha256',json_encode($rows,JSON_THROW_ON_ERROR)),
+                'counts'=>$counts,'ok'=>true];
+            $this->WriteAttributeString('UnifiedPublishPreview',json_encode($state,JSON_THROW_ON_ERROR));
+            $this->WriteAttributeString('UnifiedPublishNotice',
+                'Geprüft: Navigation '.$counts['Navigation'].', Sprachregeln '
+                .$counts['Sprachregeln'].', APL '.$counts['APL'].'. Keine PROD-Schreibzugriffe.');
+            return json_encode($state,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        } catch (\Throwable $e) {
+            $this->WriteAttributeString('UnifiedPublishPreview','');
+            $this->WriteAttributeString('UnifiedPublishNotice','Prüfung fehlgeschlagen: '.$e->getMessage());
+            return json_encode(['ok'=>false,'error'=>$e->getMessage()],JSON_UNESCAPED_UNICODE);
+        }
+    }
+
+    /**
+     * Coordinates existing guarded publish paths. SystemConfiguration sections
+     * must be previewed afresh after a previous section has been published.
+     * Multi-script publishing is not atomic; report partial success clearly.
+     */
+    public function PublishUnifiedEditSections(): string
+    {
+        $completed=[];
+        try {
+            $preview=json_decode($this->ReadAttributeString('UnifiedPublishPreview'),true);
+            if (!is_array($preview)||empty($preview['ok'])
+                || (int)($preview['at']??0)<time()-600)
+                throw new \RuntimeException('Bitte die gemeinsame Vorschau erneut ausführen.');
+            $rows=json_decode($this->GetUnifiedEditChanges(),true,512,JSON_THROW_ON_ERROR);
+            if (!hash_equals((string)$preview['hash'],
+                    hash('sha256',json_encode($rows,JSON_THROW_ON_ERROR))))
+                throw new \RuntimeException('Änderungen seit Vorschau erkannt.');
+            foreach ([
+                ['Navigation','PreviewSystemNavigationUpdate','PublishSystemNavigationUpdate',
+                    'SystemNavigationPublishPreview'],
+                ['Sprachregeln','PreviewVoiceRules','PublishVoiceRules',
+                    'VoiceRulesPublishPreview'],
+                ['APL','PreviewVisualNavigationDraft','PublishVisualNavigationDraft',
+                    'VisualNavDraftPreview']
+            ] as [$area,$check,$publish,$previewAttr]) {
+                if ((int)($preview['counts'][$area]??0)===0)continue;
+                $this->$check();
+                if ($this->ReadAttributeString($previewAttr)==='')
+                    throw new \RuntimeException($area.': aktuelle Prüfung fehlgeschlagen.');
+                $this->$publish();
+                $remaining=json_decode($this->GetUnifiedEditChanges(),true);
+                foreach (is_array($remaining)?$remaining:[] as $row) {
+                    $domain=(string)($row['bereich']??'');
+                    if ($domain===$area || ($area==='APL' && str_starts_with($domain,'APL / ')))
+                        throw new \RuntimeException($area.': nach Freigabe weiterhin offene Änderungen.');
+                }
+                $completed[]=$area;
+            }
+            $this->WriteAttributeString('UnifiedPublishPreview','');
+            $this->WriteAttributeString('UnifiedPublishNotice',
+                'Freigegeben: '.($completed===[]?'keine Änderungen':implode(', ',$completed)));
+            return json_encode(['ok'=>true,'completed'=>$completed],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        } catch (\Throwable $e) {
+            $this->WriteAttributeString('UnifiedPublishPreview','');
+            $error=$e->getMessage();
+            $this->WriteAttributeString('UnifiedPublishNotice',
+                'TEILWEISE/FEHLER: '.implode(', ',$completed).' · '.$error);
+            return json_encode(['ok'=>false,'completed'=>$completed,'error'=>$error],
+                JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        }
+    }
+
     private function visualNavigationDraftChanges(): array
     {
         $result=[];
