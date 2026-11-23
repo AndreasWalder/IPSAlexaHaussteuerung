@@ -22,8 +22,8 @@ foreach($tokens as $token) {
     if (is_array($token) && $token[0]===T_EXIT)
         throw new RuntimeException('WebHookIcons must use return, never exit/die.');
 }
-if(substr_count($source,"$bad(403);\n        return;")!==1)
+if(substr_count($source,"\$bad(403);\n        return;")!==1)
     throw new RuntimeException('403 must return after setting the HTTP status.');
-if(substr_count($source,"$bad(404);\n        return;")!==2)
+if(substr_count($source,"\$bad(404);\n        return;")!==2)
     throw new RuntimeException('404 must return after setting the HTTP status.');
 echo "PASS: icon webhook ends normally and retains token, 304 and error handling\n";
