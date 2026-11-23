@@ -361,6 +361,8 @@ trait IAHVisualNavigationEditorTrait
                          ['name'=>'target','caption'=>'Ziel / Frage','width'=>'235px','save'=>true],
                          ['name'=>'status','caption'=>'Status','width'=>'155px','save'=>false],
                          ['name'=>'groupId','visible'=>false,'save'=>true],
+                          ['name'=>'pageInstance','visible'=>false,'save'=>true],
+                          ['name'=>'pageTargetChoice','visible'=>false,'save'=>true],
                           ['name'=>'navigationKey','visible'=>false,'save'=>true],
                           ['name'=>'navigationTitle','visible'=>false,'save'=>true],
                           ['name'=>'navigationTarget','visible'=>false,'save'=>true],
