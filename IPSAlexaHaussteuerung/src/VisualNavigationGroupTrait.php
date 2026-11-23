@@ -264,6 +264,21 @@ trait IAHVisualNavigationGroupTrait
             $launch=$existing['hasLaunch']||$addLaunch;
             $page=$existing['hasPage']||$addPage;
             $renderer=$existing['hasRenderer'];
+            // Inherited legacy page fallbacks must not be materialized merely
+            // because the user confirmed another part of the group.
+            if ($existing['hasPage'] && !$addPage
+                && (string)($input['pageAction']??'')===(string)$existing['pageAction']
+                && trim((string)($input['pageTitle']??''))===(string)$existing['pageTitle']
+                && trim((string)($input['pageTarget']??''))===(string)$existing['pageTarget']) {
+                $rawPage=json_decode($this->ReadPropertyString('PageMappings'),true);
+                $storedPage=false;
+                foreach (is_array($rawPage)?$rawPage:[] as $entry) {
+                    if(is_array($entry) && (string)($entry['key']??'')===$key) {
+                        $storedPage=true;break;
+                    }
+                }
+                if (!$storedPage) $page=false;
+            }
             $before=[];$after=[];
             foreach (['LaunchCatalog','PageMappings','RendererDomains'] as $prop) {
                 $raw=$this->ReadPropertyString($prop);
@@ -273,6 +288,8 @@ trait IAHVisualNavigationGroupTrait
                 $after[$prop]=$parsed;
             }
             if ($launch) {
+                if ($addLaunch && !preg_match('/^[a-z0-9_-]{2,48}$/D',$key))
+                    throw new RuntimeException('Für eine neue Startkachel ist ein gültiger Schlüssel erforderlich.');
                 $title=trim((string)($input['title']??''));
                 $action=(string)($input['actionType']??'route');
                 $target=trim((string)($input['target']??''));
