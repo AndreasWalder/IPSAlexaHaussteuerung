@@ -633,8 +633,16 @@ trait IAHVisualNavigationGroupTrait
                     $options[]=['caption'=>$title.' — '.$id.' ('.$name.' #'.$instanceId.')',
                         'value'=>$id];
                 }
-            } catch (\Throwable $error) { continue; }
+            } catch (\Throwable $error) {
+                $this->visualNavigationTrace('ERROR','WEBFRONT_CONFIG_READ_FAILED',[
+                    'instance'=>$instanceId,'error'=>$error->getMessage()
+                ]);
+                continue;
+            }
         }
+        $this->visualNavigationTrace('INFO','WEBFRONT_ITEMS_LOADED',[
+            'instance'=>$selectedInstance,'count'=>count($options)-1
+        ]);
         usort($options,static fn(array $a,array $b):int=>
             $a['value']===''?-1:($b['value']===''?1:
                 strnatcasecmp($a['caption'],$b['caption'])));
@@ -975,10 +983,21 @@ trait IAHVisualNavigationGroupTrait
 
     public function UpdateVisualNavigationWebFrontInstance(int $instanceId): void
     {
-        $this->UpdateFormField('pageTargetChoice','options',
-            json_encode($this->visualNavigationWebFrontItemOptions($instanceId),
-                JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
-        $this->UpdateFormField('pageTargetChoice','value','');
+        $this->visualNavigationTrace('INFO','WEBFRONT_SELECTION_CHANGED',['instance'=>$instanceId]);
+        try {
+            $options=$this->visualNavigationWebFrontItemOptions($instanceId);
+            $this->UpdateFormField('pageTargetChoice','options',
+                json_encode($options,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
+            $this->UpdateFormField('pageTargetChoice','value','');
+            $this->visualNavigationTrace('OK','WEBFRONT_OPTIONS_UPDATED',[
+                'instance'=>$instanceId,'count'=>count($options)-1
+            ]);
+        } catch (\Throwable $error) {
+            $this->visualNavigationTrace('ERROR','WEBFRONT_SELECTION_FAILED',[
+                'instance'=>$instanceId,'error'=>$error->getMessage()
+            ]);
+            throw $error;
+        }
     }
 
     public function UpdateVisualNavigationGroupPageType(string $type): void
