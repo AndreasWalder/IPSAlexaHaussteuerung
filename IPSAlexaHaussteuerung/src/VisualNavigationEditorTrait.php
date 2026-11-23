@@ -193,6 +193,115 @@ trait IAHVisualNavigationEditorTrait
         $this->UpdateFormField('VisualNavNotice','caption',$status);
     }
 
+
+    /**
+     * Symcon List.form (>= 7.0): a row-specific dialog, without exposing
+     * irrelevant settings from another source. This method is invoked by
+     * a short form script, not by an action or the ActionScript router.
+     */
+    public function GetVisualNavigationEditForm(string $source, string $action): string
+    {
+        $title=['type'=>'ValidationTextBox','name'=>'title',
+            'caption'=>'Anzeigetext','width'=>'100%'];
+        $target=['type'=>'ValidationTextBox','name'=>'target',
+            'caption'=>'Ziel','width'=>'100%'];
+        $fields=[$title];
+
+        if ($source==='launch') {
+            $isAi=$action==='ai_query';
+            $fields[]=['type'=>'Label','caption'=>'Startkachel: Welche Aktion soll beim Antippen ausgeführt werden?'];
+            $fields[]=[
+                'type'=>'Select','name'=>'actionType','caption'=>'Beim Antippen',
+                'onChange'=>'IAH_UpdateVisualNavigationActionForm($id, $actionType);',
+                'options'=>[
+                    ['caption'=>'Vorhandene APL-Seite öffnen','value'=>'route'],
+                    ['caption'=>'Freie KI-Frage ausführen','value'=>'ai_query']
+                ]
+            ];
+            $target['caption']=$isAi?'Frage an die KI (frei formulierbar)':'APL-Seite / Route (z. B. bundesliga)';
+            $fields[]=$target;
+            $fields[]=['type'=>'ExpansionPanel','caption'=>'Aussehen der Startkachel',
+                'expanded'=>true,'items'=>[
+                    ['type'=>'Select','name'=>'icon','caption'=>'Kachelbild aus vorhandenen Dateien',
+                        'options'=>$this->visualTileIconOptions()],
+                    ['type'=>'SelectFile','name'=>'iconUpload','caption'=>'Oder neues Bild hochladen',
+                        'extensions'=>'.png,.jpg,.jpeg,.webp'],
+                    ['type'=>'SelectColor','name'=>'color','caption'=>'Kachelfarbe','allowTransparent'=>false]
+                ]];
+            $fields[]=['type'=>'ExpansionPanel','name'=>'VisualNavAiSettings',
+                'caption'=>'KI-Ergebnis auf Alexa Show','visible'=>$isAi,'expanded'=>true,
+                'items'=>[
+                    ['type'=>'Label','caption'=>'Diese Einstellungen betreffen ausschließlich KI-Kacheln. '
+                        .'Die Frage darf jedes Thema enthalten. Keine Geräte werden durch diese KI-Frage geschaltet.'],
+                    ['type'=>'ValidationTextBox','name'=>'resultTitle',
+                        'caption'=>'Ergebnis-Überschrift (leer = KI entscheidet)','width'=>'100%'],
+                    ['type'=>'Select','name'=>'resultIconMode',
+                        'caption'=>'Icon der Ergebnisseite','options'=>[
+                            ['caption'=>'KI wählt passendes Icon','value'=>'ai'],
+                            ['caption'=>'Festes Startkachel-Bild verwenden','value'=>'tile']
+                        ]],
+                    ['type'=>'Select','name'=>'resultStatusMode',
+                        'caption'=>'Status bewerten','options'=>[
+                            ['caption'=>'Nur wenn Daten eine Bewertung erlauben','value'=>'auto'],
+                            ['caption'=>'Keine Statusbewertung','value'=>'off']
+                        ]],
+                    ['type'=>'Select','name'=>'resultLayout','caption'=>'Darstellung','options'=>[
+                        ['caption'=>'Automatisch anhand der Antwort','value'=>'auto'],
+                        ['caption'=>'Nur Antworttext','value'=>'text'],
+                        ['caption'=>'Statusseite mit Details','value'=>'status']
+                    ]],
+                    ['type'=>'CheckBox','name'=>'speakAnswer','caption'=>'Antwort auch vorlesen'],
+                    ['type'=>'CheckBox','name'=>'useArchive',
+                        'caption'=>'Archivwerte bei Hausfragen berücksichtigen']
+                ]];
+        } elseif ($source==='navigation') {
+            // Navigation is an EDIT-only configuration; publication remains
+            // in the existing EDIT/PROD workflow.
+            $fields[]=['type'=>'Label','caption'=>'Navigations-Tab (EDIT): '
+                .'Titel und verknüpftes IP-Symcon-Objekt ändern. '
+                .'Zum Veröffentlichen anschließend EDIT nach PROD übernehmen.'];
+            $fields[]=['type'=>'SelectObject','name'=>'target',
+                'caption'=>'Verknüpftes IP-Symcon-Objekt','width'=>'100%'];
+        } elseif ($source==='page') {
+            $fields[]=['type'=>'Label','caption'=>'Page-Zuordnung: Der Schlüssel bleibt unverändert. '
+                .'Ein IPS-Element benötigt eine Item-ID, ein externer Link eine HTTPS-Adresse.'];
+            $fields[]=['type'=>'Select','name'=>'actionType','caption'=>'Typ der Zielseite',
+                'onChange'=>'IAH_UpdateVisualNavigationActionForm($id, $actionType);',
+                'options'=>[
+                    ['caption'=>'IPS-Visualisierungselement (z. B. item2124)','value'=>'wfc_item'],
+                    ['caption'=>'Externe HTTPS-Seite','value'=>'external_url']
+                ]];
+            $target['caption']=$action==='external_url'
+                ? 'Vollständige HTTPS-Adresse':'IPS Item-ID (z. B. item2124)';
+            $fields[]=$target;
+        } elseif ($source==='renderer') {
+            $fields[]=['type'=>'Label','caption'=>'Renderer: Die vorhandene APL-Vorlage bleibt bestehen. '
+                .'Hier wird nur die RoomsCatalog-Domäne zugeordnet.'];
+            $fields[]=['type'=>'ValidationTextBox','name'=>'target',
+                'caption'=>'RoomsCatalog-Domäne (z. B. devices)','width'=>'100%'];
+        } else {
+            $fields[]=['type'=>'Label','caption'=>'Unbekannte Herkunft: keine Bearbeitung möglich.'];
+        }
+        return json_encode($fields,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
+    }
+
+    /** Adjust dependent fields within the currently opened List dialog. */
+    public function UpdateVisualNavigationActionForm(string $action): void
+    {
+        $this->UpdateFormField('target','caption',match($action) {
+            'ai_query'=>'Frage an die KI (frei formulierbar)',
+            'route'=>'APL-Seite / Route (z. B. bundesliga)',
+            'external_url'=>'Vollständige HTTPS-Adresse',
+            'wfc_item'=>'IPS Item-ID (z. B. item2124)',
+            default=>'Ziel'
+        });
+        // Only launch rows contain this named panel. In a page mapping
+        // there is no such panel, so leave it alone in that case.
+        if (in_array($action,['route','ai_query'],true)) {
+            $this->UpdateFormField('VisualNavAiSettings','visible',$action==='ai_query');
+        }
+    }
+
     private function buildVisualNavigationForm(): array
     {
         $onEdit = 'IAH_SaveVisualNavigationEntry($id, json_encode(['
