@@ -134,7 +134,7 @@ trait IAHVisualNavigationEditorTrait
                     'key'=>(string)($entry['entryKey'] ?? $entry['tabKey'] ?? ''),
                     'title'=>(string)($entry['title'] ?? ''),
                     'actionType'=>'navigation',
-                    'target'=>(string)($entry['objectId'] ?? 0),
+                    'target'=>(int)($entry['objectId'] ?? 0),
                     'detail'=>(string)($entry['roomKey'] ?? '').' / '.(string)($entry['domainKey'] ?? ''),
                     'status'=>empty($entry['enabled']) ? 'Inaktiv' : 'EDIT/PROD separat',
                 ];
