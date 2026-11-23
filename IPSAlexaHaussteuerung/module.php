@@ -11,6 +11,7 @@ require_once __DIR__ . '/src/AlexaLogTrait.php';
 require_once __DIR__ . '/src/SystemConfigurationManager.php';
 require_once __DIR__ . '/src/SystemNavigationEditor.php';
 require_once __DIR__ . '/src/VisualNavigationEditorTrait.php';
+require_once __DIR__ . '/src/VisualNavigationGroupTrait.php';
 require_once __DIR__ . '/src/VoiceRuleEngine.php';
 require_once __DIR__ . '/src/VoiceRuleLiteralReader.php';
 require_once __DIR__ . '/src/VoiceRuleAiMatcher.php';
@@ -49,6 +50,7 @@ class IPSAlexaHaussteuerung extends IPSModule
     use IAHLastAlexaInteractionTrait;
     use IAHAlexaIntentSyncTrait;
     use IAHVisualNavigationEditorTrait;
+    use IAHVisualNavigationGroupTrait;
     use IAHEchoRemoteTrait;
     use IAHWeatherForecastTrait;
     use IAHHomeConnectTrait;
