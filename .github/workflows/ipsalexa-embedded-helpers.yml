@@ -9,6 +9,8 @@ on:
       - 'IPSAlexaHaussteuerung/module.php'
       - 'IPSAlexaHaussteuerung/resources/helpers/KIHouseController.php'
       - 'tests/test_embedded_helper_load_guards.php'
+      - 'IPSAlexaHaussteuerung/src/VisualNavigationEditorTrait.php'
+      - 'tests/test_visual_navigation_dynamic_editor.php'
       - '.github/workflows/ipsalexa-embedded-helpers.yml'
   pull_request:
     paths:
@@ -17,6 +19,8 @@ on:
       - 'IPSAlexaHaussteuerung/module.php'
       - 'IPSAlexaHaussteuerung/resources/helpers/KIHouseController.php'
       - 'tests/test_embedded_helper_load_guards.php'
+      - 'IPSAlexaHaussteuerung/src/VisualNavigationEditorTrait.php'
+      - 'tests/test_visual_navigation_dynamic_editor.php'
   workflow_dispatch:
 
 jobs:
@@ -36,5 +40,9 @@ jobs:
           php -l IPSAlexaHaussteuerung/resources/helpers/IrrigationQueryEngine.php
           php -l IPSAlexaHaussteuerung/resources/helpers/KIHouseController.php
           php -l tests/test_embedded_helper_load_guards.php
+          php -l IPSAlexaHaussteuerung/src/VisualNavigationEditorTrait.php
+          php -l tests/test_visual_navigation_dynamic_editor.php
       - name: Run embedded helper regression
         run: php tests/test_embedded_helper_load_guards.php
+      - name: Test dynamic Alexa navigation editor
+        run: php tests/test_visual_navigation_dynamic_editor.php
