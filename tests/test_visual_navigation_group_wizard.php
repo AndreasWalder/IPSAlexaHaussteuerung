@@ -77,16 +77,29 @@ checkGroup(in_array(['name'=>'VisualNavStage1','field'=>'expanded','value'=>fals
 // Identical display name but a different legacy navigation key must still
 // appear in one edit dialog, without re-keying the underlying navigation.
 $h->records[]=['source'=>'navigation','key'=>'legacy_bienen','title'=>'Bienen',
-    'actionType'=>'navigation','target'=>49803];
+    'actionType'=>'navigation','target'=>49803,
+    'navigationRoom'=>'global','navigationDomain'=>'devices',
+    'navigationOrder'=>25,'navigationAliases'=>'Imkerei, Bienenstock',
+    'navigationEnabled'=>true];
 $merged=$h->groups();
 $mergedBienen=array_values(array_filter($merged,static fn($r)=>$r['groupId']==='route:bienen'))[0]??null;
 checkGroup(count($merged)===3,'Matching navigation must not create a second Bienen row');
 checkGroup($mergedBienen['navigationKey']==='legacy_bienen','Legacy navigation key lost');
 checkGroup($mergedBienen['navigationTarget']===49803,'Navigation target lost');
+checkGroup($mergedBienen['navigationOrder']===25,'Navigation order lost');
+checkGroup($mergedBienen['navigationAliases']==='Imkerei, Bienenstock','Synonyms lost');
+checkGroup($mergedBienen['navigationRoom']==='global','Navigation room lost');
+checkGroup($mergedBienen['navigationDomain']==='devices','Navigation domain lost');
+checkGroup($mergedBienen['navigationEnabled']===true,'Navigation active flag lost');
 checkGroup(str_contains($mergedBienen['parts'],'Navigation (EDIT)'),'Merged overview must show navigation');
 $mergedForm=json_decode($h->GetVisualNavigationGroupForm('route:bienen'),true,512,JSON_THROW_ON_ERROR);
 checkGroup(str_contains(json_encode($mergedForm),'navigationTarget'),
     'Unified dialog must contain navigation object selector');
+foreach (['navigationRoom','navigationDomain','navigationOrder',
+    'navigationAliases','navigationEnabled'] as $field) {
+    checkGroup(str_contains(json_encode($mergedForm),'"name":"'.$field.'"'),
+        'Missing navigation editor field '.$field);
+}
 $h->records[]=['source'=>'navigation','key'=>'legacy_bienen_2','title'=>'Bienen',
     'actionType'=>'navigation','target'=>49804];
 $ambiguous=$h->groups();
