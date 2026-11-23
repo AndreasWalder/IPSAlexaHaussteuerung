@@ -372,7 +372,12 @@ trait IAHVisualNavigationEditorTrait
                                  ['caption'=>'Navigation EDIT','value'=>'navigation']
                              ]]],
                          ['name'=>'target','caption'=>'Ziel / Frage','width'=>'235px','save'=>true],
-                         ['name'=>'status','caption'=>'Status','width'=>'155px','save'=>false],                          ['name'=>'source','visible'=>false,'save'=>true],
+                         ['name'=>'status','caption'=>'Status','width'=>'155px','save'=>false],
+                          ['name'=>'deleteAction','caption'=>'EDIT löschen','width'=>'110px',
+                              'save'=>false,
+                              'confirm'=>'APL-Verknüpfungen in EDIT zum Löschen vormerken? '
+                                  .'PROD und verknüpfte Navigation bleiben unverändert.',
+                              'onClick'=>'IAH_DeleteVisualNavigationGroupDraft($id, (string)($VisualNavRows["groupId"] ?? ""));'],                          ['name'=>'source','visible'=>false,'save'=>true],
                           ['name'=>'hasLaunch','visible'=>false,'save'=>true],
                           ['name'=>'hasPage','visible'=>false,'save'=>true],
                           ['name'=>'hasRenderer','visible'=>false,'save'=>true],
@@ -481,6 +486,28 @@ trait IAHVisualNavigationEditorTrait
                 ],
                 ['type'=>'Label','name'=>'VisualNavDraftStatus',
                     'caption'=>$this->visualNavigationDraftSummary()],
+                ['type'=>'PopupButton','name'=>'VisualNavRestorePopup',
+                    'caption'=>'BACKUP WIEDERHERSTELLEN',
+                    'popup'=>[
+                        'caption'=>'APL-Backup nach EDIT zurückspielen',
+                        'closeCaption'=>'Abbrechen',
+                        'items'=>[
+                            ['type'=>'Label','caption'=>'Ein Sicherungsstand wird ausschließlich '
+                                .'als EDIT-Entwurf wiederhergestellt. Danach die Änderungen prüfen.'],
+                            ['type'=>'Select','name'=>'VisualNavRestoreChoice',
+                                'caption'=>'Sicherungsstand','value'=>'',
+                                'options'=>$this->visualNavigationBackupOptions()]
+                        ],
+                        'buttons'=>[
+                            ['caption'=>'IN EDIT WIEDERHERSTELLEN',
+                                'onClick'=>'IAH_RestoreVisualNavigationBackupToEdit($id, (string)$VisualNavRestoreChoice);']
+                        ]
+                    ]
+                ],
+                ['type'=>'Button','caption'=>'OFFENE EDIT-ÄNDERUNGEN VERWERFEN',
+                    'confirm'=>'Alle nicht veröffentlichten APL-EDIT-Änderungen verwerfen? '
+                        .'PROD bleibt unverändert.',
+                    'onClick'=>'IAH_DiscardVisualNavigationDraft($id);'],
                 ['type'=>'RowLayout','items'=>[
                     ['type'=>'Button','caption'=>'EDIT-ÄNDERUNGEN PRÜFEN',
                         'onClick'=>'IAH_PreviewVisualNavigationDraft($id);'],
