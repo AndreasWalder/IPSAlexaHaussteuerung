@@ -127,11 +127,11 @@ trait IAHVisualNavigationEditorTrait
         }
         $context = $this->navigationEditorContext();
         if (is_array($context['edit'])) {
-            foreach (IAHSystemNavigationEditor::items($context['edit']) as $entry) {
+            foreach (IAHSystemNavigationEditor::items($context['edit']) as $entryKey=>$entry) {
                 if (!is_array($entry)) continue;
                 $rows[] = [
                     'source'=>'navigation',
-                    'key'=>(string)($entry['entryKey'] ?? $entry['tabKey'] ?? ''),
+                    'key'=>(string)$entryKey,
                     'title'=>(string)($entry['title'] ?? ''),
                     'actionType'=>'navigation',
                     'target'=>(int)($entry['objectId'] ?? 0),
