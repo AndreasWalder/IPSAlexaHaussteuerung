@@ -406,22 +406,83 @@ trait IAHVisualNavigationEditorTrait
                         'onClick'=>'IAH_TestVisualNavigationTile($id, $VisualNavTestKey);']
                 ]],
                 ['type'=>'Label','name'=>'VisualNavTestStatus','caption'=>'Noch kein Test ausgeführt.'],
-                ['type'=>'Label','caption'=>'Neue Startkachel mit verständlicher Aktion anlegen:'],
+                ['type'=>'Label','caption'=>'Neue Startkacheln über einen Dialog erstellen. '
+                    .'Mit OK wird ein EDIT-Entwurf erzeugt; PROD bleibt unverändert.'],
+                ['type'=>'PopupButton','name'=>'VisualNavCreateTilePopup',
+                    'caption'=>'STARTKACHEL ANLEGEN',
+                    'popup'=>[
+                        'caption'=>'Neue Startkachel anlegen','width'=>'680px',
+                        'closeCaption'=>'Abbrechen',
+                        'pages'=>[
+                            ['name'=>'identity','caption'=>'1 von 3 – Kachel & Aktion',
+                                'items'=>[
+                                    ['type'=>'ValidationTextBox','name'=>'VNCKey',
+                                        'caption'=>'Kachel-ID (a-z, 0-9, _ oder -)','value'=>''],
+                                    ['type'=>'ValidationTextBox','name'=>'VNCTitle',
+                                        'caption'=>'Anzeigename','value'=>''],
+                                    ['type'=>'Select','name'=>'VNCAction',
+                                        'caption'=>'Beim Antippen','value'=>'route',
+                                        'options'=>[
+                                            ['caption'=>'Vorhandene APL-Seite öffnen','value'=>'route'],
+                                            ['caption'=>'Freie KI-Frage stellen','value'=>'ai_query']
+                                        ]],
+                                    ['type'=>'ValidationTextBox','name'=>'VNCTarget',
+                                        'caption'=>'APL-Route oder KI-Frage','value'=>'']
+                                ],
+                                'validate'=>'return IAH_ValidateVisualNavigationTileDraft($id, $VNCKey, $VNCTitle, $VNCAction, $VNCTarget);'],
+                            ['name'=>'appearance','caption'=>'2 von 3 – Darstellung',
+                                'items'=>[
+                                    ['type'=>'Select','name'=>'VNCIcon',
+                                        'caption'=>'Kachelbild auswählen','value'=>'',
+                                        'options'=>$this->visualTileIconOptions()],
+                                    ['type'=>'SelectFile','name'=>'VNCIconUpload',
+                                        'caption'=>'Oder eigenes Bild hochladen',
+                                        'extensions'=>'.png,.jpg,.jpeg,.webp'],
+                                    ['type'=>'SelectColor','name'=>'VNCColor',
+                                        'caption'=>'Kachelfarbe','value'=>0x365C89,
+                                        'allowTransparent'=>false],
+                                    ['type'=>'ValidationTextBox','name'=>'VNCResultTitle',
+                                        'caption'=>'KI-Ergebnis-Überschrift (optional)','value'=>''],
+                                    ['type'=>'Select','name'=>'VNCResultLayout',
+                                        'caption'=>'KI-Ergebnisseite','value'=>'auto',
+                                        'options'=>[
+                                            ['caption'=>'Automatisch','value'=>'auto'],
+                                            ['caption'=>'Nur Text','value'=>'text'],
+                                            ['caption'=>'Statusseite','value'=>'status']
+                                        ]],
+                                    ['type'=>'CheckBox','name'=>'VNCSpeak',
+                                        'caption'=>'KI-Antwort vorlesen','value'=>true],
+                                    ['type'=>'CheckBox','name'=>'VNCArchive',
+                                        'caption'=>'Archivwerte für Hausfragen verwenden','value'=>true]
+                                ]],
+                            ['name'=>'review','caption'=>'3 von 3 – Prüfen und in EDIT anlegen',
+                                'items'=>[
+                                    ['type'=>'Label','caption'=>'Die neue Startkachel wird als EDIT-Entwurf '
+                                        .'gespeichert. Sie erscheint erst nach ausdrücklicher '
+                                        .'Freigabe in der produktiven Alexa-Visualisierung.']
+                                ],
+                                'validate'=>'return IAH_ValidateVisualNavigationTileDraft($id, $VNCKey, $VNCTitle, $VNCAction, $VNCTarget);',
+                                'onConfirm'=>'IAH_CreateVisualNavigationTileDraft($id, json_encode(['
+                                    .'"key"=>$VNCKey,"title"=>$VNCTitle,"action"=>$VNCAction,'
+                                    .'"target"=>$VNCTarget,"icon"=>$VNCIcon,'
+                                    .'"iconUpload"=>(string)$VNCIconUpload,"color"=>$VNCColor,'
+                                    .'"resultTitle"=>$VNCResultTitle,"resultLayout"=>$VNCResultLayout,'
+                                    .'"speakAnswer"=>$VNCSpeak,"useArchive"=>$VNCArchive'
+                                    .'],JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE));'
+                            ]
+                        ]
+                    ]
+                ],
+                ['type'=>'Label','name'=>'VisualNavDraftStatus',
+                    'caption'=>$this->visualNavigationDraftSummary()],
                 ['type'=>'RowLayout','items'=>[
-                    ['type'=>'ValidationTextBox','name'=>'VisualNavNewKey','caption'=>'Kachel-ID','value'=>''],
-                    ['type'=>'ValidationTextBox','name'=>'VisualNavNewTitle','caption'=>'Titel','value'=>''],
-                    ['type'=>'Select','name'=>'VisualNavNewAction','caption'=>'Aktion','value'=>'route',
-                        'options'=>[['caption'=>'Seite öffnen','value'=>'route'],['caption'=>'KI-Frage','value'=>'ai_query']]],
-                    ['type'=>'ValidationTextBox','name'=>'VisualNavNewTarget','caption'=>'Route oder genaue Frage','value'=>''],
-                    ['type'=>'Select','name'=>'VisualNavNewIcon','caption'=>'Vorhandenes Kachelbild',
-                        'options'=>$this->visualTileIconOptions(),'value'=>''],
-                    ['type'=>'SelectColor','name'=>'VisualNavNewColor','caption'=>'Kachelfarbe',
-                        'allowTransparent'=>false,'value'=>0x365C89],
-                    ['type'=>'SelectFile','name'=>'VisualNavNewIconUpload','caption'=>'Oder Bild hochladen',
-                        'extensions'=>'.png,.jpg,.jpeg,.webp'],
+                    ['type'=>'Button','caption'=>'EDIT-ÄNDERUNGEN PRÜFEN',
+                        'onClick'=>'IAH_PreviewVisualNavigationDraft($id);'],
+                    ['type'=>'Button','caption'=>'EDIT NACH PROD ÜBERNEHMEN',
+                        'confirm'=>'Alle geprüften Änderungen der APL-Kacheln und Seitenzuordnungen '
+                            .'mit Sicherung nach PROD übernehmen?',
+                        'onClick'=>'IAH_PublishVisualNavigationDraft($id);']
                 ]],
-                ['type'=>'Button','caption'=>'STARTKACHEL ANLEGEN',
-                    'onClick'=>'IAH_CreateVisualNavigationTile($id, $VisualNavNewKey, $VisualNavNewTitle, $VisualNavNewAction, $VisualNavNewTarget, $VisualNavNewIcon, $VisualNavNewColor, (string)$VisualNavNewIconUpload);'],
                 ['type'=>'ExpansionPanel','caption'=>'Navigationstabs (EDIT/PROD) bearbeiten',
                     'expanded'=>false,'items'=>[$this->buildSystemNavigationEditorForm()]],
             ],
