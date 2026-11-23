@@ -144,6 +144,8 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterAttributeString('LaunchIconDiagnostics', '');
         $this->RegisterAttributeString('VisualNavNotice', '');
         $this->RegisterAttributeString('VisualNavBackup', '');
+        $this->RegisterAttributeString('VisualNavDraft', '');
+        $this->RegisterAttributeString('VisualNavDraftPreview', '');
         $this->RegisterAttributeString('SystemNavigationPublishPreview', '');
         $this->RegisterAttributeString('VoiceRuleEditorNotice', '');
         $this->RegisterAttributeString('VoiceRulesPublishPreview', '');
