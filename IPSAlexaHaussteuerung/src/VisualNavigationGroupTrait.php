@@ -8,6 +8,59 @@ declare(strict_types=1);
  */
 trait IAHVisualNavigationGroupTrait
 {
+    /**
+     * Read legacy WebFront item IDs and human-readable titles dynamically.
+     * The WebFront configuration stores Items as a JSON encoded array and
+     * each item's Configuration as another JSON object.
+     * Does not write to any WebFront instance.
+     */
+    private function visualNavigationWebFrontItemOptions(): array
+    {
+        $options=[['caption'=>'Manuell eingeben / bisherigen Wert behalten','value'=>'']];
+        if (!function_exists('IPS_GetInstanceListByModuleID')
+            || !function_exists('IPS_GetConfiguration')) return $options;
+        $seen=[];
+        // Built-in WebFront visualization module.
+        foreach (IPS_GetInstanceListByModuleID('{3565B1F2-8F7B-4311-A4B6-1BF1D868F39E}') as $instanceId) {
+            if (!is_int($instanceId) && !ctype_digit((string)$instanceId)) continue;
+            $instanceId=(int)$instanceId;
+            try {
+                $config=json_decode(IPS_GetConfiguration($instanceId),true);
+                if (!is_array($config)) continue;
+                $items=$config['Items']??[];
+                if (is_string($items)) $items=json_decode($items,true);
+                if (!is_array($items)) continue;
+                $instanceName=function_exists('IPS_GetName')
+                    ? (string)IPS_GetName($instanceId):'WebFront';
+                foreach ($items as $item) {
+                    if (!is_array($item)) continue;
+                    $id=trim((string)($item['ID']??''));
+                    if ($id==='' || !preg_match('/^[A-Za-z0-9_-]{1,100}$/D',$id)) continue;
+                    $details=$item['Configuration']??[];
+                    if (is_string($details)) $details=json_decode($details,true);
+                    if (!is_array($details)) $details=[];
+                    $title=trim((string)($details['title']??$details['name']??''));
+                    if ($title==='') $title=(string)($item['ClassName']??'Element');
+                    $label=$title.' — '.$id.' ('.$instanceName.' #'.$instanceId.')';
+                    // A shared page mapping only stores the item ID. When IDs
+                    // collide across WebFront instances, show each ID once.
+                    if (!isset($seen[$id])) {
+                        $options[]=['caption'=>$label,'value'=>$id];
+                        $seen[$id]=true;
+                    }
+                }
+            } catch (\Throwable $error) {
+                // Broken/unsupported WebFront configurations must not break
+                // the rest of the tile editor.
+                continue;
+            }
+        }
+        usort($options,static fn(array $a,array $b):int=>
+            $a['value']===''?-1:($b['value']===''?1:
+                strnatcasecmp($a['caption'],$b['caption'])));
+        return $options;
+    }
+
     private function visualNavigationGroups(): array
     {
         $groups=[];
@@ -238,9 +291,15 @@ trait IAHVisualNavigationGroupTrait
                                 'options'=>[
                                     ['caption'=>'IP-Symcon Visualisierung (item...)','value'=>'wfc_item'],
                                     ['caption'=>'Externe HTTPS-Seite','value'=>'external_url']]],
+                            ['type'=>'Select','name'=>'pageTargetChoice',
+                                'caption'=>'Vorhandenes WebFront-Element (ID + Bezeichnung)',
+                                'visible'=>$row['pageAction']!=='external_url',
+                                'options'=>$this->visualNavigationWebFrontItemOptions()],
                             ['type'=>'ValidationTextBox','name'=>'pageTarget',
                                 'caption'=>$row['pageAction']==='external_url'
-                                    ?'HTTPS-Adresse':'IPS Item-ID (z. B. item2124)']
+                                    ?'HTTPS-Adresse':'Manuelle IPS Item-ID (Fallback)'],
+                            ['type'=>'Label','caption'=>'Bei einer Auswahl im Dropdown wird deren '
+                                .'Item-ID verwendet. Ohne Auswahl gilt die manuelle Eingabe.']
                         ]
                     ]],
                     [[
@@ -442,6 +501,15 @@ trait IAHVisualNavigationGroupTrait
             if ($page) {
                 $type=(string)($input['pageAction']??'wfc_item');
                 $value=trim((string)($input['pageTarget']??''));
+                if ($type==='wfc_item') {
+                    $selected=trim((string)($input['pageTargetChoice']??''));
+                    if ($selected!=='') {
+                        $known=array_column($this->visualNavigationWebFrontItemOptions(),'value');
+                        if (!in_array($selected,$known,true))
+                            throw new RuntimeException('Ausgewähltes WebFront-Element existiert nicht mehr.');
+                        $value=$selected;
+                    }
+                }
                 $label=trim((string)($input['pageTitle']??''));
                 if(!in_array($type,['wfc_item','external_url'],true)||$value==='')
                     throw new RuntimeException('Seitenzuordnung: Typ und Ziel erforderlich.');
