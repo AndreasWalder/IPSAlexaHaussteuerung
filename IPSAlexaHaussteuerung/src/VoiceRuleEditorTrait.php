@@ -269,15 +269,8 @@ trait IAHVoiceRuleEditorTrait
                         'onClick'=>'IAH_CreateVoiceRule($id, (string)$VoiceNewTitle, '
                             .'(string)$VoiceNewAlias, (string)$VoiceNewKind);']
                 ]],
-                ['type'=>'RowLayout','items'=>[
-                    ['type'=>'Button','caption'=>'SPRECHREGELN PRÜFEN (VORSCHAU)',
-                        'onClick'=>'IAH_PreviewVoiceRules($id);'],
-                    ['type'=>'Button','caption'=>'GEPRÜFTE SPRECHREGELN NACH PROD',
-                        'confirm'=>'Sprechregeln und Szenen aus SystemConfigurationEdit '
-                            .'mit gesichertem Original-PROD-Backup aktivieren? '
-                            .'Es werden keine Szenen ausgeführt.',
-                        'onClick'=>'IAH_PublishVoiceRules($id);']
-                ]],
+                ['type'=>'Label','caption'=>'Freigabe erfolgt über die gemeinsame '
+                    .'"Änderungen EDIT vor PROD"-Tabelle in IPSAlexaHaussteuerung.'],
                 ['type'=>'ValidationTextBox','name'=>'VoiceRulesDiagnosticJson',
                     'caption'=>'Szenen & eigene Alexa-Befehle – kopierbare Diagnose '
                         .'(EDIT, PROD und letzte Alexa-Abfragen; ohne Systemkonfiguration)',
