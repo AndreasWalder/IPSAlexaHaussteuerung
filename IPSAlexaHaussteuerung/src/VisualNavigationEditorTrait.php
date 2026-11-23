@@ -665,21 +665,44 @@ trait IAHVisualNavigationEditorTrait
     {
         try {
             $backup=json_decode($this->ReadAttributeString('VisualNavBackup'),true,64,JSON_THROW_ON_ERROR);
-            if (!is_array($backup) || !in_array(($backup['property']??''),[
-                'LaunchCatalog','PageMappings','RendererDomains'
-            ],true) || !is_string($backup['previous']??null)) {
-                throw new RuntimeException('Kein gültiges Backup vorhanden.');
+            if (!is_array($backup)) throw new RuntimeException('Kein gültiges Backup vorhanden.');
+            $allowed=['LaunchCatalog','PageMappings','RendererDomains'];
+            $originals=[];
+            if (isset($backup['properties']) && is_array($backup['properties'])) {
+                $originals=$backup['properties'];
+            } elseif (in_array(($backup['property']??''),$allowed,true)
+                && is_string($backup['previous']??null)) {
+                // Backward compatible with existing single-entry backups.
+                $originals[$backup['property']]=$backup['previous'];
             }
-            if (function_exists('IPS_HasChanges') && IPS_HasChanges($this->InstanceID)) {
-                throw new RuntimeException('Bitte zuerst ungespeicherte Instanzeinstellungen übernehmen.');
+            if ($originals===[])throw new RuntimeException('Kein gültiges Backup vorhanden.');
+            foreach ($originals as $property=>$raw) {
+                if(!in_array($property,$allowed,true)||!is_string($raw)
+                    || !is_array(json_decode($raw,true)))
+                    throw new RuntimeException('Backup enthält ungültige Eigenschaften.');
             }
-            IPS_SetProperty($this->InstanceID,$backup['property'],$backup['previous']);
-            IPS_ApplyChanges($this->InstanceID);
+            if (function_exists('IPS_HasChanges') && IPS_HasChanges($this->InstanceID))
+                throw new RuntimeException('Bitte zuerst andere ungespeicherte Änderungen übernehmen.');
+            // Protect the current state against a partial restore failure.
+            $current=[];
+            foreach ($originals as $property=>$_) $current[$property]=$this->ReadPropertyString($property);
+            try {
+                foreach ($originals as $property=>$raw)
+                    IPS_SetProperty($this->InstanceID,$property,$raw);
+                IPS_ApplyChanges($this->InstanceID);
+            } catch (\Throwable $restoreError) {
+                foreach ($current as $property=>$raw)
+                    IPS_SetProperty($this->InstanceID,$property,$raw);
+                IPS_ApplyChanges($this->InstanceID);
+                throw $restoreError;
+            }
             $this->WriteAttributeString('VisualNavBackup','');
-            $this->WriteAttributeString('VisualNavNotice','Letzte Änderung zurückgenommen.');
-        } catch(Throwable $e) {
+            $this->WriteAttributeString('VisualNavNotice',
+                'Letzte Änderung zurückgenommen: '.implode(', ',array_keys($originals)));
+        } catch(\Throwable $e) {
             $this->WriteAttributeString('VisualNavNotice','Wiederherstellung fehlgeschlagen: '.$e->getMessage());
         }
         $this->ReloadForm();
     }
+
 }
