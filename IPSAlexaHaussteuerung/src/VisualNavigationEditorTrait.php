@@ -348,6 +348,35 @@ trait IAHVisualNavigationEditorTrait
                     .'"KI-Frage" fragt die KI und zeigt Antwort, automatisch gewähltes Icon und Status. '
                     .'Page-Zuordnungen und Renderer werden direkt übernommen. '
                     .'Navigationstabs bleiben zum Schutz der bestehenden EDIT/PROD-Veröffentlichung separat versioniert.'],
+                ['type'=>'ExpansionPanel','caption'=>'Änderungen EDIT vor PROD – alle Alexa-Modulbereiche',
+                    'expanded'=>true,'items'=>[
+                        ['type'=>'Label','caption'=>'Gemeinsame Übersicht nur für IPSAlexaHaussteuerung: '
+                            .'APL-Kacheln, Seitenziele, Renderer, Navigation und Sprachregeln. '
+                            .'RoomsCatalog bleibt separat im RoomsCatalogConfigurator.'],
+                        ['type'=>'List','name'=>'UnifiedEditChanges',
+                            'caption'=>'Offene Änderungen in EDIT',
+                            'rowCount'=>12,'add'=>false,'delete'=>false,
+                            'loadValuesFromConfiguration'=>false,
+                            'values'=>json_decode($this->GetUnifiedEditChanges(),true)?:[],
+                            'columns'=>[
+                                ['name'=>'bereich','caption'=>'Modulbereich','width'=>'190px','save'=>false],
+                                ['name'=>'element','caption'=>'Element','width'=>'230px','save'=>false],
+                                ['name'=>'aenderung','caption'=>'Änderung','width'=>'110px','save'=>false],
+                                ['name'=>'details','caption'=>'Schlüssel / Details','width'=>'auto','save'=>false],
+                                ['name'=>'status','caption'=>'Status','width'=>'110px','save'=>false]
+                            ]],
+                        ['type'=>'Label','name'=>'UnifiedPublishNotice',
+                            'caption'=>$this->ReadAttributeString('UnifiedPublishNotice')],
+                        ['type'=>'RowLayout','items'=>[
+                            ['type'=>'Button','caption'=>'ALLE EDIT-ÄNDERUNGEN PRÜFEN',
+                                'onClick'=>'IAH_PreviewUnifiedEditPublish($id);'],
+                            ['type'=>'Button','caption'=>'EDIT NACH PROD ÜBERNEHMEN',
+                                'confirm'=>'Alle geprüften Änderungen aus APL, Navigation und '
+                                    .'Sprachregeln übernehmen? Vorher werden die bestehenden '
+                                    .'PROD-Backups erstellt. RoomsCatalog bleibt unverändert.',
+                                'onClick'=>'IAH_PublishUnifiedEditSections($id);']
+                        ]]
+                    ]],
                 ['type'=>'Label','name'=>'VisualNavRuntimeStatus',
                     'caption'=>$this->visualNavigationRuntimeStatus()],
                 ['type'=>'Button','caption'=>'APL-KLICKROUTER PRÜFEN / REPARIEREN',
@@ -508,14 +537,7 @@ trait IAHVisualNavigationEditorTrait
                     'confirm'=>'Alle nicht veröffentlichten APL-EDIT-Änderungen verwerfen? '
                         .'PROD bleibt unverändert.',
                     'onClick'=>'IAH_DiscardVisualNavigationDraft($id);'],
-                ['type'=>'RowLayout','items'=>[
-                    ['type'=>'Button','caption'=>'EDIT-ÄNDERUNGEN PRÜFEN',
-                        'onClick'=>'IAH_PreviewVisualNavigationDraft($id);'],
-                    ['type'=>'Button','caption'=>'EDIT NACH PROD ÜBERNEHMEN',
-                        'confirm'=>'Alle geprüften Änderungen der APL-Kacheln und Seitenzuordnungen '
-                            .'mit Sicherung nach PROD übernehmen?',
-                        'onClick'=>'IAH_PublishVisualNavigationDraft($id);']
-                ]],
+
                 ['type'=>'ExpansionPanel','caption'=>'Navigationstabs (EDIT/PROD) bearbeiten',
                     'expanded'=>false,'items'=>[$this->buildSystemNavigationEditorForm()]],
             ],
