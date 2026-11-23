@@ -207,6 +207,41 @@ trait IAHVisualNavigationGroupTrait
         $this->ReloadForm();
     }
 
+    /** Delete only the APL-facing components; linked EDIT navigation is protected. */
+    public function DeleteVisualNavigationGroupDraft(string $groupId): void
+    {
+        try {
+            $entry=null;
+            foreach ($this->visualNavigationGroups() as $candidate) {
+                if ((string)$candidate['groupId']===$groupId) {$entry=$candidate;break;}
+            }
+            if (!is_array($entry))throw new \RuntimeException('Kachelgruppe nicht gefunden.');
+            if (($entry['source']??'')==='navigation')
+                throw new \RuntimeException('Navigationstabs bitte im Navigation-EDIT-Editor verwalten.');
+            $key=(string)$entry['key'];
+            $properties=['LaunchCatalog'=>'id','PageMappings'=>'key','RendererDomains'=>'route'];
+            $changes=[];
+            foreach ($properties as $property=>$idField) {
+                $rows=json_decode($this->visualNavigationReadProperty($property),true);
+                if (!is_array($rows))throw new \RuntimeException('EDIT-JSON ungültig: '.$property);
+                $filtered=array_values(array_filter($rows,
+                    static fn($row):bool=>!is_array($row)||(string)($row[$idField]??'')!==$key));
+                if (count($filtered)===count($rows))continue;
+                $changes[$property]=json_encode($filtered,
+                    JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
+            }
+            if ($changes===[])
+                throw new \RuntimeException('Keine gespeicherte APL-Komponente zum Löschen gefunden.');
+            $this->visualNavigationStageProperties($changes);
+            $this->WriteAttributeString('VisualNavNotice',
+                'APL-Eintrag '.$key.' in EDIT zum Löschen vorgemerkt. '
+                .'Verknüpfte Navigation bleibt bestehen. Vor PROD-Übernahme prüfen.');
+        } catch (\Throwable $error) {
+            $this->WriteAttributeString('VisualNavNotice','Nicht gelöscht: '.$error->getMessage());
+        }
+        $this->ReloadForm();
+    }
+
     public function PreviewVisualNavigationDraft(): void
     {
         $this->WriteAttributeString('VisualNavDraftPreview','');
@@ -467,6 +502,7 @@ trait IAHVisualNavigationGroupTrait
             if ($g['hasPage']) $parts[]='Seitenziel';
             if ($g['hasRenderer']) $parts[]='Renderer';
             if ($g['source']==='navigation' || !empty($g['navigationKey'])) $parts[]='Navigation (EDIT)';
+            $g['deleteAction']=$g['source']==='navigation'?'':'In EDIT löschen';
             $g['parts']=implode(' + ',$parts);
             $g['detail']=$g['parts'];
             $g['status']=$g['source']==='navigation'?'Nur EDIT – PROD separat':
