@@ -650,7 +650,7 @@ trait IAHVisualNavigationGroupTrait
                 && (string)($input['pageAction']??'')===(string)$existing['pageAction']
                 && trim((string)($input['pageTitle']??''))===(string)$existing['pageTitle']
                 && trim((string)($input['pageTarget']??''))===(string)$existing['pageTarget']) {
-                $rawPage=json_decode($this->ReadPropertyString('PageMappings'),true);
+                $rawPage=json_decode($this->visualNavigationReadProperty('PageMappings'),true);
                 $storedPage=false;
                 foreach (is_array($rawPage)?$rawPage:[] as $entry) {
                     if(is_array($entry) && (string)($entry['key']??'')===$key) {
@@ -661,7 +661,7 @@ trait IAHVisualNavigationGroupTrait
             }
             $before=[];$after=[];
             foreach (['LaunchCatalog','PageMappings','RendererDomains'] as $prop) {
-                $raw=$this->ReadPropertyString($prop);
+                $raw=$this->visualNavigationReadProperty($prop);
                 $parsed=json_decode($raw,true);
                 if (!is_array($parsed))throw new RuntimeException($prop.' ist kein gültiges Array.');
                 $before[$prop]=$raw;
@@ -807,37 +807,18 @@ trait IAHVisualNavigationGroupTrait
                 $this->WriteAttributeString('VisualNavNotice','Keine Änderungen: '.$key);
                 $this->ReloadForm();return;
             }
-            // Restore-compatible backup contains every modified original.
-            $backup=[];
-            foreach ($updated as $property=>$_) $backup[$property]=$before[$property];
             if ($navChange!==null && $updated!==[]) {
-                throw new RuntimeException('Navigation und Kacheleinstellungen wurden gleichzeitig geändert. '
-                    .'Bitte zunächst die Kachel speichern und danach die Navigation.');
+                throw new RuntimeException('Navigation und Kacheldaten getrennt speichern. '
+                    .'Zuerst die Kachel speichern und danach die Navigation.');
             }
             if ($navChange!==null) {
-                $this->SaveSystemNavigationTab(json_encode($navChange,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
+                $this->SaveSystemNavigationTab(json_encode($navChange,
+                    JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
                 return;
             }
-            $this->WriteAttributeString('VisualNavBackup',json_encode([
-                'properties'=>$backup,'key'=>$key
-            ],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
-            try {
-                foreach ($updated as $property=>$value)
-                    IPS_SetProperty($this->InstanceID,$property,$value);
-                IPS_ApplyChanges($this->InstanceID);
-                foreach ($updated as $property=>$value) {
-                    $actual=json_decode($this->ReadPropertyString($property),true);
-                    if ($actual!==json_decode($value,true))
-                        throw new RuntimeException('Schreibprüfung fehlgeschlagen: '.$property);
-                }
-            } catch (\Throwable $writeError) {
-                foreach ($backup as $property=>$raw)
-                    IPS_SetProperty($this->InstanceID,$property,$raw);
-                IPS_ApplyChanges($this->InstanceID);
-                throw $writeError;
-            }
+            $this->visualNavigationStageProperties($updated);
             $this->WriteAttributeString('VisualNavNotice',
-                'Gespeichert: '.$key.' · '.implode(', ',array_keys($updated)));
+                'In EDIT gespeichert: '.$key.' · '.implode(', ',array_keys($updated)));
         } catch (\Throwable $error) {
             $this->WriteAttributeString('VisualNavNotice',
                 'Nicht gespeichert: '.$error->getMessage());
