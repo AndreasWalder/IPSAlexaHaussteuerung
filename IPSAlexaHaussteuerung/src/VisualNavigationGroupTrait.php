@@ -115,6 +115,98 @@ trait IAHVisualNavigationGroupTrait
         $this->ReloadForm();
     }
 
+    /** Summarize item-level changes, not just the modified JSON properties. */
+    private function visualNavigationDraftChanges(): array
+    {
+        $result=[];
+        $draft=$this->visualNavigationDraftData();
+        $keys=['LaunchCatalog'=>'id','PageMappings'=>'key','RendererDomains'=>'route'];
+        foreach ((array)($draft['properties']??[]) as $property=>$json) {
+            $key=$keys[$property]??null;
+            if ($key===null)continue;
+            $current=json_decode($this->ReadPropertyString($property),true);
+            $planned=json_decode((string)$json,true);
+            if (!is_array($current)||!is_array($planned))continue;
+            $index=static function (array $entries,string $key): array {
+                $map=[];
+                foreach ($entries as $entry)
+                    if (is_array($entry)&&isset($entry[$key]))
+                        $map[(string)$entry[$key]]=$entry;
+                return $map;
+            };
+            $old=$index($current,$key);$next=$index($planned,$key);
+            foreach ($next as $id=>$entry) {
+                $label=(string)($entry['title']??$entry['label']??$id);
+                if (!array_key_exists($id,$old))$result[]='NEU '.$property.': '.$label.' ['.$id.']';
+                elseif ($old[$id]!==$entry)$result[]='GEÄNDERT '.$property.': '.$label.' ['.$id.']';
+            }
+            foreach ($old as $id=>$entry)
+                if (!array_key_exists($id,$next))
+                    $result[]='ENTFERNT '.$property.': '.(string)($entry['title']??$entry['label']??$id).' ['.$id.']';
+        }
+        return $result;
+    }
+
+    private function visualNavigationBackupOptions(): array
+    {
+        $choices=[['caption'=>'Sicherungsstand auswählen','value'=>'']];
+        $items=json_decode($this->ReadAttributeString('VisualNavHistory'),true);
+        if (is_array($items)) {
+            foreach (array_reverse($items,true) as $index=>$snapshot) {
+                if (!is_array($snapshot))continue;
+                $date=date('d.m.Y H:i:s',(int)($snapshot['timestamp']??0));
+                $properties=implode(', ',array_keys((array)($snapshot['properties']??[])));
+                $choices[]=['caption'=>$date.' — '.$properties,'value'=>'history:'.$index];
+            }
+        }
+        $legacy=json_decode($this->ReadAttributeString('VisualNavBackup'),true);
+        if (is_array($legacy) && !empty($legacy['properties']))
+            $choices[]=['caption'=>'Älteste Einzelsicherung (vor Versionshistorie)','value'=>'legacy'];
+        return $choices;
+    }
+
+    public function RestoreVisualNavigationBackupToEdit(string $choice): void
+    {
+        try {
+            if ($choice==='')throw new \RuntimeException('Bitte Sicherungsstand auswählen.');
+            $current=$this->visualNavigationDraftData();
+            if (!empty($current['properties']))
+                throw new \RuntimeException('Zuerst offene EDIT-Änderungen veröffentlichen oder verwerfen.');
+            $snapshot=null;
+            if (str_starts_with($choice,'history:')) {
+                $index=substr($choice,8);
+                if (!ctype_digit($index))throw new \RuntimeException('Ungültiger Sicherungsindex.');
+                $all=json_decode($this->ReadAttributeString('VisualNavHistory'),true);
+                $snapshot=is_array($all)?($all[(int)$index]??null):null;
+            } elseif ($choice==='legacy') {
+                $snapshot=json_decode($this->ReadAttributeString('VisualNavBackup'),true);
+            }
+            if (!is_array($snapshot)||!is_array($snapshot['properties']??null))
+                throw new \RuntimeException('Sicherung nicht gefunden.');
+            $updates=[];
+            foreach ($snapshot['properties'] as $name=>$source)
+                if (in_array($name,['LaunchCatalog','PageMappings','RendererDomains'],true)
+                    && is_string($source) && is_array(json_decode($source,true)))
+                    $updates[$name]=$source;
+            if ($updates===[])throw new \RuntimeException('Sicherung enthält keine gültigen APL-Daten.');
+            $this->visualNavigationStageProperties($updates);
+            $this->WriteAttributeString('VisualNavNotice',
+                'Sicherung als EDIT-Entwurf wiederhergestellt. Änderungen zuerst prüfen.');
+        } catch (\Throwable $error) {
+            $this->WriteAttributeString('VisualNavNotice',
+                'Backup nicht übernommen: '.$error->getMessage());
+        }
+        $this->ReloadForm();
+    }
+
+    public function DiscardVisualNavigationDraft(): void
+    {
+        $this->WriteAttributeString('VisualNavDraft','');
+        $this->WriteAttributeString('VisualNavDraftPreview','');
+        $this->WriteAttributeString('VisualNavNotice','Alle offenen APL-EDIT-Änderungen verworfen. PROD unverändert.');
+        $this->ReloadForm();
+    }
+
     public function PreviewVisualNavigationDraft(): void
     {
         $this->WriteAttributeString('VisualNavDraftPreview','');
@@ -134,8 +226,9 @@ trait IAHVisualNavigationGroupTrait
                 'time'=>time()
             ],JSON_THROW_ON_ERROR));
             $this->WriteAttributeString('VisualNavNotice',
-                'Vorschau OK: '.implode(', ',array_keys($changes))
-                .' · EDIT kann jetzt nach PROD übernommen werden (10 Minuten gültig).');
+                'Vorschau OK (10 Minuten gültig): '
+                .implode(' | ',$this->visualNavigationDraftChanges())
+                .' · EDIT kann nach PROD übernommen werden.');
         } catch (\Throwable $error) {
             $this->WriteAttributeString('VisualNavNotice','EDIT-Prüfung: '.$error->getMessage());
         }
@@ -164,10 +257,18 @@ trait IAHVisualNavigationGroupTrait
                     throw new \RuntimeException('Ungültiges EDIT-JSON: '.$name);
                 $before[$name]=$raw;
             }
-            $this->WriteAttributeString('VisualNavBackup',json_encode([
+            $snapshot=[
                 'properties'=>$before,'reason'=>'before_visual_edit_to_prod',
                 'timestamp'=>time()
-            ],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
+            ];
+            $this->WriteAttributeString('VisualNavBackup',json_encode($snapshot,
+                JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
+            $history=json_decode($this->ReadAttributeString('VisualNavHistory'),true);
+            if (!is_array($history))$history=[];
+            $history[]=$snapshot;
+            $history=array_slice($history,-10);
+            $this->WriteAttributeString('VisualNavHistory',json_encode($history,
+                JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
             try {
                 foreach ($changes as $name=>$json)
                     IPS_SetProperty($this->InstanceID,$name,$json);
