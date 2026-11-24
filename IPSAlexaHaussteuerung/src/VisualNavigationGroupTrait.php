@@ -213,6 +213,12 @@ trait IAHVisualNavigationGroupTrait
                     if ($prodId>0) $ctx['prod']=$this->readConfigurationArrayFromScript($prodId);
                 }
                 if (!is_array($ctx['edit']??null) || !is_array($ctx['prod']??null)) {
+                    $this->visualNavigationTrace('ERROR','UNIFIED_CONTEXT_MISSING',[
+                        'source'=>$area,
+                        'status'=>'EDIT='. (is_array($ctx['edit']??null)?'available':'missing')
+                            .',PROD='. (is_array($ctx['prod']??null)?'available':'missing'),
+                        'targetId'=>(int)($ctx['ids']['prod']??0)
+                    ]);
                     $append($area,'Konfiguration','NICHT PRÜFBAR','EDIT oder PROD fehlt');
                     continue;
                 }
@@ -1156,6 +1162,11 @@ trait IAHVisualNavigationGroupTrait
                         $value=$selected;
                     }
                 }
+                $this->visualNavigationTrace('INFO','PAGE_TARGET_RESOLVED',[
+                    'key'=>$key,'selected'=>$value,
+                    'instance'=>(int)($input['pageInstance']??0),
+                    'status'=>(string)$type
+                ]);
                 $label=trim((string)($input['pageTitle']??''));
                 if(!in_array($type,['wfc_item','external_url'],true)||$value==='')
                     throw new RuntimeException('Seitenzuordnung: Typ und Ziel erforderlich.');
