@@ -40,6 +40,58 @@ trait IAHVisualNavigationGroupTrait
         }
     }
 
+    /**
+     * Emit a separate event per changed, visible configuration field.
+     * Log only non-sensitive enumerations, booleans and numeric/opaque IDs;
+     * never raw AI questions, arbitrary titles, URLs or script parameters.
+     */
+    private function visualNavigationTraceFieldChanges(
+        string $groupId,array $before,array $after
+    ): void {
+        $safeFields=[
+            'pageInstance','pageTargetChoice','pageAction','actionType',
+            'resultIconMode','resultStatusMode','resultLayout',
+            'speakAnswer','useArchive','hasLaunch','hasPage','hasRenderer',
+            'addLaunch','addPage','navigationOrder','navigationEnabled'
+        ];
+        $opaqueFields=['pageTarget','target','title','pageTitle',
+            'rendererTitle','rendererTarget','navigationAliases','resultTitle'];
+        foreach ($safeFields as $field) {
+            $a=$before[$field]??null;
+            $b=$after[$field]??null;
+            if ($a===$b)continue;
+            $this->visualNavigationTrace('INFO','DIALOG_FIELD_CHANGED',[
+                'group'=>$groupId,'field'=>$field,
+                'reason'=>'old='.$this->visualNavigationTraceFieldValue($field,$a)
+                    .';new='.$this->visualNavigationTraceFieldValue($field,$b)
+            ]);
+        }
+        foreach ($opaqueFields as $field) {
+            $a=$before[$field]??null;$b=$after[$field]??null;
+            if ((string)$a===(string)$b)continue;
+            $this->visualNavigationTrace('INFO','DIALOG_FIELD_CHANGED',[
+                'group'=>$groupId,'field'=>$field,
+                'reason'=>'oldHash='.substr(hash('sha256',(string)$a),0,12)
+                    .';newHash='.substr(hash('sha256',(string)$b),0,12)
+            ]);
+        }
+    }
+
+    private function visualNavigationTraceFieldValue(string $field,mixed $value): string
+    {
+        if ($value===null)return '(missing)';
+        if (is_bool($value))return $value?'true':'false';
+        if (in_array($field,['pageInstance','navigationOrder'],true))
+            return (string)(int)$value;
+        if ($field==='pageTargetChoice') {
+            $id=(string)$value;
+            return preg_match('/^[A-Za-z0-9_-]{0,100}$/D',$id)
+                ?$id:'[invalid-id]';
+        }
+        if (is_scalar($value))return substr((string)$value,0,60);
+        return '[complex]';
+    }
+
     public function GetVisualNavigationDiagnostics(): string
     {
         $entries=json_decode($this->ReadAttributeString('VisualNavDiagnosticLog'),true);
@@ -1075,6 +1127,7 @@ trait IAHVisualNavigationGroupTrait
             }
             if ($existing===null) throw new RuntimeException('Eintrag nicht mehr vorhanden. Bitte neu laden.');
             $key=$existing['key'];
+            $this->visualNavigationTraceFieldChanges($groupId,$existing,$input);
             $this->visualNavigationTrace('INFO','DIALOG_VALUES',[
                 'group'=>$groupId,
                 'source'=>(string)$existing['source'],
@@ -1292,6 +1345,19 @@ trait IAHVisualNavigationGroupTrait
                 'changed'=>$navChange!==null?'navigation':'apl',
                 'count'=>count($updated)
             ]);
+            if ($updated!==[]) {
+                foreach ($updated as $property=>$encoded) {
+                    $beforeRows=json_decode((string)($before[$property]??'[]'),true);
+                    $afterRows=json_decode($encoded,true);
+                    $this->visualNavigationTrace('INFO','EDIT_PROPERTY_DIFF',[
+                        'group'=>$groupId,'property'=>$property,
+                        'beforeHash'=>substr(hash('sha256',(string)($before[$property]??'')),0,12),
+                        'afterHash'=>substr(hash('sha256',$encoded),0,12),
+                        'reason'=>'oldCount='.(is_array($beforeRows)?count($beforeRows):-1)
+                            .';newCount='.(is_array($afterRows)?count($afterRows):-1)
+                    ]);
+                }
+            }
             if ($updated===[] && $navChange===null) {
                 $this->visualNavigationTrace('INFO','DIALOG_NO_CHANGES',[
                     'key'=>$key,'reason'=>'No actual change to page, launch, renderer or navigation; '
