@@ -672,6 +672,9 @@ function iah_sanitize_page_mapping_entry(array $entry): ?array
     if ($label !== '') {
         $normalized['label'] = $label;
     }
+    if ($type === 'wfc_item' && (int)($entry['wfcId'] ?? 0) > 0) {
+        $normalized['wfcId'] = (int)$entry['wfcId'];
+    }
 
     return $normalized;
 }
