@@ -697,6 +697,7 @@ trait IAHVisualNavigationGroupTrait
                 $g['pageTitle']=(string)$record['title'];
                 $g['pageAction']=(string)$record['actionType'];
                 $g['pageTarget']=(string)$record['target'];
+                $g['pageInstance']=(string)($record['pageInstance']??'0');
                 if (!$g['hasLaunch'] && $g['title']==='') {
                     $g['title']=(string)$record['title'];
                     $g['source']='page';
@@ -898,7 +899,8 @@ trait IAHVisualNavigationGroupTrait
                                     ['caption'=>'IP-Symcon Visualisierung (item...)','value'=>'wfc_item'],
                                     ['caption'=>'Externe HTTPS-Seite','value'=>'external_url']]],
                             ['type'=>'Select','name'=>'pageInstance',
-                                'caption'=>'WebFront-Instanz (Classic)','value'=>'0',
+                                'caption'=>'WebFront-Instanz (Classic)',
+                                'value'=>(string)($row['pageInstance']??'0'),
                                 'visible'=>$row['pageAction']!=='external_url',
                                 'options'=>$this->visualNavigationWebFrontInstanceOptions(),
                                 'onChange'=>'IAH_UpdateVisualNavigationWebFrontInstance($id, (int)$pageInstance);'],
@@ -1249,7 +1251,10 @@ trait IAHVisualNavigationGroupTrait
                 'count'=>count($updated)
             ]);
             if ($updated===[] && $navChange===null) {
-                $this->visualNavigationTrace('INFO','DIALOG_NO_CHANGES',['key'=>$key]);
+                $this->visualNavigationTrace('INFO','DIALOG_NO_CHANGES',[
+                    'key'=>$key,'reason'=>'No actual change to page, launch, renderer or navigation; '
+                        .'selected item may already equal the stored item ID'
+                ]);
                 $this->WriteAttributeString('VisualNavNotice','Keine Änderungen: '.$key);
                 $this->ReloadForm();return;
             }
