@@ -211,6 +211,10 @@ checkGroup(json_decode($sameIdDraft['properties']['PageMappings'],true)[0]['wfcI
     'WebFront instance-only change was lost');
 $h->DiscardVisualNavigationDraft();
 // Simulate a persisted page mapping returned by the Symcon list model.
+$h->properties['PageMappings']=json_encode([
+    ['key'=>'energie','type'=>'wfc_item','value'=>'item2124',
+        'label'=>'Energie','wfcId'=>45135]
+],JSON_THROW_ON_ERROR);
 $h->records=array_map(static function(array $record):array {
     if ($record['source']==='page' && $record['key']==='energie')
         $record['pageInstance']='45135';
