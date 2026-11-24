@@ -210,6 +210,32 @@ checkGroup(isset($sameIdDraft['properties']['PageMappings']),
 checkGroup(json_decode($sameIdDraft['properties']['PageMappings'],true)[0]['wfcId']===45135,
     'WebFront instance-only change was lost');
 $h->DiscardVisualNavigationDraft();
+// Simulate a persisted page mapping returned by the Symcon list model.
+$h->records=array_map(static function(array $record):array {
+    if ($record['source']==='page' && $record['key']==='energie')
+        $record['pageInstance']='45135';
+    return $record;
+},$h->records);
+$restored=array_values(array_filter($h->groups(),
+    static fn($g)=>($g['groupId']??'')==='route:energie'))[0];
+checkGroup($restored['pageInstance']==='45135',
+    'WebFront instance must rehydrate from the stored mapping');
+checkGroup($restored['pageTargetChoice']==='item2124',
+    'WebFront item dropdown must rehydrate its saved item ID');
+$restoredDialog=json_decode($h->GetVisualNavigationGroupForm('route:energie'),
+    true,512,JSON_THROW_ON_ERROR);
+$items=json_encode($restoredDialog,JSON_THROW_ON_ERROR);
+checkGroup(str_contains($items,'"name":"pageTargetChoice"'),
+    'Saved WebFront dropdown must exist in the edit form');
+checkGroup(str_contains($items,'"value":"item2124"'),
+    'WebFront dropdown must preselect the persisted item ID');
+$h->SaveVisualNavigationGroup(json_encode($restored,JSON_THROW_ON_ERROR));
+checkGroup($h->ReadAttributeString('VisualNavDraft')==='',
+    'Opening and saving an unchanged WebFront selection must not stage a change');
+$trace=json_decode($h->GetVisualNavigationDiagnostics(),true);
+checkGroup((bool)array_filter($trace,static fn($row)=>
+    ($row['event']??'')==='WEBFRONT_SELECTION_RESTORED'),
+    'Selection-restore diagnostic event missing');
 $nav=json_decode($h->GetVisualNavigationGroupForm('navigation:legacy_dampf'),true,512,JSON_THROW_ON_ERROR);
 checkGroup(str_contains(json_encode($nav),'SelectObject'),'Navigation must use object selector');
 checkGroup(str_contains(json_encode($nav),'PROD'),'Navigation must explicitly protect PROD');
