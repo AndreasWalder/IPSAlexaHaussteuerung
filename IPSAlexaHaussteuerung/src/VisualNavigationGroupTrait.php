@@ -804,9 +804,25 @@ trait IAHVisualNavigationGroupTrait
                 ['type'=>'Label','caption'=>'Eintrag nicht mehr vorhanden. Bitte Konfigurator neu öffnen.']
             ],JSON_THROW_ON_ERROR);
         }
+        // The selected WebFront item is persisted as PageMappings.value.
+        // Rehydrate the dropdown from that value when the dialog reopens.
+        // Never assume a stored manual ID exists in the selected WebFront.
+        $webFrontInstance=(int)($row['pageInstance']??0);
+        $webFrontOptions=$this->visualNavigationWebFrontItemOptions($webFrontInstance);
+        $storedPageItem=(string)($row['pageTarget']??'');
+        $knownPageItems=array_column($webFrontOptions,'value');
+        $row['pageTargetChoice']=($row['pageAction']==='wfc_item'
+            && $storedPageItem!==''
+            && in_array($storedPageItem,$knownPageItems,true))
+            ?$storedPageItem:'';
         $this->visualNavigationTrace('INFO','DIALOG_OPEN',[
             'group'=>$groupId,'source'=>(string)$row['source'],
             'count'=>count($row)
+        ]);
+        $this->visualNavigationTrace('INFO','WEBFRONT_SELECTION_RESTORED',[
+            'group'=>$groupId,'instance'=>$webFrontInstance,
+            'selected'=>$row['pageTargetChoice'],
+            'status'=>$row['pageTargetChoice']!==''?'selected':'manual',
         ]);
         $isNav=$row['source']==='navigation';
         $isAi=$row['actionType']==='ai_query';
@@ -911,9 +927,10 @@ trait IAHVisualNavigationGroupTrait
                                 'options'=>$this->visualNavigationWebFrontInstanceOptions(),
                                 'onChange'=>'IAH_UpdateVisualNavigationWebFrontInstance($id, (int)$pageInstance);'],
                             ['type'=>'Select','name'=>'pageTargetChoice',
-                                'caption'=>'Vorhandenes WebFront-Element (ID + Bezeichnung)','value'=>'',
+                                'caption'=>'Vorhandenes WebFront-Element (ID + Bezeichnung)',
+                                'value'=>$row['pageTargetChoice'],
                                 'visible'=>$row['pageAction']!=='external_url',
-                                'options'=>$this->visualNavigationWebFrontItemOptions()],
+                                'options'=>$webFrontOptions,
                             ['type'=>'ValidationTextBox','name'=>'pageTarget',
                                 'caption'=>$row['pageAction']==='external_url'
                                     ?'HTTPS-Adresse':'Manuelle IPS Item-ID (Fallback)'],
