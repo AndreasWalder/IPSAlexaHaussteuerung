@@ -946,7 +946,8 @@ class IPSAlexaHaussteuerung extends IPSModule
             $page = trim($legacy);
         }
 
-        $this->TriggerPageSwitch($page, (int) $V['WfcId']);
+        $pageWfc=(int)($pageMappings[$key]['wfcId']??0);
+        $this->TriggerPageSwitch($page, $pageWfc>0?$pageWfc:(int)$V['WfcId']);
     }
 
     public function TriggerPageSwitch(string $pageId, int $wfcId): void
@@ -3425,6 +3426,11 @@ PHP;
         $label = trim((string) ($entry['label'] ?? ''));
         if ($label !== '') {
             $normalized['label'] = $label;
+        }
+        // Optional Classic WebFront source. Older mappings without this
+        // property continue using the existing global WfcId.
+        if ($type === 'wfc_item' && (int)($entry['wfcId'] ?? 0) > 0) {
+            $normalized['wfcId'] = (int)$entry['wfcId'];
         }
 
         return $normalized;
