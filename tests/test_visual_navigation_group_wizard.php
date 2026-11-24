@@ -11,7 +11,9 @@ function IPS_GetInstanceListByModuleID(string $module): array {return [45135];}
 function IPS_GetConfiguration(int $id): string {
     return json_encode(['Items'=>json_encode([
         ['ID'=>'item9907','ClassName'=>'TabPane',
-            'Configuration'=>json_encode(['title'=>'Kamera'])]
+            'Configuration'=>json_encode(['title'=>'Kamera'])],
+        ['ID'=>'item2124','ClassName'=>'TabPane',
+            'Configuration'=>json_encode(['title'=>'Energie'])]
     ])],JSON_THROW_ON_ERROR);
 }
 function IPS_GetName(int $id): string {return 'Haus';}
