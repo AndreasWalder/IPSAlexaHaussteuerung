@@ -390,17 +390,17 @@ trait IAHVisualNavigationEditorTrait
                         ['type'=>'Label','caption'=>'Erfasst Dialog-OK, Feldübergaben, '
                             .'erkannte Unterschiede, EDIT-Speicherung, Prüfungen, '
                             .'PROD-Freigaben und Fehler. Keine KI-Fragen oder Zugangsdaten.'],
-                        ['type'=>'ValidationTextBox','name'=>'VisualNavDiagnosticJson',
-                            'caption'=>'Diagnose JSON – vollständig kopierbar',
-                            'multiline'=>true,'width'=>'100%',
-                            'value'=>$this->GetVisualNavigationDiagnostics()],
                         ['type'=>'RowLayout','items'=>[
                             ['type'=>'Button','caption'=>'DIAGNOSE AKTUALISIEREN',
                                 'onClick'=>'IAH_RefreshVisualNavigationDiagnostics($id);'],
                             ['type'=>'Button','caption'=>'DIAGNOSE LEEREN',
                                 'confirm'=>'Die letzten APL-Diagnoseeinträge löschen?',
                                 'onClick'=>'IAH_ClearVisualNavigationDiagnostics($id);']
-                        ]]
+                        ]],
+                        ['type'=>'ValidationTextBox','name'=>'VisualNavDiagnosticJson',
+                            'caption'=>'Diagnose JSON – vollständig kopierbar',
+                            'multiline'=>true,'width'=>'100%',
+                            'value'=>$this->GetVisualNavigationDiagnostics()]
                     ]],
 
                 ['type'=>'List','name'=>'VisualNavRows',
