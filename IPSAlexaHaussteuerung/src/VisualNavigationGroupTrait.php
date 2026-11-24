@@ -342,6 +342,9 @@ trait IAHVisualNavigationGroupTrait
             $this->WriteAttributeString('UnifiedPublishNotice',
                 'Geprüft: Navigation '.$counts['Navigation'].', Sprachregeln '
                 .$counts['Sprachregeln'].', APL '.$counts['APL'].'. Keine PROD-Schreibzugriffe.');
+            $this->visualNavigationTrace('OK','UNIFIED_PREVIEW_SUCCEEDED',[
+                'count'=>count($rows),'properties'=>implode(',',array_keys(array_filter($counts)))
+            ]);
             return json_encode($state,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
         } catch (\Throwable $e) {
             $this->WriteAttributeString('UnifiedPublishPreview','');
@@ -394,6 +397,9 @@ trait IAHVisualNavigationGroupTrait
             $this->WriteAttributeString('UnifiedPublishPreview','');
             $this->WriteAttributeString('UnifiedPublishNotice',
                 'Freigegeben: '.($completed===[]?'keine Änderungen':implode(', ',$completed)));
+            $this->visualNavigationTrace('OK','UNIFIED_PUBLISH_SUCCEEDED',[
+                'properties'=>implode(',',$completed),'count'=>count($completed)
+            ]);
             return json_encode(['ok'=>true,'completed'=>$completed],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
         } catch (\Throwable $e) {
             $this->WriteAttributeString('UnifiedPublishPreview','');
@@ -707,9 +713,8 @@ trait IAHVisualNavigationGroupTrait
                 continue;
             }
         }
-        $this->visualNavigationTrace('INFO','WEBFRONT_ITEMS_LOADED',[
-            'instance'=>$selectedInstance,'count'=>count($options)-1
-        ]);
+        // This method is also invoked for every row during form rendering.
+        // Avoid repeating identical informational messages on every refresh.
         usort($options,static fn(array $a,array $b):int=>
             $a['value']===''?-1:($b['value']===''?1:
                 strnatcasecmp($a['caption'],$b['caption'])));
@@ -1089,6 +1094,9 @@ trait IAHVisualNavigationGroupTrait
         $this->visualNavigationTrace('INFO','WEBFRONT_SELECTION_CHANGED',['instance'=>$instanceId]);
         try {
             $options=$this->visualNavigationWebFrontItemOptions($instanceId);
+            $this->visualNavigationTrace('INFO','WEBFRONT_ITEMS_LOADED',[
+                'instance'=>$instanceId,'count'=>count($options)-1
+            ]);
             $this->UpdateFormField('pageTargetChoice','options',
                 json_encode($options,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
             $this->UpdateFormField('pageTargetChoice','value','');
