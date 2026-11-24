@@ -138,6 +138,9 @@ $preview=json_decode($h->attributes['VisualNavDraftPreview']??'',true);
 checkGroup(is_array($preview)&&isset($preview['hash']),'EDIT preview not created');
 $h->PublishVisualNavigationDraft();
 checkGroup($h->applyCount===1,'Exactly one PROD apply expected');
+$completionTrace=json_decode($h->GetVisualNavigationDiagnostics(),true);
+checkGroup((bool)array_filter($completionTrace,static fn($row)=>
+    ($row['event']??'')==='APL_PUBLISH_OK'),'Missing APL publishing success log');
 checkGroup(json_decode($h->properties['LaunchCatalog'],true)[0]['title']==='Bienen Übersicht',
     'EDIT launch was not published');
 checkGroup($h->ReadAttributeString('VisualNavDraft')==='','EDIT draft must be cleared');
