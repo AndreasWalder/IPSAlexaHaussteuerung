@@ -123,6 +123,7 @@ trait IAHVisualNavigationEditorTrait
                 'title'=>(string)($mapping['label'] ?? $key),
                 'actionType'=>(string)($mapping['type'] ?? 'wfc_item'),
                 'target'=>(string)($mapping['value'] ?? ''),
+                'pageInstance'=>(string)(int)($mapping['wfcId'] ?? 0),
                 'detail'=>'Page-Zuordnung', 'status'=>'Konfiguriert',
             ];
         }
