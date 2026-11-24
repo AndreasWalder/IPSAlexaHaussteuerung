@@ -930,7 +930,7 @@ trait IAHVisualNavigationGroupTrait
                                 'caption'=>'Vorhandenes WebFront-Element (ID + Bezeichnung)',
                                 'value'=>$row['pageTargetChoice'],
                                 'visible'=>$row['pageAction']!=='external_url',
-                                'options'=>$webFrontOptions,
+                                'options'=>$webFrontOptions],
                             ['type'=>'ValidationTextBox','name'=>'pageTarget',
                                 'caption'=>$row['pageAction']==='external_url'
                                     ?'HTTPS-Adresse':'Manuelle IPS Item-ID (Fallback)'],
