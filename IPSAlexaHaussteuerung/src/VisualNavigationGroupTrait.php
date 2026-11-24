@@ -206,6 +206,12 @@ trait IAHVisualNavigationGroupTrait
         ] as [$area,$method,$section]) {
             try {
                 $ctx=$this->$method();
+                // Navigation editor context exposes EDIT and script IDs, but
+                // does not contain a parsed PROD entry.
+                if ($section==='navigation' && !is_array($ctx['prod']??null)) {
+                    $prodId=(int)($ctx['ids']['prod']??0);
+                    if ($prodId>0) $ctx['prod']=$this->readConfigurationArrayFromScript($prodId);
+                }
                 if (!is_array($ctx['edit']??null) || !is_array($ctx['prod']??null)) {
                     $append($area,'Konfiguration','NICHT PRÜFBAR','EDIT oder PROD fehlt');
                     continue;
@@ -1156,11 +1162,22 @@ trait IAHVisualNavigationGroupTrait
                 $found=false;
                 foreach ($after['PageMappings'] as &$row) {
                     if(!is_array($row)||(string)($row['key']??'')!==$key)continue;
-                    $row=array_replace($row,['type'=>$type,'value'=>$value,'label'=>$label]);
+                    $patch=['type'=>$type,'value'=>$value,'label'=>$label];
+                    if ($type==='wfc_item') {
+                        $instanceId=(int)($input['pageInstance']??($row['wfcId']??0));
+                        if ($instanceId>0) $patch['wfcId']=$instanceId;
+                        else unset($row['wfcId']);
+                    } else unset($row['wfcId']);
+                    $row=array_replace($row,$patch);
                     $found=true;break;
                 }
                 unset($row);
-                if (!$found) $after['PageMappings'][]=['key'=>$key,'type'=>$type,'value'=>$value,'label'=>$label];
+                if (!$found) {
+                    $new=['key'=>$key,'type'=>$type,'value'=>$value,'label'=>$label];
+                    if ($type==='wfc_item' && (int)($input['pageInstance']??0)>0)
+                        $new['wfcId']=(int)$input['pageInstance'];
+                    $after['PageMappings'][]=$new;
+                }
             }
             if ($renderer) {
                 $title=trim((string)($input['rendererTitle']??''));
