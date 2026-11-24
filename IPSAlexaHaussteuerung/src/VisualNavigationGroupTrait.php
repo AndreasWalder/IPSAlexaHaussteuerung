@@ -765,6 +765,16 @@ trait IAHVisualNavigationGroupTrait
             unset($groups[$navId]);
         }
         foreach ($groups as &$g) {
+            // The Symcon list dialog hydrates its values from the row, not
+            // only from the form definition. Restore the saved dropdown ID
+            // in the row as well, but only if it exists in this WebFront.
+            if ($g['hasPage'] && $g['pageAction']==='wfc_item') {
+                $choices=$this->visualNavigationWebFrontItemOptions((int)$g['pageInstance']);
+                $pageId=(string)$g['pageTarget'];
+                $g['pageTargetChoice']=($pageId!==''
+                    && in_array($pageId,array_column($choices,'value'),true))
+                    ?$pageId:'';
+            }
             $parts=[];
             if ($g['hasLaunch']) $parts[]='Startkachel';
             if ($g['hasPage']) $parts[]='Seitenziel';
@@ -1103,7 +1113,11 @@ trait IAHVisualNavigationGroupTrait
                 && (string)($input['pageAction']??'')===(string)$existing['pageAction']
                 && trim((string)($input['pageTitle']??''))===(string)$existing['pageTitle']
                 && trim((string)($input['pageTarget']??''))===(string)$existing['pageTarget']
-                && trim((string)($input['pageTargetChoice']??''))==='') {
+                && (
+                    trim((string)($input['pageTargetChoice']??''))===''
+                    || trim((string)$input['pageTargetChoice'])===(string)$existing['pageTarget']
+                )
+                && (int)($input['pageInstance']??0)===(int)($existing['pageInstance']??0)) {
                 $rawPage=json_decode($this->visualNavigationReadProperty('PageMappings'),true);
                 $storedPage=false;
                 foreach (is_array($rawPage)?$rawPage:[] as $entry) {
