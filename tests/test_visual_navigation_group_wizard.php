@@ -181,6 +181,8 @@ checkGroup(isset($staged['properties']['PageMappings']),
     'Changing a WebFront target must write a page mapping EDIT draft');
 checkGroup(json_decode($staged['properties']['PageMappings'],true)[0]['value']==='item9907',
     'Selected WebFront element ID not preserved');
+checkGroup(json_decode($staged['properties']['PageMappings'],true)[0]['wfcId']===45135,
+    'Selected WebFront instance was not staged');
 checkGroup(json_decode($h->properties['PageMappings'],true)[0]['value']==='item2124',
     'PROD mapping was modified before approval');
 checkGroup($h->applyCount===2,'WebFront dialog OK must not apply instance changes');
@@ -193,6 +195,19 @@ checkGroup((bool)array_filter($log,static fn($row)=>($row['event']??'')==='DIALO
     'Missing dialog save success log entry');
 $h->DiscardVisualNavigationDraft();
 
+// The Item ID may be unchanged while the WebFront instance changes.
+$h->DiscardVisualNavigationDraft();
+$energySame=array_values(array_filter($h->groups(),
+    static fn($g)=>$g['groupId']==='route:energie'))[0];
+$energySame['pageInstance']='45135';
+$energySame['pageTargetChoice']='item2124';
+$h->SaveVisualNavigationGroup(json_encode($energySame,JSON_THROW_ON_ERROR));
+$sameIdDraft=json_decode($h->ReadAttributeString('VisualNavDraft'),true);
+checkGroup(isset($sameIdDraft['properties']['PageMappings']),
+    'Changing only the WebFront instance must create an EDIT change');
+checkGroup(json_decode($sameIdDraft['properties']['PageMappings'],true)[0]['wfcId']===45135,
+    'WebFront instance-only change was lost');
+$h->DiscardVisualNavigationDraft();
 $nav=json_decode($h->GetVisualNavigationGroupForm('navigation:legacy_dampf'),true,512,JSON_THROW_ON_ERROR);
 checkGroup(str_contains(json_encode($nav),'SelectObject'),'Navigation must use object selector');
 checkGroup(str_contains(json_encode($nav),'PROD'),'Navigation must explicitly protect PROD');
