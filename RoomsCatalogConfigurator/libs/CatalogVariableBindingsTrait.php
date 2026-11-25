@@ -295,37 +295,43 @@ trait RCCCatalogVariableBindingsTrait
             if (in_array($last,$actionFields,true)){$hasAction=true;break;}
         }
         if (!$hasAction)return 0;
+        $lock=static function (array &$leaf) use ($actionFields,$newId): bool {
+            $found=false;
+            foreach ($leaf as $key=>$value) {
+                if (in_array(strtolower((string)$key),$actionFields,true)
+                    && self::rccIsId($value)===$newId) {
+                    $found=true;break;
+                }
+            }
+            if ($found) {
+                $leaf['kiReadOnly']=true;
+                $leaf['aiReviewed']=false;
+            }
+            return $found;
+        };
         $rooms=&$catalog;
         if (isset($catalog['rooms']) && is_array($catalog['rooms']))
             $rooms=&$catalog['rooms'];
         $locked=0;
         foreach ($rooms as &$room) {
-            if (!is_array($room)||!is_array($room['domains']??null))continue;
+            if (!is_array($room) || !is_array($room['domains']??null))continue;
             foreach ($room['domains'] as $domainKey=>&$domain) {
                 if (!is_array($domain))continue;
-                foreach ($domain as &$group) {
-                    if (!is_array($group))continue;
-                    if (in_array((string)$domainKey,['heizung','jalousie'],true)) {
-                        $entries=[&$group];
-                    } else $entries=&$group;
-                    foreach ($entries as &$leaf) {
-                        if (!is_array($leaf))continue;
-                        $found=false;
-                        foreach ($leaf as $key=>$value) {
-                            if (in_array(strtolower((string)$key),$actionFields,true)
-                                && self::rccIsId($value)===$newId) {
-                                $found=true;break;
-                            }
-                        }
-                        if ($found) {
-                            $leaf['kiReadOnly']=true;
-                            $leaf['aiReviewed']=false;
-                            $locked++;
-                        }
+                if (in_array((string)$domainKey,['heizung','jalousie'],true)) {
+                    foreach ($domain as &$leaf) {
+                        if (is_array($leaf) && $lock($leaf))$locked++;
                     }
                     unset($leaf);
+                } else {
+                    foreach ($domain as &$group) {
+                        if (!is_array($group))continue;
+                        foreach ($group as &$leaf) {
+                            if (is_array($leaf) && $lock($leaf))$locked++;
+                        }
+                        unset($leaf);
+                    }
+                    unset($group);
                 }
-                unset($group);
             }
             unset($domain);
         }
