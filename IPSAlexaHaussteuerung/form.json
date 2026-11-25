@@ -155,14 +155,14 @@
           "caption": "Einmal Archive Control wählen (z. B. Archive #17597). KI liest damit bei Bedarf archivierte Werte und erkannte Ereignisse, ohne weitere Archiv-IDs pro Gerät. Nur bereits im RoomsCatalog für KI freigegebene Geräte werden abgefragt. Voraussetzung: Die betreffenden Variablen wurden im Archiv protokolliert; die Funktion aktiviert Logging nicht selbst."
         },
         {
-          "name": "KIDetailedQueryDiagnostics",
+          "name": "KIFullDeviceDiagnosticsEnabled",
           "type": "CheckBox",
-          "caption": "Detaillierte KI-Analyse in IP-Symcon-Logs (Geraete, Variablen-IDs, aktueller Wert, Profil und Mapping)",
-          "value": true
+          "caption": "Ausführliche Geräte- und Variablenlogs (nur bei LOG_LEVEL=debug, standardmäßig AUS)",
+          "value": false
         },
         {
           "type": "Label",
-          "caption": "Nur lokale Alexa-Meldungen; nicht an OpenAI. Fuer die Fehleranalyse des RoomsCatalog bei Bedarf ausschalten."
+          "caption": "Nur bei ausdrücklich aktivierter Diagnose und LOG_LEVEL=debug werden detaillierte Gerätewerte in die lokalen Alexa-Meldungen geschrieben. Kompakte Zusammenfassungen bleiben erhalten."
         },
         {
           "type": "Label",
