@@ -143,8 +143,10 @@ function ki_load_rooms_catalog(array $cfg): array
         if ($scId>0 && function_exists('IPS_GetScriptContent')) {
             try {
                 $scFile=IPS_GetScriptFile($scId);
-                $scPath=IPS_GetKernelDir().'scripts/'.ltrim((string)$scFile,'/\\');
-                $sc=is_file($scPath)?@include $scPath:[];
+                $scPath=is_file((string)$scFile)?(string)$scFile:
+                    IPS_GetKernelDir().'scripts/'.ltrim((string)$scFile,'/\\');
+                $sc=[];
+                if(is_file($scPath))$sc=@include $scPath;
                 $id=(int)($sc['script']['ROOMS_CATALOG']??0);
             }catch(Throwable $ignored){}
         }
@@ -155,8 +157,10 @@ function ki_load_rooms_catalog(array $cfg): array
         try {
             // Static return-array catalog (the existing configured PROD script).
             $file=IPS_GetScriptFile($id);
-            $path=IPS_GetKernelDir().'scripts/'.ltrim((string)$file,'/\\');
-            $catalog=is_file($path)?@include $path:null;
+            $path=is_file((string)$file)?(string)$file:
+                IPS_GetKernelDir().'scripts/'.ltrim((string)$file,'/\\');
+            $catalog=null;
+            if(is_file($path))$catalog=@include $path;
             if (is_array($catalog)) {
                 // The catalog is keyed by rooms and may also contain metadata.
                 $rooms=is_array($catalog['rooms']??null)?$catalog['rooms']:$catalog;
