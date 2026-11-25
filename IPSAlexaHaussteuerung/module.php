@@ -762,18 +762,17 @@ class IPSAlexaHaussteuerung extends IPSModule
         $last = end($snapshots);
         if (($last['sha256'] ?? '') !== $prevHash) {
             $snapshots[] = [
-                'createdAt' => gmdate('c'),
+                'name' => date('Y-m-d_H-i-s').' SystemConfigurationEdit_Backup_'.$reason,
+                'createdAt' => date('c'),
                 'reason' => $reason,
                 'sourceScriptId' => $editId,
                 'sha256' => $prevHash,
                 'phpSource' => $raw,
             ];
         }
-        // Initiales PROD-Backup immer erhalten, nur letzte EDIT-Zwischenstaende begrenzen.
-        $backup['snapshots'] = array_merge(array_slice($snapshots, 0, 1), array_slice($snapshots, -12));
-        if (count($snapshots) <= 13) {
-            $backup['snapshots'] = $snapshots;
-        }
+        // Five-slot rolling history across PROD and EDIT. The oldest is
+        // replaced on the sixth write; the active scripts are untouched.
+        $backup['snapshots'] = $this->normalizeSystemBackupSnapshots($snapshots);
         $backupSource = IAHSystemNavigationEditor::encode($backup);
         IPS_SetScriptContent($backupId, $backupSource);
         if ($this->getScriptContent($backupId) !== $backupSource) {
@@ -834,17 +833,38 @@ class IPSAlexaHaussteuerung extends IPSModule
             $ctx['prod'],$ctx['edit'],$ctx['catalog'],$exists);
     }
 
-    /** Existing verified snapshot container is retained. No backups are removed. */
+    /** Reuse the existing SystemConfiguration_Backup container, keep five entries. */
+    private function normalizeSystemBackupSnapshots(array $snapshots): array
+    {
+        foreach($snapshots as &$snapshot){
+            if(!is_array($snapshot))continue;
+            if(!isset($snapshot['name']) || !is_string($snapshot['name'])
+                || $snapshot['name']===''){
+                $timestamp=strtotime((string)($snapshot['createdAt']??''))?:0;
+                $prefix=$timestamp>0?date('Y-m-d_H-i-s',$timestamp):'0000-00-00_00-00-00';
+                $source=(int)($snapshot['sourceScriptId']??0);
+                $snapshot['name']=$prefix.' SystemConfiguration_Backup_'
+                    .($source>0?'Script'.$source.'_':'')
+                    .(string)($snapshot['reason']??'Legacy');
+            }
+        }
+        unset($snapshot);
+        return array_values(array_slice($snapshots,-5));
+    }
+
+    /** Append one verified backup snapshot (maximum five). */
     private function appendNavigationBackup(int $scriptId,int $sourceId,string $source,string $reason): void
     {
         $backup=$this->readConfigurationArrayFromScript($scriptId);
         if(!is_array($backup) || !is_array($backup['snapshots']??null))
             throw new \RuntimeException('SystemConfiguration_Backup fehlt oder ist ungueltig.');
         $backup['snapshots'][]=[
-            'createdAt'=>gmdate('c'), 'reason'=>$reason,
+            'name'=>date('Y-m-d_H-i-s').' SystemConfiguration_PROD_Backup_'.$reason,
+            'createdAt'=>date('c'), 'reason'=>$reason,
             'sourceScriptId'=>$sourceId,
             'sha256'=>hash('sha256',$source),'phpSource'=>$source
         ];
+        $backup['snapshots']=$this->normalizeSystemBackupSnapshots($backup['snapshots']);
         $backupSource=IAHSystemNavigationEditor::encode($backup);
         IPS_SetScriptContent($scriptId,$backupSource);
         if($this->getScriptContent($scriptId)!==$backupSource)
