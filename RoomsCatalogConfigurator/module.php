@@ -14,6 +14,7 @@ require_once __DIR__ . '/libs/DataSourceEditor.php';
 require_once __DIR__ . '/libs/DataSourceEditorTrait.php';
 require_once __DIR__ . '/libs/SystemTreeDiscovery.php';
 require_once __DIR__ . '/libs/SystemTreeEditorTrait.php';
+require_once __DIR__ . '/libs/CatalogVariableBindingsTrait.php';
 require_once __DIR__ . '/libs/HeatingSystemEditorTrait.php';
 require_once __DIR__ . '/libs/HomeConnectEditorTrait.php';
 require_once __DIR__ . '/libs/HouseholdEditorTrait.php';
@@ -97,6 +98,7 @@ class RoomsCatalogConfigurator extends IPSModule
     private const ALEXA_MODULE_ID = '{F528D4D0-5729-4315-AE88-9BBABDBD0392}';
     use RCCDataSourceEditorTrait;
     use RCCSystemTreeEditorTrait;
+    use RCCCatalogVariableBindingsTrait;
     use RCCHeatingSystemEditorTrait;
     use RCCHomeConnectEditorTrait;
     use RCCHouseholdEditorTrait;
@@ -164,6 +166,11 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('SystemTreePreview','{}');
         $this->RegisterAttributeString('HeatingSystemPreview','{}');
         $this->RegisterAttributeString('SystemTreeNotice','Noch kein Anlagen-Scan gestartet.');
+        $this->RegisterAttributeString('CatalogBindingInventory','[]');
+        $this->RegisterAttributeString('CatalogBindingPreview','');
+        $this->RegisterAttributeString('CatalogBindingSelected','0');
+        $this->RegisterAttributeString('CatalogBindingNotice','Noch keine Variablenanalyse durchgeführt.');
+        $this->RegisterAttributeString('CatalogBindingLog','[]');
         $this->RegisterAttributeString('HuaweiDataSourceReport','');
         $this->RegisterAttributeString('HuaweiDataSourceNotice','Noch kein HuaweiPV-Scan gestartet.');
         $this->RegisterAttributeString('CatalogRestoreNotice','Noch kein Backup zur Wiederherstellung ausgewaehlt.');
@@ -6416,6 +6423,7 @@ class RoomsCatalogConfigurator extends IPSModule
         }
 
         $main[]=$this->buildVoiceTestPanel();
+        $main[]=$this->rccBindingPanel();
         $main[]=$this->buildSystemTreePanel();
         $main[]=$this->buildHeatingSystemPanel($editCatalog, $prodCatalog);
         $main[]=$this->buildHomeConnectPanel();
