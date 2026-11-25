@@ -70,7 +70,8 @@ final class RCCBackupRotation
             throw new \RuntimeException('Backup konnte nicht erstellt werden.');
         $safeReason=preg_replace('/[^A-Za-z0-9_-]/','_',substr($reason,0,56))?:'Sicherung';
         IPS_SetParent($id,(int)IPS_GetParent($sourceId));
-        IPS_SetName($id,date('Y-m-d_H-i-s').' RoomsCatalog_'.$kind.'_Backup_'.$safeReason.'_#'.$id);
+        $base=$kind==='EDIT'?'RoomsCatalogEdit_Backup_':'RoomsCatalog_Backup_';
+        IPS_SetName($id,date('Y-m-d_H-i-s').' '.$base.$safeReason.'_#'.$id);
         IPS_SetScriptContent($id,$original);
         if(IPS_GetScriptContent($id)!==$original)
             throw new \RuntimeException('Backup #'.$id.' nicht verifiziert; Quelldaten unveraendert.');
