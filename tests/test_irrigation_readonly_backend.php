@@ -53,4 +53,35 @@ foreach (['Wie geht es meiner Bewässerung?','Wie geht es mit der Bewässerung?'
         'Exact live module endpoint returns clean JSON and APL status rows without generated script stdout');
 }
 test($requests===$before,'Status queries and their archives never issue device actions');
+// New irrigation root #52811 must resolve the verified power source as well
+// as the legacy #41578, without accepting arbitrary unrelated roots.
+$resolveHeater=new ReflectionMethod(IAHIrrigationQuery::class,'heaterMeter');
+$meterNew=$resolveHeater->invoke(null,
+    ['sourceRootId'=>52811,'points'=>[],'controllers'=>[]],
+    [47232=>['AggregationActive'=>true]]);
+$meterLegacy=$resolveHeater->invoke(null,
+    ['sourceRootId'=>41578,'points'=>[],'controllers'=>[]],
+    [47232=>['AggregationActive'=>true]]);
+$meterUnrelated=$resolveHeater->invoke(null,
+    ['sourceRootId'=>99999,'points'=>[],'controllers'=>[]],
+    [47232=>['AggregationActive'=>true]]);
+test(($meterNew['id']??0)===47232 && ($meterLegacy['id']??0)===47232
+    && $meterUnrelated===null,
+    'Heater meter is discovered at both irrigation roots but not unrelated devices');
+
+// The old NLU fallback must receive the configured PROD catalog script,
+// not rely on a hard-coded scripts/RoomsCatalog.php file.
+$parserSource=file_get_contents(__DIR__.'/../IPSAlexaHaussteuerung/resources/helpers/KIIntentParser.php');
+test(str_contains($parserSource,"rooms_catalog_script_id")
+    && !str_contains($parserSource,"(__DIR__ . '/RoomsCatalog.php')"),
+    'Legacy NLU uses configured production RoomsCatalog ID');
+$actionSource=file_get_contents(__DIR__.'/../IPSAlexaHaussteuerung/resources/action_entry.php');
+test(str_contains($actionSource,"'rooms_catalog_script_id'=>(int)")
+    && str_contains($actionSource,"KIFullDeviceDiagnosticsEnabled"),
+    'Alexa route supplies PROD catalog and requires explicit device-log opt-in');
+$formSource=json_decode(file_get_contents(
+    __DIR__.'/../IPSAlexaHaussteuerung/form.json'),true,512,JSON_THROW_ON_ERROR);
+test(str_contains(json_encode($formSource),"KIFullDeviceDiagnosticsEnabled"),
+    'Diagnostic opt-in checkbox must be available in Alexa configuration');
+
 echo "PASS logged irrigation backend regression, real module JSON replies, complete health rows, grammatical variants and read-only actions\n";
