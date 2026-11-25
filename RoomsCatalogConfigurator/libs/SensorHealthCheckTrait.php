@@ -51,11 +51,9 @@ trait RCCSensorHealthCheckTrait
                     .' s überschritten. '.($meta['seasonal']
                         ?'Saison und Anlagenbetrieb berücksichtigen.'
                         :'Sensorverbindung und Abfragezyklus kontrollieren.')];
-        } elseif ($updated===0) {
-            $findings[]=['severity'=>'Hinweis',
-                'message'=>'Kein Aktualisierungszeitstempel verfügbar. '
-                    .'Aktivität des Sensors kann nicht verlässlich beurteilt werden.'];
         }
+        // No timestamp in older/custom modules: insufficient evidence,
+        // not a defective sensor. Do not flood the result with warnings.
 
         // Value checks only for recognized, physically meaningful quantities.
         // Never operate on an actuator based on these observations.
@@ -79,8 +77,11 @@ trait RCCSensorHealthCheckTrait
                                     .' ('.($min??'offen').' bis '.($max??'offen').').'];
                         }
                         $unit=strtolower((string)($point['unit']??''));
+                        $profile=strtolower((string)(($var['VariableCustomProfile']??'')
+                            ?:($var['VariableProfile']??'')));
                         if (($meta['battery']||$meta['humidity'])
-                            && ($unit==='%'||str_contains((string)$var['VariableProfile'],'~Intensity'))) {
+                            && ($unit==='%'||str_contains($profile,'intensity')
+                                ||str_contains($profile,'battery'))) {
                             if ($value<0||$value>100) {
                                 $findings[]=['severity'=>'Prüfen',
                                     'message'=>'Prozentwert außerhalb 0–100. Profil/Skalierung prüfen.'];
