@@ -129,7 +129,7 @@ class IPSAlexaHaussteuerung extends IPSModule
         $this->RegisterPropertyInteger('HomeAgentVoiceTimeoutSeconds', 6);
         // Lokale Diagnose bei Hausfragen: Istwerte, Profile und IPS-Variablen-IDs
         // werden NICHT an OpenAI uebertragen, sondern nur in IPS-Logs ausgegeben.
-        $this->RegisterPropertyBoolean('KIDetailedQueryDiagnostics', true);
+        $this->RegisterPropertyBoolean('KIDetailedQueryDiagnostics', false);
         // Nur diese eine Archivinstanz wird fuer KI-Verlaufsfragen benoetigt.
         $this->RegisterPropertyInteger('KIArchiveControlId', 0);
         $this->RegisterPropertyFloat('KICostMonthlyWarningUSD', 5.00); // Historischer Konfigurationswert
