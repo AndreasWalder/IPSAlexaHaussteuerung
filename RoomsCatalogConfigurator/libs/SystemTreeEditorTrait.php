@@ -215,6 +215,68 @@ trait RCCSystemTreeEditorTrait
         return mb_substr($s,0,70);
     }
 
+    /** Explain why a replacement is incompatible and how to migrate it.
+     * Conversion is intentionally NOT performed on live IPS values.
+     */
+    private static function systemTreeMigrationAdvice(array $old,array $candidate,string $role): string
+    {
+        $names=[0=>'Boolean',1=>'Integer',2=>'Float',3=>'String'];
+        $oldType=(int)($old['type']??-1);
+        $newType=(int)($candidate['type']??-1);
+        $unit=(string)($candidate['unit']??'');
+        $expected=match($role) {
+            'stationTemperature','outdoorTemperature'=>'°C',
+            'pumpPressure'=>'bar',
+            'soilMoisture','sensorBattery','rainSensor'=>'%',
+            'heaterSignal'=>'W, kW, A oder mA',
+            'pumpStatus','zoneStatus','heaterStatus','winterMode'=>'Boolean',
+            'nextStart'=>'Integer (Unix-Zeitstempel)',
+            default=>'zur gewählten Rolle passender Typ und Einheit'
+        };
+        $messages=[
+            'Bisher: '.($names[$oldType]??'unbekannt').' / '.((string)($old['unit']??'')?:'ohne Einheit')
+                .'; neu: '.($names[$newType]??'unbekannt').' / '.($unit?:'ohne Einheit').'.',
+            'Erwartet für '.$role.': '.$expected.'.'
+        ];
+        if ($newType===3) {
+            $messages[]='Vorschlag: Eine numerische bzw. boolesche Hilfsvariable '
+                .'aus dem Stringwert erzeugen. Dezimaltrennzeichen, Wertbereich '
+                .'und ungültige Eingaben zuerst prüfen.';
+        } elseif ($newType===0 && in_array($role,['stationTemperature','outdoorTemperature',
+            'soilMoisture','sensorBattery','rainSensor','pumpPressure','heaterSignal'],true)) {
+            $messages[]='Vorschlag: Einen numerischen Messwert verwenden; Boolean '
+                .'ist für einen kontinuierlichen Messwert nicht geeignet.';
+        } elseif (in_array($newType,[1,2],true)
+            && in_array($role,['pumpStatus','zoneStatus','heaterStatus','winterMode'],true)) {
+            $messages[]='Vorschlag: Numerisch nach Boolean umsetzen (z. B. 0=Aus, '
+                .'1=Ein). Erst die tatsächliche Wertebedeutung prüfen; keine '
+                .'automatische Schaltfreigabe.';
+        } elseif ($role==='nextStart' && $newType===2) {
+            $messages[]='Vorschlag: Zeitstempel als Integer in Sekunden '
+                .'bereitstellen; Millisekunden und Zeitzone vorher prüfen.';
+        } elseif (in_array($newType,[1,2],true)) {
+            if ($unit==='' && in_array($role,['stationTemperature','outdoorTemperature',
+                'soilMoisture','sensorBattery','rainSensor','pumpPressure'],true))
+                $messages[]='Vorschlag: Einheit und Wertebereich prüfen. Falls '
+                    .'die Werte bereits korrekt sind, das passende Variablenprofil '
+                    .'zuweisen oder eine normalisierte Hilfsvariable verwenden.';
+            elseif ($unit==='°F' && in_array($role,['stationTemperature','outdoorTemperature'],true))
+                $messages[]='Vorschlag: Temperatur in °C umrechnen: (°F - 32) × 5 / 9. '
+                    .'Die Umrechnung muss vor der RoomsCatalog-Zuordnung erfolgen.';
+            elseif ($unit==='kPa' && $role==='pumpPressure')
+                $messages[]='Vorschlag: Druck von kPa in bar umrechnen (kPa / 100).';
+            elseif ($unit==='kW' && $role==='heaterSignal')
+                $messages[]='Hinweis: kW wird als Leistung unterstützt. '
+                    .'Für W mit 1000 multiplizieren, falls ein Verbraucher W erwartet.';
+            else $messages[]='Vorschlag: Profil/Einheit und Bereich mit dem bisher '
+                    .'erwarteten Datenformat vergleichen. Bei Abweichungen eine '
+                    .'normalisierte Hilfsvariable auswählen.';
+        }
+        $messages[]='Die originale ID, das Archiv und PROD bleiben unverändert, '
+            .'bis die kompatible Zuordnung ausdrücklich in EDIT gespeichert wird.';
+        return implode(' ',$messages);
+    }
+
     private static function systemTreeRoleMatches(array $p,string $role): bool
     {
         $numeric=in_array($p['type'],[1,2],true);
@@ -541,7 +603,10 @@ trait RCCSystemTreeEditorTrait
             $replacementId=(int)($options['replacementId']??$pid);
             $forceRefresh=(bool)($options['refreshMetadata']??false);
             if ($replacementId<=0 || !IPS_VariableExists($replacementId))
-                throw new RuntimeException('Die ausgewählte Ersatzvariable existiert nicht.');
+                throw new RuntimeException('Die ausgewählte Ersatzvariable existiert nicht. '
+                    .'Vorschlag: im IP-Symcon-Objektbaum die alte ID kontrollieren '
+                    .'und eine bestehende Ersatzvariable mit gleicher Rolle auswählen. '
+                    .'Bei abweichenden Typen zunächst eine passende Hilfsvariable anlegen.');
             if ($replacementId!==$pid && isset($s['points'][$replacementId]))
                 throw new RuntimeException('Die Ersatzvariable ist bereits einem anderen Datenpunkt dieser Anlage zugeordnet.');
             $changingId=$replacementId!==$pid;
@@ -561,7 +626,8 @@ trait RCCSystemTreeEditorTrait
                 if ($p['role']!=='unknown'
                     && !self::systemTreeRoleMatches($p,(string)$options['role'])) {
                     throw new RuntimeException('Die Ersatzvariable passt nicht zur Rolle. '
-                        .'Bitte Datentyp, Profil und Einheit prüfen.');
+                        .self::systemTreeMigrationAdvice($s['points'][$pid],$metadata,
+                            (string)$options['role']));
                 }
             }
             if ($changingId && !empty($options['allowAction']))
