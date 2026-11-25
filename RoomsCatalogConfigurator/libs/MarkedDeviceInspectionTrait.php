@@ -325,7 +325,7 @@ trait RCCMarkedDeviceInspectionTrait
             $summary=count($entries).' markierte Geräte, '.$checked.' eindeutige Variablen '
                 .'aus '.$referenceCount.' Fundstellen und '.$scriptCount.' Skriptreferenzen'
                 .($health?' (Gesundheitscheck: '.$healthChecked
-                    .' Variablen, '.(30-$healthArchiveBudget).' Archiv-Trends)':'').': ';
+                    .' Variablen, '.(30-$healthArchiveBudget).' Archiv-Trends)':'').': '
                 .$ok.' ohne technischen Befund, '.$severityCounts['FEHLER'].' Fehler, '
                 .$severityCounts['Prüfen'].' prüfen, '.$severityCounts['Hinweis'].' Hinweise. '
                 .'Dauer '.$ms.' ms. Prüfung lesend; plausibel bedeutet nicht '
