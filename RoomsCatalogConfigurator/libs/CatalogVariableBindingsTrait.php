@@ -83,7 +83,7 @@ trait RCCCatalogVariableBindingsTrait
     private function rccBindingInfo(int $id): array
     {
         $out=['id'=>$id,'exists'=>false,'parent'=>0,'type'=>-1,'profile'=>'',
-            'archive'=>'Unbekannt','name'=>'Variable nicht vorhanden'];
+            'ident'=>'','unit'=>'','archive'=>'Unbekannt','name'=>'Variable nicht vorhanden'];
         if ($id<=0 || !IPS_VariableExists($id))return $out;
         $o=IPS_GetObject($id);$v=IPS_GetVariable($id);
         $out['exists']=true;
@@ -91,6 +91,12 @@ trait RCCCatalogVariableBindingsTrait
         $out['name']=(string)($o['ObjectName']??'');
         $out['type']=(int)($v['VariableType']??-1);
         $out['profile']=(string)(($v['VariableCustomProfile']??'')?:($v['VariableProfile']??''));
+        $out['ident']=(string)($o['ObjectIdent']??'');
+        if ($out['profile']!=='' && function_exists('IPS_VariableProfileExists')
+            && IPS_VariableProfileExists($out['profile'])) {
+            $profile=IPS_GetVariableProfile($out['profile']);
+            $out['unit']=trim((string)($profile['Suffix']??''));
+        }
         return $out;
     }
 
@@ -237,6 +243,43 @@ trait RCCCatalogVariableBindingsTrait
         }
     }
 
+    /** Refresh only technical metadata of points with this variable ID. */
+    private static function rccRefreshPointMetadata(array &$catalog,int $id,array $info): int
+    {
+        $updated=0;
+        $walk=static function (array &$node) use (&$walk,$id,$info,&$updated): void {
+            foreach ($node as $key=>&$entry) {
+                if (!is_array($entry))continue;
+                if ($key==='points' && isset($entry[$id])
+                    && is_array($entry[$id])) {
+                    $point=&$entry[$id];
+                    $expected=[
+                        'id'=>$id,'parent'=>$info['parent'],
+                        'type'=>$info['type'],'profile'=>$info['profile'],
+                        'ident'=>$info['ident']
+                    ];
+                    if ($info['unit']!=='')$expected['unit']=$info['unit'];
+                    $changed=false;
+                    foreach ($expected as $field=>$value) {
+                        if (($point[$field]??null)!==$value) {
+                            $point[$field]=$value;$changed=true;
+                        }
+                    }
+                    if ($changed) {
+                        $point['manualEdit']=true;
+                        $point['manualSource']=true;
+                        $updated++;
+                    }
+                    unset($point);
+                }
+                $walk($entry);
+            }
+            unset($entry);
+        };
+        $walk($catalog);
+        return $updated;
+    }
+
     public function ApplyCatalogVariableBinding(int $oldId,int $newId,bool $confirmed): void
     {
         try {
@@ -256,13 +299,19 @@ trait RCCCatalogVariableBindingsTrait
             if ($issues!==[])throw new RuntimeException('Typ/Profil passt nicht: '
                 .implode(' ',$issues).' Bitte geeignete kompatible Hilfsvariable wählen.');
             if ($oldId===$newId) {
-                // Recheck metadata, archive availability and references without
-                // writing the exact same catalog content.
-                $this->rccBindingTrace('SAME_ID_REFRESH',['id'=>$oldId,
-                    'parent'=>$new['parent'],'count'=>count($preview['rows'])]);
+                $refreshed=self::rccRefreshPointMetadata($catalog,$oldId,$new);
+                if ($refreshed>0)
+                    $this->saveSystemTreeEdit($script,$original,$catalog);
+                $this->WriteAttributeString('CatalogBindingPreview','');
+                $this->rccBindingTrace('SAME_ID_REFRESH',[
+                    'id'=>$oldId,'parent'=>$new['parent'],'updated'=>$refreshed
+                ]);
                 $this->WriteAttributeString('CatalogBindingNotice',
-                    'Gleiche Variable erfolgreich geprüft. Parent #'.$new['parent']
-                    .'. Keine unnötige EDIT-/PROD-Änderung.');
+                    'Gleiche Variable aktualisiert. Parent #'.$new['parent']
+                    .'. Technische Datensätze in EDIT angepasst: '.$refreshed
+                    .'. PROD und Archivhistorie unverändert.');
+                $this->UpdateFormField('CatalogBindingNotice','caption',
+                    $this->ReadAttributeString('CatalogBindingNotice'));
                 return;
             }
             // Values before keys: references nested below a numeric
@@ -276,24 +325,8 @@ trait RCCCatalogVariableBindingsTrait
                 throw new RuntimeException('Fundstellen haben sich verändert.');
             foreach ($refs as $ref)
                 self::rccReplaceBindingPath($catalog,$ref['path'],$ref['kind'],$oldId,$newId);
-            // Technical point metadata must agree with the selected new sensor.
-            $walk=static function (array &$node) use (&$walk,$newId,$new): void {
-                foreach ($node as $k=>&$v) {
-                    if (is_array($v)) {
-                        if ($k==='points' && isset($v[$newId]) && is_array($v[$newId])) {
-                            $v[$newId]['id']=$newId;
-                            $v[$newId]['parent']=$new['parent'];
-                            $v[$newId]['type']=$new['type'];
-                            $v[$newId]['profile']=$new['profile'];
-                            $v[$newId]['manualEdit']=true;
-                            $v[$newId]['manualSource']=true;
-                        }
-                        $walk($v);
-                    }
-                }
-                unset($v);
-            };
-            $walk($catalog);
+            // New physical variable metadata is refreshed after reference re-keying.
+            self::rccRefreshPointMetadata($catalog,$newId,$new);
             // A replaced physical sensor should not be re-imported at the
             // next irrigation object-tree scan.
             foreach ((array)($catalog['dataSources']??[]) as &$source) {
