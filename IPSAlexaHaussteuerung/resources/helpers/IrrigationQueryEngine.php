@@ -483,6 +483,22 @@ final class IAHIrrigationQuery
         return ['label'=>'Rohrbegleitheizung','value'=>$reading,'speech'=>$speech];
     }
 
+    /** A single verified heater feedback can supplement missing power data. */
+    private static function heaterLiveWithFeedback(array $system,?array $meter,array $series=[]): array
+    {
+        $heat=self::heaterLive($meter,$series);
+        if (!str_contains((string)$heat['speech'],'nicht bestimmbar'))return $heat;
+        $points=self::points($system,'heaterStatus');
+        if (count($points)!==1)return $heat;
+        $point=reset($points);
+        $state=self::value($point);
+        if (!is_bool($state))return $heat;
+        $status=$state?'Ein':'Aus';
+        return ['label'=>'Rohrbegleitheizung (Rückmeldung)',
+            'value'=>$status,
+            'speech'=>'Rohrbegleitheizung laut Statusrückmeldung '.($state?'ein':'aus')];
+    }
+
     private static function summary(array $s,bool $winter,bool $onlyState,?int $zone,array $heat=[],array $heating=[]): array
     {
         $parts=[];$rows=[];$on=[];$missing=0;
@@ -787,7 +803,7 @@ final class IAHIrrigationQuery
                 in_array($period[2],['heute','gestern'],true),$heaterDaily);
             $history['diagnostics']=$diag+$history['diagnostics'];
             if ($heatingHistoryRequested)return $history;
-            $heat=self::heaterLive($meter,$history['diagnostics']['archive']??[]);
+            $heat=self::heaterLiveWithFeedback($s,$meter,$history['diagnostics']['archive']??[]);
             $history['answer']=$heat['speech'].'. '.$history['answer'];
             $heat['label']='Aktueller Status';
             array_unshift($history['displayRows'],$heat);
@@ -836,7 +852,7 @@ final class IAHIrrigationQuery
             if ($combinedStatus) {
                 $meter=self::heaterMeter($s,$inventory);
                 $heater=self::heaterHistory($meter,$archive,$inventory,self::period('heute',$mode,$now),$now,$deadline,true);
-                $heat=self::heaterLive($meter,$heater['diagnostics']['archive']??[]);
+                $heat=self::heaterLiveWithFeedback($s,$meter,$heater['diagnostics']['archive']??[]);
                 $overview=self::summary($s,(bool)$mode['winter'],false,null,$heat,$heater);
                 $parts[]=$overview['answer'];
                 $displayRows=$overview['displayRows'];
