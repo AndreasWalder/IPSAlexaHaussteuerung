@@ -17,8 +17,16 @@ final class IAHVoiceRuleLiteralReader
 
     public static function read(?string $source): ?array
     {
-        if(!is_string($source) || $source==='' || strlen($source)>self::MAX_SOURCE_BYTES)
-            return null;
+        if(!is_string($source) || $source==='')return null;
+        // token_get_all() creates a massive token array, followed by another
+        // normalized token copy. RoomsCatalog EDIT scripts can exhaust 64MB
+        // long before the old 10 MB source-size cap is reached.
+        // Large arrays instead use the non-executing streaming literal reader.
+        if(strlen($source)>64*1024) {
+            require_once __DIR__.'/VoiceRuleStreamingLiteralReader.php';
+            return IAHVoiceRuleStreamingLiteralReader::read($source);
+        }
+        if(strlen($source)>self::MAX_SOURCE_BYTES)return null;
         try {
             $all=token_get_all($source);
             if(count($all)>self::MAX_TOKENS)return null;
