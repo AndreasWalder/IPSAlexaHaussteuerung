@@ -7,6 +7,7 @@ function testCheck(bool $condition,string $message): void {
     if (!$condition)throw new RuntimeException($message);
 }
 function IPS_VariableExists(int $id): bool {return in_array($id,[60001,60003],true);}
+function IPS_ScriptExists(int $id): bool {return $id===70001;}
 function IPS_ObjectExists(int $id): bool {return in_array($id,[50000,60001,60003],true);}
 function IPS_GetObject(int $id): array {
     return ['ParentID'=>50000,'ObjectName'=>'Sensor #'.$id];
@@ -69,4 +70,32 @@ testCheck($r['selected']===1 && $r['issues']>=1,
     'Markierte virtuelle Bewässerungsanlagen müssen geprüft werden');
 testCheck(str_contains($r['summary'],'IP')===false || $r['references']>=2,
     'Bewässerungspunkte müssen in die technische Prüfung einfließen');
+testCheck($r['variables']===2,
+    'Each physical irrigation variable must be checked only once');
+$h->catalog['dataSources']['irrigation_52811']=[
+    'provider'=>'ObjectTreeIrrigation',
+    'points'=>[
+        60001=>['id'=>60001,'role'=>'stationTemperature','archiveMode'=>'none'],
+        60002=>['id'=>60002,'role'=>'stationTemperature']
+    ],
+    'scripts'=>[
+        70001=>['id'=>70001,'name'=>'Existing script'],
+        70002=>['id'=>70002,'name'=>'Missing script']
+    ],
+    'actuators'=>[52811=>['AktorID1'=>60001]]
+];
+$h->RunMarkedDeviceInspection(false);
+$r=json_decode($h->ReadAttributeString('MarkedInspectionResult'),true,512,JSON_THROW_ON_ERROR);
+testCheck($r['variables']===2 && $r['scripts']===2,
+    'Duplicated sensor paths and script IDs must remain distinct');
+testCheck(count(array_filter($r['rows'],static fn(array $row)=>
+    (int)$row['variableId']===60002))===1,
+    'Missing variable must appear only once');
+testCheck(count(array_filter($r['rows'],static fn(array $row)=>
+    (int)$row['variableId']===70002 && $row['field']==='Skript'))===1,
+    'Missing script must be checked as script, not variable');
+testCheck(count(array_filter($r['rows'],static fn(array $row)=>
+    (int)$row['variableId']===70001))===0,
+    'Existing script should not appear as a missing variable');
+
 echo "PASS marked device inspection\n";
