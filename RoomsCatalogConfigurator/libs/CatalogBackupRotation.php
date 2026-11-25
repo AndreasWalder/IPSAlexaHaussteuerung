@@ -12,8 +12,9 @@ final class RCCBackupRotation
 
     public static function isCatalogBackup(string $name): bool
     {
-        return preg_match('/^(?:\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}\\s+)?RoomsCatalog(?:Edit)?[_ ]/i',$name)===1
-            && (stripos($name,'Backup')!==false || stripos($name,'before_repair')!==false);
+        // Only backup formats created by our publisher or legacy editors.
+        // A manually created script merely containing "Backup" is protected.
+        return preg_match('/^(?:\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}\\s+)?RoomsCatalog(?:Edit)?_(?:Backup(?:_|$)|PartialProd_Backup_|Einzelposition_Backup_|before_repair(?:_|$))/i',$name)===1;
     }
 
     public static function sortDate(string $name,int $id): string
