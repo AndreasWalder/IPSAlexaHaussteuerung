@@ -52,9 +52,10 @@ trait RCCCatalogVariableBindingsTrait
                 $at=[...$path,$key];
                 $name=(string)$key;
                 $id=self::rccIsId($value);
-                if ($id>0 && self::rccVariableKey($name,$path))
-                    $refs[]=['id'=>$id,'path'=>$at,'kind'=>'value'];
                 $container=(string)($path[count($path)-1]??'');
+                if ($id>0 && ($id>=10000 || IPS_VariableExists($id))
+                    && (self::rccVariableKey($name,$path) || $container==='voiceActions'))
+                    $refs[]=['id'=>$id,'path'=>$at,'kind'=>'value'];
                 if (ctype_digit($name) && self::rccIsId($name)>0
                     && in_array($container,['points','heater'],true))
                     $refs[]=['id'=>(int)$name,'path'=>$at,'kind'=>'key'];
@@ -155,6 +156,19 @@ trait RCCCatalogVariableBindingsTrait
             if ($refs===[])throw new RuntimeException('Die alte ID hat keine erkannten Referenzen.');
             $old=$this->rccBindingInfo($oldId);$new=$this->rccBindingInfo($newId);
             if (!$new['exists'])throw new RuntimeException('Neue Variable existiert nicht.');
+            try {
+                [$archiveId,$archiveInventory]=$this->systemTreeArchive();
+                foreach (['old'=>&$old,'new'=>&$new] as &$info) {
+                    $entry=is_array($archiveInventory)?($archiveInventory[$info['id']]??null):null;
+                    $info['archive']=$entry===null?'Keine Archivdaten / nicht gefunden'
+                        :('Archiv #'.$archiveId.'; Logging '
+                          .(!empty($entry['AggregationActive'])?'aktiv':'inaktiv')
+                          .'; '.(int)($entry['RecordCount']??0).' Werte');
+                }
+                unset($info);
+            } catch (Throwable $archiveError) {
+                $old['archive']=$new['archive']='Archiv konnte nicht gelesen werden';
+            }
             $issues=self::rccBindingAdvice($old,$new);
             $rows=array_map(static fn(array $ref):array=>[
                 'path'=>self::rccPathText($ref['path']),'kind'=>$ref['kind'],
@@ -163,8 +177,9 @@ trait RCCCatalogVariableBindingsTrait
                 'oldId'=>$oldId,'newId'=>$newId,'rows'=>$rows,'issues'=>$issues,'time'=>time()];
             $this->WriteAttributeString('CatalogBindingPreview',json_encode($preview,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
             $note=count($rows).' Fundstellen. Alt: Parent #'.$old['parent']
-                .' / Typ '.$old['type'].'; neu: Parent #'.$new['parent']
-                .' / Typ '.$new['type'].'. '
+                .' / Typ '.$old['type'].' / '.$old['archive']
+                .'; neu: Parent #'.$new['parent']
+                .' / Typ '.$new['type'].' / '.$new['archive'].'. '
                 .($issues===[]?'Technisch plausibel; echte Sensorwerte prüfen.'
                     :implode(' ',$issues).' Für diese Typ-/Profilabweichung ist vor dem Austausch '
                         .'eine passende Hilfsvariable bzw. gesonderte fachliche Bestätigung nötig.')
@@ -231,15 +246,9 @@ trait RCCCatalogVariableBindingsTrait
                     .'. Keine unnötige EDIT-/PROD-Änderung.');
                 return;
             }
-            // Replace deep references in the previewed order: values first,
-            // then numeric keys, so keyed points remain addressable.
+            // Values before keys: references nested below a numeric
+            // point key must be updated before that point key is moved.
             $rows=(array)$preview['rows'];
-            usort($rows,static fn(array $a,array $b):int=>
-                ($a['kind']==='key'?1:0)<=>($b['kind']==='key'?1:0));
-            foreach ($rows as $row) {
-                // Preview paths contain readable segments; exact structured
-                // paths are resolved from the same hash-checked source again.
-            }
             $refs=array_values(array_filter($this->rccBindingRefs($catalog),
                 static fn(array $ref):bool=>$ref['id']===$oldId));
             usort($refs,static fn(array $a,array $b):int=>
@@ -266,6 +275,22 @@ trait RCCCatalogVariableBindingsTrait
                 unset($v);
             };
             $walk($catalog);
+            // A replaced physical sensor should not be re-imported at the
+            // next irrigation object-tree scan.
+            foreach ((array)($catalog['dataSources']??[]) as &$source) {
+                if (!is_array($source)
+                    || ($source['provider']??'')!=='ObjectTreeIrrigation')continue;
+                if (isset($source['points'][$newId]) && !isset($source['points'][$oldId])) {
+                    $source['excludedPoints'][$oldId]=(string)
+                        ($source['points'][$newId]['label']??('Replaced '.$oldId));
+                    // A replacement actuator never inherits permission from
+                    // the old physical hardware without re-approval.
+                    $source['voiceActions']=array_values(array_diff(
+                        (array)($source['voiceActions']??[]),[$newId]));
+                    $source['points'][$newId]['actionCandidate']=false;
+                }
+            }
+            unset($source);
             $this->saveSystemTreeEdit($script,$original,$catalog);
             $this->WriteAttributeString('CatalogBindingPreview','');
             $this->WriteAttributeString('CatalogBindingInventory','[]');
