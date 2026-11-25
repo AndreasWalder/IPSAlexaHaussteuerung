@@ -116,8 +116,6 @@ trait RCCMarkedDeviceInspectionTrait
         try {
             $this->ensureRuntimeCatalogCurrent();
             $selected=$this->bulkSelectionKeys();
-            if ($selected===[]) throw new RuntimeException(
-                'Keine Geräte markiert. Bitte zuerst Häkchen in der Geräteliste setzen.');
             $entries=[];
             $sourceSelection=json_decode($this->ReadAttributeString('OverviewSourceSelections'),true);
             if (!is_array($sourceSelection))$sourceSelection=[];
@@ -138,6 +136,14 @@ trait RCCMarkedDeviceInspectionTrait
                 $key=$this->buildCompositeKey($row);
                 if ($key!==null && in_array($key,$selected,true))$entries[]=$row;
             }
+            if ($entries===[])throw new RuntimeException(
+                'Keine Geräte markiert. Bitte zuerst Häkchen in der Geräteliste setzen.');
+            // Virtual data-source selections are stored separately from
+            // RuntimeEntries. Do not reject them due to an empty bulk selection.
+            if (function_exists('IPS_LogMessage'))IPS_LogMessage('RoomsCatalog Prüfung',
+                'Auswahl erkannt: '.count($selected).' reguläre Geräte, '
+                .count($sourceSelection).' Datenquellen-Markierungen, '
+                .count($entries).' prüfbare Einträge.');
             $results=[];$checked=0;$ok=0;$issues=0;
             $archiveId=0;$archiveMap=[];
             if ($deep && function_exists('AC_GetAggregationVariables')) {
