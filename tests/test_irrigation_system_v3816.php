@@ -5,6 +5,7 @@ class IPSModule {}
 require_once __DIR__.'/../RoomsCatalogConfigurator/libs/SystemTreeDiscovery.php';
 require_once __DIR__.'/../RoomsCatalogConfigurator/libs/SystemTreeEditorTrait.php';
 require_once __DIR__.'/../RoomsCatalogConfigurator/libs/CatalogVariableBindingsTrait.php';
+require_once __DIR__.'/../RoomsCatalogConfigurator/libs/CatalogScalarValuesTrait.php';
 require_once __DIR__.'/../RoomsCatalogConfigurator/libs/DataSourceEditor.php';
 require_once __DIR__.'/../IPSAlexaHaussteuerung/src/VoiceRuleLiteralReader.php';
 require_once __DIR__.'/../IPSAlexaHaussteuerung/resources/helpers/KIHouseController.php';
@@ -153,6 +154,7 @@ test(count($scan['notes'])===1,'broken link is reported');
 class Editor {
     use RCCSystemTreeEditorTrait;
     use RCCCatalogVariableBindingsTrait;
+    use RCCCatalogScalarValuesTrait;
     public array $attr=[],$updates=[];
     public int $listRefreshes=0;
     public function ReadPropertyInteger(string $key): int {return ['RoomsCatalogEditScriptID'=>10001,'RoomsCatalogScriptID'=>10002][$key]??0;}
@@ -496,6 +498,31 @@ $ed->ApplyCatalogVariableBinding(64600,60102,true);
 test($scripts[10001]===$updatedSource
     && str_contains($ed->ReadAttributeString('CatalogBindingNotice'),'Typ/Profil'),
     'Incompatible sensor does not silently replace existing binding');
+// Unknown existing scalar fields can be edited safely through the GUI
+// without changing types, secret fields or unrelated catalog structures.
+$ed->ScanCatalogScalarValues('lamp');
+$scalarRows=json_decode($ed->ReadAttributeString('CatalogScalarRows'),true);
+$titleField=array_values(array_filter($scalarRows,static fn(array $row)=>
+    str_ends_with($row['path'],' / title')))[0]??null;
+test(is_array($titleField) && $titleField['value']==='Lamp',
+    'Lazy scalar editor must discover an existing field');
+test(!str_contains(json_encode($scalarRows),'private-test-secret'),
+    'Scalar inventory may not include secret values');
+$ed->SaveCatalogScalarValue($titleField['pathKey'],'Lampe neu');
+$edited=IAHVoiceRuleLiteralReader::read($scripts[10001]);
+test($edited['rooms']['office']['domains']['licht']['switches']['lamp']['title']==='Lampe neu',
+    'Generic scalar editor updates only the selected EDIT field');
+test($scripts[10002]===$beforeGlobalProd,
+    'Generic scalar editor must not publish to PROD');
+$ed->ScanCatalogScalarValues('lamp');
+$scalarRows=json_decode($ed->ReadAttributeString('CatalogScalarRows'),true);
+$integerField=array_values(array_filter($scalarRows,static fn(array $row)=>
+    str_ends_with($row['path'],' / parentId')))[0]??null;
+test(is_array($integerField),'Generic scalar editor preserves integer metadata');
+$beforeInvalid=$scripts[10001];
+$ed->SaveCatalogScalarValue($integerField['pathKey'],'not-a-number');
+test($scripts[10001]===$beforeInvalid,
+    'Incompatible scalar formats must not alter EDIT');
 $scripts[10001]=$beforeGlobalEdit;
 test($scripts[10002]===$beforeGlobalProd,'Archive/PROD unaffected by central migration');
 
