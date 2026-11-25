@@ -642,6 +642,10 @@ class IPSAlexaHaussteuerung extends IPSModule
                             .'Der neueste steht oben. Aktive Skripte bleiben unveraendert.'],
                         ['type'=>'Button','caption'=>'BACKUPS ANZEIGEN',
                             'onClick'=>'IAH_RefreshSystemConfigurationBackups($id);'],
+                        ['type'=>'Button','caption'=>'ALTE BACKUPS AUF MAXIMAL 5 AUFRÄUMEN',
+                            'confirm'=>'Alte SystemConfiguration-Sicherungsstände dauerhaft entfernen? '
+                                .'Die fünf neuesten bleiben erhalten. EDIT und PROD bleiben unverändert.',
+                            'onClick'=>'IAH_PruneSystemConfigurationBackups($id);'],
                         ['type'=>'List','name'=>'SystemBackupRows','caption'=>'Gesicherte Staende (neueste zuerst)',
                             'rowCount'=>5,'add'=>false,'delete'=>false,
                             'loadValuesFromConfiguration'=>false,'values'=>[],
@@ -728,6 +732,38 @@ class IPSAlexaHaussteuerung extends IPSModule
         } catch (\Throwable $e) {
             $this->updateSystemNavigationNotice('Neuer Tab abgebrochen: ' . $e->getMessage());
         }
+    }
+
+    /** Explicit cleanup of the existing verified SystemConfiguration backup container. */
+    public function PruneSystemConfigurationBackups(): void
+    {
+        try {
+            $ctx=$this->navigationEditorContext();
+            $backupId=(int)($ctx['ids']['backup']??0);
+            if($backupId<=0 || !IPS_ScriptExists($backupId))
+                throw new \RuntimeException('SystemConfiguration_Backup fehlt.');
+            $original=$this->getScriptContent($backupId);
+            $backup=$this->readConfigurationArrayFromScript($backupId);
+            if(!is_array($backup)||!is_array($backup['snapshots']??null))
+                throw new \RuntimeException('SystemConfiguration_Backup ist nicht lesbar.');
+            $before=count($backup['snapshots']);
+            $backup['snapshots']=$this->normalizeSystemBackupSnapshots($backup['snapshots']);
+            $new=IAHSystemNavigationEditor::encode($backup);
+            if($new!==$original){
+                IPS_SetScriptContent($backupId,$new);
+                if($this->getScriptContent($backupId)!==$new){
+                    IPS_SetScriptContent($backupId,$original);
+                    throw new \RuntimeException('Schreibprüfung fehlgeschlagen; Backup wiederhergestellt.');
+                }
+            }
+            $message='SystemConfiguration-Backups: vorher '.$before.', jetzt '
+                .count($backup['snapshots']).'. EDIT und PROD unveraendert.';
+            $this->RefreshSystemConfigurationBackups();
+        }catch(\Throwable $error){
+            $message='SystemConfiguration-Backup-Aufraeumen: '.$error->getMessage();
+        }
+        IPS_LogMessage('Alexa',$message);
+        echo $message;
     }
 
     /** Explicit on-demand backup list; do not parse the backup during form load. */
