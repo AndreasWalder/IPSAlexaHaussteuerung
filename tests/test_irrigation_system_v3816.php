@@ -540,6 +540,27 @@ test($samePoint['parent']===61000 && $samePoint['ident']==='Temp1'
     && !empty($samePoint['manualEdit']),
     'Refreshing same ID must persist parent and object ident in EDIT');
 test($scripts[10002]===$beforeGlobalProd,'Same-ID refresh must not touch PROD');
+// A physical replacement rekeys the point but must not reactivate the old sensor.
+$ed->PreviewCatalogVariableBinding(60104,64600);
+$ed->ApplyCatalogVariableBinding(60104,64600,true);
+$rekeyed=IAHVoiceRuleLiteralReader::read($scripts[10001]);
+$sourceAfter=$rekeyed['dataSources']['irrigation_41578'];
+test(isset($sourceAfter['points'][64600])&&!isset($sourceAfter['points'][60104])
+    && isset($sourceAfter['excludedPoints'][60104])
+    && empty($sourceAfter['points'][64600]['actionCandidate']),
+    'Replacing a physical variable must retain the exclusion and block unverified actions');
+// Writable controls require physical reapproval after sensor migration.
+$controlCatalog=['rooms'=>['office'=>['domains'=>['licht'=>['switches'=>[
+    'lamp'=>['controlId'=>60104,'kiReadOnly'=>false,'aiReviewed'=>true]
+]]]]]];
+$scripts[10001]="<?php return ".var_export($controlCatalog,true).";";
+$ed->PreviewCatalogVariableBinding(60104,64600);
+$ed->ApplyCatalogVariableBinding(60104,64600,true);
+$controlLeaf=IAHVoiceRuleLiteralReader::read($scripts[10001])
+    ['rooms']['office']['domains']['licht']['switches']['lamp'];
+test($controlLeaf['controlId']===64600
+    && $controlLeaf['kiReadOnly']===true && $controlLeaf['aiReviewed']===false,
+    'Migrated control output must require fresh safety approval');
 $scripts[10001]=$beforeGlobalEdit;
 test($scripts[10002]===$beforeGlobalProd,'Archive/PROD unaffected by central migration');
 
