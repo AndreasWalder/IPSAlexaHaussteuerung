@@ -370,7 +370,11 @@ final class IAHIrrigationQuery
     private static function heaterMeter(array $system,array $inventory): ?array
     {
         $points=(array)($system['points']??[]);
-        $garden=(int)($system['sourceRootId']??0)===(41 * 1000 + 578) || in_array((52 * 1000 + 811),(array)($system['controllers']??[]),true);
+        // Historic installations used root #41578; current irrigation uses
+        // IPSBewaesserung #52811. Keep both for migrated PROD catalogs.
+        $roots=[41578,52811];
+        $garden=in_array((int)($system['sourceRootId']??0),$roots,true)
+            || array_intersect($roots,array_map('intval',(array)($system['controllers']??[])))!==[];
         $namedArchive=[];
         if ($garden) {
             $namedArchive=self::heaterMeterLinks((int)($system['sourceRootId']??0));
