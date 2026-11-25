@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/../RoomsCatalogConfigurator/libs/CatalogVariableBindingsTrait.php';
 require_once __DIR__.'/../RoomsCatalogConfigurator/libs/MarkedDeviceInspectionTrait.php';
+require_once __DIR__.'/../RoomsCatalogConfigurator/libs/SensorHealthCheckTrait.php';
 
 function testCheck(bool $condition,string $message): void {
     if (!$condition)throw new RuntimeException($message);
@@ -13,14 +14,16 @@ function IPS_GetObject(int $id): array {
     return ['ParentID'=>50000,'ObjectName'=>'Sensor #'.$id];
 }
 function IPS_GetVariable(int $id): array {
-    return ['VariableType'=>2,'VariableProfile'=>'~Temperature'];
+    return $GLOBALS['healthVariables'][$id]??['VariableType'=>2,'VariableProfile'=>'~Temperature'];
 }
+function GetValue(int $id): mixed {return $GLOBALS['healthValues'][$id]??21.5;}
 function IPS_VariableProfileExists(string $name): bool {return true;}
 function IPS_GetName(int $id): string {return 'Sensor #'.$id;}
 function IPS_LogMessage(string $sender,string $message): void {}
 class InspectionHarness {
     use RCCCatalogVariableBindingsTrait;
     use RCCMarkedDeviceInspectionTrait;
+    use RCCSensorHealthCheckTrait;
     public array $attributes=['OverviewSourceSelections'=>'{}'];
     public array $updates=[];
     public array $catalog=['dataSources'=>[]];
@@ -97,5 +100,42 @@ testCheck(count(array_filter($r['rows'],static fn(array $row)=>
 testCheck(count(array_filter($r['rows'],static fn(array $row)=>
     (int)$row['variableId']===70001))===0,
     'Existing script should not appear as a missing variable');
+
+// Health mode: check freshness only with a declared expected interval.
+$h->runtime=[];
+$h->catalog['dataSources']['irrigation_52811']=[
+    'provider'=>'ObjectTreeIrrigation','points'=>[
+        60001=>['id'=>60001,'role'=>'stationTemperature',
+            'expectedIntervalSeconds'=>3600],
+        60003=>['id'=>60003,'role'=>'sensorBattery','unit'=>'%']
+    ]];
+$GLOBALS['healthVariables']=[
+    60001=>['VariableType'=>2,'VariableProfile'=>'~Temperature',
+        'VariableUpdated'=>time()-7200],
+    60003=>['VariableType'=>1,'VariableProfile'=>'~Battery',
+        'VariableUpdated'=>time()-120]
+];
+$GLOBALS['healthValues']=[60001=>21.5,60003=>12];
+$h->RunMarkedDeviceInspection(false,true);
+$health=json_decode($h->ReadAttributeString('MarkedInspectionResult'),true,512,JSON_THROW_ON_ERROR);
+testCheck($health['health']===true && $health['healthChecked']===2,
+    'Health check must assess each selected distinct variable');
+testCheck(count(array_filter($health['rows'],static fn($r)=>
+    (int)($r['variableId']??0)===60001
+    && str_contains($r['finding'],'Aktualisierung')))===1,
+    'Stale active temperature must be flagged with its configured interval');
+testCheck(count(array_filter($health['rows'],static fn($r)=>
+    (int)($r['variableId']??0)===60003
+    && str_contains($r['finding'],'Batteriestand')))===1,
+    'Low battery must be flagged with actionable explanation');
+$h->catalog['dataSources']['irrigation_52811']['points'][60001]['role']='zoneStatus';
+$h->catalog['dataSources']['irrigation_52811']['points'][60001]['expectedIntervalSeconds']=0;
+$h->catalog['dataSources']['irrigation_52811']['points'][60003]['role']='zoneStatus';
+$GLOBALS['healthVariables'][60001]['VariableType']=0;
+$GLOBALS['healthVariables'][60003]['VariableType']=0;
+$h->RunMarkedDeviceInspection(false,true);
+$switches=json_decode($h->ReadAttributeString('MarkedInspectionResult'),true,512,JSON_THROW_ON_ERROR);
+testCheck($switches['issues']===0,
+    'Seasonal switch values without configured freshness must not raise health alarms');
 
 echo "PASS marked device inspection\n";
