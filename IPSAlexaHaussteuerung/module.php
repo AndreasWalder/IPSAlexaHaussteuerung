@@ -636,6 +636,21 @@ class IPSAlexaHaussteuerung extends IPSModule
                     'caption' => $this->systemNavigationEditorSummary($context)],
                 ['type' => 'Label', 'name' => 'SystemNavigationEditorNotice',
                     'caption' => $notice, 'visible' => $notice !== ''],
+                ['type'=>'ExpansionPanel','caption'=>'SystemConfiguration-Backups (maximal 5)',
+                    'expanded'=>false,'items'=>[
+                        ['type'=>'Label','caption'=>'EDIT und PROD teilen sich fuenf Sicherungsstaende. '
+                            .'Der neueste steht oben. Aktive Skripte bleiben unveraendert.'],
+                        ['type'=>'Button','caption'=>'BACKUPS ANZEIGEN',
+                            'onClick'=>'IAH_RefreshSystemConfigurationBackups($id);'],
+                        ['type'=>'List','name'=>'SystemBackupRows','caption'=>'Gesicherte Staende (neueste zuerst)',
+                            'rowCount'=>5,'add'=>false,'delete'=>false,
+                            'loadValuesFromConfiguration'=>false,'values'=>[],
+                            'columns'=>[
+                                ['name'=>'name','caption'=>'Datum / Uhrzeit · Sicherung','width'=>'auto','save'=>false],
+                                ['name'=>'source','caption'=>'Quelle','width'=>'100px','save'=>false],
+                                ['name'=>'sha','caption'=>'SHA-256','width'=>'115px','save'=>false]
+                            ]]
+                    ]],
                 ['type' => 'List', 'name' => 'SystemNavigationEditRows',
                     'caption' => 'Navigationsbereiche',
                     'rowCount' => 12, 'loadValuesFromConfiguration' => false,
@@ -712,6 +727,37 @@ class IPSAlexaHaussteuerung extends IPSModule
             $this->ReloadSystemNavigationEditor();
         } catch (\Throwable $e) {
             $this->updateSystemNavigationNotice('Neuer Tab abgebrochen: ' . $e->getMessage());
+        }
+    }
+
+    /** Explicit on-demand backup list; do not parse the backup during form load. */
+    public function RefreshSystemConfigurationBackups(): void
+    {
+        try {
+            $ctx=$this->navigationEditorContext();
+            $ids=$ctx['ids']??[];
+            $backup=$this->readConfigurationArrayFromScript((int)($ids['backup']??0));
+            $rows=[];
+            foreach(array_reverse((array)($backup['snapshots']??[])) as $snapshot){
+                if(!is_array($snapshot))continue;
+                $id=(int)($snapshot['sourceScriptId']??0);
+                $source=$id===(int)($ids['prod']??0)?'PROD':
+                    ($id===(int)($ids['edit']??0)?'EDIT':'Skript #'.$id);
+                $label=(string)($snapshot['name']??'');
+                if($label===''){
+                    $stamp=strtotime((string)($snapshot['createdAt']??''))?:0;
+                    $label=($stamp>0?date('Y-m-d_H-i-s',$stamp):'Datum unbekannt')
+                        .' SystemConfiguration_'.$source.'_Backup_'
+                        .(string)($snapshot['reason']??'Legacy');
+                }
+                $rows[]=['name'=>$label,'source'=>$source,
+                    'sha'=>substr((string)($snapshot['sha256']??''),0,12)];
+            }
+            $this->UpdateFormField('SystemBackupRows','values',
+                json_encode(array_slice($rows,0,5),JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE));
+        }catch(\Throwable $error){
+            $this->UpdateFormField('SystemBackupRows','values','[]');
+            IPS_LogMessage('Alexa','SystemConfiguration-Backup-Liste: '.$error->getMessage());
         }
     }
 
