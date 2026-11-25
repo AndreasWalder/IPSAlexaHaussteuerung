@@ -15,6 +15,7 @@ require_once __DIR__ . '/libs/DataSourceEditorTrait.php';
 require_once __DIR__ . '/libs/SystemTreeDiscovery.php';
 require_once __DIR__ . '/libs/SystemTreeEditorTrait.php';
 require_once __DIR__ . '/libs/CatalogVariableBindingsTrait.php';
+require_once __DIR__ . '/libs/CatalogScalarValuesTrait.php';
 require_once __DIR__ . '/libs/HeatingSystemEditorTrait.php';
 require_once __DIR__ . '/libs/HomeConnectEditorTrait.php';
 require_once __DIR__ . '/libs/HouseholdEditorTrait.php';
@@ -99,6 +100,7 @@ class RoomsCatalogConfigurator extends IPSModule
     use RCCDataSourceEditorTrait;
     use RCCSystemTreeEditorTrait;
     use RCCCatalogVariableBindingsTrait;
+    use RCCCatalogScalarValuesTrait;
     use RCCHeatingSystemEditorTrait;
     use RCCHomeConnectEditorTrait;
     use RCCHouseholdEditorTrait;
@@ -171,6 +173,9 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('CatalogBindingSelected','0');
         $this->RegisterAttributeString('CatalogBindingNotice','Noch keine Variablenanalyse durchgeführt.');
         $this->RegisterAttributeString('CatalogBindingLog','[]');
+        $this->RegisterAttributeString('CatalogScalarHash','');
+        $this->RegisterAttributeString('CatalogScalarRows','[]');
+        $this->RegisterAttributeString('CatalogScalarNotice','Noch keine Katalogfelder geladen.');
         $this->RegisterAttributeString('HuaweiDataSourceReport','');
         $this->RegisterAttributeString('HuaweiDataSourceNotice','Noch kein HuaweiPV-Scan gestartet.');
         $this->RegisterAttributeString('CatalogRestoreNotice','Noch kein Backup zur Wiederherstellung ausgewaehlt.');
@@ -6424,6 +6429,7 @@ class RoomsCatalogConfigurator extends IPSModule
 
         $main[]=$this->buildVoiceTestPanel();
         $main[]=$this->rccBindingPanel();
+        $main[]=$this->rccScalarPanel();
         $main[]=$this->buildSystemTreePanel();
         $main[]=$this->buildHeatingSystemPanel($editCatalog, $prodCatalog);
         $main[]=$this->buildHomeConnectPanel();
