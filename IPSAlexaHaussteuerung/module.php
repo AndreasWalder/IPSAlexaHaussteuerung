@@ -2488,7 +2488,8 @@ PHP;
         $initialBackup = [
             'schemaVersion' => 1,
             'snapshots' => [[
-                'createdAt' => gmdate('c'),
+                'name' => date('Y-m-d_H-i-s').' SystemConfiguration_PROD_Backup_initial',
+                'createdAt' => date('c'),
                 'reason' => 'initial_v3_3_3',
                 'sourceScriptId' => $sourceId,
                 'sha256' => hash('sha256', $source),
