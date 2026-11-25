@@ -53,8 +53,17 @@ trait RCCCatalogVariableBindingsTrait
                 $name=(string)$key;
                 $id=self::rccIsId($value);
                 $container=(string)($path[count($path)-1]??'');
+                $nonVariableField=in_array(strtolower($name),[
+                    'parent','parentid','sourcerootid','archiveid','archiveinstanceid',
+                    'scriptid','instanceid','roomid','zone','order','sortorder',
+                    'sourceid','eventid','controllerid','deviceid','moduleid',
+                    'timestamp','duration','timeout','count','port','threshold',
+                    'minutes','seconds','day','month','year'],true);
                 if ($id>0 && ($id>=10000 || IPS_VariableExists($id))
-                    && (self::rccVariableKey($name,$path) || $container==='voiceActions'))
+                    && !$nonVariableField
+                    && (self::rccVariableKey($name,$path)
+                        || $container==='voiceActions'
+                        || (IPS_VariableExists($id) && count($path)>=3)))
                     $refs[]=['id'=>$id,'path'=>$at,'kind'=>'value'];
                 if (ctype_digit($name) && self::rccIsId($name)>0
                     && in_array($container,['points','heater'],true))
@@ -158,14 +167,16 @@ trait RCCCatalogVariableBindingsTrait
             if (!$new['exists'])throw new RuntimeException('Neue Variable existiert nicht.');
             try {
                 [$archiveId,$archiveInventory]=$this->systemTreeArchive();
-                foreach (['old'=>&$old,'new'=>&$new] as &$info) {
-                    $entry=is_array($archiveInventory)?($archiveInventory[$info['id']]??null):null;
-                    $info['archive']=$entry===null?'Keine Archivdaten / nicht gefunden'
+                foreach ([$oldId,$newId] as $archiveVariableId) {
+                    $entry=is_array($archiveInventory)
+                        ?($archiveInventory[$archiveVariableId]??null):null;
+                    $archiveText=$entry===null?'Keine Archivdaten / nicht gefunden'
                         :('Archiv #'.$archiveId.'; Logging '
                           .(!empty($entry['AggregationActive'])?'aktiv':'inaktiv')
                           .'; '.(int)($entry['RecordCount']??0).' Werte');
+                    if ($archiveVariableId===$oldId)$old['archive']=$archiveText;
+                    if ($archiveVariableId===$newId)$new['archive']=$archiveText;
                 }
-                unset($info);
             } catch (Throwable $archiveError) {
                 $old['archive']=$new['archive']='Archiv konnte nicht gelesen werden';
             }
