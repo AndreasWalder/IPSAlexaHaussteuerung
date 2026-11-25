@@ -204,6 +204,42 @@ test($s['historySignals']['heater'][63101]['mode']==='heaterPower'&&$s['voiceAct
 $form=json_decode($ed->GetSystemTreeEditForm($key),true,512,JSON_THROW_ON_ERROR);
 test(array_is_list($form)&&str_contains(json_encode($form),'Winter und Stationen')
     && str_contains(json_encode($form),'Kreis 4')&&str_contains(json_encode($form),'SelectVariable'),'Grouped List.form fields');
+// Rebinding a sensor leaves PROD and the old archive values unchanged.
+variable(64500,61000,'Ersatz Temperatur','NewTemp',2,12.5,'~Temperature');
+$replacement=['enabled'=>true,'allowAction'=>false,'role'=>'stationTemperature',
+    'zone'=>0,'archiveMode'=>'none','replacementId'=>64500];
+$beforeProd=$scripts[10002];
+ob_start();$ed->SaveSystemTreePoint($key,60104,json_encode($replacement));$replaceNotice=ob_get_clean();
+$afterReplace=IAHVoiceRuleLiteralReader::read($scripts[10001])['dataSources'][$key];
+test(isset($afterReplace['points'][64500])&&!isset($afterReplace['points'][60104]),
+    'Sensor replacement must atomically re-key the EDIT point: '.$replaceNotice);
+test((int)$afterReplace['points'][64500]['parent']===61000
+    && (int)$afterReplace['points'][64500]['id']===64500,
+    'Replacement must refresh parent and technical ID');
+test(($afterReplace['excludedPoints'][60104]??'')!==''
+    && $scripts[10002]===$beforeProd,
+    'Replacement must exclude old sensor without changing PROD');
+// Re-selecting the same variable is allowed and refreshes metadata.
+$objects[64500]['ParentID']=70000;
+$refresh=$replacement;$refresh['refreshMetadata']=true;
+ob_start();$ed->SaveSystemTreePoint($key,64500,json_encode($refresh));$refreshNotice=ob_get_clean();
+$afterRefresh=IAHVoiceRuleLiteralReader::read($scripts[10001])['dataSources'][$key];
+test((int)$afterRefresh['points'][64500]['parent']===70000,
+    'Reusing the same ID with refresh must re-read parent metadata: '.$refreshNotice);
+// An incompatible numeric replacement gives actionable conversion guidance.
+variable(64501,70000,'Boolean Ersatz','BooleanTemp',0,false,'~Switch');
+$badReplacement=$replacement;$badReplacement['replacementId']=64501;
+ob_start();$ed->SaveSystemTreePoint($key,64500,json_encode($badReplacement));$badNotice=ob_get_clean();
+test(str_contains($badNotice,'Vorschlag:')
+    && isset(IAHVoiceRuleLiteralReader::read($scripts[10001])['dataSources'][$key]['points'][64500]),
+    'Incompatible replacement must offer a migration suggestion and leave EDIT intact');
+// String replacement must give a formatting suggestion rather than only a generic error.
+variable(64502,70000,'String Temperatur','TempString',3,'12,5');
+$badReplacement['replacementId']=64502;
+ob_start();$ed->SaveSystemTreePoint($key,64500,json_encode($badReplacement));$stringNotice=ob_get_clean();
+test(str_contains($stringNotice,'Stringwert')&&$scripts[10002]===$beforeProd,
+    'String migration proposal must preserve PROD and current EDIT binding');
+
 $rows=RCCDataSourceEditor::sourceRows($catalog);
 test(count($rows)===2&&$rows[1]['domain']==='bewaesserung','virtual irrigation source alongside Huawei');
 ob_start();$ed->PreviewSystemTree(41578);$ed->ImportSystemTreeToEdit(41578);ob_end_clean();
