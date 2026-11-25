@@ -138,4 +138,23 @@ sc333_check(str_contains($ui, 'Navigation & Tabs')
 sc333_check(IPS_GetScriptContent(501) === $source,
     'Showing permanent navigation UI may not modify SystemConfiguration');
 
+// Five-slot rolling retention applies to the shared SystemConfiguration
+// container across both EDIT and PROD snapshots.
+$retention=new ReflectionMethod(IPSAlexaHaussteuerung::class,'normalizeSystemBackupSnapshots');
+$eight=[];
+for($i=0;$i<8;$i++)$eight[]=[
+    'reason'=>'test'.$i,'createdAt'=>date('c',time()-8*86400+$i*86400),
+    'sourceScriptId'=>($i%2===0?$editId:501),
+    'phpSource'=>'<?php return [];','sha256'=>hash('sha256',(string)$i)
+];
+$five=$retention->invoke($module,$eight);
+sc333_check(count($five)===5 && ($five[0]['reason']??'')==='test3'
+    && ($five[4]['reason']??'')==='test7',
+    'Sixth SystemConfiguration backup must rotate oldest snapshot');
+foreach($five as $snapshot)sc333_check(
+    preg_match('/^\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2} SystemConfiguration_/',$snapshot['name']??'')===1,
+    'Every SystemConfiguration backup label must begin with local date and time');
+sc333_check(IPS_GetScriptContent(501)===$source,
+    'Normalizing backup history must never modify SystemConfiguration PROD');
+
 echo "SystemConfiguration staging/backup and permanent navigation UI without migrations: OK\n";
