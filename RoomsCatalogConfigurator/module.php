@@ -5360,7 +5360,7 @@ class RoomsCatalogConfigurator extends IPSModule
             echo 'Automatische Backup-Funktionen fehlen; aus Sicherheitsgruenden nichts gespeichert.';
             return;
         }
-        $backupId = RCCBackupRotation::create($editId,$originalSource,'EDIT','TechnicalV339',[$this->ReadPropertyInteger('RoomsCatalogScriptID'),$editId]);
+        $backupId = RCCBackupRotation::create($editId,$originalSource,'EDIT','Technical_V339',[$this->ReadPropertyInteger('RoomsCatalogScriptID'),$editId]);
         IPS_SetScriptContent($editId,$nextSource);
         if (IPS_GetScriptContent($editId) !== $nextSource) {
             IPS_SetScriptContent($editId,$originalSource);
