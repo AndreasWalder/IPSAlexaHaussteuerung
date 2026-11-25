@@ -3283,7 +3283,8 @@ function Execute($request = null)
                                     'model' => (string) ($propsEarly['KIModelSelection'] ?? 'gpt-6-luna'),
                                     'max_words' => (int) ($propsEarly['HomeAgentVoiceMaxWords'] ?? 20),
                                     'timeout_seconds' => (int) ($propsEarly['HomeAgentVoiceTimeoutSeconds'] ?? 6),
-                                    'device_diagnostics' => (bool) ($propsEarly['KIDetailedQueryDiagnostics'] ?? true),
+                                    'device_diagnostics' => (bool) ($propsEarly['KIDetailedQueryDiagnostics'] ?? false)
+                                        && strtolower((string)($propsEarly['LOG_LEVEL'] ?? 'info')) === 'debug',
                                     'allow_writes' => !$iahReadOnlyQuery && empty($housePlan['scope']) && !$iahPossibleFollowup
                                         && strcasecmp((string)$intentName, 'HausUndIntent') !== 0
                                         && $homeAgentAllowCommands,
