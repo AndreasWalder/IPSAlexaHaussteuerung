@@ -4337,7 +4337,10 @@ function Execute($request = null)
             $kiInputText = $rawUserText !== '' ? trim((string)$rawUserText) : $rawSlotsToText($rawSlotValues);
             $kiInputText = trim(preg_replace('/\s+/', ' ', (string)$kiInputText));
 
-            if ($kiInputText !== '') {
+            // A solitary prompt word is not a house command. Do not spend
+            // an OpenAI request on Alexa dialogue scaffolding such as "sagen".
+            if ($kiInputText !== '' && !preg_match(
+                '/^(?:sagen|sage|bitte|ja|nein|okay|ok)$/iu',$kiInputText)) {
                 $invokeKiParser($kiInputText, 'final_fallback');
                 if ($kiParserOverride !== null) {
                     $action = (string) ($kiParserOverride['action'] ?? $action);
