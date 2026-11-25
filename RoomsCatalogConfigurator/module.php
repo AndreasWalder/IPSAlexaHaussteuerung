@@ -176,6 +176,8 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('CatalogScalarHash','');
         $this->RegisterAttributeString('CatalogScalarRows','[]');
         $this->RegisterAttributeString('CatalogScalarNotice','Noch keine Katalogfelder geladen.');
+        $this->RegisterAttributeString('CatalogFormPerformance','');
+        $this->RegisterAttributeString('CatalogFormPerformanceLastLog','0');
         $this->RegisterAttributeString('HuaweiDataSourceReport','');
         $this->RegisterAttributeString('HuaweiDataSourceNotice','Noch kein HuaweiPV-Scan gestartet.');
         $this->RegisterAttributeString('CatalogRestoreNotice','Noch kein Backup zur Wiederherstellung ausgewaehlt.');
@@ -5577,6 +5579,7 @@ class RoomsCatalogConfigurator extends IPSModule
 
     public function GetConfigurationForm()
     {
+        $formStartedAt=microtime(true);
         $this->syncHouseholdToEdit();
         $this->syncWeatherStationsToEdit();
         $this->syncXSenseToEdit();
@@ -6602,8 +6605,22 @@ class RoomsCatalogConfigurator extends IPSModule
         ];
         $form['elements']=$main;
         $form['actions']=[];
-
-        return json_encode($form);
+        $payload=json_encode($form);
+        $durationMs=(int)round((microtime(true)-$formStartedAt)*1000);
+        $bytes=is_string($payload)?strlen($payload):0;
+        $this->WriteAttributeString('CatalogFormPerformance',json_encode([
+            'durationMs'=>$durationMs,'formBytes'=>$bytes,
+            'measuredAt'=>date('Y-m-d H:i:s')
+        ],JSON_UNESCAPED_UNICODE));
+        if (($durationMs>=1500 || $bytes>=800000)
+            && function_exists('IPS_LogMessage')
+            && time()-(int)$this->ReadAttributeString('CatalogFormPerformanceLastLog')>=300) {
+            $this->WriteAttributeString('CatalogFormPerformanceLastLog',(string)time());
+            IPS_LogMessage('RoomsCatalog','Konfigurator-Aufbau: '.$durationMs
+                .' ms, JSON '.round($bytes/1024).' KiB. '
+                .'Variablen- und Werte-Suche nur auf Anforderung.');
+        }
+        return $payload;
     }
 
     // =====================================================================
