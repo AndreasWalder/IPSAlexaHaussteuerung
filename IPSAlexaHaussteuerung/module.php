@@ -1442,14 +1442,45 @@ class IPSAlexaHaussteuerung extends IPSModule
         $parent=(int)IPS_GetParent($scriptId);
         IPS_SetParent($backupId,$parent);
         IPS_SetName($backupId,
-            'AlexaActionBackup_'.preg_replace('/[^A-Za-z0-9_]/','',$reason)
-            .'_'.gmdate('Ymd_His').'_#'.$scriptId);
+            date('Y-m-d_H-i-s').' AlexaActionBackup_'
+            .preg_replace('/[^A-Za-z0-9_]/','',$reason).'_#'.$scriptId);
         if(function_exists('IPS_SetHidden'))IPS_SetHidden($backupId,true);
         IPS_SetScriptContent($backupId,$originalSource);
         if($this->getScriptContent($backupId)!==$originalSource
             || $this->getScriptContent($scriptId)!==$originalSource)
             throw new RuntimeException('Action-Backup nicht verifiziert; Original bleibt unveraendert.');
+        $this->pruneActionBackupScripts($scriptId,$backupId);
         return $backupId;
+    }
+
+    /** Keep five verified Alexa Action script backups in their original folder. */
+    private function pruneActionBackupScripts(int $sourceId,int $newBackupId): void
+    {
+        if(!function_exists('IPS_DeleteScript')||!function_exists('IPS_GetChildrenIDs')
+            ||!function_exists('IPS_ScriptExists')||!function_exists('IPS_GetName'))return;
+        $found=[];
+        foreach((array)IPS_GetChildrenIDs((int)IPS_GetParent($sourceId)) as $id) {
+            $id=(int)$id;
+            if($id<1||$id===$sourceId||!IPS_ScriptExists($id))continue;
+            $name=(string)IPS_GetName($id);
+            if(!preg_match('/^(?:20\\d{2}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}\\s+)?AlexaActionBackup_/',$name))continue;
+            $stamp='00000000000000';
+            if(preg_match('/(20\\d{2})-(\\d{2})-(\\d{2})_(\\d{2})-(\\d{2})-(\\d{2})/',$name,$m))
+                $stamp=implode('',array_slice($m,1,6));
+            elseif(preg_match('/(20\\d{6})_(\\d{6})/',$name,$m))
+                $stamp=$m[1].$m[2];
+            $found[$id]=$stamp.sprintf('%010d',$id);
+        }
+        arsort($found,SORT_STRING);
+        foreach(array_slice(array_keys($found),5) as $id) {
+            if($id===$sourceId || $id===$newBackupId || !IPS_ScriptExists($id))continue;
+            try {
+                IPS_DeleteScript($id,true);
+            }catch(\Throwable $error){
+                IPS_LogMessage('Alexa','Action-Backup #'.$id.' konnte nicht entfernt werden: '
+                    .$error->getMessage());
+            }
+        }
     }
 
     private function patchActionScriptVoiceRules(int $scriptId): void
