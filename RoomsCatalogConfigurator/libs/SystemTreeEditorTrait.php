@@ -596,6 +596,7 @@ trait RCCSystemTreeEditorTrait
             if (($catalog['dataSources'][$key]['provider']??'')!=='ObjectTreeIrrigation'
                 || !isset($catalog['dataSources'][$key]['points'][$pid]))throw new RuntimeException('Datenpunkt fehlt in EDIT.');
             $s=&$catalog['dataSources'][$key];$p=&$s['points'][$pid];
+            $originalPoint=$p;
             $options=json_decode($json,true,16,JSON_THROW_ON_ERROR);
             if (!is_array($options)||!is_bool($options['enabled']??null)||!is_bool($options['allowAction']??null)
                 || !is_string($options['role']??null)||!is_int($options['zone']??null)
@@ -617,6 +618,10 @@ trait RCCSystemTreeEditorTrait
                 // must never inherit an unverified actuator permission.
                 foreach (['ident','parent','path','type','unit','profile'] as $field)
                     $p[$field]=$metadata[$field];
+                if (!$changingId && $metadata['unit']===''
+                    && !empty($originalPoint['manualUnit'])) {
+                    $p['unit']=$originalPoint['manualUnit'];
+                }
                 $p['id']=$replacementId;
                 $p['manualEdit']=true;
                 $p['manualSource']=true;
@@ -626,7 +631,7 @@ trait RCCSystemTreeEditorTrait
                 if ($p['role']!=='unknown'
                     && !self::systemTreeRoleMatches($p,(string)$options['role'])) {
                     throw new RuntimeException('Die Ersatzvariable passt nicht zur Rolle. '
-                        .self::systemTreeMigrationAdvice($s['points'][$pid],$metadata,
+                        .self::systemTreeMigrationAdvice($originalPoint,$metadata,
                             (string)$options['role']));
                 }
             }
@@ -725,7 +730,9 @@ trait RCCSystemTreeEditorTrait
                 $items[]=['type'=>'Label','caption'=>'Keine Stationstemperatur zugeordnet. Unter „Variable ergänzen“ kannst du einen vorhandenen Messwert auswählen.'];
             $items[]=['type'=>'Label','caption'=>'Sensor tauschen: Im Zahnrad unter „Variable / Ersatz“ '
                 .'auch die bisherige oder dieselbe Variable wählen. „Erneut einlesen“ aktualisiert '
-                .'Parent, Typ, Profil und Einheit. Archivhistorie bleibt an der ursprünglichen IPS-ID.'];
+                .'Parent, Typ, Profil und Einheit. Bei Typ-/Formatkonflikten wird ein '
+                .'Migrationsvorschlag angezeigt, aber keine automatische Konvertierung vorgenommen. '
+                .'Archivhistorie bleibt an der ursprünglichen IPS-ID.'];
             foreach ($groups as $group=>$title) {
                 $rows=[];
                 foreach ($s['points'] as $p) {
