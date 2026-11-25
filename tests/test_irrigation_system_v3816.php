@@ -523,6 +523,23 @@ $beforeInvalid=$scripts[10001];
 $ed->SaveCatalogScalarValue($integerField['pathKey'],'not-a-number');
 test($scripts[10001]===$beforeInvalid,
     'Incompatible scalar formats must not alter EDIT');
+// Same-ID refresh must also repair stale parent/ident metadata in catalog points.
+$pointCatalog=['rooms'=>[],'dataSources'=>['irrigation_41578'=>[
+    'provider'=>'ObjectTreeIrrigation',
+    'points'=>[60104=>['id'=>60104,'parent'=>0,
+        'ident'=>'obsolete','type'=>2,'profile'=>'~Temperature',
+        'label'=>'Pumpenschacht oben','role'=>'stationTemperature']],
+    'historySignals'=>['heater'=>[]],'voiceActions'=>[]
+]]];
+$scripts[10001]="<?php return ".var_export($pointCatalog,true).";";
+$ed->PreviewCatalogVariableBinding(60104,60104);
+$ed->ApplyCatalogVariableBinding(60104,60104,true);
+$afterSameId=IAHVoiceRuleLiteralReader::read($scripts[10001]);
+$samePoint=$afterSameId['dataSources']['irrigation_41578']['points'][60104];
+test($samePoint['parent']===61000 && $samePoint['ident']==='Temp1'
+    && !empty($samePoint['manualEdit']),
+    'Refreshing same ID must persist parent and object ident in EDIT');
+test($scripts[10002]===$beforeGlobalProd,'Same-ID refresh must not touch PROD');
 $scripts[10001]=$beforeGlobalEdit;
 test($scripts[10002]===$beforeGlobalProd,'Archive/PROD unaffected by central migration');
 
