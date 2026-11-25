@@ -34,7 +34,7 @@ function checkBackup(bool $ok,string $message): void{
     if(!$ok)throw new RuntimeException($message);
 }
 // A non-backup script in the same folder is never touched.
-$scriptContent[120]='<?php return "user content";';$parents[120]=301;$names[120]='RoomsCatalogCustomScript';
+$scriptContent[120]='<?php return "user content";';$parents[120]=301;$names[120]='RoomsCatalog_MyCustomBackup';
 for($i=0;$i<9;$i++){
     $sourceId=$i%2===0?101:102;
     $source=$scriptContent[$sourceId];
