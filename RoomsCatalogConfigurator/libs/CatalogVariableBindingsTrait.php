@@ -95,7 +95,7 @@ trait RCCCatalogVariableBindingsTrait
     }
 
     /** Lazy inventory: only executed by the explicit scan button. */
-    public function ScanCatalogVariableBindings(): void
+    public function ScanCatalogVariableBindings(string $filter=''): void
     {
         try {
             [$script,$old,$catalog]=$this->systemTreeEditContext();
@@ -109,7 +109,13 @@ trait RCCCatalogVariableBindingsTrait
             }
             ksort($counts,SORT_NUMERIC);
             $rows=[];
+            $filter=mb_strtolower(trim($filter),'UTF-8');
             foreach ($counts as $id=>$ref) {
+                if ($filter!=='' && !str_contains(mb_strtolower(
+                    (string)$id.' '.implode(' ',$ref['paths']),'UTF-8'),$filter)
+                    && (!IPS_VariableExists((int)$id)
+                        || !str_contains(mb_strtolower(IPS_GetName((int)$id),'UTF-8'),$filter)))
+                    continue;
                 $info=$this->rccBindingInfo((int)$id);
                 $rows[]=['variableId'=>(int)$id,'name'=>$info['name'],
                     'parent'=>$info['parent'],'type'=>$info['type'],
@@ -117,12 +123,14 @@ trait RCCCatalogVariableBindingsTrait
                     'paths'=>implode(' | ',$ref['paths']),
                     'status'=>$info['exists']?'Gültig':'FEHLT'];
             }
-            $this->WriteAttributeString('CatalogBindingInventory',json_encode($rows,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
-            $this->WriteAttributeString('CatalogBindingNotice',count($rows).' IDs gefunden. '
-                .'Für eine bestimmte Variable die ID anklicken oder unten eingeben.');
+            $visible=array_slice($rows,0,200);
+            $this->WriteAttributeString('CatalogBindingInventory',json_encode($visible,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
+            $this->WriteAttributeString('CatalogBindingNotice',count($rows).' IDs zur Suche passend, '
+                .count($visible).' angezeigt. Suche für weitere IDs eingrenzen. '
+                .'Bei ungültigen IDs kann die bisherige Nummer direkt eingegeben werden.');
             $this->rccBindingTrace('SCAN_OK',['count'=>count($rows)]);
             $this->UpdateFormField('CatalogBindingRows','values',
-                json_encode(array_slice($rows,0,200),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
+                json_encode($visible,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
             $this->UpdateFormField('CatalogBindingNotice','caption',
                 $this->ReadAttributeString('CatalogBindingNotice'));
         } catch (Throwable $e) {
@@ -327,8 +335,10 @@ trait RCCCatalogVariableBindingsTrait
                 ['type'=>'Label','caption'=>'Variablenzuordnungen und Fundstellen werden erst '
                     .'auf Knopfdruck ermittelt, damit das Hauptformular schneller bleibt. '
                     .'Auch ungültige IDs aus EDIT sind sichtbar. Nur nach EDIT speichern.'],
+                ['type'=>'ValidationTextBox','name'=>'CatalogBindingFilter',
+                    'caption'=>'ID, Name oder Katalogpfad suchen (optional)'],
                 ['type'=>'Button','caption'=>'VARIABLEN IM EDIT-KATALOG SUCHEN',
-                    'onClick'=>'RCC_ScanCatalogVariableBindings($id);'],
+                    'onClick'=>'RCC_ScanCatalogVariableBindings($id,(string)$CatalogBindingFilter);'],
                 ['type'=>'List','name'=>'CatalogBindingRows','caption'=>'Variablenreferenzen',
                     'rowCount'=>10,'loadValuesFromConfiguration'=>false,
                     'add'=>false,'delete'=>false,
