@@ -4,6 +4,7 @@ declare(strict_types=1);
 class IPSModule {}
 require_once __DIR__.'/../RoomsCatalogConfigurator/libs/SystemTreeDiscovery.php';
 require_once __DIR__.'/../RoomsCatalogConfigurator/libs/SystemTreeEditorTrait.php';
+require_once __DIR__.'/../RoomsCatalogConfigurator/libs/CatalogVariableBindingsTrait.php';
 require_once __DIR__.'/../RoomsCatalogConfigurator/libs/DataSourceEditor.php';
 require_once __DIR__.'/../IPSAlexaHaussteuerung/src/VoiceRuleLiteralReader.php';
 require_once __DIR__.'/../IPSAlexaHaussteuerung/resources/helpers/KIHouseController.php';
@@ -151,6 +152,7 @@ test(count($scan['notes'])===1,'broken link is reported');
 
 class Editor {
     use RCCSystemTreeEditorTrait;
+    use RCCCatalogVariableBindingsTrait;
     public array $attr=[],$updates=[];
     public int $listRefreshes=0;
     public function ReadPropertyInteger(string $key): int {return ['RoomsCatalogEditScriptID'=>10001,'RoomsCatalogScriptID'=>10002][$key]??0;}
@@ -457,4 +459,44 @@ record(47232,$today+240,2775.2);
 $pending=array_column($askEnergy($energyCatalog,'Status Rohrbegleitheizung')['displayRows'],'value','label');
 test($pending['Heizstarts heute']==='Lastspitze noch nicht abgeschlossen',
     'a matching spike with no logged fall yet does not appear as zero starts');
+// Central variable editor works on arbitrary catalog leaves without manually
+// editing RoomsCatalogEdit PHP, and keeps unrelated numeric IDs untouched.
+$beforeGlobalEdit=$scripts[10001];
+$beforeGlobalProd=$scripts[10002];
+$customCatalog=['rooms'=>['office'=>['display'=>'Office','domains'=>[
+    'licht'=>['switches'=>['lamp'=>[
+        'title'=>'Lamp','state'=>60104,'statusId'=>60104,
+        'parentId'=>60104,'scriptId'=>60104,
+    ]]]]]]];
+$scripts[10001]="<?php return ".var_export($customCatalog,true).";";
+variable(64600,61000,'Temperaturersatz','TemperatureReplaced',2,14.0,'~Temperature');
+$ed->ScanCatalogVariableBindings();
+$inventory=json_decode($ed->ReadAttributeString('CatalogBindingInventory'),true);
+$found=array_values(array_filter($inventory,static fn(array $x)=>(int)$x['variableId']===60104));
+test(count($found)===1 && $found[0]['references']===2,
+    'Central scan identifies both bindings but not parentId/scriptId');
+$ed->PreviewCatalogVariableBinding(60104,64600);
+$preview=json_decode($ed->ReadAttributeString('CatalogBindingPreview'),true);
+test(is_array($preview) && count($preview['rows'])===2,
+    'Central preview lists every changed field');
+$ed->ApplyCatalogVariableBinding(60104,64600,true);
+$changed=IAHVoiceRuleLiteralReader::read($scripts[10001]);
+$lamp=$changed['rooms']['office']['domains']['licht']['switches']['lamp'];
+test($lamp['state']===64600 && $lamp['statusId']===64600
+    && $lamp['parentId']===60104 && $lamp['scriptId']===60104,
+    'Central migration changes variable links but preserves unrelated IDs');
+test($scripts[10002]===$beforeGlobalProd,'Central replacement must never write PROD');
+$updatedSource=$scripts[10001];
+$ed->PreviewCatalogVariableBinding(64600,64600);
+$ed->ApplyCatalogVariableBinding(64600,64600,true);
+test($scripts[10001]===$updatedSource,
+    'Same ID refresh must not rewrite EDIT script or lose values');
+$ed->PreviewCatalogVariableBinding(64600,60102); // different profile and type
+$ed->ApplyCatalogVariableBinding(64600,60102,true);
+test($scripts[10001]===$updatedSource
+    && str_contains($ed->ReadAttributeString('CatalogBindingNotice'),'Typ/Profil'),
+    'Incompatible sensor does not silently replace existing binding');
+$scripts[10001]=$beforeGlobalEdit;
+test($scripts[10002]===$beforeGlobalProd,'Archive/PROD unaffected by central migration');
+
 echo "PASS V3.8.16: link/script graph, checked EDIT import, seasonal voice, rising edges and action guards\n";
