@@ -2062,6 +2062,8 @@ function Execute($request = null)
 
         $kiParserOverride = null;
         $kiParserConfig = is_array($V['KIIntentParser'] ?? null) ? $V['KIIntentParser'] : [];
+        // The same published RoomsCatalog used by the primary house-query backend.
+        $kiParserConfig['rooms_catalog_script_id']=(int)($S['ROOMS_CATALOG']??0);
         $kiParserScriptId = (int)($V['KIIntentParserScript'] ?? 0);
         $rawUserText = iah_extract_raw_user_text($request);
         $slotsEmpty = (
@@ -2078,7 +2080,10 @@ function Execute($request = null)
             }
 
             $log('debug', 'KIIntentParser.trigger.' . $reason, ['chars' => mb_strlen($text, 'UTF-8')]);
-            $kiResponseRaw = IPS_RunScriptWaitEx($kiParserScriptId, ['text' => $text, 'ki_cost_instance_id' => $instanceId]);
+            $kiResponseRaw = IPS_RunScriptWaitEx($kiParserScriptId, [
+                'text'=>$text,'ki_cost_instance_id'=>$instanceId,
+                'cfg'=>['rooms_catalog_script_id'=>(int)($kiParserConfig['rooms_catalog_script_id']??0)]
+            ]);
             $kiParsed = json_decode((string) $kiResponseRaw, true);
             if (is_array($kiParsed) && !empty($kiParsed['rate_limited'])) {
                 $log('warn', 'KIIntentParser.rate_limited', []);
