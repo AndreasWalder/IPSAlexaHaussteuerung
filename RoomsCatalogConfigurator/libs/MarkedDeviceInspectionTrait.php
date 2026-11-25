@@ -83,6 +83,33 @@ trait RCCMarkedDeviceInspectionTrait
         return $found;
     }
 
+    /** Include all physical points of a virtual datasource selection. */
+    private function rccInspectionSourceVariables(array $source): array
+    {
+        $refs=[];
+        foreach ((array)($source['points']??[]) as $key=>$point) {
+            if (!is_array($point))continue;
+            $id=(int)($point['id']??$key);
+            if ($id>0)$refs['point.'.(string)$key]=$id;
+        }
+        foreach ((array)($source['metrics']??[]) as $key=>$metric) {
+            if (!is_array($metric))continue;
+            foreach (['variableId','valueId','id'] as $field) {
+                $id=(int)($metric[$field]??0);
+                if ($id>0) $refs['metric.'.(string)$key.'.'.$field]=$id;
+            }
+        }
+        // Include additional nested source references where the stored
+        // fields explicitly represent a variable, without including the root.
+        foreach ($this->rccBindingRefs(['dataSources'=>['current'=>$source]]) as $ref) {
+            $id=(int)$ref['id'];
+            if ($id<=0)continue;
+            $path=implode('.',array_map('strval',(array)$ref['path']));
+            $refs[$path]=$id;
+        }
+        return $refs;
+    }
+
     public function RunMarkedDeviceInspection(bool $deep=false): void
     {
         $started=microtime(true);
@@ -92,6 +119,20 @@ trait RCCMarkedDeviceInspectionTrait
             if ($selected===[]) throw new RuntimeException(
                 'Keine Geräte markiert. Bitte zuerst Häkchen in der Geräteliste setzen.');
             $entries=[];
+            $sourceSelection=json_decode($this->ReadAttributeString('OverviewSourceSelections'),true);
+            if (!is_array($sourceSelection))$sourceSelection=[];
+            if ($sourceSelection!==[]) {
+                $catalog=$this->loadConfiguredCatalog('RoomsCatalogEditScriptID','EDIT');
+                foreach ($this->overviewSourceRows($catalog) as $row) {
+                    $key=$this->buildCompositeKey($row);
+                    if ($key===null || empty($sourceSelection[$key]))continue;
+                    $sourceKey=(string)($row['sourceKey']??$row['key']??'');
+                    $source=$catalog['dataSources'][$sourceKey]??null;
+                    if (!is_array($source))continue;
+                    $row['inspectionSource']=$source;
+                    $entries[]=$row;
+                }
+            }
             foreach ($this->getRuntimeEntries() as $row) {
                 if (!is_array($row))continue;
                 $key=$this->buildCompositeKey($row);
@@ -111,7 +152,9 @@ trait RCCMarkedDeviceInspectionTrait
             }
             foreach ($entries as $row) {
                 $device=(string)($row['title']??$row['key']??'Gerät');
-                $ids=$this->rccInspectionVariableFields($row);
+                $ids=isset($row['inspectionSource'])
+                    ?$this->rccInspectionSourceVariables($row['inspectionSource'])
+                    :$this->rccInspectionVariableFields($row);
                 if ($ids===[]) {
                     $results[]=['severity'=>'Hinweis','device'=>$device,'field'=>'Zuordnung',
                         'variableId'=>0,'finding'=>'Keine typisierte Variablen-ID gefunden. '
