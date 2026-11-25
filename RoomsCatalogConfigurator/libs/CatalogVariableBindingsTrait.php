@@ -280,6 +280,59 @@ trait RCCCatalogVariableBindingsTrait
         return $updated;
     }
 
+    /**
+     * A replacement in an actionable control binding must not silently keep
+     * the old approval for the new hardware. Lock that device in EDIT until
+     * the real action is verified in the normal device editor.
+     */
+    private static function rccRequireNewControlApproval(array &$catalog,int $newId,array $refs): int
+    {
+        $actionFields=['controlid','aicontrolid','toggle','set','aitoggleid'];
+        $hasAction=false;
+        foreach ($refs as $ref) {
+            $path=(array)($ref['path']??[]);
+            $last=strtolower((string)end($path));
+            if (in_array($last,$actionFields,true)){$hasAction=true;break;}
+        }
+        if (!$hasAction)return 0;
+        $rooms=&$catalog;
+        if (isset($catalog['rooms']) && is_array($catalog['rooms']))
+            $rooms=&$catalog['rooms'];
+        $locked=0;
+        foreach ($rooms as &$room) {
+            if (!is_array($room)||!is_array($room['domains']??null))continue;
+            foreach ($room['domains'] as $domainKey=>&$domain) {
+                if (!is_array($domain))continue;
+                foreach ($domain as &$group) {
+                    if (!is_array($group))continue;
+                    if (in_array((string)$domainKey,['heizung','jalousie'],true)) {
+                        $entries=[&$group];
+                    } else $entries=&$group;
+                    foreach ($entries as &$leaf) {
+                        if (!is_array($leaf))continue;
+                        $found=false;
+                        foreach ($leaf as $key=>$value) {
+                            if (in_array(strtolower((string)$key),$actionFields,true)
+                                && self::rccIsId($value)===$newId) {
+                                $found=true;break;
+                            }
+                        }
+                        if ($found) {
+                            $leaf['kiReadOnly']=true;
+                            $leaf['aiReviewed']=false;
+                            $locked++;
+                        }
+                    }
+                    unset($leaf);
+                }
+                unset($group);
+            }
+            unset($domain);
+        }
+        unset($room);
+        return $locked;
+    }
+
     public function ApplyCatalogVariableBinding(int $oldId,int $newId,bool $confirmed): void
     {
         try {
@@ -325,6 +378,7 @@ trait RCCCatalogVariableBindingsTrait
                 throw new RuntimeException('Fundstellen haben sich verändert.');
             foreach ($refs as $ref)
                 self::rccReplaceBindingPath($catalog,$ref['path'],$ref['kind'],$oldId,$newId);
+            $lockedControls=self::rccRequireNewControlApproval($catalog,$newId,$refs);
             // New physical variable metadata is refreshed after reference re-keying.
             self::rccRefreshPointMetadata($catalog,$newId,$new);
             // A replaced physical sensor should not be re-imported at the
@@ -350,6 +404,8 @@ trait RCCCatalogVariableBindingsTrait
             $this->WriteAttributeString('CatalogBindingInventory','[]');
             $this->WriteAttributeString('CatalogBindingNotice',
                 count($refs).' Verweise in EDIT ersetzt. PROD unverändert. '
+                .($lockedControls>0?$lockedControls.' betroffene Steuergeräte sind vor '
+                    .'erneuter Schaltfreigabe am echten Gerät zu prüfen. ':'')
                 .'Archivhistorie und PHP-Skripte außerhalb RoomsCatalog bleiben unverändert.');
             $this->rccBindingTrace('EDIT_SAVED',['oldId'=>$oldId,'newId'=>$newId,'references'=>count($refs)]);
         } catch (Throwable $e) {
