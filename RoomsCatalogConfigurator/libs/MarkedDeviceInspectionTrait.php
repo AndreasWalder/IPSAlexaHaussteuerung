@@ -99,15 +99,42 @@ trait RCCMarkedDeviceInspectionTrait
                 if ($id>0) $refs['metric.'.(string)$key.'.'.$field]=$id;
             }
         }
-        // Include additional nested source references where the stored
-        // fields explicitly represent a variable, without including the root.
+        // Include additional variable references, but NEVER interpret a
+        // script, instance or parent object ID as a variable.
         foreach ($this->rccBindingRefs(['dataSources'=>['current'=>$source]]) as $ref) {
             $id=(int)$ref['id'];
             if ($id<=0)continue;
-            $path=implode('.',array_map('strval',(array)$ref['path']));
+            $parts=array_map('strval',(array)$ref['path']);
+            if (array_intersect(['scripts','instances','excludedPoints'],$parts))continue;
+            $last=strtolower((string)end($parts));
+            if (in_array($last,['scriptid','instanceid','parentid','wfcid'],true))continue;
+            $path=implode('.',$parts);
             $refs[$path]=$id;
         }
         return $refs;
+    }
+
+    /** Check scripts against the correct Symcon object type, once each. */
+    private function rccInspectionSourceScripts(array $source): array
+    {
+        $scripts=[];
+        foreach ((array)($source['scripts']??[]) as $key=>$entry) {
+            $id=is_array($entry)?(int)($entry['id']??$key):(int)$entry;
+            if ($id>0)$scripts[$id]=true;
+        }
+        return array_keys($scripts);
+    }
+
+    /** Historic data is required only when explicitly configured for a point. */
+    private function rccInspectionArchivePolicy(array $source,int $id): array
+    {
+        $point=$source['points'][$id]??null;
+        if (!is_array($point))return ['required'=>false,'maxAge'=>0];
+        $mode=strtolower((string)($point['archiveMode']??''));
+        $required=!empty($point['archiveRequired'])
+            || in_array($mode,['required','history','heaterpower','manual'],true);
+        $maxAge=(int)($point['maxAgeSeconds']??$point['expectedIntervalSeconds']??0);
+        return ['required'=>$required,'maxAge'=>max(0,$maxAge)];
     }
 
     public function RunMarkedDeviceInspection(bool $deep=false): void
@@ -144,38 +171,50 @@ trait RCCMarkedDeviceInspectionTrait
                 'Auswahl erkannt: '.count($selected).' reguläre Geräte, '
                 .count($sourceSelection).' Datenquellen-Markierungen, '
                 .count($entries).' prüfbare Einträge.');
-            $results=[];$checked=0;$ok=0;$issues=0;
+            $results=[];$checked=0;$ok=0;$issues=0;$scriptCount=0;
+            $referenceCount=0;$severityCounts=['FEHLER'=>0,'Prüfen'=>0,'Hinweis'=>0];
             $archiveId=0;$archiveMap=[];
             if ($deep && function_exists('AC_GetAggregationVariables')) {
                 try {
                     [$archiveId,$archiveMap]=$this->systemTreeArchive();
                 } catch (Throwable $error) {
+                    // Archive availability is not a failure of any sensor.
                     $results[]=['severity'=>'Hinweis','device'=>'Archiv',
                         'field'=>'Archive Control','variableId'=>0,
                         'finding'=>'Archiv nicht lesbar: '.$error->getMessage()];
+                    $severityCounts['Hinweis']++;
                 }
             }
             foreach ($entries as $row) {
                 $device=(string)($row['title']??$row['key']??'Gerät');
-                $ids=isset($row['inspectionSource'])
-                    ?$this->rccInspectionSourceVariables($row['inspectionSource'])
+                $source=is_array($row['inspectionSource']??null)
+                    ?$row['inspectionSource']:null;
+                $ids=$source!==null
+                    ?$this->rccInspectionSourceVariables($source)
                     :$this->rccInspectionVariableFields($row);
-                if ($ids===[]) {
+                $grouped=[];
+                foreach ($ids as $field=>$id) {
+                    $id=(int)$id;
+                    if ($id<=0)continue;
+                    $referenceCount++;
+                    $grouped[$id][]=(string)$field;
+                }
+                if ($grouped===[] && $source===null) {
                     $results[]=['severity'=>'Hinweis','device'=>$device,'field'=>'Zuordnung',
                         'variableId'=>0,'finding'=>'Keine typisierte Variablen-ID gefunden. '
-                            .'Für Anlagen-Datenquellen bitte die zentrale Variablenverwaltung verwenden.'];
-                    continue;
+                            .'Katalogzuordnung bei Bedarf manuell prüfen.'];
+                    $severityCounts['Hinweis']++;
                 }
-                foreach ($ids as $field=>$id) {
+                foreach ($grouped as $id=>$paths) {
                     $checked++;
                     $status='OK';$message='';
-                    if (!function_exists('IPS_VariableExists')||!IPS_VariableExists($id)) {
+                    if (!function_exists('IPS_VariableExists')||!IPS_VariableExists((int)$id)) {
                         $status='FEHLER';$message='Variable existiert nicht. '
                             .'Im zentralen Variableneditor eine Ersatz-ID auswählen.';
                     } else {
                         try {
-                            $obj=IPS_GetObject($id);
-                            $var=IPS_GetVariable($id);
+                            $obj=IPS_GetObject((int)$id);
+                            $var=IPS_GetVariable((int)$id);
                             $type=(int)($var['VariableType']??-1);
                             $parent=(int)($obj['ParentID']??0);
                             if ($parent<=0 || !IPS_ObjectExists($parent)) {
@@ -190,40 +229,46 @@ trait RCCMarkedDeviceInspectionTrait
                                 $status='Prüfen';$message='Variablenprofil '.$profile
                                     .' fehlt. Profil oder Datenformat prüfen.';
                             }
-                            if ($type===3 && preg_match('/(?:temperature|humidity|power|brightness|position|ist|soll)/i',$field)) {
+                            $fieldText=implode(' ',array_slice($paths,0,4));
+                            if ($type===3 && preg_match(
+                                '/(?:temperature|humidity|power|brightness|position|ist|soll)/i',
+                                $fieldText)) {
                                 $status='Prüfen';$message='String statt numerischem Messwert. '
                                     .'Format prüfen und ggf. eine Float-Hilfsvariable verwenden.';
                             }
-                            if ($deep && $archiveId>0) {
-                                $logged=isset($archiveMap[$id]);
-                                if (!$logged && $status==='OK') {
-                                    $status='Hinweis';
-                                    $message='Kein Archiveintrag vorhanden. Archivlogging prüfen, '
-                                        .'falls historische Auswertungen benötigt werden.';
-                                } elseif ($logged && $status==='OK'
-                                    && function_exists('AC_GetLoggedValues')) {
+                            // Never assume that every actuator, status or seasonal
+                            // sensor requires archive data. Check only explicit
+                            // historical requirements.
+                            $policy=$source!==null
+                                ?$this->rccInspectionArchivePolicy($source,(int)$id)
+                                :['required'=>false,'maxAge'=>0];
+                            if ($deep && $archiveId>0 && $policy['required']
+                                && $status==='OK') {
+                                if (!isset($archiveMap[$id])) {
+                                    $status='Prüfen';$message='Archiv für diesen Messwert '
+                                        .'explizit vorgesehen, aber nicht gefunden.';
+                                } elseif (function_exists('AC_GetLoggedValues')) {
                                     try {
-                                        // One recent value only; never query whole archives
-                                        // during a marked-device inspection.
-                                        $latest=AC_GetLoggedValues($archiveId,$id,
-                                            time()-30*86400,time(),1);
+                                        $ageLimit=(int)$policy['maxAge'];
+                                        $window=max(30*86400,$ageLimit*2);
+                                        $latest=AC_GetLoggedValues($archiveId,(int)$id,
+                                            time()-$window,time(),1);
                                         if (!is_array($latest) || $latest===[]) {
                                             $status='Hinweis';
-                                            $message='Keine Archivwerte in den letzten 30 Tagen. '
-                                                .'Logging und erwarteten Sensorzyklus prüfen.';
-                                        } else {
+                                            $message='Kein Archivwert im geprüften Zeitraum. '
+                                                .'Messzyklus und Saison berücksichtigen.';
+                                        } elseif ($ageLimit>0) {
                                             $last=(int)($latest[0]['TimeStamp']??0);
-                                            if ($last>0 && time()-$last>7*86400) {
+                                            if ($last>0 && time()-$last>$ageLimit) {
                                                 $status='Prüfen';
                                                 $message='Letzter Archivwert vom '
                                                     .date('d.m.Y H:i',$last)
-                                                    .'. Erwartetes Messintervall prüfen.';
+                                                    .'; konfiguriertes Intervall überschritten.';
                                             }
                                         }
-                                    } catch (Throwable $archiveException) {
-                                        $status='Hinweis';
-                                        $message='Archivwerte nicht lesbar: '
-                                            .$archiveException->getMessage();
+                                    } catch (Throwable $archiveError) {
+                                        $status='Hinweis';$message='Archiv nicht auswertbar: '
+                                            .$archiveError->getMessage();
                                     }
                                 }
                             }
@@ -232,19 +277,40 @@ trait RCCMarkedDeviceInspectionTrait
                         }
                     }
                     if ($status==='OK'){$ok++;continue;}
-                    $issues++;
-                    $results[]=['severity'=>$status,'device'=>$device,'field'=>$field,
-                        'variableId'=>$id,'finding'=>$message];
+                    $issues++;$severityCounts[$status]++;
+                    $paths=array_values(array_unique($paths));
+                    $results[]=['severity'=>$status,'device'=>$device,
+                        'field'=>implode(' | ',array_slice($paths,0,3))
+                            .(count($paths)>3?' (+'.(count($paths)-3).')':''),
+                        'variableId'=>(int)$id,'finding'=>$message];
+                }
+                // Script IDs are neither variables nor failed sensors.
+                if ($source!==null) {
+                    foreach ($this->rccInspectionSourceScripts($source) as $scriptId) {
+                        $scriptCount++;
+                        if (function_exists('IPS_ScriptExists')
+                            && !IPS_ScriptExists((int)$scriptId)) {
+                            $issues++;$severityCounts['FEHLER']++;
+                            $results[]=['severity'=>'FEHLER','device'=>$device,
+                                'field'=>'Skript','variableId'=>(int)$scriptId,
+                                'finding'=>'Verknüpftes PHP-Skript existiert nicht. '
+                                    .'Skriptreferenz im Katalog prüfen.'];
+                        }
+                    }
                 }
             }
             $ms=(int)round((microtime(true)-$started)*1000);
-            $summary=count($entries).' markierte Geräte, '.$checked.' Variablenverweise: '
-                .$ok.' ohne technischen Befund, '.$issues.' Auffälligkeiten. '
+            $summary=count($entries).' markierte Geräte, '.$checked.' eindeutige Variablen '
+                .'aus '.$referenceCount.' Fundstellen und '.$scriptCount.' Skriptreferenzen: '
+                .$ok.' ohne technischen Befund, '.$severityCounts['FEHLER'].' Fehler, '
+                .$severityCounts['Prüfen'].' prüfen, '.$severityCounts['Hinweis'].' Hinweise. '
                 .'Dauer '.$ms.' ms. Prüfung lesend; plausibel bedeutet nicht '
                 .'am echten Sensor bestätigt.';
             if ($issues===0)$summary.=' Keine technischen Auffälligkeiten erkannt.';
             $report=['at'=>date('Y-m-d H:i:s'),'summary'=>$summary,
-                'selected'=>count($entries),'references'=>$checked,
+                'selected'=>count($entries),'references'=>$referenceCount,
+                'variables'=>$checked,'scripts'=>$scriptCount,
+                'severityCounts'=>$severityCounts,
                 'issues'=>$issues,'deep'=>$deep,'rows'=>$results];
             $this->WriteAttributeString('MarkedInspectionResult',json_encode($report,
                 JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE));
