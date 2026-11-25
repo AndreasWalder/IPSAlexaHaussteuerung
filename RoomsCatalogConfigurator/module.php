@@ -502,6 +502,29 @@ class RoomsCatalogConfigurator extends IPSModule
         echo $notice;
     }
 
+    /** Optional cleanup of old backup scripts; never touches PROD or EDIT. */
+    public function PruneCatalogBackups(): void
+    {
+        try {
+            $sources=[$this->ReadPropertyInteger('RoomsCatalogScriptID'),
+                $this->ReadPropertyInteger('RoomsCatalogEditScriptID')];
+            $before=count(RCCBackupRotation::candidates($sources));
+            RCCBackupRotation::prune($sources);
+            $after=count(RCCBackupRotation::candidates($sources));
+            $message='Backup-Aufraeumen: vorher '.$before.', jetzt '.$after
+                .' Katalog-Sicherungen. RoomsCatalog und RoomsCatalogEdit unveraendert.';
+            $this->UpdateFormField('CatalogRestoreBackupId','options',
+                json_encode($this->catalogRestoreOptions(),JSON_INVALID_UTF8_SUBSTITUTE));
+            $this->UpdateFormField('CatalogRestoreBackupId','value',0);
+            $this->WriteAttributeString('CatalogRestorePreview','{}');
+        }catch(\Throwable $error){
+            $message='Backup-Aufraeumen fehlgeschlagen: '.$error->getMessage();
+        }
+        $this->WriteAttributeString('CatalogRestoreNotice',$message);
+        $this->UpdateFormField('CatalogRestoreNotice','caption',$message);
+        echo $message;
+    }
+
     public function CreateCatalogEditBackup(): void
     {
         try {
@@ -6433,6 +6456,11 @@ class RoomsCatalogConfigurator extends IPSModule
                     .'PROD bleibt unveraendert; gespeicherte EDIT-Aenderungen werden ersetzt.'],
                 ['type'=>'Button','caption'=>'AKTUELLEN EDIT-STAND JETZT SICHERN',
                     'onClick'=>'RCC_CreateCatalogEditBackup($id);'],
+                ['type'=>'Button','caption'=>'ALTE BACKUPS AUF MAXIMAL 5 AUFRÄUMEN',
+                    'confirm'=>'Alte RoomsCatalog-Backups dauerhaft löschen? '
+                        .'Nur die fünf neuesten bleiben erhalten. EDIT und PROD '
+                        .'werden nicht geändert.',
+                    'onClick'=>'RCC_PruneCatalogBackups($id);'],
                 ['type'=>'Select','name'=>'CatalogRestoreBackupId',
                     'caption'=>'Sicherung auswaehlen',
                     'options'=>$this->catalogRestoreOptions(),
