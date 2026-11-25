@@ -538,6 +538,35 @@ trait RCCSystemTreeEditorTrait
             if (!is_array($options)||!is_bool($options['enabled']??null)||!is_bool($options['allowAction']??null)
                 || !is_string($options['role']??null)||!is_int($options['zone']??null)
                 || !is_string($options['archiveMode']??null))throw new RuntimeException('Eingaben unvollständig.');
+            $replacementId=(int)($options['replacementId']??$pid);
+            $forceRefresh=(bool)($options['refreshMetadata']??false);
+            if ($replacementId<=0 || !IPS_VariableExists($replacementId))
+                throw new RuntimeException('Die ausgewählte Ersatzvariable existiert nicht.');
+            if ($replacementId!==$pid && isset($s['points'][$replacementId]))
+                throw new RuntimeException('Die Ersatzvariable ist bereits einem anderen Datenpunkt dieser Anlage zugeordnet.');
+            $changingId=$replacementId!==$pid;
+            if ($changingId || $forceRefresh) {
+                $metadata=RCCSystemTreeDiscovery::supplementalPoint($replacementId,'');
+                // Keep the logical role, display name and user permissions.
+                // Refresh ONLY technical metadata; a different physical sensor
+                // must never inherit an unverified actuator permission.
+                foreach (['ident','parent','path','type','unit','profile'] as $field)
+                    $p[$field]=$metadata[$field];
+                $p['id']=$replacementId;
+                $p['manualEdit']=true;
+                $p['manualSource']=true;
+                if ($changingId)$p['actionCandidate']=false;
+                $p['evidence']=array_values(array_unique(array_merge(
+                    (array)($p['evidence']??[]),['manual-variable-reassignment'])));
+                if ($p['role']!=='unknown'
+                    && !self::systemTreeRoleMatches($p,(string)$options['role'])) {
+                    throw new RuntimeException('Die Ersatzvariable passt nicht zur Rolle. '
+                        .'Bitte Datentyp, Profil und Einheit prüfen.');
+                }
+            }
+            if ($changingId && !empty($options['allowAction']))
+                throw new RuntimeException('Beim Sensorwechsel Alexa-Schalten zunächst deaktivieren. '
+                    .'Die neue Variable muss separat als unterstützte Aktion geprüft werden.');
             $role=$options['role'];$zone=$options['zone'];$mode=$options['archiveMode'];
             if ($role!==$p['role'] && $p['role']==='unknown' && $p['unit']===''
                 && in_array($p['type'],[1,2],true) && in_array($role,['stationTemperature','soilMoisture'],true)) {
@@ -553,27 +582,39 @@ trait RCCSystemTreeEditorTrait
                 throw new RuntimeException('Für Lesezugriff zuerst einen unterstützten Datentyp und eine Rolle auswählen.');
             if ($options['allowAction']&&!$p['actionCandidate'])throw new RuntimeException('Keine unterstützte Aktion des Bewässerungsmoduls.');
             $s['voiceActions']=array_values(array_diff((array)$s['voiceActions'],[$pid]));
-            if ($options['allowAction'])$s['voiceActions'][]=$pid;
+            if ($options['allowAction'])$s['voiceActions'][]=$replacementId;
             $s['historySignals']['heater']=(array)($s['historySignals']['heater']??[]);
             unset($s['historySignals']['heater'][$pid]);
             if ((int)($s['historySignals']['pumpId']??0)===$pid)unset($s['historySignals']['pumpId']);
             if ($mode!=='none' && !$options['enabled'])throw new RuntimeException('Archivsignale benötigen eine lesbare Variable.');
             if ($mode==='pump' && $role==='pumpStatus' && $p['type']===0)
-                $s['historySignals']['pumpId']=$pid;
+                $s['historySignals']['pumpId']=$replacementId;
             elseif ($mode==='heaterPower' && $role==='heaterSignal' && in_array($p['type'],[1,2],true)
                 && in_array($p['unit'],['W','kW'],true)) {
                 foreach ($s['historySignals']['heater'] as $other=>$existing) {
                     if (($existing['mode']??'')==='heaterPower')unset($s['historySignals']['heater'][$other]);
                 }
-                $s['historySignals']['heater'][$pid]=['mode'=>'heaterPower'];
+                $s['historySignals']['heater'][$replacementId]=['mode'=>'heaterPower'];
             } elseif ($mode!=='none')throw new RuntimeException('Als Heizungsquelle bitte eine Leistungsvariable in W oder kW auswählen.');
             $p['role']=$role;$p['zone']=$zone;$p['enabled']=$options['enabled'];$p['manualEdit']=true;
             $p['group']=match($role){
                 'stationTemperature','winterMode','heaterStatus','heaterSignal'=>'winter',
                 'soilMoisture','outdoorTemperature','rainSensor','sensorBattery'=>'climate',
                 'pumpStatus'=>'pump','zoneStatus'=>'zones','nextStart'=>'schedule',default=>$p['group']};
+            if ($changingId) {
+                $newPoint=$p;
+                unset($p);
+                unset($s['points'][$pid]);
+                $s['points'][$replacementId]=$newPoint;
+                // Exclude obsolete sensor on the next object-tree rescan.
+                $s['excludedPoints'][$pid]=(string)$newPoint['label'];
+            }
             $this->saveSystemTreeEdit($id,$old,$catalog);
-            echo 'Datenpunkt in EDIT gespeichert. Bei geöffneter Liste die Anlage erneut öffnen.';
+            IPS_LogMessage('RoomsCatalog','SystemTree variable '.($changingId?'replaced':'refreshed')
+                .' old=#'.$pid.' new=#'.$replacementId
+                .' parent=#'.(int)($s['points'][$replacementId]['parent']??0));
+            echo 'Datenpunkt in EDIT '.($changingId?'ersetzt':'gespeichert/aktualisiert')
+                .'. PROD unverändert. Historische Archivwerte bleiben bei der bisherigen Variablen-ID.';
         } catch (Throwable $e) {echo $e->getMessage();}
     }
 
@@ -616,6 +657,9 @@ trait RCCSystemTreeEditorTrait
             }
             if (!in_array('stationTemperature',array_column($s['points'],'role'),true))
                 $items[]=['type'=>'Label','caption'=>'Keine Stationstemperatur zugeordnet. Unter „Variable ergänzen“ kannst du einen vorhandenen Messwert auswählen.'];
+            $items[]=['type'=>'Label','caption'=>'Sensor tauschen: Im Zahnrad unter „Variable / Ersatz“ '
+                .'auch die bisherige oder dieselbe Variable wählen. „Erneut einlesen“ aktualisiert '
+                .'Parent, Typ, Profil und Einheit. Archivhistorie bleibt an der ursprünglichen IPS-ID.'];
             foreach ($groups as $group=>$title) {
                 $rows=[];
                 foreach ($s['points'] as $p) {
@@ -631,7 +675,9 @@ trait RCCSystemTreeEditorTrait
                     $archiveStatus=$inventory===null?'Unbekannt':($archiveRow===null?'Kein Archiv':
                         (empty($archiveRow['AggregationActive']) && isset($archiveRow['AggregationActive'])?'Logging aus':'Archiviert'));
                     if (isset($archiveRow['RecordCount']))$archiveStatus.=' · '.$archiveRow['RecordCount'].' Werte';
-                    $rows[]=['pid'=>$pid,'label'=>$p['label'],'role'=>$p['role'],'zone'=>$p['zone'],'reading'=>$v,
+                    $rows[]=['pid'=>$pid,'replacementId'=>$pid,'refreshMetadata'=>false,
+                        'parentId'=>(int)($p['parent']??0),
+                        'label'=>$p['label'],'role'=>$p['role'],'zone'=>$p['zone'],'reading'=>$v,
                         'archive'=>$archiveStatus,
                         'enabled'=>$p['enabled'],'allowAction'=>in_array($pid,$s['voiceActions'],true),
                         'archiveMode'=>(int)($s['historySignals']['pumpId']??0)===$pid?'pump':(($signal['mode']??'')==='heaterPower'?'heaterPower':'none'),
@@ -648,6 +694,11 @@ trait RCCSystemTreeEditorTrait
                         'loadValuesFromConfiguration'=>false,'add'=>false,'delete'=>false,'values'=>$rows,
                         'columns'=>[
                             ['name'=>'pid','caption'=>'ID','width'=>'65px','save'=>false],
+                            ['name'=>'parentId','caption'=>'Parent-ID','width'=>'80px','save'=>false],
+                            ['name'=>'replacementId','caption'=>'Variable / Ersatz','width'=>'185px',
+                                'edit'=>['type'=>'SelectVariable','validVariableTypes'=>[0,1,2]]],
+                            ['name'=>'refreshMetadata','caption'=>'Erneut einlesen','width'=>'95px',
+                                'edit'=>['type'=>'CheckBox']],
                             ['name'=>'label','caption'=>'Datenpunkt','width'=>'200px','save'=>false],
                             ['name'=>'reading','caption'=>'Istwert','width'=>'95px','save'=>false],
                             ['name'=>'role','caption'=>'Rolle','width'=>'155px','edit'=>['type'=>'Select','options'=>array_map(
@@ -665,6 +716,8 @@ trait RCCSystemTreeEditorTrait
                         'onEdit'=>'RCC_SaveSystemTreePoint($id, '.$qkey.', (int)('.$v.'["pid"] ?? 0), json_encode(['
                             .'"role" => (string)('.$v.'["role"] ?? ""), "zone" => (int)('.$v.'["zone"] ?? 0), '
                             .'"archiveMode" => (string)('.$v.'["archiveMode"] ?? "none"), '
+                            .'"replacementId" => (int)('.$v.'["replacementId"] ?? '.$v.'["pid"] ?? 0), '
+                            .'"refreshMetadata" => (bool)('.$v.'["refreshMetadata"] ?? false), '
                             .'"enabled" => (bool)('.$v.'["enabled"] ?? false), "allowAction" => (bool)('.$v.'["allowAction"] ?? false)]));'
                     ]
                 ]];
