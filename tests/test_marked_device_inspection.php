@@ -20,6 +20,13 @@ function GetValue(int $id): mixed {return $GLOBALS['healthValues'][$id]??21.5;}
 function IPS_VariableProfileExists(string $name): bool {return true;}
 function IPS_GetName(int $id): string {return 'Sensor #'.$id;}
 function IPS_LogMessage(string $sender,string $message): void {}
+function AC_GetAggregationVariables(int $id): array {return [];}
+function AC_GetAggregatedValues(int $archive,int $id,int $level,int $start,int $end,int $limit): array {
+    $GLOBALS['healthArchiveCalls']=($GLOBALS['healthArchiveCalls']??0)+1;
+    return array_map(static fn($i)=>[
+        'Min'=>21.5,'Max'=>21.5,'TimeStamp'=>time()-$i*86400,'Count'=>4
+    ],[1,2,3,4,5]);
+}
 class InspectionHarness {
     use RCCCatalogVariableBindingsTrait;
     use RCCMarkedDeviceInspectionTrait;
@@ -32,6 +39,9 @@ class InspectionHarness {
     public function WriteAttributeString(string $name,string $v): void {$this->attributes[$name]=$v;}
     public function UpdateFormField(string $name,string $property,mixed $v): void {
         $this->updates[$name.'.'.$property]=$v;
+    }
+    private function systemTreeArchive(): array {
+        return [90000,[60001=>['AggregationActive'=>true]]];
     }
     private function ensureRuntimeCatalogCurrent(): void {}
     private function getRuntimeEntries(): array {return $this->runtime;}
@@ -128,6 +138,11 @@ testCheck(count(array_filter($health['rows'],static fn($r)=>
     (int)($r['variableId']??0)===60003
     && str_contains($r['finding'],'Batteriestand')))===1,
     'Low battery must be flagged with actionable explanation');
+testCheck(($health['healthArchiveQueries']??0)===1,
+    'Only eligible continuously measured active sensors should query archive trends');
+testCheck(($GLOBALS['healthArchiveCalls']??0)===1,
+    'Archived temperature must use only one bounded daily aggregation request');
+
 $h->catalog['dataSources']['irrigation_52811']['points'][60001]['role']='zoneStatus';
 $h->catalog['dataSources']['irrigation_52811']['points'][60001]['expectedIntervalSeconds']=0;
 $h->catalog['dataSources']['irrigation_52811']['points'][60003]['role']='zoneStatus';
@@ -137,5 +152,7 @@ $h->RunMarkedDeviceInspection(false,true);
 $switches=json_decode($h->ReadAttributeString('MarkedInspectionResult'),true,512,JSON_THROW_ON_ERROR);
 testCheck($switches['issues']===0,
     'Seasonal switch values without configured freshness must not raise health alarms');
+testCheck(($switches['healthArchiveQueries']??-1)===0,
+    'Boolean and seasonal switches must skip expensive trend analysis');
 
 echo "PASS marked device inspection\n";
