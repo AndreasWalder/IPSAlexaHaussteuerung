@@ -68,6 +68,24 @@ $meterUnrelated=$resolveHeater->invoke(null,
 test(($meterNew['id']??0)===47232 && ($meterLegacy['id']??0)===47232
     && $meterUnrelated===null,
     'Heater meter is discovered at both irrigation roots but not unrelated devices');
+// A single verified boolean heater feedback may provide a live status
+// even if the energy meter is absent. It must never start an actuator.
+$feedback=new ReflectionMethod(IAHIrrigationQuery::class,'heaterLiveWithFeedback');
+$feedbackPoint=[
+    'id'=>60108,'parent'=>61000,'ident'=>'Winterbetrieb','type'=>0,
+    'role'=>'heaterStatus','enabled'=>true
+];
+$feedbackOn=$feedback->invoke(null,['points'=>[60108=>$feedbackPoint]],null,[]);
+test(str_contains((string)($feedbackOn['speech']??''),'laut Statusrückmeldung ein'),
+    'Verified boolean feedback can supplement missing meter');
+$previous=$GLOBALS['values'][60108];
+$GLOBALS['values'][60108]=false;
+$feedbackOff=$feedback->invoke(null,['points'=>[60108=>$feedbackPoint]],null,[]);
+$GLOBALS['values'][60108]=$previous;
+test(str_contains((string)($feedbackOff['speech']??''),'laut Statusrückmeldung aus'),
+    'Heater feedback off status is distinguished from missing meter');
+test($requests===$before,'Heater feedback must be read-only');
+
 
 // The old NLU fallback must receive the configured PROD catalog script,
 // not rely on a hard-coded scripts/RoomsCatalog.php file.
