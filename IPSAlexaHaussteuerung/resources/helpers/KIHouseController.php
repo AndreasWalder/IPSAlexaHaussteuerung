@@ -1545,7 +1545,7 @@ function iah_rc_voice(
         $wantsEnergy=$energySources!==[] && (
             (bool)preg_match('/\b(pv|photovoltaik|solar|wechselrichter|akku|batterie|strom|energie|ertrag|netzbezug|einspeis|autark|eigenverbrauch|hausverbrauch|anlage|smartmeter|ladezustand|leistungsaufnahme)\b/ui',$text)
             || (string)($cfg['ui_context_domain']??'')==='energie');
-        $enableDeviceDiagnostics=!$preview&&(bool)($cfg['device_diagnostics']??true);
+        $enableDeviceDiagnostics=!$preview&&(bool)($cfg['device_diagnostics']??false);
         $typeCounts=[];$temperatureMapped=0;
         foreach ($devices as $device) {
             $kind=(string)($device['type']??'');
