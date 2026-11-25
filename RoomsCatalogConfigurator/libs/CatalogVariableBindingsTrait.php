@@ -329,20 +329,22 @@ trait RCCCatalogVariableBindingsTrait
             self::rccRefreshPointMetadata($catalog,$newId,$new);
             // A replaced physical sensor should not be re-imported at the
             // next irrigation object-tree scan.
-            foreach ((array)($catalog['dataSources']??[]) as &$source) {
-                if (!is_array($source)
-                    || ($source['provider']??'')!=='ObjectTreeIrrigation')continue;
-                if (isset($source['points'][$newId]) && !isset($source['points'][$oldId])) {
-                    $source['excludedPoints'][$oldId]=(string)
-                        ($source['points'][$newId]['label']??('Replaced '.$oldId));
-                    // A replacement actuator never inherits permission from
-                    // the old physical hardware without re-approval.
-                    $source['voiceActions']=array_values(array_diff(
-                        (array)($source['voiceActions']??[]),[$newId]));
-                    $source['points'][$newId]['actionCandidate']=false;
+            if (isset($catalog['dataSources']) && is_array($catalog['dataSources'])) {
+                foreach ($catalog['dataSources'] as &$source) {
+                    if (!is_array($source)
+                        || ($source['provider']??'')!=='ObjectTreeIrrigation')continue;
+                    if (isset($source['points'][$newId]) && !isset($source['points'][$oldId])) {
+                        $source['excludedPoints'][$oldId]=(string)
+                            ($source['points'][$newId]['label']??('Replaced '.$oldId));
+                        // A replacement actuator never inherits permission
+                        // from old hardware without explicit re-approval.
+                        $source['voiceActions']=array_values(array_diff(
+                            (array)($source['voiceActions']??[]),[$newId]));
+                        $source['points'][$newId]['actionCandidate']=false;
+                    }
                 }
+                unset($source);
             }
-            unset($source);
             $this->saveSystemTreeEdit($script,$original,$catalog);
             $this->WriteAttributeString('CatalogBindingPreview','');
             $this->WriteAttributeString('CatalogBindingInventory','[]');
