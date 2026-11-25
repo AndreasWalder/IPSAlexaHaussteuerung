@@ -17,6 +17,7 @@ require_once __DIR__ . '/libs/SystemTreeEditorTrait.php';
 require_once __DIR__ . '/libs/CatalogVariableBindingsTrait.php';
 require_once __DIR__ . '/libs/CatalogScalarValuesTrait.php';
 require_once __DIR__ . '/libs/MarkedDeviceInspectionTrait.php';
+require_once __DIR__ . '/libs/CatalogBackupRotation.php';
 require_once __DIR__ . '/libs/SensorHealthCheckTrait.php';
 require_once __DIR__ . '/libs/HeatingSystemEditorTrait.php';
 require_once __DIR__ . '/libs/HomeConnectEditorTrait.php';
@@ -335,31 +336,10 @@ class RoomsCatalogConfigurator extends IPSModule
     private function catalogRestoreOptions(): array
     {
         $options=[['caption'=>'Backup auswaehlen','value'=>0]];
-        if (!function_exists('IPS_GetChildrenIDs') || !function_exists('IPS_GetParent')
-            || !function_exists('IPS_GetName') || !function_exists('IPS_ScriptExists')) return $options;
-        $found=[];
-        $seenParents=[];
-        foreach (['RoomsCatalogEditScriptID','RoomsCatalogScriptID'] as $property) {
-            $scriptId=$this->ReadPropertyInteger($property);
-            if ($scriptId<=0 || !IPS_ScriptExists($scriptId)) continue;
-            $parentId=(int)IPS_GetParent($scriptId);
-            if ($parentId<=0 || isset($seenParents[$parentId])) continue;
-            $seenParents[$parentId]=true;
-            foreach ((array)IPS_GetChildrenIDs($parentId) as $candidateId) {
-                $candidateId=(int)$candidateId;
-                if ($candidateId<=0 || $candidateId===$scriptId
-                    || !IPS_ScriptExists($candidateId)) continue;
-                $name=(string)IPS_GetName($candidateId);
-                if (!str_starts_with($name,'RoomsCatalog')
-                    || (stripos($name,'Backup')===false
-                        && stripos($name,'before_repair')===false)) continue;
-                $found[$candidateId]=$name;
-            }
-        }
-        krsort($found,SORT_NUMERIC);
-        foreach (array_slice($found,0,100,true) as $id=>$name) {
+        $anchors=[$this->ReadPropertyInteger('RoomsCatalogScriptID'),
+            $this->ReadPropertyInteger('RoomsCatalogEditScriptID')];
+        foreach(RCCBackupRotation::candidates($anchors) as $id=>$name)
             $options[]=['caption'=>$name.' (#'.$id.')','value'=>$id];
-        }
         return $options;
     }
 
@@ -380,20 +360,10 @@ class RoomsCatalogConfigurator extends IPSModule
     /** Eine unabhaengige, verifizierte Kopie vor JEDEM Restore anlegen. */
     private function catalogBackupCurrentEdit(int $editId,string $content,string $reason): int
     {
-        if (!function_exists('IPS_CreateScript') || !function_exists('IPS_SetParent')
-            || !function_exists('IPS_SetName') || !function_exists('IPS_GetParent'))
-            throw new \RuntimeException('IP-Symcon Backup-Funktionen nicht verfuegbar.');
-        $backup=IPS_CreateScript(0);
-        if (!is_int($backup) || $backup<=0)
-            throw new \RuntimeException('EDIT-Backup konnte nicht erstellt werden.');
-        IPS_SetParent($backup,IPS_GetParent($editId));
-        IPS_SetName($backup,'RoomsCatalogEdit_Backup_'.$reason.'_'.date('Ymd_His').'_'.$backup);
-        IPS_SetScriptContent($backup,$content);
-        if (IPS_GetScriptContent($backup)!==$content)
-            throw new \RuntimeException('EDIT-Backup #'.$backup.' konnte nicht verifiziert werden.');
-        return $backup;
+        return RCCBackupRotation::create($editId,$content,'EDIT',$reason,[
+            $this->ReadPropertyInteger('RoomsCatalogScriptID'),$editId
+        ]);
     }
-
 
     /** Preview is read-only, derives all IDs from the selected HuaweiPV node. */
     public function PreviewHuaweiDataSource(int $sourceId=0): void
@@ -3709,16 +3679,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 || IPS_GetScriptContent($sources['editId'])!==$sources['editSource']) {
                 throw new \RuntimeException('Kataloge vor der Sicherung veraendert. Abbruch.');
             }
-            $backup=IPS_CreateScript(0);
-            if (!is_int($backup) || $backup<=0) {
-                throw new \RuntimeException('PROD-Backup konnte nicht angelegt werden.');
-            }
-            IPS_SetParent($backup,IPS_GetParent($sources['prodId']));
-            IPS_SetName($backup,'RoomsCatalog_PartialProd_Backup_'.date('Ymd_His').'_'.$backup);
-            IPS_SetScriptContent($backup,$sources['prodSource']);
-            if (IPS_GetScriptContent($backup)!==$sources['prodSource']) {
-                throw new \RuntimeException('PROD-Backup konnte nicht verifiziert werden; keine Uebernahme.');
-            }
+            $backup=RCCBackupRotation::create($sources['prodId'],$sources['prodSource'],'PROD','PartialProd',[$sources['prodId'],$sources['editId']]);
             if (IPS_GetScriptContent($sources['prodId'])!==$sources['prodSource']
                 || IPS_GetScriptContent($sources['editId'])!==$sources['editSource']) {
                 throw new \RuntimeException('Kataloge nach Sicherung veraendert. PROD nicht beschrieben.');
@@ -3997,16 +3958,7 @@ class RoomsCatalogConfigurator extends IPSModule
                 || IPS_GetScriptContent($sources['prodId'])!==$sources['prodSource']) {
                 throw new \RuntimeException('Kataloge kurz vor Backup veraendert.');
             }
-            $backup=IPS_CreateScript(0);
-            if (!is_int($backup) || $backup<=0) {
-                throw new \RuntimeException('PROD-Backup konnte nicht erzeugt werden.');
-            }
-            IPS_SetParent($backup,IPS_GetParent($sources['prodId']));
-            IPS_SetName($backup,'RoomsCatalog_Einzelposition_Backup_'.date('Ymd_His').'_'.$backup);
-            IPS_SetScriptContent($backup,$sources['prodSource']);
-            if (IPS_GetScriptContent($backup)!==$sources['prodSource']) {
-                throw new \RuntimeException('Backup-Verifikation fehlgeschlagen, PROD unveraendert.');
-            }
+            $backup=RCCBackupRotation::create($sources['prodId'],$sources['prodSource'],'PROD','Einzelposition',[$sources['prodId'],$sources['editId']]);
             if (IPS_GetScriptContent($sources['editId'])!==$sources['editSource']
                 || IPS_GetScriptContent($sources['prodId'])!==$sources['prodSource']) {
                 throw new \RuntimeException('Kataloge nach Backup veraendert. Keine Uebernahme.');
@@ -4321,16 +4273,7 @@ class RoomsCatalogConfigurator extends IPSModule
             }
 
             // Back up the exact original PROD script content BEFORE editing.
-            $backup=IPS_CreateScript(0);
-            if (!is_int($backup) || $backup<=0) {
-                throw new \RuntimeException('PROD-Backup konnte nicht erstellt werden.');
-            }
-            IPS_SetParent($backup,IPS_GetParent($prodId));
-            IPS_SetName($backup,'RoomsCatalog_Backup_before_full_EDIT_to_PROD_'.date('Ymd_His').'_'.$backup);
-            IPS_SetScriptContent($backup,$prodSource);
-            if (IPS_GetScriptContent($backup)!==$prodSource) {
-                throw new \RuntimeException('PROD-Backup nicht verifiziert; keine Uebernahme.');
-            }
+            $backup=RCCBackupRotation::create($prodId,$prodSource,'PROD','EditNachProd',[$prodId,$editId]);
             if (IPS_GetScriptContent($editId)!==$editSource
                 || IPS_GetScriptContent($prodId)!==$prodSource) {
                 throw new \RuntimeException('EDIT/PROD nach der Sicherung veraendert; PROD nicht beschrieben.');
@@ -5417,15 +5360,7 @@ class RoomsCatalogConfigurator extends IPSModule
             echo 'Automatische Backup-Funktionen fehlen; aus Sicherheitsgruenden nichts gespeichert.';
             return;
         }
-        $backupId = IPS_CreateScript(0);
-        if (!is_int($backupId) || $backupId <= 0) { echo 'Backup konnte nicht erstellt werden.'; return; }
-        IPS_SetParent($backupId, IPS_GetParent($editId));
-        IPS_SetName($backupId,'RoomsCatalogEdit_Backup_Technical_V339_'.date('Ymd_His').'_'.$backupId);
-        IPS_SetScriptContent($backupId,$originalSource);
-        if (IPS_GetScriptContent($backupId) !== $originalSource) {
-            echo 'Backup-Verifikation fehlgeschlagen, EDIT unveraendert.';
-            return;
-        }
+        $backupId = RCCBackupRotation::create($editId,$originalSource,'EDIT','TechnicalV339',[$this->ReadPropertyInteger('RoomsCatalogScriptID'),$editId]);
         IPS_SetScriptContent($editId,$nextSource);
         if (IPS_GetScriptContent($editId) !== $nextSource) {
             IPS_SetScriptContent($editId,$originalSource);
