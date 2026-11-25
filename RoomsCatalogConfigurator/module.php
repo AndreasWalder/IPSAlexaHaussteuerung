@@ -16,6 +16,7 @@ require_once __DIR__ . '/libs/SystemTreeDiscovery.php';
 require_once __DIR__ . '/libs/SystemTreeEditorTrait.php';
 require_once __DIR__ . '/libs/CatalogVariableBindingsTrait.php';
 require_once __DIR__ . '/libs/CatalogScalarValuesTrait.php';
+require_once __DIR__ . '/libs/MarkedDeviceInspectionTrait.php';
 require_once __DIR__ . '/libs/HeatingSystemEditorTrait.php';
 require_once __DIR__ . '/libs/HomeConnectEditorTrait.php';
 require_once __DIR__ . '/libs/HouseholdEditorTrait.php';
@@ -101,6 +102,7 @@ class RoomsCatalogConfigurator extends IPSModule
     use RCCSystemTreeEditorTrait;
     use RCCCatalogVariableBindingsTrait;
     use RCCCatalogScalarValuesTrait;
+    use RCCMarkedDeviceInspectionTrait;
     use RCCHeatingSystemEditorTrait;
     use RCCHomeConnectEditorTrait;
     use RCCHouseholdEditorTrait;
@@ -173,6 +175,7 @@ class RoomsCatalogConfigurator extends IPSModule
         $this->RegisterAttributeString('CatalogBindingSelected','0');
         $this->RegisterAttributeString('CatalogBindingNotice','Noch keine Variablenanalyse durchgeführt.');
         $this->RegisterAttributeString('CatalogBindingLog','[]');
+        $this->RegisterAttributeString('MarkedInspectionResult','');
         $this->RegisterAttributeString('CatalogScalarHash','');
         $this->RegisterAttributeString('CatalogScalarRows','[]');
         $this->RegisterAttributeString('CatalogScalarNotice','Noch keine Katalogfelder geladen.');
@@ -6006,7 +6009,8 @@ class RoomsCatalogConfigurator extends IPSModule
                                     'type'=>'Button',
                                     'caption'=>'MARKIERTE NACHEINANDER BEARBEITEN',
                                     'onClick'=>'RCC_StartMarkedEditor($id);'
-                                ]
+                                ],
+                                $this->rccMarkedInspectionForm()
                             ]
                         ],
                         $this->markedEditorForm()
