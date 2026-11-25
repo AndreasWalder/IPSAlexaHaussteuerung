@@ -17,6 +17,7 @@ require_once __DIR__ . '/libs/SystemTreeEditorTrait.php';
 require_once __DIR__ . '/libs/CatalogVariableBindingsTrait.php';
 require_once __DIR__ . '/libs/CatalogScalarValuesTrait.php';
 require_once __DIR__ . '/libs/MarkedDeviceInspectionTrait.php';
+require_once __DIR__ . '/libs/SensorHealthCheckTrait.php';
 require_once __DIR__ . '/libs/HeatingSystemEditorTrait.php';
 require_once __DIR__ . '/libs/HomeConnectEditorTrait.php';
 require_once __DIR__ . '/libs/HouseholdEditorTrait.php';
@@ -103,6 +104,7 @@ class RoomsCatalogConfigurator extends IPSModule
     use RCCCatalogVariableBindingsTrait;
     use RCCCatalogScalarValuesTrait;
     use RCCMarkedDeviceInspectionTrait;
+    use RCCSensorHealthCheckTrait;
     use RCCHeatingSystemEditorTrait;
     use RCCHomeConnectEditorTrait;
     use RCCHouseholdEditorTrait;
