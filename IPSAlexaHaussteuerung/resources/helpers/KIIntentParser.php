@@ -134,30 +134,47 @@ function ki_load_cfg_from_system_configuration(): array
  */
 function ki_load_rooms_catalog(array $cfg): array
 {
-    static $cachedCatalog = null;
-
-    if ($cachedCatalog !== null) {
-        return $cachedCatalog;
+    static $cache = [];
+    // The production catalog is maintained as an IP-Symcon script, not as
+    // scripts/RoomsCatalog.php. Never fall back to an unrelated EDIT snapshot.
+    $id=(int)($cfg['rooms_catalog_script_id']??0);
+    if ($id<=0 && function_exists('ki_find_system_configuration_script_id')) {
+        $scId=ki_find_system_configuration_script_id();
+        if ($scId>0 && function_exists('IPS_GetScriptContent')) {
+            try {
+                $scFile=IPS_GetScriptFile($scId);
+                $scPath=IPS_GetKernelDir().'scripts/'.ltrim((string)$scFile,'/\\');
+                $sc=is_file($scPath)?@include $scPath:[];
+                $id=(int)($sc['script']['ROOMS_CATALOG']??0);
+            }catch(Throwable $ignored){}
+        }
     }
-
-    $path = (string)($cfg['rooms_catalog_path'] ?? (__DIR__ . '/RoomsCatalog.php'));
-
-    if (!is_file($path)) {
-        ki_log('RoomsCatalog wurde nicht gefunden unter ' . $path);
-        $cachedCatalog = [];
-        return $cachedCatalog;
+    if ($id>0 && function_exists('IPS_ScriptExists') && IPS_ScriptExists($id)) {
+        $key='script:'.$id;
+        if (isset($cache[$key]))return $cache[$key];
+        try {
+            // Static return-array catalog (the existing configured PROD script).
+            $file=IPS_GetScriptFile($id);
+            $path=IPS_GetKernelDir().'scripts/'.ltrim((string)$file,'/\\');
+            $catalog=is_file($path)?@include $path:null;
+            if (is_array($catalog)) {
+                // The catalog is keyed by rooms and may also contain metadata.
+                $rooms=is_array($catalog['rooms']??null)?$catalog['rooms']:$catalog;
+                ki_log('RoomsCatalog PROD-Skript #'.$id.' erfolgreich geladen.');
+                return $cache[$key]=$rooms;
+            }
+        }catch(Throwable $error){
+            ki_log('RoomsCatalog PROD #'.$id.' konnte nicht gelesen werden: '.$error->getMessage());
+        }
     }
-
-    $roomsCatalog = @include $path;
-    if (!is_array($roomsCatalog)) {
-        ki_log('RoomsCatalog hat ein unerwartetes Format.');
-        $cachedCatalog = [];
-        return $cachedCatalog;
+    // Explicit legacy overrides remain supported, but not as the default.
+    $path=(string)($cfg['rooms_catalog_path']??'');
+    if ($path!=='' && is_file($path)) {
+        $legacy=@include $path;
+        if(is_array($legacy))return $cache['file:'.$path]=$legacy;
     }
-
-    ki_log('RoomsCatalog erfolgreich geladen (' . count($roomsCatalog) . ' Räume inklusive global).');
-    $cachedCatalog = $roomsCatalog;
-    return $roomsCatalog;
+    ki_log('Kein gültiger RoomsCatalog-PROD-Skriptbezug gefunden; NLU ohne Katalogkontext.');
+    return [];
 }
 
 /**
