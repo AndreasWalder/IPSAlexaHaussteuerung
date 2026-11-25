@@ -22,8 +22,12 @@ trait RCCMarkedDeviceInspectionTrait
                         .'Archivstatus wird nur bei ausdrücklicher Tiefenprüfung abgefragt.'],
                     ['type'=>'CheckBox','name'=>'MarkedInspectionDeep',
                         'caption'=>'Archivwerte und Aktualität mitprüfen (langsamer)','value'=>false],
+                    ['type'=>'CheckBox','name'=>'MarkedInspectionHealth',
+                        'caption'=>'Erweiterter Sensor-Gesundheitscheck (Messwerte, Batterie, Trend)',
+                        'value'=>false],
                     ['type'=>'Button','caption'=>'JETZT PRÜFEN',
-                        'onClick'=>'RCC_RunMarkedDeviceInspection($id,(bool)$MarkedInspectionDeep);'],
+                        'onClick'=>'RCC_RunMarkedDeviceInspection($id,(bool)$MarkedInspectionDeep,'
+                            .'(bool)$MarkedInspectionHealth);'],
                     ['type'=>'Label','name'=>'MarkedInspectionSummary',
                         'caption'=>(string)($result['summary']??'Noch keine Prüfung ausgeführt.')],
                     ['type'=>'List','name'=>'MarkedInspectionFindings',
@@ -137,7 +141,7 @@ trait RCCMarkedDeviceInspectionTrait
         return ['required'=>$required,'maxAge'=>max(0,$maxAge)];
     }
 
-    public function RunMarkedDeviceInspection(bool $deep=false): void
+    public function RunMarkedDeviceInspection(bool $deep=false,bool $health=false): void
     {
         $started=microtime(true);
         try {
@@ -173,8 +177,9 @@ trait RCCMarkedDeviceInspectionTrait
                 .count($entries).' prüfbare Einträge.');
             $results=[];$checked=0;$ok=0;$issues=0;$scriptCount=0;
             $referenceCount=0;$severityCounts=['FEHLER'=>0,'Prüfen'=>0,'Hinweis'=>0];
+            $healthChecked=0;$healthArchiveBudget=30;
             $archiveId=0;$archiveMap=[];
-            if ($deep && function_exists('AC_GetAggregationVariables')) {
+            if (($deep||$health) && function_exists('AC_GetAggregationVariables')) {
                 try {
                     [$archiveId,$archiveMap]=$this->systemTreeArchive();
                 } catch (Throwable $error) {
@@ -235,6 +240,23 @@ trait RCCMarkedDeviceInspectionTrait
                                 $fieldText)) {
                                 $status='Prüfen';$message='String statt numerischem Messwert. '
                                     .'Format prüfen und ggf. eine Float-Hilfsvariable verwenden.';
+                            }
+                            if ($health) {
+                                $point=is_array($source['points'][$id]??null)
+                                    ?$source['points'][$id]:[];
+                                $healthChecked++;
+                                $observations=$this->rccInspectSensorHealth(
+                                    (int)$id,$var,$point,$fieldText,
+                                    $archiveId,$archiveMap,time(),$healthArchiveBudget
+                                );
+                                $priority=['OK'=>0,'Hinweis'=>1,'Prüfen'=>2,'FEHLER'=>3];
+                                foreach ($observations as $observation) {
+                                    $candidate=(string)($observation['severity']??'Hinweis');
+                                    if (($priority[$candidate]??0)>($priority[$status]??0))
+                                        $status=$candidate;
+                                    $message.=($message!==''?' | ':'')
+                                        .(string)($observation['message']??'');
+                                }
                             }
                             // Never assume that every actuator, status or seasonal
                             // sensor requires archive data. Check only explicit
@@ -301,7 +323,9 @@ trait RCCMarkedDeviceInspectionTrait
             }
             $ms=(int)round((microtime(true)-$started)*1000);
             $summary=count($entries).' markierte Geräte, '.$checked.' eindeutige Variablen '
-                .'aus '.$referenceCount.' Fundstellen und '.$scriptCount.' Skriptreferenzen: '
+                .'aus '.$referenceCount.' Fundstellen und '.$scriptCount.' Skriptreferenzen'
+                .($health?' (Gesundheitscheck: '.$healthChecked
+                    .' Variablen, '.(30-$healthArchiveBudget).' Archiv-Trends)':'').': ';
                 .$ok.' ohne technischen Befund, '.$severityCounts['FEHLER'].' Fehler, '
                 .$severityCounts['Prüfen'].' prüfen, '.$severityCounts['Hinweis'].' Hinweise. '
                 .'Dauer '.$ms.' ms. Prüfung lesend; plausibel bedeutet nicht '
@@ -311,7 +335,10 @@ trait RCCMarkedDeviceInspectionTrait
                 'selected'=>count($entries),'references'=>$referenceCount,
                 'variables'=>$checked,'scripts'=>$scriptCount,
                 'severityCounts'=>$severityCounts,
-                'issues'=>$issues,'deep'=>$deep,'rows'=>$results];
+                'issues'=>$issues,'deep'=>$deep,'health'=>$health,
+                'healthChecked'=>$healthChecked,
+                'healthArchiveQueries'=>30-$healthArchiveBudget,
+                'rows'=>$results];
             $this->WriteAttributeString('MarkedInspectionResult',json_encode($report,
                 JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE));
             if (function_exists('IPS_LogMessage'))
