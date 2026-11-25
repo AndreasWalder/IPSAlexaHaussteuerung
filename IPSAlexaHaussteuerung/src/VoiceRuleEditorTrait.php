@@ -1248,7 +1248,7 @@ trait IAHVoiceRuleEditorTrait
             'max_words'=>$this->ReadPropertyInteger('HomeAgentVoiceMaxWords')?:20,
             'timeout_seconds'=>$this->ReadPropertyInteger('HomeAgentVoiceTimeoutSeconds')?:6,
             'ki_cost_instance_id'=>$this->InstanceID,
-            'device_diagnostics'=>$this->ReadPropertyBoolean('KIDetailedQueryDiagnostics')
+            'device_diagnostics'=>$this->ReadPropertyBoolean('KIFullDeviceDiagnosticsEnabled')
                 && strtolower($this->ReadPropertyString('LOG_LEVEL'))==='debug',
             'prefer_ai'=>$this->ReadPropertyBoolean('KIHousePreferAI'),
             'question_scope'=>$scope,
