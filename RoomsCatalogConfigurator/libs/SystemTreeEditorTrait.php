@@ -612,6 +612,19 @@ trait RCCSystemTreeEditorTrait
                 throw new RuntimeException('Die Ersatzvariable ist bereits einem anderen Datenpunkt dieser Anlage zugeordnet.');
             $changingId=$replacementId!==$pid;
             if ($changingId || $forceRefresh) {
+                // The discovery helper intentionally rejects strings. For a
+                // rejected candidate we still need enough type information
+                // to generate an actionable migration recommendation.
+                $candidateVariable=IPS_GetVariable($replacementId);
+                $candidateType=(int)($candidateVariable['VariableType']??-1);
+                if (!in_array($candidateType,[0,1,2],true)) {
+                    $candidateProfile=(string)(($candidateVariable['VariableCustomProfile']??'')
+                        ?:($candidateVariable['VariableProfile']??''));
+                    throw new RuntimeException('Ersatzvariable hat einen nicht unterstützten Typ. '
+                        .self::systemTreeMigrationAdvice($originalPoint,[
+                            'type'=>$candidateType,'unit'=>'','profile'=>$candidateProfile
+                        ],(string)$options['role']));
+                }
                 $metadata=RCCSystemTreeDiscovery::supplementalPoint($replacementId,'');
                 // Keep the logical role, display name and user permissions.
                 // Refresh ONLY technical metadata; a different physical sensor
