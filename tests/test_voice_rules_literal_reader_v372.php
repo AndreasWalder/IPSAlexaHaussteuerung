@@ -46,6 +46,37 @@ ckLiteralVoice(IAHVoiceRuleLiteralReader::read('<?php return array("x"=>1); echo
 ckLiteralVoice(IAHVoiceRuleLiteralReader::read('<?php return [1,2,3')===null,
     'broken PHP array rejected');
 
+// Exercise streaming path directly for uncommon quoting, arrays and strict_types.
+require_once __DIR__.'/../IPSAlexaHaussteuerung/src/VoiceRuleStreamingLiteralReader.php';
+ckLiteralVoice(IAHVoiceRuleStreamingLiteralReader::read($encoded)===$special,
+    'streaming reader must round-trip mixed literal values and escapes');
+ckLiteralVoice(IAHVoiceRuleStreamingLiteralReader::read(
+    '<?php return [1, system("echo unsafe")];')===null,
+    'streaming reader must not evaluate PHP expressions');
+ckLiteralVoice(IAHVoiceRuleStreamingLiteralReader::read(
+    '<?php return array(1,2); echo "extra";')===null,
+    'streaming reader must reject additional statements');
+
+// A typical growing RoomsCatalog should no longer use token_get_all().
+$large=['rooms'=>[]];
+for($i=0;$i<3500;$i++){
+    $large['rooms']['raum_'.$i]=[
+        'domains'=>['licht'=>['switches'=>['geraet_'.$i=>[
+            'title'=>'LED Licht '.$i,
+            'state'=>40000+$i,
+            'aliases'=>["Licht in Raum $i","Leuchte $i"],
+            'ai'=>['variables'=>['power'=>40000+$i],'readOnly'=>true]
+        ]]]]
+    ];
+}
+$largeSource="<?php\nreturn ".var_export($large,true).";\n";
+ckLiteralVoice(strlen($largeSource)>64*1024,
+    'large array fixture must trigger streaming parser');
+ckLiteralVoice(IAHVoiceRuleLiteralReader::read($largeSource)===$large,
+    'large catalog must round-trip through streaming parser');
+unset($large,$largeSource);
+
+
 $beforeCount=count($GLOBALS['vr371Calls']??[]);
 $originalFile=file_get_contents(IPS_GetScriptFile(501));
 try {
