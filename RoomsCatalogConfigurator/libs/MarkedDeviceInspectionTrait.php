@@ -139,7 +139,6 @@ trait RCCMarkedDeviceInspectionTrait
                 if ($key!==null && in_array($key,$selected,true))$entries[]=$row;
             }
             $results=[];$checked=0;$ok=0;$issues=0;
-            $seen=[];
             $archiveId=0;$archiveMap=[];
             if ($deep && function_exists('AC_GetAggregationVariables')) {
                 try {
@@ -195,6 +194,31 @@ trait RCCMarkedDeviceInspectionTrait
                                     $status='Hinweis';
                                     $message='Kein Archiveintrag vorhanden. Archivlogging prüfen, '
                                         .'falls historische Auswertungen benötigt werden.';
+                                } elseif ($logged && $status==='OK'
+                                    && function_exists('AC_GetLoggedValues')) {
+                                    try {
+                                        // One recent value only; never query whole archives
+                                        // during a marked-device inspection.
+                                        $latest=AC_GetLoggedValues($archiveId,$id,
+                                            time()-30*86400,time(),1);
+                                        if (!is_array($latest) || $latest===[]) {
+                                            $status='Hinweis';
+                                            $message='Keine Archivwerte in den letzten 30 Tagen. '
+                                                .'Logging und erwarteten Sensorzyklus prüfen.';
+                                        } else {
+                                            $last=(int)($latest[0]['TimeStamp']??0);
+                                            if ($last>0 && time()-$last>7*86400) {
+                                                $status='Prüfen';
+                                                $message='Letzter Archivwert vom '
+                                                    .date('d.m.Y H:i',$last)
+                                                    .'. Erwartetes Messintervall prüfen.';
+                                            }
+                                        }
+                                    } catch (Throwable $archiveException) {
+                                        $status='Hinweis';
+                                        $message='Archivwerte nicht lesbar: '
+                                            .$archiveException->getMessage();
+                                    }
                                 }
                             }
                         } catch (Throwable $e) {
