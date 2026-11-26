@@ -405,7 +405,7 @@ record(47232,$today+305,3191.48);
 record(47232,$today+315,15.0);
 $statusRows=array_column($askEnergy($energyCatalog,'Status Rohrbegleitheizung')['displayRows'],'value','label');
 test($statusRows['Heizstarts heute']==='1' && $statusRows['Uhrzeiten heute']==='00:05'
-    && $statusRows['Erkennungsband']==='2.358,92–3.191,48 W',
+    && $statusRows['Erkennungsband']==='2.303,42–3.246,98 W',
     'both band limits are inclusive and status includes the observed times');
 $daily=array_column($askEnergy($energyCatalog,'Wie oft hat die Rohrbegleitheizung pro Tag eingeschaltet?')['displayRows'],'value','label');
 test($daily['14.11.2026']==='1' && $daily['13.11.2026']==='1' && $daily['12.11.2026']==='0',

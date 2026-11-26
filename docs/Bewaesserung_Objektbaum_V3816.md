@@ -46,12 +46,12 @@ Anlageneditor kontrollieren, welche Datenpunkte archiviert sind:
   der Scan mehrere mögliche Zustände gefunden hat. Es zählt der jüngste
   nachweisbare Aus→Ein-Wechsel. Alexa gibt nur das lokale Datum aus.
 - **Rohrbegleitheizung:** Die Messreihe **Schaltschrank Verteiler und Heizung Pumpe**
-  hat Vorrang. Die Anlage erkennt außerdem die bekannte Leistungsvariable
-  #47232. Im Anlageneditor lässt sich die zugehörige Watt-Variable als
+  hat Vorrang. Als feste Leistungsquelle wird die archivierte Wirkleistung
+  #54809 bevorzugt; #47232 bleibt als Rückfallquelle. Im Anlageneditor lässt sich die zugehörige Watt-Variable als
   **Rohrbegleitheizung: Leistung** explizit zuordnen.
-  Die Rohmessung von **2.775,2 W** im Archiv der Variable #47232 dient
-  als Referenz. Mit 15 % Toleranz ergibt sich ein Erkennungsband von
-  **2.358,92 bis 3.191,48 W**. Nach dem Grundverbrauch
+  **2.775,2 W** dient als Referenz. Der Export von #54809 zeigte Spitzen von
+  **2.332,5 bis 2.859,1 W** bei etwa **15 W** Grundlast. Mit 17 % Toleranz
+  ergibt sich ein Erkennungsband von **2.303,42 bis 3.246,98 W**. Nach dem Grundverbrauch
   (bis 30 W) zählt eine in diesem Band liegende Lastspitze beim Abfallen
   auf Grundverbrauch einmal. Eine Spitze über dem Band wird verworfen.
   Als Uhrzeit zählt der Eintritt ins Band. Tageszahlen folgen der Ortszeit.

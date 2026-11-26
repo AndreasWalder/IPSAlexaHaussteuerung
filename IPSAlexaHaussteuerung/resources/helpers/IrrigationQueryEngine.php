@@ -8,9 +8,10 @@ final class IAHIrrigationQuery
     private const HEATER_METER_GROUP='energiewerte bewaesserung';
     private const HEATER_METER_TITLE='schaltschrank verteiler und heizung pumpe';
     private const HEATER_METER_LINK='schaltschrank verteiler';
-    // Confirmed raw archive peak of irrigation power #47232, in watts.
+    // Reference peak is corroborated by the Wirkleistung archive #54809.
     private const HEATER_REFERENCE_WATTS=2775.2;
-    private const HEATER_TOLERANCE=0.15;
+    // Captures observed peaks from 2332 W while keeping a wide gap to idle load.
+    private const HEATER_TOLERANCE=0.17;
     private const HEATER_IDLE_WATTS=30.0;
 
     private static function norm(string $s): string
@@ -378,7 +379,8 @@ final class IAHIrrigationQuery
         $namedArchive=[];
         if ($garden) {
             $namedArchive=self::heaterMeterLinks((int)($system['sourceRootId']??0));
-            $points+=[(47 * 1000 + 232)=>[]]+array_fill_keys(array_keys($namedArchive),[]);
+            $points+=[(54 * 1000 + 809)=>[],(47 * 1000 + 232)=>[]]
+                +array_fill_keys(array_keys($namedArchive),[]);
             // An older catalog can omit the source or use a link caption rather than the variable name.
             if (function_exists('IPS_GetName')) {
                 foreach (array_slice(array_keys($inventory),0,2000) as $id) {
@@ -392,6 +394,7 @@ final class IAHIrrigationQuery
         $candidates=[];
         foreach ($points as $id=>$point) {
             $id=(int)$id;
+            $preferred=$garden && $id===(54 * 1000 + 809);
             $known=$garden && $id===(47 * 1000 + 232);
             $selected=!empty($point['enabled']) && ($point['role']??'')==='heaterSignal'
                 && ($system['historySignals']['heater'][$id]['mode']??'')==='heaterPower';
@@ -406,7 +409,7 @@ final class IAHIrrigationQuery
             if (isset($system['excludedPoints'][$id])
                 || (!empty($point['manualEdit']) && empty($point['enabled']))
                 || ($named===1 && !$archived && !$known && !$selected)
-                || (!$selected && !$known && !$named && (empty($point['enabled'])
+                || (!$selected && !$preferred && !$known && !$named && (empty($point['enabled'])
                     || (!$inCatalogGroup && ($point['role']??'')!=='heaterSignal')))
                 || !IPS_VariableExists($id))continue;
             try {
@@ -430,7 +433,7 @@ final class IAHIrrigationQuery
                 if ($unit==='' && $profile!=='' && function_exists('IPS_VariableProfileExists') && IPS_VariableProfileExists($profile))
                     $unit=trim((string)(IPS_GetVariableProfile($profile)['Suffix']??''));
                 if ($unit==='')$unit=trim((string)($point['unit']??''));
-                if ($unit==='' && ($named || ($known && $powerName)))$unit='W';
+                if ($unit==='' && ($named || (($preferred || $known) && $powerName)))$unit='W';
                 if (!in_array($unit,['W','kW'],true))continue;
 
                 // The named chart and the known garden power ID can refer to linked/renamed objects.
@@ -440,7 +443,8 @@ final class IAHIrrigationQuery
                     $inGroup=self::norm((string)($container['ObjectName']??''))===self::HEATER_METER_GROUP;
                     $ancestor=(int)($container['ParentID']??0);
                 }
-                if (!$selected && !$named && !$known && (!$inGroup || (!$powerName && ($point['role']??'')!=='heaterSignal')))continue;
+                if (!$selected && !$named && !$preferred && !$known
+                    && (!$inGroup || (!$powerName && ($point['role']??'')!=='heaterSignal')))continue;
                 $reading=GetValue($id);
                 $value=is_numeric($reading) && is_finite((float)$reading) && (float)$reading>=0?(float)$reading:null;
             } catch (Throwable $ignored) {
@@ -450,7 +454,7 @@ final class IAHIrrigationQuery
             $signal=['mode'=>'heater_power_band','off'=>self::HEATER_IDLE_WATTS/$scale,
                 'on'=>round(self::HEATER_REFERENCE_WATTS*(1-self::HEATER_TOLERANCE),2)/$scale,
                 'max'=>round(self::HEATER_REFERENCE_WATTS*(1+self::HEATER_TOLERANCE),2)/$scale];
-            $priority=[$selected,$named===2,$archived,$named,$known,$value!==null];
+            $priority=[$selected,$named===2,$archived && $preferred,$archived,$named,$known,$value!==null];
             $candidates[]=['id'=>$id,'unit'=>$unit,'value'=>$value,'priority'=>$priority,'signal'=>$signal];
         }
         usort($candidates,static fn(array $a,array $b):int=>$b['priority']<=>$a['priority']);
