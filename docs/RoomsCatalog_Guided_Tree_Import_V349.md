@@ -12,6 +12,12 @@ Im RoomsCatalogConfigurator: **Geraete erkennen, inventarisieren und reparieren 
 6. Nur gewuenschte Eintraege markieren (wahlweise „EINDEUTIGE MARKIEREN“) und **MARKIERTE GERAETE NACH EDIT UEBERNEHMEN** ausfuehren. Nur dieser Schritt schreibt neue Geraete nach RoomsCatalogEdit. PROD bleibt unveraendert.
 7. Zugeordnete Istvariablen am echten Geraet pruefen, gezielt KI-Lesen erlauben und erst dann die geprueften EDIT-Aenderungen nach PROD uebernehmen.
 
+## Kopierbarer Objektbaum-Export
+
+Nach einer Inventur drueckt **OBJEKTTREE + PROFILE ALS JSON ZUM KOPIEREN**. Der Export ergaenzt das bisherige Geraeteinventar um eine flache Objektliste mit `parentId`, `childIds` und vollstaendigem `path`. Instanzen enthalten Modul-ID/-Name, Status und Verbindungs-ID. Variablen enthalten Typ, aktuellen Wert, verwendete Standard-/Custom-Profile, Schreibaktionsmetadaten sowie Zeitstempel. Die Profiltafel fuehrt Praefix, Suffix, Wertebereich, Schrittweite, Nachkommastellen, Icon und Assoziationen mit Wert, Name, Icon und Farbe auf.
+
+Der Export ist auf 5.000 Objekte und 24 Ebenen begrenzt und meldet `truncated`, wenn ein Limit erreicht wurde. Textwerte werden auf 240 Zeichen begrenzt. Variablen, deren Name, Ident oder Profil auf Passwort, Token oder Schlüssel hinweist, erhalten keinen Wert; Skriptinhalte werden nie gelesen. Das JSON kannst du hier einfuegen, damit neue Geraetetypen und Variablenzuordnungen aus konkreten Modul-, Profil- und Live-Merkmalen abgeleitet werden koennen.
+
 ## KNX-Bewegungsmelder
 
 Auch eine Instanz mit nur einer Boolean-Value-Variable oder mehrere einzelne Bewegungsvariablen unter einer Kategorie werden als eigene Sensoren erkannt, nicht als ein grosses Geraet. Eindeutige nicht beschreibbare Statusvariablen werden als **motion** vorgeschlagen; keine KI-Aktionen. Beispiele wie „EG Buero Bewegung“ werden dem passenden Raum zugeordnet, sofern eindeutig.

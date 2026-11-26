@@ -29,7 +29,7 @@ require_once __DIR__ . '/../IPSAlexaHaussteuerung/src/VoiceRulePreviewForm.php';
 
 /**
  * ============================================================
- * ROOMS CATALOG CONFIGURATOR — IP-Symcon Modul (V3.3.2)
+ * ROOMS CATALOG CONFIGURATOR — IP-Symcon Modul (V3.3.3)
  * ============================================================
  *
  * Änderungsverlauf
@@ -95,6 +95,11 @@ require_once __DIR__ . '/../IPSAlexaHaussteuerung/src/VoiceRulePreviewForm.php';
  * - Alle sichtbaren oder ausdruecklich alle Geraete markieren
  * - Geraetetyp, KI-Berechtigung und offene Pruefung auf markierte Geraete anwenden
  * - Eindeutige fehlende Variablen pro Geraet ergaenzen, Vorschau + EDIT-Hash-Schutz
+ *
+ * 2026-11-26: V3.3.3 — vollständiger Objektbaum- und Profil-JSON-Export
+ * - Elternpfade, Kind-IDs, Instanzmodule und Variablenmetadaten ergänzen
+ * - Verwendete Profile mit Wertebereich, Anzeige und allen Assoziationen exportieren
+ * - Aktuelle Sensorwerte fuer die Analyse; erkennbare Zugangsdaten und Skriptinhalte bleiben außen vor
  */
 
 class RoomsCatalogConfigurator extends IPSModule
@@ -1915,7 +1920,196 @@ class RoomsCatalogConfigurator extends IPSModule
         echo 'Keine Inventurdaten zu IPS ' . $sourceId . ' vorhanden. Bitte neu scannen.';
     }
 
-    /** Kopierbarer, datensparsamer Inventarbericht fuer die gemeinsame Analyse. */
+    private function discoveryExportObjectKind(int $type): string
+    {
+        return match ($type) {
+            0=>'category',1=>'instance',2=>'variable',3=>'script',
+            4=>'event',5=>'media',6=>'link',default=>'other'
+        };
+    }
+
+    /** Ancestors make a selected subtree understandable when it is pasted elsewhere. */
+    private function discoveryExportPath(int $id): array
+    {
+        $path=[];$seen=[];$current=$id;
+        for($depth=0;$depth<32 && $current>0 && !isset($seen[$current]);$depth++) {
+            $seen[$current]=true;
+            if(!IPS_ObjectExists($current))break;
+            $object=IPS_GetObject($current);
+            if(!is_array($object))break;
+            array_unshift($path,[
+                'id'=>$current,
+                'name'=>mb_substr((string)($object['ObjectName']??''),0,160),
+                'objectType'=>(int)($object['ObjectType']??-1),
+                'objectKind'=>$this->discoveryExportObjectKind((int)($object['ObjectType']??-1))
+            ]);
+            $current=(int)($object['ParentID']??$object['ObjectParentID']??0);
+        }
+        return $path;
+    }
+
+    private function discoveryExportProfile(string $name): ?array
+    {
+        if(trim($name)==='' || !function_exists('IPS_GetVariableProfile'))return null;
+        try {$profile=IPS_GetVariableProfile($name);}
+        catch(Throwable $ignored) {return ['name'=>$name,'available'=>false];}
+        if(!is_array($profile))return ['name'=>$name,'available'=>false];
+        $associations=[];
+        foreach(array_slice((array)($profile['Associations']??[]),0,128) as $association) {
+            if(!is_array($association))continue;
+            $associations[]=[
+                'value'=>is_scalar($association['Value']??null)?$association['Value']:null,
+                'name'=>mb_substr((string)($association['Name']??''),0,160),
+                'icon'=>mb_substr((string)($association['Icon']??''),0,100),
+                'color'=>isset($association['Color'])&&is_numeric($association['Color'])
+                    ?(int)$association['Color']:null
+            ];
+        }
+        return [
+            'name'=>(string)($profile['ProfileName']??$name),
+            'available'=>true,
+            'type'=>isset($profile['ProfileType'])?(int)$profile['ProfileType']:null,
+            'icon'=>mb_substr((string)($profile['Icon']??''),0,100),
+            'readOnly'=>(bool)($profile['IsReadOnly']??false),
+            'prefix'=>mb_substr((string)($profile['Prefix']??''),0,40),
+            'suffix'=>mb_substr((string)($profile['Suffix']??''),0,40),
+            'minimum'=>isset($profile['MinValue'])&&is_numeric($profile['MinValue'])?(float)$profile['MinValue']:null,
+            'maximum'=>isset($profile['MaxValue'])&&is_numeric($profile['MaxValue'])?(float)$profile['MaxValue']:null,
+            'step'=>isset($profile['StepSize'])&&is_numeric($profile['StepSize'])?(float)$profile['StepSize']:null,
+            'digits'=>isset($profile['Digits'])?(int)$profile['Digits']:null,
+            'associations'=>$associations,
+            'associationsTruncated'=>count((array)($profile['Associations']??[]))>128
+        ];
+    }
+
+    private function discoveryExportLiveValue(int $id,string $name,string $ident,array $variable): array
+    {
+        $profile=(string)($variable['VariableCustomProfile']??'').' '
+            .(string)($variable['VariableProfile']??'');
+        if(preg_match('/(?:pass(?:word|wd|wort)?|kennwort|token|secret|api[\s_-]*key|access[\s_-]*key|credential|authorization|authentication|authkey)/iu',
+            $name.' '.$ident.' '.$profile))
+            return ['included'=>false,'omitted'=>'sensitive_name'];
+        if(!function_exists('GetValue'))return ['included'=>false,'omitted'=>'reader_unavailable'];
+        try {$value=GetValue($id);}
+        catch(Throwable $ignored) {return ['included'=>false,'omitted'=>'read_error'];}
+        if(!is_scalar($value))return ['included'=>false,'omitted'=>'non_scalar'];
+        if(is_float($value)&&!is_finite($value))return ['included'=>false,'omitted'=>'non_finite'];
+        if(is_string($value)) {
+            $truncated=mb_strlen($value,'UTF-8')>240;
+            return ['included'=>true,'value'=>mb_substr($value,0,240,'UTF-8'),
+                'truncated'=>$truncated];
+        }
+        return ['included'=>true,'value'=>$value,'truncated'=>false];
+    }
+
+    /**
+     * Bounded, read-only object-tree export. It does not read script contents.
+     * The flat rows retain parentId, childIds and the complete display path.
+     */
+    private function discoveryExportObjectTree(array $roots): array
+    {
+        $maxObjects=5000;$maxDepth=24;$objects=[];$profiles=[];$seen=[];$queue=[];$truncated=false;
+        foreach($roots as $root) {
+            $root=(int)$root;
+            if($root<=0 || !IPS_ObjectExists($root))continue;
+            $path=$this->discoveryExportPath($root);
+            if($path!==[])array_pop($path); // The root itself is appended with its row.
+            $queue[]=[$root,0,$path];
+        }
+        while($queue!==[]) {
+            if(count($objects)>=$maxObjects){$truncated=true;break;}
+            [$id,$depth,$parentPath]=array_shift($queue);
+            if($id<=0 || isset($seen[$id]) || !IPS_ObjectExists($id))continue;
+            $seen[$id]=true;
+            $object=IPS_GetObject($id);
+            if(!is_array($object))continue;
+            $type=(int)($object['ObjectType']??-1);
+            $name=mb_substr((string)($object['ObjectName']??''),0,160);
+            $ident=mb_substr((string)($object['ObjectIdent']??''),0,120);
+            $childIds=[];
+            if(function_exists('IPS_GetChildrenIDs')) {
+                $children=IPS_GetChildrenIDs($id);
+                if(is_array($children))$childIds=array_values(array_map('intval',$children));
+            }
+            $row=[
+                'id'=>$id,
+                'parentId'=>(int)($object['ParentID']??$object['ObjectParentID']??0),
+                'objectType'=>$type,
+                'objectKind'=>$this->discoveryExportObjectKind($type),
+                'name'=>$name,'ident'=>$ident,'position'=>(int)($object['ObjectPosition']??0),
+                'hidden'=>!empty($object['ObjectIsHidden']),
+                'disabled'=>!empty($object['ObjectIsDisabled']),
+                'path'=>array_merge($parentPath,[['id'=>$id,'name'=>$name,'objectType'=>$type,
+                    'objectKind'=>$this->discoveryExportObjectKind($type)]]),
+                'childIds'=>$childIds
+            ];
+            if($type===1 && function_exists('IPS_GetInstance')) {
+                try {$instance=IPS_GetInstance($id);}
+                catch(Throwable $ignored) {$instance=[];}
+                $module=(array)($instance['ModuleInfo']??[]);
+                $row['instance']=[
+                    'moduleId'=>(string)($module['ModuleID']??''),
+                    'moduleName'=>mb_substr((string)($module['ModuleName']??''),0,120),
+                    'status'=>isset($instance['InstanceStatus'])?(int)$instance['InstanceStatus']:null,
+                    'connectionId'=>isset($instance['ConnectionID'])?(int)$instance['ConnectionID']:null
+                ];
+            } elseif($type===2 && function_exists('IPS_VariableExists') && IPS_VariableExists($id)
+                && function_exists('IPS_GetVariable')) {
+                try {$variable=IPS_GetVariable($id);}
+                catch(Throwable $ignored) {$variable=[];}
+                $custom=(string)($variable['VariableCustomProfile']??'');
+                $standard=(string)($variable['VariableProfile']??'');
+                $profileNames=array_values(array_unique(array_filter([$custom,$standard],static fn(string $v):bool=>$v!=='')));
+                foreach($profileNames as $profileName) {
+                    if(!array_key_exists($profileName,$profiles))
+                        $profiles[$profileName]=$this->discoveryExportProfile($profileName);
+                }
+                $customAction=(int)($variable['VariableCustomAction']??0);
+                $live=$this->discoveryExportLiveValue($id,$name,$ident,$variable);
+                $row['variable']=[
+                    'type'=>isset($variable['VariableType'])?(int)$variable['VariableType']:null,
+                    'typeName'=>match((int)($variable['VariableType']??-1)){
+                        0=>'boolean',1=>'integer',2=>'float',3=>'string',default=>'unknown'
+                    },
+                    'profile'=>$custom!==''?$custom:$standard,
+                    'customProfile'=>$custom,'standardProfile'=>$standard,
+                    'profiles'=>$profileNames,
+                    'action'=>$customAction!==1 && ($customAction>1 || (int)($variable['VariableAction']??0)>0),
+                    'actionTargetId'=>(int)($variable['VariableAction']??0),
+                    'customActionId'=>$customAction,
+                    'currentValueIncluded'=>$live['included'],
+                    'currentValue'=>$live['value']??null,
+                    'currentValueOmitted'=>$live['omitted']??'',
+                    'currentValueTruncated'=>(bool)($live['truncated']??false),
+                    'updatedAt'=>isset($variable['VariableUpdated'])?(int)$variable['VariableUpdated']:null,
+                    'changedAt'=>isset($variable['VariableChanged'])?(int)$variable['VariableChanged']:null,
+                    'presentationConfigured'=>!empty($variable['VariableCustomPresentation'])
+                        || !empty($variable['VariablePresentation'])
+                ];
+            } elseif($type===6 && function_exists('IPS_GetLink')) {
+                try {$link=IPS_GetLink($id);}
+                catch(Throwable $ignored) {$link=[];}
+                $targetId=(int)($link['TargetID']??0);
+                $row['link']=['targetId'=>$targetId,
+                    'targetName'=>$targetId>0 && IPS_ObjectExists($targetId)
+                        ?mb_substr((string)(IPS_GetObject($targetId)['ObjectName']??''),0,160):''];
+            }
+            $objects[]=$row;
+            if($depth>=$maxDepth) {
+                if($childIds!==[])$truncated=true;
+                continue;
+            }
+            $path=$row['path'];
+            foreach($childIds as $childId)$queue[]=[$childId,$depth+1,$path];
+        }
+        ksort($profiles,SORT_STRING);
+        return ['rootIds'=>array_values(array_map('intval',$roots)),
+            'objects'=>$objects,'profiles'=>(object)$profiles,
+            'objectCount'=>count($objects),'profileCount'=>count($profiles),
+            'maxDepth'=>$maxDepth,'maxObjects'=>$maxObjects,'truncated'=>$truncated];
+    }
+
+    /** Kopierbarer Inventar- und Objektbaumexport mit aktuellen Sensorwerten, ohne Skriptinhalte. */
     public function ExportDiscoveryInventory(): void
     {
         $snapshot = json_decode($this->ReadAttributeString('DiscoveryInventory'),true);
@@ -1923,6 +2117,14 @@ class RoomsCatalogConfigurator extends IPSModule
             echo 'Bitte zuerst eine Geraeteinventur starten.';
             return;
         }
+        $roots=$this->discoveryRoots();
+        if($roots===[] || ($snapshot['roots']??[])!==$roots) {
+            echo 'Suchwurzel geaendert oder ungueltig. Bitte zuerst erneut inventarisieren.';
+            return;
+        }
+        $snapshot['exportFormat']='roomsCatalogObjectTreeV2';
+        $snapshot['exportedAt']=time();
+        $snapshot['objectTree']=$this->discoveryExportObjectTree($roots);
         echo json_encode($snapshot,JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
     }
 
@@ -6092,7 +6294,9 @@ class RoomsCatalogConfigurator extends IPSModule
                     'expanded' => false,
                     'items' => [
                         ['type'=>'Label','caption'=>'1. Knotenpunkt im IP-Symcon-Objektbaum auswaehlen (z.B. KNX > Sicherheit > Bewegung). '
-                            .'Nur dieser Teilbaum wird gelesen. Instanzen und einzelne direkte Sensorvariablen werden erkannt.'],
+                            .'Nur dieser Teilbaum wird gelesen. Der JSON-Export enthält den Objektpfad, Eltern-/Kindbeziehungen, '
+                            .'Instanzmodule, Variablenprofile, Assoziationen und aktuelle Variablenwerte. Erkennbare Zugangsdaten '
+                            .'sowie Skriptinhalte werden nicht ausgegeben.'],
                         ['type'=>'RowLayout','items'=>[
                             ['type'=>'SelectObject','name'=>'DiscoveryRootId','caption'=>'Knotenpunkt / Suchwurzel (Kategorie, Instanz oder Variable)'],
                             ['type'=>'ValidationTextBox','name'=>'DiscoveryExtraRootIds','caption'=>'Weitere Suchwurzeln (optional, IPS-IDs)']
@@ -6140,7 +6344,7 @@ class RoomsCatalogConfigurator extends IPSModule
                         ['type'=>'Label','name'=>'DiscoverySummary','caption'=>$discoverySummary],
                         ['type'=>'Button','caption'=>'DATENSTAND UND OFFENE PUNKTE PRUEFEN',
                             'onClick'=>'RCC_AuditDiscoveryCoverage($id);'],
-                        ['type'=>'Button','caption'=>'INVENTAR ALS JSON ZUM KOPIEREN',
+                        ['type'=>'Button','caption'=>'OBJEKTTREE + PROFILE ALS JSON ZUM KOPIEREN',
                             'onClick'=>'RCC_ExportDiscoveryInventory($id);'],
                         ['type'=>'Label','name'=>'DiscoveryAudit',
                             'caption'=>$this->ReadAttributeString('DiscoveryAuditReport')],
